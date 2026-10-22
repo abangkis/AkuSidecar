@@ -11,8 +11,79 @@ import {requireBoundStartup,startupDiagnostic,startupFailureLatch} from './x-man
 const path=resolve('scripts/auth-session-fixture/x-native-metadata-probe-driver.mjs');
 let code=await fs.readFile(path,'utf8');
 code=code.replace(/from '(\.\/[^']+)'/g,(_,p)=>`from '${new URL(p,pathToFileURL(path)).href}'`);
-code+=`\nexport function offlineHarness(current,transport){active=current;send=transport;return {dispatch:dispatchCDP,start:()=>startManualCookieObservation(current),run:(options,factory)=>boundCheckpoint(current,false,options,undefined,()=>{},undefined,factory)};}\n`;
+code+=`\nexport function offlineHarness(current,transport){active=current;send=transport;return {dispatch:dispatchCDP,start:()=>startManualCookieObservation(current),run:(options,factory)=>boundCheckpoint(current,false,options,undefined,()=>{},undefined,factory),collector:factory=>collectorShortCheckpoint(current,undefined,()=>{},()=>{},undefined,factory)};}\n`;
 const driver=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
+// Expose only the production transport's event dispatcher in memory. No launch,
+// profile validation, native send or process creation is invoked by these tests.
+const collectorPath=resolve('scripts/auth-session-fixture/x-qa-feasibility-collector.mjs');
+let collectorCode=await fs.readFile(collectorPath,'utf8');
+collectorCode=collectorCode.replace('fileURLToPath(import.meta.url)',JSON.stringify(collectorPath))
+  .replace('return Object.freeze({ launch, send, subscribe, close, ownership });','return Object.freeze({ subscribe, deliver:deliverMessage });');
+const collectorModule=await import('data:text/javascript;base64,'+Buffer.from(collectorCode).toString('base64'));
+
+async function collectorRepeatScenario(mode){
+  const transport=collectorModule.createQAFeasibilityCollector({FrameDecoder:driver.CDPFrameDecoder}),decoder=new driver.CDPFrameDecoder();
+  let guard,binder,received=0,observed=0,maxCalls=0,atDispatch,afterLate;
+  const counts=new WeakMap(),commands=[],original=ManualStartupCookieGuard.prototype.observe;
+  ManualStartupCookieGuard.prototype.observe=function(raw){
+    if(this===guard&&raw.method==='Network.requestWillBeSent'){
+      observed++;const n=(counts.get(raw.params)||0)+1;counts.set(raw.params,n);maxCalls=Math.max(maxCalls,n);
+    }
+    return original.call(this,raw);
+  };
+  const emit=(method,params)=>{
+    if(method==='Network.requestWillBeSent')received++;
+    decoder.push(Buffer.from(JSON.stringify({method,params,sessionId:'cs'})+'\0'),transport.deliver);
+  };
+  const request=(id,loader,type='Image',extra={})=>emit('Network.requestWillBeSent',{requestId:id,frameId:'cf',loaderId:loader,type,request:{method:'GET',url:type==='Document'?'https://x.com/home':'https://x.com/asset'},...extra});
+  const current={owner:1,sessionId:'reader',manualStartupSelected:true,shortFeasibility:{sessionId:'cs',targetId:'ct'}};
+  current.shortFeasibility.transport={subscribe:transport.subscribe,ownership:()=>({pid:2,profileId:'collector',alive:true}),send:async(method,params,session,project)=>{
+    commands.push(method);
+    if(method==='Page.getFrameTree')return project({frameTree:{frame:{id:'cf',loaderId:'old',url:'https://x.com/home'}}});
+    if(method==='Page.navigate'){request('navigation','old','Document');return project({frameId:'cf'});}
+    if(method==='Runtime.evaluate')return project({result:{type:'boolean',value:true}});
+    if(method==='Debugger.setInstrumentationBreakpoint')return project({breakpointId:'instrumentation'});
+    if(method==='Page.reload'){
+      request('root','new','Document');request('asset','new');
+      if(mode!=='single'){
+        const headers=mode==='candidate'?{'Set-Cookie':'ct0=; Path=/'}:mode==='unknown'?{'Set-Cookie':'unknown_private=x; Path=/'}:mode==='other'?{'Set-Cookie':'lang=en; Path=/'}:{};
+        request('asset','new','Image',mode==='undeclared'?{}:{redirectResponse:mode==='malformed'?null:{url:'https://x.com/asset',status:302,headers}});
+      }
+      atDispatch={reason:guard.rejection(),...guard.trace()};
+      // Later complete, consistent response metadata cannot repair ID reuse.
+      emit('Network.responseReceived',{requestId:'asset',frameId:'cf',loaderId:'new',hasExtraInfo:false,response:{url:'https://x.com/asset',status:200,headers:{}}});
+      afterLate={reason:guard.rejection(),...guard.trace()};
+      // Stop after the production dispatch path; this is not a login-success fixture.
+      throw new Error('offline_stop_after_dispatch');
+    }
+    return project({});
+  }};
+  try{
+    const h=driver.offlineHarness(current,async method=>method==='Page.getFrameTree'?{frameId:'rf'}:{acknowledged:true});
+    await h.start();guard=current.shortFeasibility.manualCookieGuard;
+    current.manualCookieGuard.beginPostSeed();guard.beginPostSeed();
+    await h.collector((...args)=>{binder=createManualV2BoundObservation(...args,()=>{},guard);return binder;});
+    return{atDispatch,afterLate,received,observed,maxCalls,commands,binder,final:{reason:guard.rejection(),...guard.trace()},first:current.manualCookieDiagnostics.current()};
+  }finally{ManualStartupCookieGuard.prototype.observe=original;}
+}
+for(const [mode,reason,trigger,provenance]of [
+  ['single','unknown','unknown','unknown'],
+  ['declared','guard_request_unbound','request','redirect'],
+  ['undeclared','guard_request_unbound','request','reused'],
+  ['malformed','guard_request_unbound','request','redirect'],
+  ['candidate','cookie_candidate','redirect','redirect'],
+  ['unknown','guard_header_classification','redirect','redirect'],
+  ['other','guard_request_unbound','redirect','redirect'],
+])test(`actual collector transport delivers once and keeps repeat rejection closed: ${mode}`,async()=>{
+  const r=await collectorRepeatScenario(mode),expected={reason,guardTrigger:trigger,guardProvenance:provenance};
+  assert.ok(r.binder);assert.equal(r.received,mode==='single'?3:4);assert.equal(r.observed,r.received);assert.equal(r.maxCalls,1);
+  assert.equal(r.commands.filter(m=>m==='Network.enable').length,1);
+  assert.deepEqual(r.atDispatch,expected);assert.deepEqual(r.afterLate,expected);
+  if(mode!=='single'){
+    assert.deepEqual(r.final,expected);assert.equal(r.first.role,'collector');
+    assert.equal(r.first.trace.firstCause,reason);assert.equal(r.first.trace.guardTrigger,trigger);assert.equal(r.first.trace.guardProvenance,provenance);
+  }
+});
 async function driverScenario(scenario, continuous=false, injectedCookie='lang=en; Path=/') {
   let normal=null,instrumentation=true,index=0,phase='instrumentation',evaluations=0,receipts=0,first=null,settings=false;
   const current={owner:1,pid:1,profileId:'p',sessionId:'s',targetId:'t',manualStartupSelected:true,gate:{networkEnabled:false,setLoginVisible(){}}};

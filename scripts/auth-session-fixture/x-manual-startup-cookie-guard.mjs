@@ -157,7 +157,9 @@ export class ManualStartupCookieGuard {
       const provenance=this.#requests.has(id)?'reused':redirect!==undefined?'redirect':!scope?'origin_scope':data(p,'frameId')!==this.#frame?'frame_scope':!ref(loader)?'loader_missing':'scoped';
       const r={scope,provenance,loaderId:loader,response:false,extra:false,bad:false,cookie:false,status:null,extraStatus:null,needsExtra:null,root:false};
       this.#requests.set(id,r);
-      if(provenance==='reused')this.#fail('guard_request_unbound','request','reused');
+      // A declared redirect still rejects ID reuse; distinguish its presence
+      // without accepting a hop or replacing an earlier header rejection.
+      if(provenance==='reused')this.#fail('guard_request_unbound','request',redirect!==undefined?'redirect':'reused');
       if(this.#armed&&data(p,'type')==='Document'&&data(p,'frameId')===this.#frame){
         const valid=this.#rootId===null&&provenance==='scoped'&&data(data(p,'request'),'method')==='GET'&&scope.url==='https://x.com/home'&&loader!==this.#oldLoader&&(!this.#commit||this.#commit===loader);
         if(!valid){r.provenance='root_scope';this.#fail('guard_request_unbound','request','root_scope');}

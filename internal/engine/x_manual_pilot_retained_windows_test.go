@@ -506,7 +506,7 @@ func (p *xManualInitialOfflineBackend) cleanup(ctx context.Context, role, handle
 }
 
 func TestXManualPilotRetainedStartupDiagnostic(t *testing.T) {
-	for _, role := range []string{"reader", "collector", "peer-first", "trace-reader", "trace-collector", "trace-ambiguous", "trace-peer-first", "trace-priority", "trace-priority-collector", "trace-budget", "trace-unbound", "trace-response", "trace-metadata", "trace-completion", "trace-context-priority", "trace-guard-peer-first", "trace-budget-candidate", "trace-candidate-budget"} {
+	for _, role := range []string{"reader", "collector", "peer-first", "trace-reader", "trace-collector", "trace-ambiguous", "trace-peer-first", "trace-priority", "trace-priority-collector", "trace-budget", "trace-unbound", "trace-response", "trace-metadata", "trace-completion", "trace-context-priority", "trace-guard-peer-first", "trace-budget-candidate", "trace-candidate-budget", "trace-redirect", "trace-reused", "trace-redirect-peer-first"} {
 		t.Run(role, func(t *testing.T) {
 			project, node := os.Getenv("AKU_NATIVE_MANUAL_PROJECT_ROOT"), os.Getenv("AKU_CHROME_FIXTURE_NODE")
 			if !filepath.IsAbs(project) || !filepath.IsAbs(node) {
@@ -518,12 +518,12 @@ const {offlineXManualOwnerPort}=await import(pathToFileURL(process.argv[1]));
 const {executeManualReply}=await import(pathToFileURL(process.argv[2]));
 const {startupFailure}=await import(pathToFileURL(process.argv[3]));
 const {offlineFirstCausePair}=await import(pathToFileURL(process.argv[5]));
-const fault=process.argv[4],guardFaults={'trace-priority':'guard-priority','trace-priority-collector':'guard-priority','trace-budget':'guard-budget','trace-unbound':'guard-unbound','trace-response':'guard-response','trace-metadata':'guard-metadata','trace-completion':'guard-completion','trace-context-priority':'context-priority','trace-guard-peer-first':'guard-priority','trace-budget-candidate':'budget-candidate','trace-candidate-budget':'candidate-budget'},traced=fault.startsWith('trace-'),trace=traced?offlineFirstCausePair({faultRole:['trace-collector','trace-priority-collector'].includes(fault)?'collector':'reader',fault:guardFaults[fault]??(fault==='trace-ambiguous'?'ambiguous':'cookie')}):null;
-const port=trace?trace.port:offlineXManualOwnerPort({afterRelease:async role=>{if(role===fault)throw startupFailure(role,'settings','source_unavailable');}}),peerFirst=['peer-first','trace-peer-first','trace-guard-peer-first'].includes(fault);
+const fault=process.argv[4],guardFaults={'trace-priority':'guard-priority','trace-priority-collector':'guard-priority','trace-budget':'guard-budget','trace-unbound':'guard-unbound','trace-response':'guard-response','trace-metadata':'guard-metadata','trace-completion':'guard-completion','trace-context-priority':'context-priority','trace-guard-peer-first':'guard-priority','trace-budget-candidate':'budget-candidate','trace-candidate-budget':'candidate-budget','trace-redirect':'guard-redirect','trace-reused':'guard-reused','trace-redirect-peer-first':'guard-redirect'},traced=fault.startsWith('trace-'),trace=traced?offlineFirstCausePair({faultRole:['trace-collector','trace-priority-collector'].includes(fault)?'collector':'reader',fault:guardFaults[fault]??(fault==='trace-ambiguous'?'ambiguous':'cookie')}):null;
+const port=trace?trace.port:offlineXManualOwnerPort({afterRelease:async role=>{if(role===fault)throw startupFailure(role,'settings','source_unavailable');}}),peerFirst=['peer-first','trace-peer-first','trace-guard-peer-first','trace-redirect-peer-first'].includes(fault);
 let fired=false,releasePeer;const peerDone=new Promise(resolve=>{releasePeer=resolve;});
 console.log(JSON.stringify({ready:true}));
 const tasks=new Set();for await(const line of createInterface({input:process.stdin})){const q=JSON.parse(line),task=executeManualReply(q,async()=>{
-if(peerFirst&&q.op==='manual_acquire'&&!fired){fired=true;if(trace){trace.fail('reader',fault==='trace-guard-peer-first'?'guard-priority':'cookie');port.invalidate('collector');}else port.observe('reader',{sessionId:'offline-session-reader',method:'Runtime.executionContextDestroyed',params:{executionContextId:7}});}
+if(peerFirst&&q.op==='manual_acquire'&&!fired){fired=true;if(trace){trace.fail('reader',fault==='trace-guard-peer-first'?'guard-priority':fault==='trace-redirect-peer-first'?'guard-redirect':'cookie');port.invalidate('collector');}else port.observe('reader',{sessionId:'offline-session-reader',method:'Runtime.executionContextDestroyed',params:{executionContextId:7}});}
 if(peerFirst&&fired&&q.role==='reader'&&['manual_inspect','manual_acquire'].includes(q.op))await peerDone;
 return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!code,...(code?{code}:{result})}));if(code&&q.role==='collector')releasePeer();});tasks.add(task);void task.finally(()=>tasks.delete(task));}await Promise.allSettled(tasks);`
 			dir := filepath.Join(project, "scripts", "auth-session-fixture")
@@ -605,7 +605,7 @@ return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!c
 					wantFirst, wantCookie = "guard_header_classification", "guard_header_classification"
 				case "trace-budget", "trace-budget-candidate":
 					wantFirst, wantCookie = "guard_request_budget", "guard_request_budget"
-				case "trace-unbound":
+				case "trace-unbound", "trace-redirect", "trace-reused", "trace-redirect-peer-first":
 					wantFirst, wantCookie = "guard_request_unbound", "guard_request_unbound"
 				case "trace-response":
 					wantFirst, wantCookie = "guard_response_correlation", "guard_response_correlation"
@@ -625,13 +625,17 @@ return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!c
 					wantTrigger, wantProvenance = "request", "unknown"
 				case "trace-unbound":
 					wantProvenance = "absent"
+				case "trace-redirect", "trace-redirect-peer-first":
+					wantTrigger, wantProvenance = "request", "redirect"
+				case "trace-reused":
+					wantTrigger, wantProvenance = "request", "reused"
 				case "trace-completion":
 					wantTrigger = "finish"
 				}
 				if detail.trace.guardTrigger != wantTrigger || detail.trace.guardProvenance != wantProvenance || !strings.Contains(detail.String(), "trigger="+wantTrigger+" provenance="+wantProvenance) {
 					t.Fatalf("immutable guard discriminator lost across Node/Windows RPC/Go formatter: %s", detail)
 				}
-				if role == "trace-peer-first" || role == "trace-guard-peer-first" {
+				if role == "trace-peer-first" || role == "trace-guard-peer-first" || role == "trace-redirect-peer-first" {
 					if !detail.peer || detail.trace.terminal != "unknown" {
 						t.Fatal("peer trace invented terminal outcome")
 					}

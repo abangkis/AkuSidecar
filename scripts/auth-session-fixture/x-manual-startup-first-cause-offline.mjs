@@ -24,7 +24,7 @@ export async function awaitOfflineWallTick(wallNow=()=>Date.now(),wait=()=>new P
 }
 
 export function offlineFirstCausePair({faultRole='reader',fault='cookie'}={}){
-  if(!['reader','collector'].includes(faultRole)||!['cookie','ambiguous','context-first','cookie-context','settings-order','extra-missing','extra-status','early-deadline','early-rejected','cleanup','guard-priority','guard-budget','guard-unbound','guard-response','guard-metadata','guard-completion','context-priority','generic-priority','budget-candidate','candidate-budget'].includes(fault))throw new Error('offline_diagnostic_invalid');
+  if(!['reader','collector'].includes(faultRole)||!['cookie','ambiguous','context-first','cookie-context','settings-order','extra-missing','extra-status','early-deadline','early-rejected','cleanup','guard-priority','guard-budget','guard-unbound','guard-response','guard-metadata','guard-completion','context-priority','generic-priority','budget-candidate','candidate-budget','guard-redirect','guard-reused'].includes(fault))throw new Error('offline_diagnostic_invalid');
   const diagnostics=startupFailureLatch(),states={},reports={};
   const fail=(role,kind='cookie')=>{
     const s=states[role];if(!s)throw new Error('offline_diagnostic_unready');
@@ -33,6 +33,11 @@ export function offlineFirstCausePair({faultRole='reader',fault='cookie'}={}){
     if(kind==='generic-priority'){s.binder.earlyOutcome('evaluation_failed',true);fail(role,'guard-priority');return;}
     if(kind==='context-first')s.emit('Runtime.executionContextDestroyed',{executionContextId:Number(s.pins.contextId)});
     if(kind==='context-priority')s.emit('Runtime.executionContextDestroyed',{executionContextId:Number(s.pins.contextId)});
+    if(kind==='guard-redirect'||kind==='guard-reused'){
+      const request={requestId:'repeat',frameId:s.pins.frameId,loaderId:s.pins.documentId,type:'Image',request:{method:'GET',url:'https://x.com/asset'}};
+      s.emit('Network.requestWillBeSent',request);
+      s.emit('Network.requestWillBeSent',{...request,...(kind==='guard-redirect'?{redirectResponse:{url:'https://x.com/asset',status:302,headers:{}}}:{})});
+    }
     if(kind==='guard-budget'){
       s.emit('Network.requestWillBeSent',{requestId:'root',frameId:s.pins.frameId,loaderId:s.pins.documentId,type:'Document',request:{method:'GET',url:'https://x.com/home'}});
       for(let i=0;i<128;i++)s.emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:s.pins.frameId,loaderId:s.pins.documentId,type:'Image',request:{method:'GET',url:'https://foreign.invalid/asset'}});

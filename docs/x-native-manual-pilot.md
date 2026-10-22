@@ -335,6 +335,58 @@ challenge release; boundary, rollback and stalled-clock tests cover that wait.
 Production clocks, precision and receipt timing checks are unchanged. This does
 not establish native timing qualification or identify the prior native branch.
 
+### Declared redirect versus undeclared request reuse (2026-10-23)
+
+The single authorized native run of source `1d1ea0e` rejected startup after
+10.02 seconds before admission. Seed validation passed. Its originating private
+detail was `collector/bound_finish/observed_cookie_write`, delivered via a peer,
+with `first=guard_request_unbound trigger=request provenance=reused`.
+Terminal/early/handoff/cookie/ExtraInfo summaries were unknown in that peer
+delivery and must not be inferred. The outer failure reported
+`cleanup-uncertain`; final owned-Job and retained-lease cleanup passed, the
+manifest returned to `clean`, and the disposable root was removed. No retry ran.
+Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-a6b8cdd77f6741f4b8f70b80447267d6.run.log.txt`.
+
+Astra traced the actual collector decoder, transport dispatcher, passive
+observer and checkpoint/binder path offline. Each request envelope reached the
+guard exactly once; `Network.enable` ran once. No internal duplicate-delivery
+path was demonstrated. However, a same-ID declared redirect without cookie
+headers and a same-ID request without a redirect declaration both produced
+`request/reused`. The former branch checked ID presence before redirect
+metadata. Redirect headers containing known-other or candidate evidence already
+rejected earlier, so the previous header-bearing regression missed the collision.
+The actual native branch remains unproven because that log omitted the
+declaration discriminator.
+
+The correction distinguishes a same-ID declared redirect as
+`guard_request_unbound / request / redirect`, and an undeclared same-ID request
+as `guard_request_unbound / request / reused`. Both remain rejected. Header
+classification still runs first: candidate attempts, unknown/malformed headers
+and unqualified redirect evidence cannot be repaired by the later request.
+Here `redirect` means the `redirectResponse` field was present, including a
+malformed/null declaration; it does not assert a valid redirect or accepted hop.
+The first trigger/provenance remains immutable and passes through the private V3
+Node/Windows-RPC/Go diagnostic path without raw request or cookie data.
+
+This is a diagnostic correction only. It does not accept redirects, introduce
+per-hop correlation, loosen cookie/scope/root checks, change observation bounds
+or alter Store/admission authority. Existing default-off gates, startup-only
+coverage and the absolute 60-second attempt remain unchanged. This increment
+authorizes offline implementation and regression only; no new transfer or
+retained-profile execution is authorized.
+
+Canonical offline preparation `b145fe477dac4d919eeaea8c74e90181` passed 120 Node
+tests, four standalone Go tests with 21 diagnostic bridge subcases, four build-tag
+gates and Windows compilation. Actual collector tests use the production frame
+decoder, event dispatcher, passive observer and checkpoint to verify one guard
+call per incoming envelope and distinguish declared/undeclared repeats. Header
+precedence, malformed declarations and rejection persistence are covered. The
+dispatch probe deliberately stops before full startup completion; it does not
+claim a successful identity/login observation. All 34 prepared source hashes
+match; native execution skipped before lease/profile access. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-b145fe477dac4d919eeaea8c74e90181.prepare.log.txt`.
+
 ## Implementation and execution boundary
 
 The minimum dev-only native adapter accepts private typed receipts through trusted

@@ -157,6 +157,11 @@ and default context. Missing request predecessors and disqualified records stay
 distinct in private closed diagnostics; unknown scope and candidate attempts
 remain fenced. This authorizes offline implementation and tests only.
 
+The [redirect/reuse discriminator](../../docs/x-native-manual-pilot.md#declared-redirect-versus-undeclared-request-reuse-2026-10-23)
+reports same-ID declared redirects separately from undeclared request reuse.
+Both remain rejected; header safety and immutable first-cause precedence are
+unchanged. This does not enable redirect acceptance or authorize another QA run.
+
 Manual startup diagnostics also retain the [first cause separately from terminal
 failure](../../docs/x-native-manual-pilot.md#first-cause-and-separate-startup-diagnostics-2026-10-22).
 Generic early-capture fallback must not hide a prior cookie/scope rejection.
