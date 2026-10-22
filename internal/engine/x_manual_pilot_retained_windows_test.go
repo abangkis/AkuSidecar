@@ -8,9 +8,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -98,6 +101,28 @@ type xManualRetainedSeed struct {
 
 func (xManualRetainedSeed) String() string     { return "private-retained-seed-candidate" }
 func (v xManualRetainedSeed) GoString() string { return v.String() }
+
+// The bridge's generic code sanitizer is not a seed diagnostic allowlist.
+// Reconstruct only exact combinations of reviewed closed categories.
+func xManualRetainedSeedRPCDiagnostic(err error) string {
+	if err == nil {
+		return "phase=reply_decode reason=rejected write=unknown"
+	}
+	code := err.Error()
+	for _, phase := range []string{"preconditions", "owner_before", "frame_before", "enrollment_evaluate", "enrollment_project", "frame_after", "cookie_read", "cookie_select", "seed_write", "owner_after"} {
+		for _, reason := range []string{"disabled", "replay", "unavailable", "rejected", "candidate_absent", "bootstrap_missing", "bootstrap_invalid", "wrong_page", "inspection_failed", "document_changed", "ownership_changed", "deadline", "clock_regressed"} {
+			for _, write := range []string{"not_attempted", "unknown", "acknowledged"} {
+				if code == "manual_seed_"+phase+"_"+reason+"_"+write {
+					return fmt.Sprintf("phase=%s reason=%s write=%s", phase, reason, write)
+				}
+			}
+		}
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "phase=rpc reason=deadline write=unknown"
+	}
+	return "phase=rpc reason=unavailable write=unknown"
+}
 
 func xManualRetainedRole(bridge *chromeFixtureBridge, parent, node processFixtureIdentity, role, root, profile string, pid uint32, owner int) (xManualPilotWindowsRole, error) {
 	r := xManualPilotWindowsRole{role: role, bridge: bridge, protocolOwner: owner, node: node, parent: parent, root: root, profile: profile, generation: 1}
@@ -289,9 +314,13 @@ func TestXManualPilotRetainedQA(t *testing.T) {
 	}
 	roles = append(roles, collector)
 	var seed xManualRetainedSeed
-	if bridge.rpc(ctx, "manual_seed_bootstrap", map[string]any{"owner": readerProcess.owner}, &raw) != nil || xManualPilotDecode(raw, &seed) != nil {
+	if seedErr := bridge.rpc(ctx, "manual_seed_bootstrap", map[string]any{"owner": readerProcess.owner}, &raw); seedErr != nil {
 		clear(raw)
-		t.Fatal("manual-retained-one-seed-unavailable")
+		t.Fatal("manual-retained-one-seed-rpc-rejected " + xManualRetainedSeedRPCDiagnostic(seedErr))
+	}
+	if xManualPilotDecode(raw, &seed) != nil {
+		clear(raw)
+		t.Fatal("manual-retained-one-seed-decode-rejected " + xManualRetainedSeedRPCDiagnostic(nil))
 	}
 	clear(raw)
 	if !nativePilotAccount(seed.AccountID) || seed.Seeded == nil || !*seed.Seeded || seed.HomeReady == nil || !*seed.HomeReady || seed.ReaderPID != readerProcess.pid || seed.CollectorPID != preparation.CollectorPID || seed.CollectorPID == seed.ReaderPID || !samePath(seed.ReaderProfile, filepath.Join(lease.Root, "shared")) || !samePath(seed.CollectorProfile, filepath.Join(caseRoot, "derived-headless")) {
@@ -365,4 +394,84 @@ func TestXManualPilotRetainedQA(t *testing.T) {
 		t.Fatal("manual-retained-result-fence-failed")
 	}
 	t.Log("private retained manual QA completed one in-memory result; public authority remains false")
+}
+
+func TestXManualPilotRetainedSeedDiagnostics(t *testing.T) {
+	for _, sample := range []struct {
+		err  error
+		want string
+	}{
+		{errors.New("manual_seed_enrollment_project_bootstrap_missing_not_attempted"), "phase=enrollment_project reason=bootstrap_missing write=not_attempted"},
+		{errors.New("manual_seed_seed_write_unavailable_unknown"), "phase=seed_write reason=unavailable write=unknown"},
+		{errors.New("manual_seed_owner_after_ownership_changed_acknowledged"), "phase=owner_after reason=ownership_changed write=acknowledged"},
+		{errors.New("manual_seed_owner_after_PRIVATE_acknowledged"), "phase=rpc reason=unavailable write=unknown"},
+		{errors.New("xnp_private_cookie_body"), "phase=rpc reason=unavailable write=unknown"},
+		{context.DeadlineExceeded, "phase=rpc reason=deadline write=unknown"},
+		{nil, "phase=reply_decode reason=rejected write=unknown"},
+	} {
+		if got := xManualRetainedSeedRPCDiagnostic(sample.err); got != sample.want {
+			t.Fatal("closed seed diagnostic mismatch")
+		}
+	}
+}
+
+// Accountless Node-only regression uses the unchanged correlated bridge reply
+// reader. It never constructs a Chrome Job, opens a profile or invokes a driver.
+func TestXManualPilotRetainedSeedNodeDiagnostic(t *testing.T) {
+	node, project := os.Getenv("AKU_CHROME_FIXTURE_NODE"), os.Getenv("AKU_NATIVE_MANUAL_PROJECT_ROOT")
+	if !filepath.IsAbs(node) || !filepath.IsAbs(project) {
+		t.Skip("accountless diagnostic bridge requires project helper")
+	}
+	const script = `import {pathToFileURL} from 'node:url';
+import {createInterface} from 'node:readline';
+const {createRetainedManualSetup}=await import(pathToFileURL(process.argv[1]));
+const {executeManualReply}=await import(pathToFileURL(process.argv[2]));
+const run=createRetainedManualSetup({enabled:true,transferAllowed:true,now:()=>0,
+ownership:async()=>({readerPID:1,readerProfile:'offline-reader',collectorPID:2,collectorProfile:'offline-collector'}),
+readEnrollment:async()=> '1908123456789012345',readAllowedCookies:async()=>[{},{}],
+writeAllowedCookies:async()=>{throw new Error('PRIVATE_UNSAFE_CALLBACK');}});
+console.log(JSON.stringify({ready:true}));
+for await(const line of createInterface({input:process.stdin})){const q=JSON.parse(line);await executeManualReply(q,()=>run(),(id,result,code)=>console.log(JSON.stringify({id,ok:!code,...(code?{code}:{result})})));}
+`
+	cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(project, "scripts", "auth-session-fixture", "x-manual-retained-setup.mjs"), filepath.Join(project, "scripts", "auth-session-fixture", "x-native-metadata-probe-driver.mjs"))
+	cmd.Stderr = io.Discard
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal("offline diagnostic output unavailable")
+	}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal("offline diagnostic input unavailable")
+	}
+	if cmd.Start() != nil {
+		t.Fatal("offline diagnostic Node unavailable")
+	}
+	b := &chromeFixtureBridge{cmd: cmd, stdin: stdin, pending: map[int64]chan chromeFixtureReply{}, owners: map[int]*chromeFixtureProcess{}, closed: make(chan struct{}), nodeWaited: make(chan struct{})}
+	ready := make(chan error, 1)
+	go b.readOutput(stdout, ready)
+	t.Cleanup(func() {
+		_ = stdin.Close()
+		select {
+		case <-b.nodeWaited:
+		case <-time.After(3 * time.Second):
+			_ = cmd.Process.Kill()
+			<-b.nodeWaited
+		}
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	select {
+	case err = <-ready:
+		if err != nil {
+			t.Fatal("offline diagnostic handshake failed")
+		}
+	case <-ctx.Done():
+		t.Fatal("offline diagnostic handshake timeout")
+	}
+	for _, want := range []string{"phase=seed_write reason=unavailable write=unknown", "phase=preconditions reason=replay write=unknown"} {
+		err = b.rpc(ctx, "manual_seed_bootstrap", map[string]any{"owner": 1}, nil)
+		if xManualRetainedSeedRPCDiagnostic(err) != want {
+			t.Fatal("Node-to-Go closed seed diagnostic lost")
+		}
+	}
 }

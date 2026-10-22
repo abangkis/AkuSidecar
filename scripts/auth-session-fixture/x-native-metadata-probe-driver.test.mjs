@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import vm from 'node:vm';
 import {
   CDPFrameDecoder,
   LoginObservationGate,
@@ -12,10 +13,73 @@ import {
   createOwnedManualStartupOwners,
   executeManualOwnerRPC,
   seedRetainedManualPilot,
+  manualEnrollmentCommand,projectManualEnrollmentResult,readManualEnrollment,manualSeedRPCCode,executeManualReply,
 } from './x-native-metadata-probe-driver.mjs';
 import { BOOTSTRAP_CURRENT_SELF_EXPRESSION } from './x-bootstrap-current-self.mjs';
 import { EarlyBootstrapCapture } from './x-early-bootstrap-capture.mjs';
 import { inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
+import {QA_BOUND_BOOTSTRAP_EXPRESSION} from './x-qa-bound-observation.mjs';
+import {manualSeedDiagnostic,manualSeedFailure,createRetainedManualSetup} from './x-manual-retained-setup.mjs';
+
+test('actual asynchronous seed reply preserves its command after ingress release and suppresses spoofed codes',async()=>{
+  for(const branded of [true,false]){
+    let message={id:1,op:'manual_seed_bootstrap',owner:1},release;
+    const deferred=new Promise(resolve=>{release=resolve;});
+    const replies=[];
+    const pending=executeManualReply(message,async()=>{await deferred;throw branded?manualSeedFailure('seed_write','unavailable','unknown'):new Error('xnp_PRIVATE_SECRET');},(...args)=>replies.push(args));
+    message=null;release();await pending;
+    assert.deepEqual(replies,[[1,undefined,branded?'manual_seed_seed_write_unavailable_unknown':'manual_seed_preconditions_unavailable_unknown']]);
+  }
+  const privateBuffer=Buffer.from('{"closed":true}'),replies=[];
+  await executeManualReply({id:2,op:'manual_abort'},async()=>privateBuffer,(...args)=>replies.push(args));
+  assert.deepEqual({...replies[0][1]},{closed:true});assert.equal(privateBuffer.every(v=>v===0),true);
+});
+
+test('actual enrollment route permits only its fixed guarded command and projects a synthetic current self',async()=>{
+  const current={manualEnrollmentReading:true,sessionId:'offline-session'},id='1908123456789012345';
+  const page={location:{origin:'https://x.com',pathname:'/home'},__INITIAL_STATE__:{session:{user_id:id},entities:{users:{entities:{[id]:{id_str:id}}}}}};
+  let calls=0;
+  const account=await readManualEnrollment(async(method,params)=>{
+    assert.equal(manualEnrollmentCommand(current,method,params,current.sessionId,'manual_setup',true),true);calls++;
+    if(method==='Page.getFrameTree')return {frameId:'offline-frame',loaderId:'offline-document'};
+    const value=JSON.parse(JSON.stringify(vm.runInNewContext(params.expression,page)));
+    return projectManualEnrollmentResult({result:{type:'object',value}});
+  });
+  assert.equal(account,id);assert.equal(calls,3);
+  const params={expression:QA_BOUND_BOOTSTRAP_EXPRESSION,returnByValue:true,awaitPromise:false,userGesture:false,throwOnSideEffect:true,timeout:1500};
+  for(const patch of [{throwOnSideEffect:false},{timeout:1501},{expression:'PRIVATE_UNREVIEWED_EXPRESSION'},{extra:true}])assert.equal(manualEnrollmentCommand(current,'Runtime.evaluate',{...params,...patch},current.sessionId,'manual_setup',true),false);
+  assert.equal(manualEnrollmentCommand(current,'Runtime.evaluate',params,'other','manual_setup',true),false);
+  assert.equal(manualEnrollmentCommand(current,'Runtime.evaluate',params,current.sessionId,'manual_setup',false),false);
+});
+
+test('actual enrollment projection identifies missing bootstrap and suppresses unsafe exceptions',()=>{
+  const missing=JSON.parse(JSON.stringify(vm.runInNewContext(QA_BOUND_BOOTSTRAP_EXPRESSION,{location:{origin:'https://x.com',pathname:'/home'}})));
+  assert.throws(()=>projectManualEnrollmentResult({result:{type:'object',value:missing}}),error=>{assert.deepEqual(manualSeedDiagnostic(error),{phase:'enrollment_project',reason:'bootstrap_missing',write:'not_attempted'});return true;});
+  for(const raw of [{exceptionDetails:{text:'PRIVATE_BODY'},result:{type:'object',value:missing}},{result:{type:'object',value:{accountId:'PRIVATE_ID',projection:{}}}}])assert.throws(()=>projectManualEnrollmentResult(raw),error=>manualSeedRPCCode(error)==='manual_seed_enrollment_project_rejected_not_attempted');
+  let touched=0;
+  const unsafe={get message(){touched++;throw new Error('PRIVATE_SECRET');}};
+  assert.equal(manualSeedRPCCode(unsafe),'manual_seed_preconditions_unavailable_unknown');
+  assert.equal(manualSeedRPCCode(new Error('xnp_manual_seed_seed_write_rejected_acknowledged')),'manual_seed_preconditions_unavailable_unknown');
+  assert.equal(touched,0);
+});
+
+test('seed composition retains actual enrollment subphase and document drift without reading cookies',async()=>{
+  for(const failure of ['frame_before','enrollment_evaluate','enrollment_project','frame_after','document_changed']){
+    let calls=0,cookies=0;
+    const read=()=>readManualEnrollment(async(method)=>{
+      calls++;const phase=calls===1?'frame_before':calls===2?'enrollment_evaluate':'frame_after';
+      if(failure===phase)throw new Error('PRIVATE_RUNTIME_ERROR');
+      if(calls===2){if(failure==='enrollment_project')throw manualSeedFailure('enrollment_project','candidate_absent');return{accountId:'123'};}
+      return{frameId:'frame',loaderId:failure==='document_changed'&&calls===3?'changed':'document'};
+    });
+    const run=createRetainedManualSetup({enabled:true,transferAllowed:true,now:()=>0,ownership:async()=>({readerPID:1,readerProfile:'r',collectorPID:2,collectorProfile:'c'}),readEnrollment:read,readAllowedCookies:async()=>{cookies++;return[{},{}];},writeAllowedCookies:async()=>true});
+    await assert.rejects(run(),error=>{
+      const safe=manualSeedDiagnostic(error);
+      assert.equal(safe.phase,failure==='document_changed'?'frame_after':failure);assert.equal(safe.write,'not_attempted');
+      assert.equal(safe.reason,failure==='document_changed'?'document_changed':failure==='enrollment_project'?'candidate_absent':'unavailable');return true;
+    });assert.equal(cookies,0);
+  }
+});
 
 test('manual startup hook and private owner RPC are default-off without a main provider', async () => {
   const previous = process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED;

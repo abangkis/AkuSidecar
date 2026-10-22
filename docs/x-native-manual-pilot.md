@@ -378,8 +378,9 @@ the earlier synthetic Chrome evidence remains scoped to its original fixture.
 
 The 17-file owner-port composition was reviewed and published as
 `3847d4a98ba8298305b1c0448a7f37bf58207fb8`, with origin/main verified. One
-integrated test is now prepared; it has not been run against X or a retained
-profile. Product activation remains default-off and no main provider is added.
+integrated test was prepared and subsequently attempted once against retained
+QA as recorded below. Product activation remains default-off and no main provider
+is added.
 
 Run `scripts/prepare-x-manual-retained-qa.ps1` with no arguments to prepare only.
 It runs the focused accountless regressions, four tag gates, exact-source staging
@@ -392,17 +393,18 @@ and pin helpers retain source provenance and original runtime.Caller mapping.
 Canonical preparation `5d87b8f06d9b46f2be3540998d0904bf` passed 14 Node tests,
 four tag gates, compilation and the disabled-entry check. A separate negative
 check rejected `-RunPrepared` without fresh transfer authorization before runtime
-setup. Ready artifacts are in
+setup. The now-consumed preparation root was
 `runtime/qa/auth-session-sidecar/run-x-qa-source-5d87b8f06d9b46f2be3540998d0904bf/`.
-Its `prepared-plan.json` pins source, Node, Chrome and test-executable SHA-256,
+Its `prepared-plan.json` pinned source, Node, Chrome and test-executable SHA-256,
 records `executionApproved:false`, and contains no account or credential values.
 Superseded prepare-only roots were removed; their bounded logs/provenance remain.
 
-Only after a new explicit one-transfer approval may this prepared version run:
+Execution requires a new preparation and fresh explicit one-transfer approval.
+The generic invocation is:
 
 ```powershell
 .\scripts\prepare-x-manual-retained-qa.ps1 -RunPrepared `
-  -PreparedRoot .\runtime\qa\auth-session-sidecar\run-x-qa-source-5d87b8f06d9b46f2be3540998d0904bf `
+  -PreparedRoot '<new-prepared-root>' `
   -TransferAuthorized
 ```
 
@@ -442,5 +444,47 @@ Cleanup retires only owned QA trees, verifies an empty Job, then releases the
 retained lease as clean before writing the cleanup marker. Only that proof allows
 collector/build-root deletion. Uncertain cleanup keeps its claim/root for review;
 it does not trigger a retry. The retained reader profile is preserved. Actual
-native identity acquisition, observer sessions, new-window behavior and cleanup
-for this integrated test remain unmeasured until the separately approved run.
+native identity acquisition, observer sessions and new-window behavior for this
+integrated test have not passed native acceptance.
+
+### One authorized attempt and diagnostic follow-up (2026-10-22)
+
+Source `7db821137224cbe09f2a9413ceb7ecfe5c6102c5` was attempted exactly once
+with explicit authorization for one bounded transfer. The test failed after
+4.41 seconds at `manual-retained-one-seed-unavailable`. Home readiness, collector
+preparation and Windows ownership pins had passed; broker startup and the
+new-window action were not reached. The original error combined RPC and reply
+decoding failures and erased inner setup causes. The failing phase and whether
+cookie transfer completed are unknown; elapsed time does not identify a cause.
+
+Owned Job cleanup and clean retained-lease release passed. The disposable
+collector/build root was removed and the retained reader profile was preserved.
+The authorization was consumed; no retry was performed. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-5d87b8f06d9b46f2be3540998d0904bf.run.log.txt`.
+The follow-up scope is safe closed-category seed diagnostics and offline
+regression coverage only. It grants no new transfer, profile access, login,
+Store access, main-provider activation or user-runtime operation.
+
+Seed failures now carry only closed phase, reason and write-state categories
+through the private Node reply and the Go reporting allowlist. Enrollment phases
+distinguish frame inspection, evaluation, projection and document recheck; cookie
+phases distinguish reading, selection and writing. Arbitrary exception text,
+properties, causes, account IDs, cookie values and response bodies are excluded.
+The success DTO remains the same seven-field private enrollment record.
+
+Write state is `not_attempted`, `unknown` or `acknowledged`. A failed or lost
+write acknowledgement remains `unknown`; a later ownership failure can preserve
+an already observed acknowledgement. RPC failure and strict reply-decoding
+failure are reported separately. Neither a new diagnostic nor a decode error
+can retroactively determine the previous attempt's transfer outcome. The
+one-shot latch, default-off gates and 60-second deadline are unchanged.
+
+Offline validation `dfa00d8aa5de44ec8faf3685859e8f33` passed 21 Node tests,
+two Go tests (including the accountless Node-to-Go diagnostic reply), four build
+tag gates and standalone Windows compilation. The retained native entry was
+skipped with all four gates disabled, before any lease/profile access. Regressions
+exercise the fixed enrollment command and synthetic projection, phase failures,
+document drift, exception/getter suppression, asynchronous reply lifetime,
+one-shot replay and uncertain write acknowledgement. No browser, X request,
+credential transfer, Store or user-runtime action ran. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-dfa00d8aa5de44ec8faf3685859e8f33.prepare.log.txt`.

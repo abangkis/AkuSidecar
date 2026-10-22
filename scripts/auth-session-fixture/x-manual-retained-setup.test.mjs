@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createRetainedManualSetup} from './x-manual-retained-setup.mjs';
+import {createRetainedManualSetup,manualSeedDiagnostic,manualSeedDiagnosticCode} from './x-manual-retained-setup.mjs';
 function fixture(fault){
   let reads=0,writes=0,clock=0,ownReads=0;
   const state={readerPID:1,readerProfile:'qa-reader',collectorPID:2,collectorProfile:'qa-collector'};
@@ -14,6 +14,57 @@ function fixture(fault){
 }
 test('retained manual setup requires separate enabled and one-transfer gates',()=>{
   for(const args of [{},{enabled:true},{enabled:true,transferAllowed:true}])assert.throws(()=>createRetainedManualSetup(args),/manual_setup_unavailable/);
+});
+
+test('failure phase and write state stay closed before, during and after the single write',async()=>{
+  const cases=[
+    ['account-shape','enrollment_project','candidate_absent','not_attempted'],
+    ['deadline','cookie_read','deadline','not_attempted'],
+    ['write-failed','seed_write','unavailable','unknown'],
+    ['owner-drift','owner_after','ownership_changed','acknowledged'],
+  ];
+  for(const [fault,phase,reason,write] of cases){
+    const f=fixture(fault);
+    await assert.rejects(f.run(),error=>{
+      assert.deepEqual(manualSeedDiagnostic(error),{phase,reason,write});
+      assert.equal(manualSeedDiagnosticCode(error),`manual_seed_${phase}_${reason}_${write}`);
+      assert.equal(JSON.stringify(error),'{}');assert.equal('cause' in error,false);return true;
+    });
+    await assert.rejects(f.run(),error=>{assert.deepEqual(manualSeedDiagnostic(error),{phase:'preconditions',reason:'replay',write});return true;});
+  }
+});
+
+test('callback exceptions cannot inject messages, getters or diagnostic properties',async()=>{
+  for(const failurePhase of ['owner_before','enrollment_evaluate','cookie_read','seed_write','owner_after']){
+    let ownerCalls=0,touched=0;
+    const unsafe={get message(){touched++;throw new Error('PRIVATE_SECRET');},phase:'seed_write',reason:'acknowledged',write:'acknowledged'};
+    const run=createRetainedManualSetup({enabled:true,transferAllowed:true,now:()=>0,
+      ownership:async()=>{ownerCalls++;if(failurePhase===(ownerCalls===1?'owner_before':'owner_after'))throw unsafe;return {readerPID:1,readerProfile:'r',collectorPID:2,collectorProfile:'c'};},
+      readEnrollment:async()=>{if(failurePhase==='enrollment_evaluate')throw unsafe;return '123';},
+      readAllowedCookies:async()=>{if(failurePhase==='cookie_read')throw unsafe;return [{},{}];},
+      writeAllowedCookies:async()=>{if(failurePhase==='seed_write')throw unsafe;return true;},
+    });
+    await assert.rejects(run(),error=>{
+      assert.deepEqual(manualSeedDiagnostic(error),{phase:failurePhase,reason:'unavailable',write:failurePhase==='seed_write'?'unknown':failurePhase==='owner_after'?'acknowledged':'not_attempted'});
+      assert.equal(touched,0);return true;
+    });
+  }
+  for(const error of [new Error('xnp_manual_seed_seed_write_rejected_acknowledged'),{phase:'seed_write',reason:'rejected',write:'acknowledged'},null])assert.equal(manualSeedDiagnosticCode(error),null);
+});
+
+test('false write acknowledgement remains unknown and a post-ack deadline remains acknowledged',async()=>{
+  for(const outcome of ['false','post-ack-deadline','selection']){
+    let clock=0,writes=0;
+    const run=createRetainedManualSetup({enabled:true,transferAllowed:true,now:()=>clock,
+      ownership:async()=>({readerPID:1,readerProfile:'r',collectorPID:2,collectorProfile:'c'}),
+      readEnrollment:async()=> '123',readAllowedCookies:async()=>outcome==='selection'?[]:[{},{}],
+      writeAllowedCookies:async()=>{writes++;if(outcome==='post-ack-deadline')clock=60000;return outcome!=='false';},
+    });
+    await assert.rejects(run(),error=>{
+      assert.deepEqual(manualSeedDiagnostic(error),outcome==='selection'?{phase:'cookie_select',reason:'rejected',write:'not_attempted'}:{phase:'seed_write',reason:outcome==='false'?'unavailable':'deadline',write:outcome==='false'?'unknown':'acknowledged'});return true;
+    });
+    assert.equal(writes,outcome==='selection'?0:1);
+  }
 });
 test('one setup emits only private enrollment/owner metadata and cannot transfer twice',async()=>{
   const f=fixture(),reply=await f.run();

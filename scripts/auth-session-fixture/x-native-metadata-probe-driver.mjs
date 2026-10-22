@@ -30,7 +30,7 @@ import { QA_LIVE_SELF_EXPRESSION, projectQALiveSelf } from './x-qa-live-self.mjs
 import { QALiveSelfTransport, finishQALiveSelf, qaLiveSelfCommand } from './x-qa-live-self-transport.mjs';
 import { createManualStartupOwner } from './x-manual-startup-owner.mjs';
 import { createXManualOwnerPort, manualOwnerOperation } from './x-native-manual-owner-port.mjs';
-import { createRetainedManualSetup } from './x-manual-retained-setup.mjs';
+import { createRetainedManualSetup, manualSeedFailure, manualSeedDiagnostic, manualSeedDiagnosticCode } from './x-manual-retained-setup.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -600,7 +600,10 @@ function projectCDPResult(method, result, projectionKind = null) {
       if (projectionKind === 'qa_ab' || projectionKind === 'qa_web') return projectQADirectBody(result);
       return qualificationMode(driverMode) ? projectQASourceBody(result) : projectAccountSettingsBody(result);
     case 'Network.getCookies':
-      if (projectionKind === 'qa_short_cookies') return selectQAShortCookies(result);
+      if (projectionKind === 'qa_short_cookies') {
+        try{return selectQAShortCookies(result);}
+        catch(error){if(active?.manualSetup)throw manualSeedFailure('cookie_select','rejected');throw error;}
+      }
       if (!qualificationMode(driverMode) || !active?.qaCookieIssued) throw probeError('cookie_mode_required');
       return projectQACookieMetadata(result);
     case 'Target.getTargets': {
@@ -626,11 +629,7 @@ function projectCDPResult(method, result, projectionKind = null) {
     case 'Debugger.evaluateOnCallFrame':
     case 'Runtime.evaluate': {
       if(projectionKind==='manual_enrollment'){
-        if(own(result,'exceptionDetails')||result.result?.type!=='object')throw probeError('manual_setup_unavailable');
-        let accountId=null;
-        projectBoundBootstrap(result.result.value,id=>{accountId=id;});
-        if(accountId===null)throw probeError('manual_setup_unavailable');
-        return {accountId};
+        return projectManualEnrollmentResult(result);
       }
       if (projectionKind === 'qa_live_self') {
         if (!active?.liveSelf?.running || own(result, 'exceptionDetails') || !isObject(result.result) || result.result.type !== 'object') throw probeError('qa_live_result_invalid');
@@ -779,9 +778,59 @@ function emitReply(id, result = undefined, code = undefined) {
 }
 
 function safeCode(error) {
+  const manual=manualSeedDiagnosticCode(error);if(manual)return manual;
   const value = typeof error?.message === 'string' ? error.message : '';
   if (/^xnp_[a-z0-9_]{1,80}$/u.test(value)) return value.slice(4);
   return 'probe_failed';
+}
+
+// This is the seed command's sole error-code path. A patterned xnp_* message
+// from any other exception is insufficient to supply a seed diagnostic.
+export function manualSeedRPCCode(error){
+  return manualSeedDiagnosticCode(error)??'manual_seed_preconditions_unavailable_unknown';
+}
+
+// Own the command binding across await: the ingress parser clears its local
+// message reference as soon as this bounded concurrent operation is started.
+export async function executeManualReply(message,executeCommand=execute,reply=emitReply){
+  const id=message.id,seed=message.op==='manual_seed_bootstrap';
+  let result;
+  try{
+    result=await executeCommand(message);
+    reply(id,Buffer.isBuffer(result)?parseStrictJSON(result.toString('utf8'),{maxJSONDepth:4,maxJSONTokens:96}):result);
+  }catch(error){reply(id,undefined,seed?manualSeedRPCCode(error):safeCode(error));}
+  finally{if(Buffer.isBuffer(result))result.fill(0);}
+}
+
+export function manualEnrollmentCommand(current,method,params,sessionId,purpose,transferAllowed){
+  return current?.manualEnrollmentReading===true&&purpose==='manual_setup'&&transferAllowed===true&&sessionId===current.sessionId&&(
+    method==='Page.getFrameTree'&&Object.keys(params).length===0||method==='Runtime.evaluate'&&
+    JSON.stringify(params)===JSON.stringify({expression:QA_BOUND_BOOTSTRAP_EXPRESSION,returnByValue:true,awaitPromise:false,userGesture:false,throwOnSideEffect:true,timeout:1500}));
+}
+
+export function projectManualEnrollmentResult(result){
+  try{
+    if(!isObject(result)||own(result,'exceptionDetails')||result.result?.type!=='object')throw manualSeedFailure('enrollment_project','rejected');
+    let accountId=null;
+    const projection=projectBoundBootstrap(result.result.value,id=>{accountId=id;});
+    if(accountId===null){
+      const reason=['bootstrap_missing','bootstrap_invalid','wrong_page','inspection_failed'].includes(projection.diagnostic)?projection.diagnostic:'candidate_absent';
+      throw manualSeedFailure('enrollment_project',reason);
+    }
+    return {accountId};
+  }catch(error){throw manualSeedDiagnostic(error)?error:manualSeedFailure('enrollment_project','rejected');}
+}
+
+export async function readManualEnrollment(sendCommand){
+  let phase='frame_before';
+  try{
+    const before=await sendCommand('Page.getFrameTree',{});
+    phase='enrollment_evaluate';
+    const result=await sendCommand('Runtime.evaluate',{expression:QA_BOUND_BOOTSTRAP_EXPRESSION,returnByValue:true,awaitPromise:false,userGesture:false,throwOnSideEffect:true,timeout:1500});
+    phase='frame_after';const after=await sendCommand('Page.getFrameTree',{});
+    if(before.frameId!==after.frameId||before.loaderId!==after.loaderId)throw manualSeedFailure(phase,'document_changed');
+    return result.accountId;
+  }catch(error){throw manualSeedDiagnostic(error)?error:manualSeedFailure(phase,'unavailable');}
 }
 
 function cdpWrite(message) {
@@ -817,10 +866,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     return Promise.reject(probeError('cdp_command_invalid'));
   }
   const webState = active?.webABA;
-  const manualEnrollment=active?.manualEnrollmentReading===true&&purpose==='manual_setup'&&
-    process.env.AKU_X_MANUAL_RETAINED_TRANSFER_ONCE==='1'&&sessionId===active.sessionId&&(
-      method==='Page.getFrameTree'&&Object.keys(params).length===0||method==='Runtime.evaluate'&&
-      JSON.stringify(params)===JSON.stringify({expression:QA_BOUND_BOOTSTRAP_EXPRESSION,returnByValue:true,awaitPromise:false,userGesture:false,throwOnSideEffect:true,timeout:1500}));
+  const manualEnrollment=manualEnrollmentCommand(active,method,params,sessionId,purpose,process.env.AKU_X_MANUAL_RETAINED_TRANSFER_ONCE==='1');
   const manualControl=!!active?.manualStartupPort&&purpose==='manual_owner'&&(
     method==='Target.getTargets'&&sessionId===undefined&&Object.keys(params).length===0||
     method==='Browser.getWindowForTarget'&&sessionId===undefined&&Object.keys(params).join(',')==='targetId'&&active.manualInventoryTargets?.has(params.targetId)||
@@ -1954,10 +2000,10 @@ export async function executeManualOwnerRPC(message) {
 export async function seedRetainedManualPilot(message){
   exactKeys(message,['id','op','owner'],'manual_setup_unavailable');
   if(message.op!=='manual_seed_bootstrap'||process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED!=='1'||
-    process.env.AKU_X_MANUAL_RETAINED_TRANSFER_ONCE!=='1'||process.env.AKU_X_QA_SHORT_TRANSFER_ALLOWED!=='1')throw probeError('manual_setup_unavailable');
+    process.env.AKU_X_MANUAL_RETAINED_TRANSFER_ONCE!=='1'||process.env.AKU_X_QA_SHORT_TRANSFER_ALLOWED!=='1')throw manualSeedFailure('preconditions','disabled');
   const current=requireOwner(message),s=current.shortFeasibility;
   if(!qualificationMode(driverMode)||!retainedQAScope?.reuse||!current.gate.loginVisible||current.gate.observationStarted||
-    !s||s.closed||s.ran||s.exportIssued||current.manualStartupPort||current.manualSetup)throw probeError('manual_setup_unavailable');
+    !s||s.closed||s.ran||s.exportIssued||current.manualStartupPort||current.manualSetup)throw manualSeedFailure('preconditions',current.manualSetup?'replay':'rejected',current.manualSetup?'unknown':'not_attempted');
   current.manualSetup=createRetainedManualSetup({enabled:true,transferAllowed:true,
     ownership:async()=>{
       const owned=s.transport.ownership();if(childExited||cdpFailure||!owned.alive)throw probeError('manual_setup_unavailable');
@@ -1966,11 +2012,7 @@ export async function seedRetainedManualPilot(message){
     readEnrollment:async()=>{
       current.manualEnrollmentReading=true;
       try{
-        const before=await send('Page.getFrameTree',{},current.sessionId,'manual_setup');
-        const result=await send('Runtime.evaluate',{expression:QA_BOUND_BOOTSTRAP_EXPRESSION,returnByValue:true,awaitPromise:false,userGesture:false,throwOnSideEffect:true,timeout:1500},current.sessionId,'manual_setup');
-        const after=await send('Page.getFrameTree',{},current.sessionId,'manual_setup');
-        if(before.frameId!==after.frameId||before.loaderId!==after.loaderId)throw probeError('manual_setup_unavailable');
-        return result.accountId;
+        return await readManualEnrollment((method,params)=>send(method,params,current.sessionId,'manual_setup'));
       }finally{current.manualEnrollmentReading=false;}
     },
     readAllowedCookies:async()=>{
@@ -2213,14 +2255,7 @@ async function handleControlLine(raw) {
       if(typeof message.op==='string'&&message.op.startsWith('manual_')){
         // Only the bounded fixed manual operations bypass the serialized QA
         // chain. Per-role state rejects replay and other modes remain serial.
-        void (async()=>{
-          let result;
-          try{
-            result=await execute(message);
-            emitReply(id,Buffer.isBuffer(result)?parseStrictJSON(result.toString('utf8'),{maxJSONDepth:4,maxJSONTokens:96}):result);
-          }catch(error){emitReply(id,undefined,safeCode(error));}
-          finally{if(Buffer.isBuffer(result))result.fill(0);}
-        })();
+        void executeManualReply(message);
       }else emitReply(id,await execute(message));
     }
     catch (error) { emitReply(id, undefined, safeCode(error)); }
