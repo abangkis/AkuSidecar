@@ -373,3 +373,74 @@ Evidence: `runtime/qa/auth-session-sidecar/x-manual-owner-915ed92f84984779a7bc03
 and the adjacent `.provenance.json`. The accountless build root was removed.
 This run executed neither Chrome nor the native Windows ownership backend;
 the earlier synthetic Chrome evidence remains scoped to its original fixture.
+
+## Prepared retained-QA integrated test (2026-10-22)
+
+The 17-file owner-port composition was reviewed and published as
+`3847d4a98ba8298305b1c0448a7f37bf58207fb8`, with origin/main verified. One
+integrated test is now prepared; it has not been run against X or a retained
+profile. Product activation remains default-off and no main provider is added.
+
+Run `scripts/prepare-x-manual-retained-qa.ps1` with no arguments to prepare only.
+It runs the focused accountless regressions, four tag gates, exact-source staging
+and standalone compilation. The resulting test executable is invoked with all
+four execution/transfer gates disabled and must skip before acquiring a lease or
+accessing the retained manifest/profile. The staged sources contain no Engine
+initialization, Store or package TestMain. The exact retained lease implementation
+and pin helpers retain source provenance and original runtime.Caller mapping.
+
+Canonical preparation `5d87b8f06d9b46f2be3540998d0904bf` passed 14 Node tests,
+four tag gates, compilation and the disabled-entry check. A separate negative
+check rejected `-RunPrepared` without fresh transfer authorization before runtime
+setup. Ready artifacts are in
+`runtime/qa/auth-session-sidecar/run-x-qa-source-5d87b8f06d9b46f2be3540998d0904bf/`.
+Its `prepared-plan.json` pins source, Node, Chrome and test-executable SHA-256,
+records `executionApproved:false`, and contains no account or credential values.
+Superseded prepare-only roots were removed; their bounded logs/provenance remain.
+
+Only after a new explicit one-transfer approval may this prepared version run:
+
+```powershell
+.\scripts\prepare-x-manual-retained-qa.ps1 -RunPrepared `
+  -PreparedRoot .\runtime\qa\auth-session-sidecar\run-x-qa-source-5d87b8f06d9b46f2be3540998d0904bf `
+  -TransferAuthorized
+```
+
+The helper rejects source/binary drift, existing collector profiles and reused
+execution claims before enabling process-scoped gates. This command was not
+executed during preparation. The switch records the caller's fresh approval; it
+is not approval inferred from a saved plan. No automatic retry is supported.
+
+The prepared test requires an existing clean retained QA lease under this
+checkout. Its dedicated existing-only acquisition has no create-profile fallback.
+The immutable 60-second attempt starts before lease acquisition and collector
+preparation. Home readiness may be polled for at most 15 seconds within that same
+attempt; no login, SMS, account switch or new retained profile is attempted.
+Node enters its Windows Job before Chrome launch. Both actual Chrome/profile
+owners are pinned independently of the subsequent private seed metadata.
+
+One guarded `manual_seed_bootstrap` command obtains an unqualified enrollment
+candidate from the existing descriptor-only current-self projection, then copies
+only `auth_token` and `ct0` through the previously qualified manifest: direction
+reader to fresh disposable headless BrowserContext, domain `.x.com`, path `/`,
+exact attributes, at most 8 KiB per tuple and 16 KiB total. Projection and write
+validation remain at the bounded CDP boundaries. No value, raw body or account ID
+is logged or written by the helper. This candidate and Home UI readiness do not
+authorize admission: the two fresh, challenge-bound startup observations must
+independently satisfy the existing strict account/login predicate and match it.
+
+The real owner broker then prepares/acquires both roles under the unchanged
+five-second age and joint sub-two-second evidence bound. A local controller
+reservation is followed by a fixed `manual_open_reader` HOME window action
+outside the controller lock, immediate controller recheck and unchanged frozen
+collector inspection. CDP inventory retains bootstrap and actual visible Windows
+are checked. This is a reserved QA action with a postcheck, not a new atomic
+production OS-broker effect. One in-memory claim/result and duplicate rejection
+follow; no real batch item or Store is used.
+
+Cleanup retires only owned QA trees, verifies an empty Job, then releases the
+retained lease as clean before writing the cleanup marker. Only that proof allows
+collector/build-root deletion. Uncertain cleanup keeps its claim/root for review;
+it does not trigger a retry. The retained reader profile is preserved. Actual
+native identity acquisition, observer sessions, new-window behavior and cleanup
+for this integrated test remain unmeasured until the separately approved run.

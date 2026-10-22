@@ -54,6 +54,15 @@ does not reopen deferred renewal/rotation qualification. See the
 Canonical run `915ed92f84984779a7bc03704f386617` passed 30 Node tests, eight Go
 tests plus ten subcases, four tag gates and the staged Windows compilation.
 No Chrome/native X acceptance is claimed by that accountless run.
+The owner-port composition is now published as `3847d4a`. A single retained-X
+integrated QA test is prepared in run `5d87b8f06d9b46f2be3540998d0904bf`:
+14 Node checks, four tag gates, standalone compilation and disabled-entry skip
+passed without accessing any retained profile. The source/binary-pinned plan
+remains unapproved for execution; a fresh one-transfer approval is required before
+its separate run mode. That test uses existing-only retained ownership, the same
+60-second attempt and strict startup evidence, a reserved HOME reader action and
+one in-memory result. Native execution/main-dev activation are still unproven.
+See the [prepared test checkpoint](x-native-manual-pilot.md#prepared-retained-qa-integrated-test-2026-10-22).
 The published synthetic integration is `6320295`; its snapshot V1 policy remains
 unchanged and is not silently reinterpreted as manual V2.
 

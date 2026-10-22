@@ -30,6 +30,7 @@ import { QA_LIVE_SELF_EXPRESSION, projectQALiveSelf } from './x-qa-live-self.mjs
 import { QALiveSelfTransport, finishQALiveSelf, qaLiveSelfCommand } from './x-qa-live-self-transport.mjs';
 import { createManualStartupOwner } from './x-manual-startup-owner.mjs';
 import { createXManualOwnerPort, manualOwnerOperation } from './x-native-manual-owner-port.mjs';
+import { createRetainedManualSetup } from './x-manual-retained-setup.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -624,6 +625,13 @@ function projectCDPResult(method, result, projectionKind = null) {
       return { acknowledged: true };
     case 'Debugger.evaluateOnCallFrame':
     case 'Runtime.evaluate': {
+      if(projectionKind==='manual_enrollment'){
+        if(own(result,'exceptionDetails')||result.result?.type!=='object')throw probeError('manual_setup_unavailable');
+        let accountId=null;
+        projectBoundBootstrap(result.result.value,id=>{accountId=id;});
+        if(accountId===null)throw probeError('manual_setup_unavailable');
+        return {accountId};
+      }
       if (projectionKind === 'qa_live_self') {
         if (!active?.liveSelf?.running || own(result, 'exceptionDetails') || !isObject(result.result) || result.result.type !== 'object') throw probeError('qa_live_result_invalid');
         try { return projectQALiveSelf(result.result.value); } catch { throw probeError('qa_live_projection_invalid'); }
@@ -809,10 +817,15 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     return Promise.reject(probeError('cdp_command_invalid'));
   }
   const webState = active?.webABA;
+  const manualEnrollment=active?.manualEnrollmentReading===true&&purpose==='manual_setup'&&
+    process.env.AKU_X_MANUAL_RETAINED_TRANSFER_ONCE==='1'&&sessionId===active.sessionId&&(
+      method==='Page.getFrameTree'&&Object.keys(params).length===0||method==='Runtime.evaluate'&&
+      JSON.stringify(params)===JSON.stringify({expression:QA_BOUND_BOOTSTRAP_EXPRESSION,returnByValue:true,awaitPromise:false,userGesture:false,throwOnSideEffect:true,timeout:1500}));
   const manualControl=!!active?.manualStartupPort&&purpose==='manual_owner'&&(
     method==='Target.getTargets'&&sessionId===undefined&&Object.keys(params).length===0||
     method==='Browser.getWindowForTarget'&&sessionId===undefined&&Object.keys(params).join(',')==='targetId'&&active.manualInventoryTargets?.has(params.targetId)||
     method==='Target.attachToTarget'&&sessionId===undefined&&Object.keys(params).sort().join(',')==='flatten,targetId'&&params.flatten===true&&params.targetId===active.targetId||
+    method==='Target.createTarget'&&sessionId===undefined&&JSON.stringify(params)===JSON.stringify({url:HOME_URL,newWindow:true,background:true})||
     ['Page.enable','Runtime.enable'].includes(method)&&sessionId===active.manualObserver?.sessionId&&Object.keys(params).length===0||
     ['Page.getFrameTree','Runtime.disable'].includes(method)&&sessionId===active.sessionId&&Object.keys(params).length===0);
   const liveCommand = active?.liveSelf?.running === true;
@@ -841,9 +854,9 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     method === 'Target.closeTarget' || !!active.ab?.sessionId && sessionId === active.ab.sessionId);
   if (method === 'Target.closeTarget' && !abCommand) return Promise.reject(probeError('qa_ab_command_not_authorized'));
   if (abCommand && (!qualificationMode(driverMode) || !qaABCommand(method, params, sessionId, active.ab))) return Promise.reject(probeError('qa_ab_command_not_authorized'));
-  if (!abCommand && guestCommand && (!qualificationMode(driverMode) || !active?.authControlAttempted ||
+  if (!manualControl && !abCommand && guestCommand && (!qualificationMode(driverMode) || !active?.authControlAttempted ||
       !qaGuestCommand(method, params, sessionId, active.guest))) return Promise.reject(probeError('qa_guest_command_not_authorized'));
-  if (purpose !== null && !manualControl && !(purpose === 'normal_remove' && method === 'Debugger.removeBreakpoint' &&
+  if (purpose !== null && !manualControl && !manualEnrollment && !(purpose === 'normal_remove' && method === 'Debugger.removeBreakpoint' &&
       active?.earlyCapture?.handoff.breakpoints.has(params.breakpointId))) return Promise.reject(probeError('early_command_not_authorized'));
   if (shortCookieExport && (process.env.AKU_X_QA_SHORT_TRANSFER_ALLOWED !== '1' || active.shortFeasibility.exportIssued ||
       sessionId !== active.sessionId || JSON.stringify(params) !== JSON.stringify(qaCookieRequest('api_v1')))) return Promise.reject(probeError('qa_short_transfer_denied'));
@@ -859,7 +872,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
   }
   if (method === 'Network.setCacheDisabled' && !webCommand && !abCommand && !guestCommand && (!bodyMode(driverMode) || sessionId !== active?.sessionId ||
       Object.keys(params).join(',') !== 'cacheDisabled' || params.cacheDisabled !== true)) return Promise.reject(probeError('account_cache_not_authorized'));
-  if (!manualControl && !liveCommand && !webCommand && !abCommand && !guestCommand && (EARLY_CDP_METHODS.has(method) || method === 'Page.reload' && (driverMode === 'retained_bootstrap' || bound?.running))) {
+  if (!manualControl && !manualEnrollment && !liveCommand && !webCommand && !abCommand && !guestCommand && (EARLY_CDP_METHODS.has(method) || method === 'Page.reload' && (driverMode === 'retained_bootstrap' || bound?.running))) {
     const keys = Object.keys(params);
     let valid = keys.length === 0;
     if (method === 'Debugger.setInstrumentationBreakpoint') valid = keys.length === 1 && params.instrumentation === 'beforeScriptExecution';
@@ -876,6 +889,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
   }
   let projectionKind = webCommand ? 'qa_web' : abCommand ? 'qa_ab' : guestCommand ? 'qa_guest' : null;
   if(manualControl)projectionKind=method==='Page.getFrameTree'?'manual_frame':method==='Target.getTargets'?'manual_inventory':null;
+  if(manualEnrollment)projectionKind=method==='Page.getFrameTree'?'manual_frame':'manual_enrollment';
   if (liveCommand) projectionKind = 'qa_live_self';
   if (shortCookieExport) projectionKind = 'qa_short_cookies';
   if (boundNetwork && method === 'Network.getResponseBody') projectionKind = 'qa_bound';
@@ -889,7 +903,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
   }
   if (method === 'Runtime.evaluate' && webCommand) {
     projectionKind = params.expression === QA_WEB_SNAPSHOT ? 'qa_web_hook' : 'qa_web';
-  } else if (method === 'Runtime.evaluate' && !liveCommand) {
+  } else if (method === 'Runtime.evaluate' && !liveCommand && !manualEnrollment) {
     const bootstrap = params.expression === BOOTSTRAP_CURRENT_SELF_EXPRESSION;
     const keys = bootstrap ? ['expression', 'returnByValue', 'awaitPromise', 'userGesture', 'throwOnSideEffect', 'timeout'] :
       ['expression', 'returnByValue', 'awaitPromise', 'userGesture'];
@@ -1840,7 +1854,7 @@ export function createOwnedManualStartupOwners(message) {
   const current = requireOwner(message), collector = current.shortFeasibility;
   if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !current.gate.loginVisible ||
       current.gate.observationStarted || current.earlyAttempted || current.qualificationAttempted ||
-      !collector || collector.closed || !collector.contextId || !collector.sessionId) throw probeError('manual_startup_unavailable');
+      !collector || collector.closed || !collector.contextId || !collector.sessionId || !current.manualSeeded) throw probeError('manual_startup_unavailable');
   const rendezvous = new QACheckpointRendezvous();
   const owner = role => createManualStartupOwner({ run: async sink => {
     if (sink.signal?.aborted) throw probeError('manual_startup_unavailable');
@@ -1930,7 +1944,57 @@ export async function executeManualOwnerRPC(message) {
       });
     }catch{current.manualStartupSelected=false;throw probeError('manual_owner_unavailable');}
   }
-  return current.manualStartupPort.execute(message);
+  const result=await current.manualStartupPort.execute(message);
+  if(message.op==='manual_acquire'){
+    current.manualAcquired??=new Set();current.manualAcquired.add(message.role);
+  }
+  return result;
+}
+
+export async function seedRetainedManualPilot(message){
+  exactKeys(message,['id','op','owner'],'manual_setup_unavailable');
+  if(message.op!=='manual_seed_bootstrap'||process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED!=='1'||
+    process.env.AKU_X_MANUAL_RETAINED_TRANSFER_ONCE!=='1'||process.env.AKU_X_QA_SHORT_TRANSFER_ALLOWED!=='1')throw probeError('manual_setup_unavailable');
+  const current=requireOwner(message),s=current.shortFeasibility;
+  if(!qualificationMode(driverMode)||!retainedQAScope?.reuse||!current.gate.loginVisible||current.gate.observationStarted||
+    !s||s.closed||s.ran||s.exportIssued||current.manualStartupPort||current.manualSetup)throw probeError('manual_setup_unavailable');
+  current.manualSetup=createRetainedManualSetup({enabled:true,transferAllowed:true,
+    ownership:async()=>{
+      const owned=s.transport.ownership();if(childExited||cdpFailure||!owned.alive)throw probeError('manual_setup_unavailable');
+      return {readerPID:current.pid,readerProfile:current.profileId,collectorPID:owned.pid,collectorProfile:owned.profileId};
+    },
+    readEnrollment:async()=>{
+      current.manualEnrollmentReading=true;
+      try{
+        const before=await send('Page.getFrameTree',{},current.sessionId,'manual_setup');
+        const result=await send('Runtime.evaluate',{expression:QA_BOUND_BOOTSTRAP_EXPRESSION,returnByValue:true,awaitPromise:false,userGesture:false,throwOnSideEffect:true,timeout:1500},current.sessionId,'manual_setup');
+        const after=await send('Page.getFrameTree',{},current.sessionId,'manual_setup');
+        if(before.frameId!==after.frameId||before.loaderId!==after.loaderId)throw probeError('manual_setup_unavailable');
+        return result.accountId;
+      }finally{current.manualEnrollmentReading=false;}
+    },
+    readAllowedCookies:async()=>{
+      s.exporting=true;
+      try{return await send('Network.getCookies',qaCookieRequest('api_v1'),current.sessionId);}
+      finally{s.exporting=false;}
+    },
+    writeAllowedCookies:async cookies=>{
+      await s.transport.send('Network.setCookies',{cookies},s.sessionId,()=>({acknowledged:true}));return true;
+    },
+  });
+  const result=await current.manualSetup();current.manualSeeded=true;return result;
+}
+
+async function openRetainedManualReader(message){
+  exactKeys(message,['id','op','owner'],'manual_owner_unavailable');
+  const current=requireOwner(message);
+  if(process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED!=='1'||!current.manualStartupPort||current.manualAcquired?.size!==2||current.manualReaderOpened)throw probeError('manual_owner_unavailable');
+  current.manualReaderOpened=true;
+  await current.manualStartupPort.execute({id:message.id,op:'manual_inspect',owner:message.owner,role:'reader'});
+  await send('Target.createTarget',{url:HOME_URL,newWindow:true,background:true},undefined,'manual_owner');
+  const inventory=await manualReaderInventory(current);
+  if(inventory.windowCount<2||inventory.bootstrapCount!==1)throw probeError('manual_owner_unavailable');
+  return {opened:true,...inventory};
 }
 
 async function runShortConcurrency(message, synchronize = false) {
@@ -2046,6 +2110,8 @@ async function execute(message) {
     throw probeError('rpc_invalid');
   }
   if (process.env.AKU_X_QA_LIVE_SELF === '1' && !['qa_profile_scope', 'launch', 'login_state', 'qualify_live_self', 'release'].includes(message.op)) throw probeError('qa_live_mode_operation_denied');
+  if(message.op==='manual_seed_bootstrap')return seedRetainedManualPilot(message);
+  if(message.op==='manual_open_reader')return openRetainedManualReader(message);
   if(message.op.startsWith('manual_'))return executeManualOwnerRPC(message);
   if(active?.manualStartupPort&&message.op!=='release')throw probeError('manual_owner_operation_denied');
   switch (message.op) {

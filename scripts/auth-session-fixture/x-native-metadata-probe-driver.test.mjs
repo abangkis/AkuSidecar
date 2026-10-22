@@ -11,6 +11,7 @@ import {
   projectNetworkEvent,
   createOwnedManualStartupOwners,
   executeManualOwnerRPC,
+  seedRetainedManualPilot,
 } from './x-native-metadata-probe-driver.mjs';
 import { BOOTSTRAP_CURRENT_SELF_EXPRESSION } from './x-bootstrap-current-self.mjs';
 import { EarlyBootstrapCapture } from './x-early-bootstrap-capture.mjs';
@@ -22,6 +23,7 @@ test('manual startup hook and private owner RPC are default-off without a main p
     delete process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED;
     assert.throws(() => createOwnedManualStartupOwners({}), /manual_startup_disabled/);
     await assert.rejects(executeManualOwnerRPC({id:1,op:'manual_inventory',owner:1,role:'reader'}), /manual_startup_disabled/);
+    await assert.rejects(seedRetainedManualPilot({id:1,op:'manual_seed_bootstrap',owner:1}), /manual_setup_unavailable/);
     process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED = '1';
     assert.throws(() => createOwnedManualStartupOwners({}));
   } finally {

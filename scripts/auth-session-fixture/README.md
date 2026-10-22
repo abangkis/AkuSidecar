@@ -210,6 +210,20 @@ tests plus ten subcases, four tag checks and Windows-backend compilation. The
 accountless build root was removed; bounded logs and source provenance remain
 under project-local QA. This does not qualify native X operation or activate dev.
 
+To prepare the separate retained-X integrated test, run
+`.\scripts\prepare-x-manual-retained-qa.ps1` with no arguments. Preparation builds
+a source/binary-pinned standalone executable and proves its entry skips before
+lease/profile access with all execution gates disabled. It does not open Chrome,
+inspect the retained profile or transfer a session. Canonical preparation
+`5d87b8f06d9b46f2be3540998d0904bf` passed 14 Node tests, four tag gates,
+compilation and the disabled entry. The ready root/plan are retained locally.
+
+`-RunPrepared` is a separate operation requiring a prepared root and fresh
+`-TransferAuthorized` approval; it was not used during preparation. It admits one
+attempt, one qualified two-cookie transfer and one in-memory result, using only
+an existing clean QA profile and a fresh disposable collector. See the exact
+[prepared test and limits](../../docs/x-native-manual-pilot.md#prepared-retained-qa-integrated-test-2026-10-22).
+
 ## Offline bounded dev snapshot pilot (V1 reference)
 
 The separate pilot model follows
