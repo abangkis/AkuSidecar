@@ -25,6 +25,124 @@ func testNativeStartupWire(c nativePilotCaptureChallenge) map[string]any {
 func marshalNativeStartupWire(c nativePilotCaptureChallenge) ([]byte, error) {
 	return json.Marshal(testNativeStartupWire(c))
 }
+
+func TestNativePilotStartupFailureDetails(t *testing.T) {
+	for _, role := range []string{"reader", "collector"} {
+		t.Run(role, func(t *testing.T) {
+			f := newTestNativePilotFixture()
+			testNativeStartupSource(t, f, func(_ context.Context, ch nativePilotCaptureChallenge) ([]byte, error) {
+				if ch.challenge.role == role {
+					return nil, nativePilotInitialRPC("manual_initial_" + role + "_settings_source_unavailable_primary")
+				}
+				return marshalNativeStartupWire(ch)
+			})
+			a := f.adapter(t)
+			v, d := a.initialEvidence(context.Background())
+			if v != nil || d.Reason != "source-unavailable" || d.ManualEligible || d.OfflineValidated || a.initial.role != role || a.initial.phase != "settings" {
+				t.Fatal("initial role detail lost or authority changed")
+			}
+		})
+	}
+	for _, fault := range []string{"scope_mismatch", "time_invalid", "invalid_shape"} {
+		t.Run(fault, func(t *testing.T) {
+			f := newTestNativePilotFixture()
+			testNativeStartupSource(t, f, func(_ context.Context, ch nativePilotCaptureChallenge) ([]byte, error) {
+				if ch.challenge.role == "reader" {
+					return marshalNativeStartupWire(ch)
+				}
+				m := testNativeStartupWire(ch)
+				switch fault {
+				case "scope_mismatch":
+					m["documentId"] = "wrong"
+				case "time_invalid":
+					m["elapsedMS"] = 2000
+				default:
+					return []byte(`{"private":"invalid"}`), nil
+				}
+				return json.Marshal(m)
+			})
+			a := f.adapter(t)
+			v, _ := a.initialEvidence(context.Background())
+			if v != nil || a.initial.role != "collector" || a.initial.phase != "wire_decode" || a.initial.reason != fault {
+				t.Fatal("closed wire failure category lost")
+			}
+		})
+	}
+	for _, deadline := range []bool{false, true} {
+		t.Run(fmt.Sprint(deadline), func(t *testing.T) {
+			f := newTestNativePilotFixture()
+			entered := make(chan struct{}, 2)
+			testNativeStartupSource(t, f, func(ctx context.Context, _ nativePilotCaptureChallenge) ([]byte, error) {
+				entered <- struct{}{}
+				<-ctx.Done()
+				return nil, ctx.Err()
+			})
+			ctx, cancel := context.WithCancel(context.Background())
+			if deadline {
+				ctx, cancel = context.WithTimeout(context.Background(), 20*time.Millisecond)
+			}
+			defer cancel()
+			a := f.adapter(t)
+			done := make(chan struct{})
+			go func() { a.initialEvidence(ctx); close(done) }()
+			<-entered
+			<-entered
+			if !deadline {
+				cancel()
+			}
+			<-done
+			if a.initial.role != "pair" || a.initial.phase != "joint" {
+				t.Fatal("unattributed cancellation blamed a role")
+			}
+		})
+	}
+}
+
+func TestNativePilotStartupDiagnosticClosed(t *testing.T) {
+	var typedNil *nativePilotInitialError
+	if d := nativePilotInitialOf(typedNil, "reader", "identity"); d.role != "unknown" {
+		t.Fatal("typed nil diagnostic was attributed")
+	}
+	invalid := &nativePilotInitialError{nativePilotInitialDetail{role: "PRIVATE_ID", phase: "PRIVATE_BODY", reason: "PRIVATE_COOKIE"}}
+	for _, value := range []any{invalid, invalid.detail, nativePilotInitialOf(invalid, "reader", "identity"), nativePilotInitialOf(nil, "PRIVATE_ID", "PRIVATE_BODY")} {
+		if strings.Contains(fmt.Sprintf("%v %#v", value, value), "PRIVATE") {
+			t.Fatal("malformed typed diagnostic leaked")
+		}
+	}
+	for _, role := range nativePilotInitialRoles {
+		for _, phase := range nativePilotInitialPhases {
+			for _, reason := range nativePilotInitialReasons {
+				for _, kind := range []string{"primary", "peer"} {
+					code := "manual_initial_" + role + "_" + phase + "_" + reason + "_" + kind
+					d, ok := nativePilotInitialCode(code)
+					if !ok || len(code) > 80 || d.role != role || d.phase != phase || d.reason != reason || d.peer != (kind == "peer") {
+						t.Fatal("bounded diagnostic parity failed")
+					}
+				}
+			}
+		}
+	}
+	if d := nativePilotInitialOf(nativePilotInitialRPC("xnp_PRIVATE"), "reader", "identity"); d.role != "unknown" {
+		t.Fatal("untrusted error pattern promoted")
+	}
+}
+
+func TestNativePilotStartupCanceledGuard(t *testing.T) {
+	s := &nativePilotStartupSource{}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := s.observe(ctx, nativePilotChallenge{})
+	if d := nativePilotInitialOf(err, "unknown", "acquire_rpc"); d.role != "pair" || d.phase != "joint" || d.reason != "canceled" {
+		t.Fatal("canceled entry lost joint attribution")
+	}
+	s.initial = nativePilotInitialDetail{role: "collector", phase: "settings", reason: "source_unavailable"}
+	s.mu.Lock()
+	err = s.canceledLocked(context.DeadlineExceeded)
+	s.mu.Unlock()
+	if d := nativePilotInitialOf(err, "unknown", "acquire_rpc"); d.role != "collector" || d.phase != "settings" {
+		t.Fatal("post-output deadline replaced observed primary")
+	}
+}
 func testNativeStartupSource(t *testing.T, f *testNativePilotFixture, capture nativePilotCapture) *nativePilotStartupSource {
 	t.Helper()
 	if capture == nil {

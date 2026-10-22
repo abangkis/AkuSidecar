@@ -39,6 +39,8 @@ type nativePilotBrokerConfig struct {
 }
 type nativePilotBroker struct {
 	mu                       sync.Mutex
+	detailMu                 sync.Mutex
+	initial                  nativePilotInitialDetail
 	clockMu                  sync.Mutex
 	parent                   context.Context
 	cfg                      nativePilotBrokerConfig
@@ -52,6 +54,34 @@ type nativePilotBroker struct {
 	prepareDone, cleanupDone chan struct{}
 	prepared                 []nativePilotPreparedRole
 	controller               *nativePilotManualController
+}
+
+func (b *nativePilotBroker) noteInitial(err error, role, phase string) {
+	b.detailMu.Lock()
+	defer b.detailMu.Unlock()
+	if b.initial.role == "" {
+		b.initial = nativePilotInitialOf(err, role, phase)
+	}
+}
+func (b *nativePilotBroker) initialDiagnostic() nativePilotInitialDetail {
+	b.detailMu.Lock()
+	detail := b.initial
+	b.detailMu.Unlock()
+	b.mu.Lock()
+	c := b.controller
+	b.mu.Unlock()
+	if c != nil {
+		c.adapter.mu.Lock()
+		fromSource := c.adapter.initial
+		c.adapter.mu.Unlock()
+		if fromSource.role != "" {
+			return fromSource.closed()
+		}
+	}
+	if detail.role == "" {
+		return nativePilotInitialDetail{role: "unknown", phase: "joint", reason: "unavailable"}
+	}
+	return detail.closed()
 }
 
 func (nativePilotPrepareRequest) String() string     { return "private-native-prepare-request" }
@@ -264,7 +294,7 @@ func (b *nativePilotBroker) start(ctx context.Context) nativePilotDiagnostic {
 	type result struct {
 		prepared nativePilotPreparedRole
 		role     string
-		err      bool
+		err      error
 		ack      chan struct{}
 	}
 	results := make(chan result)
@@ -281,9 +311,12 @@ func (b *nativePilotBroker) start(ctx context.Context) nativePilotDiagnostic {
 		go func(o nativePilotOwner) {
 			defer preparing.Done()
 			p, err := b.ports.prepare(prepareCtx, nativePilotPrepareRequest{role: o.role, profile: o.profile, parent: o.parent, attempt: b.cfg.pilot.binding.attempt})
+			if err != nil {
+				b.noteInitial(err, o.role, "prepare")
+			}
 			ack := make(chan struct{})
 			select {
-			case results <- result{prepared: p, role: o.role, err: err != nil, ack: ack}:
+			case results <- result{prepared: p, role: o.role, err: err, ack: ack}:
 				<-ack
 			case <-prepareCtx.Done():
 				b.abortPrepared(p, b.parent.Err() == nil)
@@ -322,7 +355,7 @@ func (b *nativePilotBroker) start(ctx context.Context) nativePilotDiagnostic {
 		if reason != "" {
 			return b.stop(reason)
 		}
-		if out.err {
+		if out.err != nil {
 			return b.stop("prepare-failed")
 		}
 		selected := b.cfg.pilot.binding.reader
@@ -339,6 +372,7 @@ func (b *nativePilotBroker) start(ctx context.Context) nativePilotDiagnostic {
 		}
 		actual, err := b.ports.inspect(prepareCtx, p)
 		if err != nil || actual != p.owner {
+			b.noteInitial(err, out.role, "inspect_before")
 			return b.stop("owner-or-policy-changed")
 		}
 		roles[out.role] = p
@@ -359,6 +393,7 @@ func (b *nativePilotBroker) start(ctx context.Context) nativePilotDiagnostic {
 		for _, p := range []nativePilotPreparedRole{roles["reader"], roles["collector"]} {
 			actual, err := b.ports.inspect(call, p)
 			if err != nil || actual != p.owner {
+				b.noteInitial(err, p.owner.role, "inspect_before")
 				return nativePilotState{binding: frozen, readerWindows: s.readerWindows, completeInventory: s.completeInventory, parentAlive: s.parentAlive, channelHealthy: s.channelHealthy, invalidationsReady: s.invalidationsReady, optedIn: s.optedIn}, nil
 			}
 		}

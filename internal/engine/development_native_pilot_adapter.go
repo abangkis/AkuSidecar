@@ -7,6 +7,8 @@ package engine
 // sampling does not establish fresh identity or session continuity afterward.
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -115,6 +117,81 @@ type nativePilotDiagnostic struct {
 	StorePermit      bool   `json:"storePermit"`
 }
 
+// Private detail only. It never changes public Reason, eligibility or permits.
+type nativePilotInitialDetail struct {
+	role, phase, reason string
+	peer                bool
+}
+type nativePilotInitialError struct{ detail nativePilotInitialDetail }
+
+var nativePilotInitialRoles = []string{"reader", "collector", "pair", "unknown"}
+var nativePilotInitialPhases = []string{"prepare", "inspect_before", "inspect_after", "acquire_rpc", "identity", "rendezvous", "settings", "cleanup", "bound_finish", "wire_decode", "joint"}
+var nativePilotInitialReasons = []string{"unavailable", "rejected", "identity_unavailable", "source_unavailable", "stale_observation", "cleanup_unverified", "scope_lost", "observed_cookie_write", "deadline", "canceled", "replay", "sample_missing", "sample_duplicate", "invalid_shape", "scope_mismatch", "time_invalid"}
+
+func (e *nativePilotInitialError) Error() string    { return "startup-projection-rejected" }
+func (e *nativePilotInitialError) GoString() string { return e.Error() }
+func (d nativePilotInitialDetail) closed() nativePilotInitialDetail {
+	has := func(values []string, v string) bool {
+		for _, value := range values {
+			if value == v {
+				return true
+			}
+		}
+		return false
+	}
+	if !has(nativePilotInitialRoles, d.role) || !has(nativePilotInitialPhases, d.phase) || !has(nativePilotInitialReasons, d.reason) {
+		return nativePilotInitialDetail{role: "unknown", phase: "acquire_rpc", reason: "unavailable"}
+	}
+	return d
+}
+func (d nativePilotInitialDetail) String() string {
+	d = d.closed()
+	return fmt.Sprintf("role=%s phase=%s reason=%s kind=%s", d.role, d.phase, d.reason, map[bool]string{false: "primary", true: "peer"}[d.peer])
+}
+func (d nativePilotInitialDetail) GoString() string { return d.String() }
+func nativePilotInitialWrap(err error, role, phase string) error {
+	var typed *nativePilotInitialError
+	if errors.As(err, &typed) {
+		if typed == nil {
+			return &nativePilotInitialError{nativePilotInitialDetail{role: "unknown", phase: "acquire_rpc", reason: "unavailable"}}
+		}
+		return &nativePilotInitialError{typed.detail.closed()}
+	}
+	reason := "unavailable"
+	if errors.Is(err, context.Canceled) {
+		role, phase, reason = "pair", "joint", "canceled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		role, phase, reason = "pair", "joint", "deadline"
+	}
+	return &nativePilotInitialError{(nativePilotInitialDetail{role: role, phase: phase, reason: reason}).closed()}
+}
+func nativePilotInitialCode(code string) (nativePilotInitialDetail, bool) {
+	if len(code) <= 96 {
+		for _, role := range nativePilotInitialRoles {
+			for _, phase := range nativePilotInitialPhases {
+				for _, reason := range nativePilotInitialReasons {
+					for _, kind := range []string{"primary", "peer"} {
+						if code == "manual_initial_"+role+"_"+phase+"_"+reason+"_"+kind {
+							return nativePilotInitialDetail{role: role, phase: phase, reason: reason, peer: kind == "peer"}, true
+						}
+					}
+				}
+			}
+		}
+	}
+	return nativePilotInitialDetail{}, false
+}
+func nativePilotInitialRPC(code string) error {
+	if detail, ok := nativePilotInitialCode(code); ok {
+		return &nativePilotInitialError{detail}
+	}
+	return nativePilotInitialWrap(nil, "unknown", "acquire_rpc")
+}
+func nativePilotInitialOf(err error, role, phase string) nativePilotInitialDetail {
+	return nativePilotInitialWrap(err, role, phase).(*nativePilotInitialError).detail
+}
+
 type nativePilotSeal struct{ marker byte }
 type nativePilotVector struct {
 	seal       *nativePilotSeal
@@ -137,6 +214,7 @@ type nativePilotAdapter struct {
 	version                  uint64
 	busy, attempted, stopped bool
 	reason                   string
+	initial                  nativePilotInitialDetail
 	current                  *nativePilotVector
 	seen                     map[nativePilotRequestKey]bool
 }
@@ -325,6 +403,11 @@ func (a *nativePilotAdapter) initialEvidence(ctx context.Context) (*nativePilotV
 		c := nativePilotChallenge{seal: a.seal, vector: version, role: owner.role, binding: a.cfg.binding, owner: owner, started: started.Round(0)}
 		receipt, err := a.ports.source.observe(probeCtx, c)
 		if err != nil {
+			a.mu.Lock()
+			if a.initial.role == "" {
+				a.initial = nativePilotInitialOf(err, "unknown", "acquire_rpc")
+			}
+			a.mu.Unlock()
 			reason = "source-unavailable"
 			break
 		}

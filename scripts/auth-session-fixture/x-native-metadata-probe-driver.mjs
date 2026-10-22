@@ -32,6 +32,7 @@ import { createManualStartupOwner } from './x-manual-startup-owner.mjs';
 import { createXManualOwnerPort, manualOwnerOperation } from './x-native-manual-owner-port.mjs';
 import { createRetainedManualSetup, manualSeedFailure, manualSeedDiagnosticCode } from './x-manual-retained-setup.mjs';
 import { ManualEnrollmentCapture } from './x-manual-enrollment-capture.mjs';
+import {startupFailure,startupFailureLatch,startupRPCCode,requireBoundStartup} from './x-manual-startup-diagnostic.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -798,7 +799,7 @@ export async function executeManualReply(message,executeCommand=execute,reply=em
   try{
     result=await executeCommand(message);
     reply(id,Buffer.isBuffer(result)?parseStrictJSON(result.toString('utf8'),{maxJSONDepth:4,maxJSONTokens:96}):result);
-  }catch(error){reply(id,undefined,seed?manualSeedRPCCode(error):safeCode(error));}
+  }catch(error){reply(id,undefined,seed?manualSeedRPCCode(error):startupRPCCode(error));}
   finally{if(Buffer.isBuffer(result))result.fill(0);}
 }
 
@@ -1672,7 +1673,7 @@ async function qualifyBoundObservation(message, cookieWriteScope = false) {
   return boundCheckpoint(current, cookieWriteScope);
 }
 
-async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, afterIdentity, beforeIdentityRead) {
+async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, afterIdentity, beforeIdentityRead,initialFailure) {
   current.earlyRunning = true;
   const bound = current.bound = { running: true, sampling: false, binder: null, networkDisabled: false };
   try {
@@ -1689,7 +1690,9 @@ async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, 
     current.earlyCapture = new BootstrapHandoffCapture({ boundIdentity: true,
       beforeIdentityRead: contextId => beforeIdentityRead?.(bound.binder.startupPins(contextId)),
       send: async (method, params, purpose) => {
-        const result = await send(method, params, current.sessionId, purpose);
+        let result;
+        try{result=await send(method,params,current.sessionId,purpose);}
+        catch(error){throw initialFailure?initialFailure(error,method==='Debugger.evaluateOnCallFrame'?'identity':['Runtime.disable','Debugger.disable','Debugger.removeBreakpoint'].includes(method)?'cleanup':'prepare'):error;}
         if (afterIdentity && !synchronized && method === 'Debugger.evaluateOnCallFrame' && bound.binder.identityReady()) {
           synchronized = true; await afterIdentity();
         }
@@ -1771,7 +1774,7 @@ async function closeShortCollector(current) {
   return disposed && s.closed;
 }
 
-async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup, beforeIdentityRead) {
+async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup, beforeIdentityRead,initialFailure) {
   const s = current.shortFeasibility;
   if (!s.navigated) {
     s.navigated = true;
@@ -1821,7 +1824,9 @@ async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup
     if (method === 'Network.getResponseBody' && !binder?.capture.consumeRead(params.requestId)) throw probeError('qa_short_collector_invalid');
     if (method === 'Debugger.evaluateOnCallFrame' && !isEarlyBootstrapCallFrameRead(params, capture, true)) throw probeError('qa_short_collector_invalid');
     if (method === 'Debugger.removeBreakpoint' && !(purpose === 'normal_remove' ? capture.handoff.breakpoints.has(params.breakpointId) : params.breakpointId === instrumentationId)) throw probeError('qa_short_collector_invalid');
-    const result = await s.transport.send(method, params, s.sessionId, r => project(method, r));
+    let result;
+    try{result=await s.transport.send(method,params,s.sessionId,r=>project(method,r));}
+    catch(error){throw initialFailure?initialFailure(error,method==='Debugger.evaluateOnCallFrame'?'identity':['Runtime.disable','Debugger.disable','Debugger.removeBreakpoint'].includes(method)?'cleanup':method.startsWith('Network.')?'settings':'prepare'):error;}
     if (afterIdentity && !synchronized && method === 'Debugger.evaluateOnCallFrame' && binder.identityReady()) {
       synchronized = true; await afterIdentity();
     }
@@ -1867,21 +1872,29 @@ async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup
 // No main provider selects it. The trusted bridge binds actual startup pins and
 // invokes both captures together. This hook never seeds cookies or adopts a
 // different document/context to make a requested binding pass.
-export function createOwnedManualStartupOwners(message) {
+export function createOwnedManualStartupOwners(message,diagnostics=startupFailureLatch()) {
   if (process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED !== '1') throw probeError('manual_startup_disabled');
   const current = requireOwner(message), collector = current.shortFeasibility;
   if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !manualStartupStateReady(current)) throw probeError('manual_startup_unavailable');
   const rendezvous = new QACheckpointRendezvous();
-  const owner = role => createManualStartupOwner({ run: async sink => {
+  const owner = role => createManualStartupOwner({role,diagnostics,run: async sink => {
     if (sink.signal?.aborted) throw probeError('manual_startup_unavailable');
     const abort = () => rendezvous.cancel();
     sink.signal?.addEventListener('abort', abort, { once: true });
+    const failure=(error,phase)=>diagnostics.record(error,role,phase);
+    const together=async()=>{try{await rendezvous.arrive(role);}catch{throw diagnostics.record(startupFailure('pair','rendezvous','deadline'),'pair','rendezvous');}};
     try {
+      let observation;
       if (role === 'reader') {
         current.gate.beginObservation(); current.earlyAttempted = true;
-        await boundCheckpoint(current, false, { deferCookieMutation: false, onPrivateResult: () => {},
-          onPrivateStartup: sink.onPrivateStartup }, () => rendezvous.arrive(role), sink.beforeIdentityRead);
-      } else await collectorShortCheckpoint(current, () => rendezvous.arrive(role), sink.onPrivateStartup, sink.beforeIdentityRead);
+        observation=await boundCheckpoint(current, false, { deferCookieMutation: false, onPrivateResult: () => {},
+          onPrivateStartup: sink.onPrivateStartup },together,sink.beforeIdentityRead,failure);
+      }else{
+        const result=await collectorShortCheckpoint(current,together,sink.onPrivateStartup,sink.beforeIdentityRead,failure);
+        observation=result?.checkpoint?.observation;
+      }
+      requireBoundStartup(observation,role,diagnostics);
+    }catch(error){const cause=failure(error,'identity');rendezvous.cancel();throw cause;
     } finally { sink.signal?.removeEventListener('abort', abort); }
   } });
   return Object.freeze({ reader: owner('reader'), collector: owner('collector') });
@@ -1911,8 +1924,9 @@ export async function executeManualOwnerRPC(message) {
   if(!current.manualStartupPort){
     current.manualStartupSelected=true;
     try{
-      current.manualStartupPort=createXManualOwnerPort({enabled:true,owner:current.owner,
-        createOwners:()=>createOwnedManualStartupOwners(message),
+      const diagnostics=startupFailureLatch();
+      current.manualStartupPort=createXManualOwnerPort({enabled:true,owner:current.owner,diagnostics,
+        createOwners:()=>createOwnedManualStartupOwners(message,diagnostics),
         snapshot:async(role,document,pins)=>{
           const reader=role==='reader', owned=reader?{pid:current.pid,profileId:current.profileId,alive:!childExited&&!cdpFailure}:collector.transport.ownership();
           const targetId=reader?current.targetId:collector.targetId;

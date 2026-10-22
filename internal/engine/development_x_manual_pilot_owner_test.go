@@ -88,6 +88,10 @@ func (f *testXManualOwnerBackend) rpc(ctx context.Context, role, op string, fiel
 		f.mu.Unlock()
 		return testXManualReply(out, value)
 	case "manual_inspect":
+		if role == "collector" && (f.fault == "inspect-before" && !f.acquired[role] || f.fault == "inspect-after" && f.acquired[role]) {
+			f.mu.Unlock()
+			return errors.New("PRIVATE_UNTRUSTED_INSPECT")
+		}
 		count, bootstrap := f.windows, 1
 		if role == "collector" {
 			count, bootstrap = 0, 0
@@ -129,6 +133,36 @@ func (f *testXManualOwnerBackend) rpc(ctx context.Context, role, op string, fiel
 	default:
 		f.mu.Unlock()
 		return errors.New("private-op-invalid")
+	}
+}
+
+func TestXManualPilotOwnerInspectDiagnostic(t *testing.T) {
+	for _, phase := range []string{"inspect_before", "inspect_after"} {
+		t.Run(phase, func(t *testing.T) {
+			cfg, f := testXManualOwnerConfig()
+			p := &xManualPilotOwnerPorts{cfg: cfg, backend: f, prepared: map[string]nativePilotPreparedRole{}, begun: map[string]bool{}, acquired: map[string]bool{}, cleanupTokens: map[string]string{}, cleanupUnknown: map[string]bool{}}
+			prepared := map[string]nativePilotPreparedRole{}
+			for _, role := range []string{"reader", "collector"} {
+				v, err := p.prepare(context.Background(), nativePilotPrepareRequest{role: role, profile: f.core[role].profile, parent: f.core[role].parent, attempt: cfg.pilot.binding.attempt})
+				if err != nil {
+					t.Fatal("offline preparation failed")
+				}
+				prepared[role] = v
+			}
+			f.acquired["reader"] = true
+			if phase == "inspect_before" {
+				f.fault = "inspect-before"
+			} else {
+				f.fault = "inspect-after"
+			}
+			binding := cfg.pilot.binding
+			binding.reader, binding.collector = prepared["reader"].owner, prepared["collector"].owner
+			_, err := p.acquire(context.Background(), prepared["collector"], nativePilotCaptureChallenge{challenge: nativePilotChallenge{seal: &nativePilotSeal{}, vector: 1, role: "collector", binding: binding, owner: binding.collector, started: f.now()}, correlation: strings.Repeat("c", 48)})
+			d := nativePilotInitialOf(err, "unknown", "acquire_rpc")
+			if err == nil || d.role != "collector" || d.phase != phase || strings.Contains(d.String(), "PRIVATE") {
+				t.Fatal("owner inspection stage lost")
+			}
+		})
 	}
 }
 func (f *testXManualOwnerBackend) cleanup(_ context.Context, role, handle string, preserve bool) error {

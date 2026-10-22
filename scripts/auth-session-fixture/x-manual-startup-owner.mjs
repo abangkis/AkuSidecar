@@ -3,6 +3,7 @@
 // acquire challenge releases that same pause; no navigation/rebinding is allowed.
 import { randomBytes } from 'node:crypto';
 import { createManualStartupCapture } from './x-manual-startup-source.mjs';
+import {startupFailureLatch} from './x-manual-startup-diagnostic.mjs';
 
 const FIELDS = ['ownerId', 'profileId', 'contextId', 'targetId', 'frameId', 'documentId'];
 const unavailable = () => new Error('manual_startup_owner_unavailable');
@@ -27,7 +28,7 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-export function createManualStartupOwner({ run, now, wallNow }) {
+export function createManualStartupOwner({ run, role='unknown',diagnostics=startupFailureLatch(), now, wallNow }) {
   if (typeof run !== 'function') throw unavailable();
   const ready = deferred(), release = deferred(), abort = new AbortController();
   const handle = randomBytes(24).toString('hex');
@@ -45,7 +46,7 @@ export function createManualStartupOwner({ run, now, wallNow }) {
     try { await running; } catch { /* Closed outcome only. */ }
     sink = actual = null;
   };
-  const capture = createManualStartupCapture({ now, wallNow, run: async (request, output) => {
+  const capture = createManualStartupCapture({ role,diagnostics,now, wallNow, run: async (request, output) => {
     if (state !== 'ready' || !actual || FIELDS.some(k => actual[k] !== request[k])) throw unavailable();
     state = 'acquiring'; sink = output.onPrivateStartup; release.resolve();
     await running;
@@ -71,17 +72,17 @@ export function createManualStartupOwner({ run, now, wallNow }) {
         },
       })).then(() => {
         if (state === 'preparing' || state === 'ready') throw unavailable();
-      }).catch(() => { close(); throw unavailable(); });
+      }).catch(error => { const failure=diagnostics.record(error,role,state==='preparing'?'prepare':'identity','unavailable','manual_startup_owner_unavailable');close();throw failure; });
       void running.catch(() => {});
       try { await ready.promise; return Object.freeze({ handle, pins: actual }); }
-      catch { close(); throw unavailable(); }
+      catch(error) { const failure=diagnostics.record(error,role,'prepare','unavailable','manual_startup_owner_unavailable');close();throw failure; }
       finally { detach(); }
     },
     async acquire(token, request, signal) {
       if (token !== handle || state !== 'ready') { close(); throw unavailable(); }
       const detach = attach(signal);
       try { return await capture(request, signal); }
-      catch { close(); throw unavailable(); }
+      catch(error) { const failure=diagnostics.record(error,role,'acquire_rpc','unavailable','manual_startup_owner_unavailable');close();throw failure; }
       finally { sink = null; detach(); }
     },
     async abort(token) {

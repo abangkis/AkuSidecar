@@ -199,9 +199,9 @@ func (p *xManualPilotOwnerPorts) cleanup(role, handle string, preserve bool) err
 	return nil
 }
 
-func (p *xManualPilotOwnerPorts) failedPrepare(core nativePilotOwner) (nativePilotPreparedRole, error) {
+func (p *xManualPilotOwnerPorts) failedPrepare(core nativePilotOwner, cause error) (nativePilotPreparedRole, error) {
 	if p.cleanup(core.role, "", true) == nil {
-		return nativePilotPreparedRole{}, errors.New("x-owner-prepare-unavailable")
+		return nativePilotPreparedRole{}, nativePilotInitialWrap(cause, core.role, "prepare")
 	}
 	// This is solely a local cleanup correlation, returned WITH an error. It is
 	// never evidence, a native identifier alias or a handle sent to the driver.
@@ -218,7 +218,7 @@ func (p *xManualPilotOwnerPorts) failedPrepare(core nativePilotOwner) (nativePil
 	p.cleanupUnknown[core.role] = true
 	p.prepared[core.role] = partial
 	p.mu.Unlock()
-	return partial, errors.New("x-owner-cleanup-uncertain")
+	return partial, nativePilotInitialWrap(cause, core.role, "prepare")
 }
 func (p *xManualPilotOwnerPorts) abort(ctx context.Context, prepared nativePilotPreparedRole, preserve bool) error {
 	p.mu.Lock()
@@ -258,8 +258,8 @@ func (p *xManualPilotOwnerPorts) prepare(ctx context.Context, req nativePilotPre
 		return nativePilotPreparedRole{}, errors.New("x-owner-request-mismatch")
 	}
 	var raw json.RawMessage
-	if p.backend.rpc(ctx, req.role, "manual_prepare", nil, &raw) != nil {
-		return p.failedPrepare(core)
+	if err := p.backend.rpc(ctx, req.role, "manual_prepare", nil, &raw); err != nil {
+		return p.failedPrepare(core, err)
 	}
 	defer clear(raw)
 	var ready struct {
@@ -267,7 +267,7 @@ func (p *xManualPilotOwnerPorts) prepare(ctx context.Context, req nativePilotPre
 		Pins   xManualPilotPins `json:"pins"`
 	}
 	if xManualPilotDecode(raw, &ready) != nil || !nativePilotRef(ready.Handle, 512) {
-		return p.failedPrepare(core)
+		return p.failedPrepare(core, nil)
 	}
 	partial := nativePilotPreparedRole{owner: core, handle: ready.Handle}
 	p.mu.Lock()
@@ -302,8 +302,8 @@ func (p *xManualPilotOwnerPorts) inspectPhase(ctx context.Context, prepared nati
 		return nativePilotOwner{}, err
 	}
 	var raw json.RawMessage
-	if p.backend.rpc(ctx, prepared.owner.role, "manual_inspect", nil, &raw) != nil {
-		return nativePilotOwner{}, errors.New("x-owner-inspect-unavailable")
+	if err := p.backend.rpc(ctx, prepared.owner.role, "manual_inspect", nil, &raw); err != nil {
+		return nativePilotOwner{}, err
 	}
 	defer clear(raw)
 	var result xManualPilotInspection
@@ -341,7 +341,7 @@ func (p *xManualPilotOwnerPorts) acquire(ctx context.Context, prepared nativePil
 		return nil, errors.New("x-owner-acquire-mismatch")
 	}
 	if _, err := p.inspectPhase(ctx, prepared, true); err != nil {
-		return nil, err
+		return nil, nativePilotInitialWrap(err, prepared.owner.role, "inspect_before")
 	}
 	request, err := ch.requestJSON()
 	if err != nil {
@@ -349,13 +349,13 @@ func (p *xManualPilotOwnerPorts) acquire(ctx context.Context, prepared nativePil
 	}
 	defer clear(request)
 	var raw json.RawMessage
-	if p.backend.rpc(ctx, prepared.owner.role, "manual_acquire", map[string]any{"handle": prepared.handle, "request": json.RawMessage(request)}, &raw) != nil {
+	if err := p.backend.rpc(ctx, prepared.owner.role, "manual_acquire", map[string]any{"handle": prepared.handle, "request": json.RawMessage(request)}, &raw); err != nil {
 		clear(raw)
-		return nil, errors.New("x-owner-acquire-unavailable")
+		return nil, nativePilotInitialWrap(err, prepared.owner.role, "acquire_rpc")
 	}
 	if _, err := p.inspect(ctx, prepared); err != nil {
 		clear(raw)
-		return nil, err
+		return nil, nativePilotInitialWrap(err, prepared.owner.role, "inspect_after")
 	}
 	return raw, nil
 }

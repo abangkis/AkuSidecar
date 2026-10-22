@@ -342,7 +342,7 @@ func TestXManualPilotRetainedQA(t *testing.T) {
 	}
 	d := broker.start(ctx)
 	if !d.ManualEligible || d.OfflineValidated || d.CanAuthorize || d.NativeQualified || d.StorePermit {
-		t.Fatalf("manual-retained-initial-rejected reason=%s", d.Reason)
+		t.Fatalf("manual-retained-initial-rejected reason=%s detail=(%s)", d.Reason, broker.initialDiagnostic())
 	}
 	var frozenCollector nativePilotPreparedRole
 	for _, prepared := range broker.prepared {
@@ -427,14 +427,15 @@ func TestXManualPilotRetainedSeedNodeDiagnostic(t *testing.T) {
 import {createInterface} from 'node:readline';
 const {createRetainedManualSetup}=await import(pathToFileURL(process.argv[1]));
 const {executeManualReply}=await import(pathToFileURL(process.argv[2]));
+const {startupFailure}=await import(pathToFileURL(process.argv[3]));
 const run=createRetainedManualSetup({enabled:true,transferAllowed:true,now:()=>0,
 ownership:async()=>({readerPID:1,readerProfile:'offline-reader',collectorPID:2,collectorProfile:'offline-collector'}),
 readEnrollment:async()=> '1908123456789012345',readAllowedCookies:async()=>[{},{}],
 writeAllowedCookies:async()=>{throw new Error('PRIVATE_UNSAFE_CALLBACK');}});
 console.log(JSON.stringify({ready:true}));
-for await(const line of createInterface({input:process.stdin})){const q=JSON.parse(line);await executeManualReply(q,()=>run(),(id,result,code)=>console.log(JSON.stringify({id,ok:!code,...(code?{code}:{result})})));}
+for await(const line of createInterface({input:process.stdin})){const q=JSON.parse(line);await executeManualReply(q,()=>{if(q.op==='manual_acquire')throw startupFailure('collector','inspect_before','observed_cookie_write');return run();},(id,result,code)=>console.log(JSON.stringify({id,ok:!code,...(code?{code}:{result})})));}
 `
-	cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(project, "scripts", "auth-session-fixture", "x-manual-retained-setup.mjs"), filepath.Join(project, "scripts", "auth-session-fixture", "x-native-metadata-probe-driver.mjs"))
+	cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(project, "scripts", "auth-session-fixture", "x-manual-retained-setup.mjs"), filepath.Join(project, "scripts", "auth-session-fixture", "x-native-metadata-probe-driver.mjs"), filepath.Join(project, "scripts", "auth-session-fixture", "x-manual-startup-diagnostic.mjs"))
 	cmd.Stderr = io.Discard
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -474,5 +475,121 @@ for await(const line of createInterface({input:process.stdin})){const q=JSON.par
 		if xManualRetainedSeedRPCDiagnostic(err) != want {
 			t.Fatal("Node-to-Go closed seed diagnostic lost")
 		}
+	}
+	err = b.rpc(ctx, "manual_acquire", map[string]any{"owner": 1}, nil)
+	if d := nativePilotInitialOf(nativePilotInitialRPC(err.Error()), "unknown", "acquire_rpc"); d.role != "collector" || d.phase != "inspect_before" || d.reason != "observed_cookie_write" {
+		t.Fatal("long bounded startup code lost in Node-to-Go bridge")
+	}
+}
+
+// Only transport uses the native backend method. OS snapshots and provenance
+// are explicitly invented/offline; no Windows Chrome identity is asserted.
+type xManualInitialOfflineBackend struct {
+	transport *xManualPilotWindowsBackend
+	cores     map[string]nativePilotOwner
+}
+
+func (*xManualInitialOfflineBackend) provenance() nativePilotProvenance {
+	return nativePilotOfflineOnly
+}
+func (*xManualInitialOfflineBackend) now() time.Time { return time.Now() }
+func (p *xManualInitialOfflineBackend) snapshot(_ context.Context, role string) (nativePilotOwner, error) {
+	return p.cores[role], nil
+}
+func (p *xManualInitialOfflineBackend) rpc(ctx context.Context, role, op string, fields map[string]any, out any) error {
+	return p.transport.rpc(ctx, role, op, fields, out)
+}
+func (p *xManualInitialOfflineBackend) cleanup(ctx context.Context, role, handle string, preserve bool) error {
+	return p.transport.cleanup(ctx, role, handle, preserve)
+}
+
+func TestXManualPilotRetainedStartupDiagnostic(t *testing.T) {
+	for _, role := range []string{"reader", "collector", "peer-first"} {
+		t.Run(role, func(t *testing.T) {
+			project, node := os.Getenv("AKU_NATIVE_MANUAL_PROJECT_ROOT"), os.Getenv("AKU_CHROME_FIXTURE_NODE")
+			if !filepath.IsAbs(project) || !filepath.IsAbs(node) {
+				t.Skip("accountless startup bridge requires helper")
+			}
+			started := time.Now()
+			const script = `import {pathToFileURL} from 'node:url';import {createInterface} from 'node:readline';
+const {offlineXManualOwnerPort}=await import(pathToFileURL(process.argv[1]));
+const {executeManualReply}=await import(pathToFileURL(process.argv[2]));
+const {startupFailure}=await import(pathToFileURL(process.argv[3]));
+const fault=process.argv[4],port=offlineXManualOwnerPort({afterRelease:async role=>{if(role===fault)throw startupFailure(role,'settings','source_unavailable');}});
+let fired=false,releasePeer;const peerDone=new Promise(resolve=>{releasePeer=resolve;});
+console.log(JSON.stringify({ready:true}));
+const tasks=new Set();for await(const line of createInterface({input:process.stdin})){const q=JSON.parse(line),task=executeManualReply(q,async()=>{
+if(fault==='peer-first'&&q.op==='manual_acquire'&&!fired){fired=true;port.observe('reader',{sessionId:'offline-session-reader',method:'Runtime.executionContextDestroyed',params:{executionContextId:7}});}
+if(fault==='peer-first'&&fired&&q.role==='reader'&&['manual_inspect','manual_acquire'].includes(q.op))await peerDone;
+return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!code,...(code?{code}:{result})}));if(code&&q.role==='collector')releasePeer();});tasks.add(task);void task.finally(()=>tasks.delete(task));}await Promise.allSettled(tasks);`
+			dir := filepath.Join(project, "scripts", "auth-session-fixture")
+			cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(dir, "x-native-manual-owner-offline.mjs"), filepath.Join(dir, "x-native-metadata-probe-driver.mjs"), filepath.Join(dir, "x-manual-startup-diagnostic.mjs"), role)
+			cmd.Stderr = io.Discard
+			stdout, err := cmd.StdoutPipe()
+			if err != nil {
+				t.Fatal("offline startup output unavailable")
+			}
+			stdin, err := cmd.StdinPipe()
+			if err != nil {
+				t.Fatal("offline startup input unavailable")
+			}
+			if cmd.Start() != nil {
+				t.Fatal("offline startup Node unavailable")
+			}
+			bridge := &chromeFixtureBridge{cmd: cmd, stdin: stdin, pending: map[int64]chan chromeFixtureReply{}, owners: map[int]*chromeFixtureProcess{}, closed: make(chan struct{}), nodeWaited: make(chan struct{})}
+			ready := make(chan error, 1)
+			go bridge.readOutput(stdout, ready)
+			t.Cleanup(func() {
+				stdin.Close()
+				select {
+				case <-bridge.nodeWaited:
+				case <-time.After(3 * time.Second):
+					cmd.Process.Kill()
+					<-bridge.nodeWaited
+				}
+			})
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			select {
+			case err = <-ready:
+				if err != nil {
+					t.Fatal("offline startup handshake rejected")
+				}
+			case <-ctx.Done():
+				t.Fatal("offline startup handshake timeout")
+			}
+			backend := &xManualInitialOfflineBackend{transport: &xManualPilotWindowsBackend{roles: map[string]xManualPilotWindowsRole{}}, cores: map[string]nativePilotOwner{}}
+			binding := nativePilotBinding{account: "1908123456789012345", enrollment: "offline-enrollment", pair: "offline-pair", attempt: "offline-attempt", derivation: "offline-derivation", policy: 1, consent: 1}
+			for i, r := range []string{"reader", "collector"} {
+				core := nativePilotOwner{role: r, owner: strconv.Itoa(i + 1), profile: "offline-profile-" + r, directory: "offline-directory-" + r, image: "offline-image", creation: "offline-created-" + r, job: "offline-job", parent: "offline-parent", pid: i + 1, generation: 1}
+				backend.cores[r] = core
+				backend.transport.roles[r] = xManualPilotWindowsRole{role: r, bridge: bridge, protocolOwner: 1}
+				selected := nativePilotOwner{role: r, profile: core.profile, parent: core.parent}
+				if r == "reader" {
+					binding.reader = selected
+				} else {
+					binding.collector = selected
+				}
+			}
+			cfg := xManualPilotOwnerConfig{enabled: true, pilot: nativePilotConfig{enabled: true, contract: nativePilotContract, limitationAcknowledged: true, binding: binding, attemptStarted: started}, policy: func(context.Context) (nativePilotBrokerState, error) {
+				return nativePilotBrokerState{account: binding.account, enrollment: binding.enrollment, pair: binding.pair, attempt: binding.attempt, derivation: binding.derivation, policy: 1, consent: 1, readerWindows: 1, completeInventory: true, parentAlive: true, channelHealthy: true, invalidationsReady: true, optedIn: true}, nil
+			}}
+			b, _ := newXManualPilotOwnerBrokerWithBackend(ctx, cfg, backend)
+			if b == nil {
+				t.Fatal("offline startup composition unavailable")
+			}
+			d := b.start(ctx)
+			detail := b.initialDiagnostic()
+			wantRole, wantPhase, wantReason := role, "settings", "source_unavailable"
+			if role == "peer-first" {
+				wantRole, wantPhase, wantReason = "reader", "joint", "scope_lost"
+				if !detail.peer {
+					t.Fatal("peer delivery marker lost")
+				}
+			}
+			if d.Reason != "source-unavailable" || d.OfflineValidated || d.ManualEligible || d.CanAuthorize || d.NativeQualified || d.StorePermit || detail.role != wantRole || detail.phase != wantPhase || detail.reason != wantReason {
+				t.Fatalf("closed startup diagnostic path lost: %s", detail)
+			}
+		})
 	}
 }

@@ -52,6 +52,7 @@ type nativePilotStartupSource struct {
 	begun, ready, readerRead, collectorRead bool
 	reader, collector                       nativePilotChallenge
 	readerReceipt, collectorReceipt         nativePilotReceipt
+	initial                                 nativePilotInitialDetail
 }
 
 func (*nativePilotStartupSource) String() string     { return "private-native-startup-source" }
@@ -72,6 +73,14 @@ func (s *nativePilotStartupSource) provenance() nativePilotProvenance {
 	return nativePilotTrustedStartup
 }
 
+// Caller holds mu; preserve an earlier cause across cancellation races.
+func (s *nativePilotStartupSource) canceledLocked(err error) error {
+	if s.initial.role == "" {
+		s.initial = nativePilotInitialOf(err, "pair", "joint")
+	}
+	return &nativePilotInitialError{s.initial.closed()}
+}
+
 // The adapter asks for roles serially. This source instead acquires both roles
 // together on the first read and buffers the exact second challenge once.
 // No native document/context pin is guessed or replaced after capture. A recipe
@@ -80,8 +89,13 @@ func (s *nativePilotStartupSource) provenance() nativePilotProvenance {
 func (s *nativePilotStartupSource) observe(ctx context.Context, c nativePilotChallenge) (nativePilotReceipt, error) {
 	s.mu.Lock()
 	if ctx == nil || ctx.Err() != nil {
+		var cause error
+		if ctx != nil {
+			cause = ctx.Err()
+		}
+		err := s.canceledLocked(cause)
 		s.mu.Unlock()
-		return nativePilotReceipt{}, errors.New("startup-canceled")
+		return nativePilotReceipt{}, err
 	}
 	if s.begun {
 		if s.ready && !s.collectorRead && s.readerRead && c == s.collector {
@@ -117,6 +131,16 @@ func (s *nativePilotStartupSource) observe(ctx context.Context, c nativePilotCha
 		err     error
 	}
 	outputs := make(chan output, 2)
+	record := func(err error, role, phase string) error {
+		typed := nativePilotInitialWrap(err, role, phase)
+		s.mu.Lock()
+		if s.initial.role == "" {
+			s.initial = typed.(*nativePilotInitialError).detail
+		}
+		first := s.initial
+		s.mu.Unlock()
+		return &nativePilotInitialError{first}
+	}
 	for _, challenge := range []nativePilotChallenge{c, collector} {
 		go func(ch nativePilotChallenge) {
 			raw, err := s.cfg.capture(group, nativePilotCaptureChallenge{challenge: ch, correlation: correlation})
@@ -127,6 +151,9 @@ func (s *nativePilotStartupSource) observe(ctx context.Context, c nativePilotCha
 				err = group.Err()
 			}
 			clear(raw)
+			if err != nil {
+				err = record(err, ch.role, "acquire_rpc")
+			}
 			outputs <- output{role: ch.role, receipt: receipt, err: err}
 		}(challenge)
 	}
@@ -134,10 +161,10 @@ func (s *nativePilotStartupSource) observe(ctx context.Context, c nativePilotCha
 	for count := 0; count < 2; count++ {
 		select {
 		case <-ctx.Done():
-			return nativePilotReceipt{}, errors.New("startup-canceled")
+			return nativePilotReceipt{}, record(ctx.Err(), "pair", "joint")
 		case out := <-outputs:
 			if out.err != nil {
-				return nativePilotReceipt{}, errors.New("startup-projection-rejected")
+				return nativePilotReceipt{}, out.err
 			}
 			if out.role == "reader" {
 				readerReceipt = out.receipt
@@ -149,7 +176,7 @@ func (s *nativePilotStartupSource) observe(ctx context.Context, c nativePilotCha
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if ctx.Err() != nil {
-		return nativePilotReceipt{}, errors.New("startup-canceled")
+		return nativePilotReceipt{}, s.canceledLocked(ctx.Err())
 	}
 	s.ready, s.readerRead, s.readerReceipt, s.collectorReceipt = true, true, nativePilotReceipt{}, collectorReceipt
 	return readerReceipt, nil
@@ -175,7 +202,7 @@ func (nativePilotStartupWire) String() string     { return "private-native-start
 func (v nativePilotStartupWire) GoString() string { return v.String() }
 
 func decodeNativePilotStartup(raw []byte, ch nativePilotChallenge, correlation string) (nativePilotReceipt, error) {
-	bad := errors.New("startup-projection-rejected")
+	bad := &nativePilotInitialError{nativePilotInitialDetail{role: ch.role, phase: "wire_decode", reason: "invalid_shape"}}
 	var empty nativePilotReceipt
 	if len(raw) == 0 || len(raw) > nativePilotStartupWireMax || !nativePilotStartupUnicode(raw) {
 		return empty, bad
@@ -220,7 +247,13 @@ func decodeNativePilotStartup(raw []byte, ch nativePilotChallenge, correlation s
 		}
 	}
 	o := ch.owner
-	if wire.schema != nativePilotStartupWireSchema || wire.challenge != correlation || wire.role != ch.role || !nativePilotAccount(wire.accountId) || wire.ownerId != o.owner || wire.profileId != o.profile || wire.contextId != o.context || wire.targetId != o.target || wire.frameId != o.frame || wire.documentId != o.document || wire.qualification != nativePilotSettingsQualification || wire.identityRequestId == wire.settingsRequestId || wire.elapsedMS >= float64(nativePilotJoint/time.Millisecond) {
+	if wire.challenge != correlation || wire.role != ch.role || wire.ownerId != o.owner || wire.profileId != o.profile || wire.contextId != o.context || wire.targetId != o.target || wire.frameId != o.frame || wire.documentId != o.document {
+		return empty, &nativePilotInitialError{nativePilotInitialDetail{role: ch.role, phase: "wire_decode", reason: "scope_mismatch"}}
+	}
+	if wire.elapsedMS >= float64(nativePilotJoint/time.Millisecond) {
+		return empty, &nativePilotInitialError{nativePilotInitialDetail{role: ch.role, phase: "wire_decode", reason: "time_invalid"}}
+	}
+	if wire.schema != nativePilotStartupWireSchema || !nativePilotAccount(wire.accountId) || wire.qualification != nativePilotSettingsQualification || wire.identityRequestId == wire.settingsRequestId {
 		return empty, bad
 	}
 	// Millisecond epoch values are bounded before conversion to avoid overflow.
@@ -234,7 +267,7 @@ func decodeNativePilotStartup(raw []byte, ch nativePilotChallenge, correlation s
 	identityAt, ok := toTime(wire.identityObservedAtMS)
 	settingsAt, ok2 := toTime(wire.settingsObservedAtMS)
 	if !ok || !ok2 || identityAt.Before(ch.started) || settingsAt.Before(identityAt) {
-		return empty, bad
+		return empty, &nativePilotInitialError{nativePilotInitialDetail{role: ch.role, phase: "wire_decode", reason: "time_invalid"}}
 	}
 	base := nativePilotResponse{challenge: ch, elapsed: time.Duration(wire.elapsedMS * float64(time.Millisecond)), semanticSuccess: true, fresh: true, direct: true, wellFormed: true, clockValid: true}
 	r := nativePilotReceipt{identity: base, settings: base}

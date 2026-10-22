@@ -550,3 +550,67 @@ No browser, X request, credential transfer, Store or user-runtime action ran.
 The new native capture timing and dual-session ordering remain unmeasured.
 Evidence:
 `runtime/qa/auth-session-sidecar/x-manual-retained-a3a1823152eb4769a12387424cb42294.prepare.log.txt`.
+
+### Startup diagnostic follow-up (2026-10-22)
+
+Source `aaa96419b578ace5934b9c98d21500291631818f` was attempted once under
+fresh explicit authorization for one bounded retained-QA transfer. Enrollment
+and seed setup passed. The test failed after 9.30 seconds at initial controller
+startup with `source-unavailable`; admission never opened. Owned Job cleanup and
+clean retained-lease release passed, the disposable collector/build root was
+removed, and the retained QA profile was preserved. No retry ran. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-a3a1823152eb4769a12387424cb42294.run.log.txt`.
+
+Offline review found diagnostic erasure, not a proven native source defect.
+The bound observation already computes fixed identity/settings/freshness/cleanup
+categories, but the startup runners discard their return values. Node source,
+actor and owner-port wrappers further collapse failures; the Windows transport,
+Go source and adapter drop the remaining role and stage. Both roles acquire
+concurrently, so neither the outer reader-first loop nor total test duration
+identifies the failing browser or establishes a joint timeout.
+
+The authorized follow-up preserves safe closed role/phase/reason diagnostics
+end to end and adds offline regressions. Preserve the first observed failure;
+report cancellation of its peer separately. Unattributable pair cancellation or
+deadline must not be assigned to either browser by inference. Diagnostic details
+cannot contain identifiers, cookies, bodies, arbitrary exception text or causes,
+and cannot supply authority or weaken any account/login, binding, time, cleanup,
+one-shot or default-off requirement. This follow-up authorizes no new transfer,
+browser/profile access, Store change, main-provider activation or user-runtime
+operation.
+
+Startup details use the private fixed code
+`manual_initial_<role>_<phase>_<reason>_<kind>`, with closed catalogs on both
+Node and Go. Node errors are branded in a WeakMap; Go accepts exact catalog
+combinations and formats only validated categories. Public diagnostic Reason
+and all eligibility/permit flags retain their existing behavior. The retained
+QA test reads the added detail through a private broker readback.
+
+The originating pair latch freezes the first observed cause before invalidating
+the shared port or canceling the rendezvous. A `peer` marker identifies a reply
+carrying that latched cause through another role's failure path; the reported
+role remains the original cause's role. The Go acquisition loop starts both
+roles concurrently and retains this attribution even if that peer reply arrives
+first. A joint cancellation/deadline without a recorded role-specific primary
+uses `pair/joint`; unqualified transport failures use a closed unknown fallback.
+
+Canonical offline preparation `3d49942164334b6baf4266b2cc8572d4` passed 48 Node
+tests, three Go top-level tests with reader/collector/peer-first startup subcases,
+four tag gates and standalone Windows compilation. The accountless startup
+roundtrip uses the actual correlated bridge and Windows backend RPC method,
+then invented OS-owner snapshots through owner ports, source, adapter and broker
+readback. It verifies diagnostic transport only; native ownership remains outside
+this accountless test. The native QA entry skipped before lease/profile access
+with all four execution gates disabled. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-3d49942164334b6baf4266b2cc8572d4.prepare.log.txt`.
+
+Related canonical startup regressions
+`3e02bb678c5d403e99c069c0e13ea391` passed 30 Node tests, Go startup/controller
+checks, four tag gates and both development Engine builds. Owner regressions
+`5da9929ebb8840e0b12fcba99d405493` passed 31 Node tests, nine Go top-level tests
+with 12 subcases, four tag gates and Windows compilation. The focused checks
+include closed formatting/typed-nil fallback, canceled entry, first-cause
+retention, wire scope/time rejection, owner inspection stages, and peer delivery
+without attribution changes. No browser, retained profile, X request, credential
+transfer, Store or user-runtime action ran. The cause of the earlier native
+`source-unavailable` remains unknown until a separately authorized observation.

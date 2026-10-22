@@ -6,11 +6,14 @@ import {createXManualOwnerPort} from './x-native-manual-owner-port.mjs';
 import {offlineStartupOwner,runOfflineStartupRecipe} from './x-manual-startup-offline-fixture.mjs';
 import {createManualStartupOwner} from './x-manual-startup-owner.mjs';
 import {parseStrictJSON} from './x-evidence-ingress.mjs';
+import {startupFailureLatch,startupRPCCode} from './x-manual-startup-diagnostic.mjs';
 
 export function offlineXManualOwnerPort({afterRelease,changeSnapshot=()=>{},onRetire=()=>{}}={}){
   const alive={reader:true,collector:true};
-  return createXManualOwnerPort({enabled:true,owner:1,
+  const diagnostics=startupFailureLatch();
+  return createXManualOwnerPort({enabled:true,owner:1,diagnostics,
     createOwners:()=>Object.fromEntries(['reader','collector'].map(role=>[role,createManualStartupOwner({
+      role,diagnostics,
       run:sink=>runOfflineStartupRecipe({role},sink,{beforeIdentityRead:async(pins,ports)=>{
         await sink.beforeIdentityRead(pins);await afterRelease?.(role,ports);
       }}),
@@ -35,7 +38,7 @@ async function run(){
       result=await port.execute(message);
       const value=Buffer.isBuffer(result)?parseStrictJSON(result.toString('utf8'),{maxJSONDepth:4,maxJSONTokens:96}):result;
       process.stdout.write(JSON.stringify({id:message.id,ok:true,result:value})+'\n');
-    }catch{process.stdout.write(JSON.stringify({id:message.id,ok:false,code:'manual_owner_unavailable'})+'\n');}
+    }catch(error){process.stdout.write(JSON.stringify({id:message.id,ok:false,code:startupRPCCode(error)})+'\n');}
     finally{if(Buffer.isBuffer(result))result.fill(0);}
   };
   try{

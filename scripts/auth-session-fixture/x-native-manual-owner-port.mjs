@@ -1,5 +1,6 @@
 // Private, default-off QA transport. OS provenance belongs to the compiled Go
 // owner backend; this module cannot grant it through a request or JSON flag.
+import {startupFailureLatch} from './x-manual-startup-diagnostic.mjs';
 const roles=['reader','collector'];
 const pinKeys=['ownerId','profileId','contextId','targetId','frameId','documentId'];
 const requestKeys=['challenge','role',...pinKeys];
@@ -26,14 +27,14 @@ export function manualOwnerOperation(value) {
   }
   return value;
 }
-export function createXManualOwnerPort({enabled=false,owner,createOwners,snapshot,retire}={}) {
+export function createXManualOwnerPort({enabled=false,owner,createOwners,snapshot,retire,diagnostics=startupFailureLatch()}={}) {
   if(enabled!==true||!Number.isSafeInteger(owner)||owner<1||![createOwners,snapshot,retire].every(v=>typeof v==='function'))throw failure();
   const actors=createOwners();
   if(!actors||!roles.every(role=>['prepare','acquire','abort','cancel'].every(k=>typeof actors[role]?.[k]==='function')))throw failure();
   const state=Object.fromEntries(roles.map(role=>[role,{actor:actors[role],pins:null,handle:null,preparing:false,acquired:false,invalid:false,closed:false,session:null}]));
   let failed=false;
-  const invalidate=role=>{state[role].invalid=true;failed=true;};
-  const checked=async(role,document=false)=>{try{
+  const invalidate=role=>{diagnostics.record(null,role,'joint','scope_lost','xnp_manual_owner_unavailable');state[role].invalid=true;failed=true;};
+  const checked=async(role,document=false,phase='prepare')=>{try{
     const s=state[role], value=await snapshot(role,document,s.pins);
     if(!value||value.alive!==true||!['ownerId','profileId','targetId','sessionId'].every(k=>ref(value[k]))||
       value.headless!==(role==='collector')||!Number.isSafeInteger(value.windowCount)||value.windowCount<0||value.windowCount>128||
@@ -42,7 +43,7 @@ export function createXManualOwnerPort({enabled=false,owner,createOwners,snapsho
     if(s.pins&&(['ownerId','profileId','targetId'].some(k=>s.pins[k]!==value[k])||s.session!==value.sessionId||
       document&&(s.pins.frameId!==value.frameId||s.pins.documentId!==value.documentId||s.pins.contextId!==value.contextId||value.lifecycleReady!==true)))throw failure();
     return value;
-  }catch{invalidate(role);throw failure();}};
+  }catch(error){const cause=diagnostics.record(error,role,phase,'unavailable','xnp_manual_owner_unavailable');invalidate(role);throw cause;}};
   return Object.freeze({
     // Called from the owned CDP dispatcher, including after capture cleanup.
     observe(role,event){
@@ -58,7 +59,7 @@ export function createXManualOwnerPort({enabled=false,owner,createOwners,snapsho
         event.method==='Page.frameDetached'&&p.frameId===s.pins.frameId||
         event.method==='Page.frameNavigated'&&!p.frame?.parentId)invalidate(role);
     },
-    invalidate(){for(const role of roles)invalidate(role);},
+    invalidate(){diagnostics.record(null,'pair','joint','unavailable','xnp_manual_owner_unavailable');for(const role of roles)invalidate(role);},
     async execute(raw){
       const message=manualOwnerOperation(raw), role=message.role,s=state[role];
       if(message.owner!==owner)throw failure();
@@ -80,7 +81,7 @@ export function createXManualOwnerPort({enabled=false,owner,createOwners,snapsho
         })();
         return s.cleanup;
       }
-      if(failed||s.closed||s.invalid)throw failure();
+      if(failed||s.closed||s.invalid)throw diagnostics.record(null,role,message.op==='manual_prepare'?'prepare':'acquire_rpc','rejected','xnp_manual_owner_unavailable');
       if(message.op==='manual_inventory'){
         const value=await checked(role);
         return {windowCount:value.windowCount,bootstrapCount:value.bootstrapCount};
@@ -97,11 +98,11 @@ export function createXManualOwnerPort({enabled=false,owner,createOwners,snapsho
           const other=state[role==='reader'?'collector':'reader'];
           if(other.pins&&(other.pins.ownerId===s.pins.ownerId||other.pins.profileId===s.pins.profileId))throw failure();
           return {handle:s.handle,pins:s.pins};
-        }catch{invalidate(role);if(s.handle)await s.actor.abort(s.handle).catch(()=>{});throw failure();}
+        }catch(error){const cause=diagnostics.record(error,role,'prepare','unavailable','xnp_manual_owner_unavailable');invalidate(role);if(s.handle)await s.actor.abort(s.handle).catch(()=>{});throw cause;}
       }
       if(!s.pins)throw failure();
       if(message.op==='manual_inspect'){
-        const value=await checked(role,true);
+        const value=await checked(role,true,s.acquired?'inspect_after':'inspect_before');
         if(s.invalid||failed)throw failure();
         return {pins:s.pins,windowCount:value.windowCount,bootstrapCount:value.bootstrapCount,paused:!s.acquired,invalid:false,headless:value.headless};
       }
@@ -112,7 +113,7 @@ export function createXManualOwnerPort({enabled=false,owner,createOwners,snapsho
           const wire=await s.actor.acquire(s.handle,message.request);
           if(failed||s.invalid){wire.fill(0);throw failure();}
           return wire;
-        }catch{invalidate(role);throw failure();}
+        }catch(error){const cause=diagnostics.record(error,role,'acquire_rpc','unavailable','xnp_manual_owner_unavailable');invalidate(role);throw cause;}
       }
       throw failure();
     },

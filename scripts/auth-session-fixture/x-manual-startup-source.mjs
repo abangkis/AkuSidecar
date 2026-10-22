@@ -4,6 +4,7 @@
 // never inferred from a caller's JSON, this schema or successful offline tests.
 import { performance } from 'node:perf_hooks';
 import { QA_BOUND_QUALIFICATION } from './x-qa-bound-observation.mjs';
+import { startupFailure,preserveStartup } from './x-manual-startup-diagnostic.mjs';
 
 export const MANUAL_STARTUP_SCHEMA = 'aku.x.manual-startup-receipt.v1';
 const REQUEST = ['challenge', 'role', 'ownerId', 'profileId', 'contextId', 'targetId', 'frameId', 'documentId'];
@@ -28,31 +29,38 @@ function record(input, fields) {
 // run(request, {signal,onPrivateStartup}) must use the fixed QABoundObservation
 // recipe on the actual already-pinned startup document. It may not echo request
 // pins as observations or return an old sanitized report in place of the sink.
-export function createManualStartupCapture({ run, now = () => performance.now(), wallNow = () => Date.now() }) {
+export function createManualStartupCapture({ run, role='unknown', diagnostics, now = () => performance.now(), wallNow = () => Date.now() }) {
   if (typeof run !== 'function' || typeof now !== 'function' || typeof wallNow !== 'function') fail();
   let used = false;
   return async (input, signal) => {
     if (used) fail();
     used = true;
-    let sample = null, calls = 0, invalid = false;
+    let sample = null, calls = 0, invalid = false,actualRole=role;
+    const reject=(phase,reason)=>{throw startupFailure(actualRole,phase,reason);};
     try {
       const request = Object.freeze(record(input, REQUEST));
       if (!REQUEST.every(k => ref(request[k])) || !['reader', 'collector'].includes(request.role) || signal?.aborted) fail();
+      actualRole=request.role;
       const start = now(), wall = wallNow();
       if (!Number.isFinite(start) || start < 0 || !Number.isFinite(wall) || wall < 0) fail();
       let last = start;
       const tick = () => {
         const value = now();
-        if (!Number.isFinite(value) || value < last || value - start >= 2000 || signal?.aborted) fail();
+        if(signal?.aborted)reject('joint','canceled');
+        if (!Number.isFinite(value) || value < last)reject('wire_decode','time_invalid');
+        if(value-start>=2000)reject('joint','deadline');
         last = value;
         return value;
       };
       await run(request, { signal, onPrivateStartup: value => {
-        if (++calls !== 1) { invalid = true; fail(); }
+        if (++calls !== 1) { invalid = true; reject('wire_decode','sample_duplicate'); }
         sample = record(value, SAMPLE);
         tick();
       } });
       const end = tick();
+      if(!sample)reject('bound_finish','sample_missing');
+      if(REQUEST.filter(k=>!['challenge','role'].includes(k)).some(k=>sample[k]!==request[k]))reject('wire_decode','scope_mismatch');
+      if(!Number.isFinite(sample.identityAt)||!Number.isFinite(sample.settingsAt)||sample.identityAt<start||sample.settingsAt<sample.identityAt||sample.settingsAt>end)reject('wire_decode','time_invalid');
       if (!sample || invalid || typeof sample.accountId !== 'string' || !/^[1-9][0-9]{0,19}$/.test(sample.accountId) ||
           !SAMPLE.filter(k => !['identityAt', 'settingsAt'].includes(k)).every(k => ref(sample[k])) ||
           REQUEST.filter(k => !['challenge', 'role'].includes(k)).some(k => sample[k] !== request[k]) ||
@@ -69,7 +77,9 @@ export function createManualStartupCapture({ run, now = () => performance.now(),
       }), 'utf8');
       if (wire.byteLength > 16384) { wire.fill(0); fail(); }
       return wire;
-    } catch { fail(); }
+    } catch(error) {
+      throw diagnostics?diagnostics.record(error,actualRole,'wire_decode','invalid_shape'):preserveStartup(error,actualRole,'wire_decode','invalid_shape');
+    }
     finally { sample = null; }
   };
 }

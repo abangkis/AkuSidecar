@@ -184,8 +184,14 @@ func (b *xManualPilotWindowsBackend) rpc(ctx context.Context, role, op string, f
 	// Only this fixed role protocol bypasses rpcMu. Both roles must enter the
 	// initial identity rendezvous together on a shared Node. Writes and replies
 	// retain the existing bridge's per-message correlation and pipe locks.
-	if r.bridge.rpcRoundTrip(ctx, op, input, out) != nil {
-		return errors.New("x-owner-transport-unavailable")
+	if err := r.bridge.rpcRoundTrip(ctx, op, input, out); err != nil {
+		if detail, ok := nativePilotInitialCode(err.Error()); ok {
+			return &nativePilotInitialError{detail}
+		}
+		if ctx.Err() != nil {
+			return nativePilotInitialWrap(ctx.Err(), "pair", "joint")
+		}
+		return nativePilotInitialWrap(nil, "unknown", "acquire_rpc")
 	}
 	return nil
 }
