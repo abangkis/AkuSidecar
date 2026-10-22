@@ -2,10 +2,11 @@ package reasoning
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/abangkis/AkuSidecar/internal/config"
@@ -24,30 +25,39 @@ func calibrationTestConfig(t *testing.T, serverURL string) config.Config {
 	}
 }
 
-func TestRunCalibrationOllamaSuccess(t *testing.T) {
+func TestRunCalibrationRejectsRetiredOllamaModelBeforeEndpoint(t *testing.T) {
+	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/show" {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = fmt.Fprint(w, "{\"capabilities\":[\"completion\",\"thinking\"]}")
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, "{\"message\":{\"content\":\"{\\\"ok\\\":true,\\\"label\\\":\\\"calibration\\\"}\"},\"done\":true,\"done_reason\":\"stop\",\"prompt_eval_count\":4,\"eval_count\":6}")
+		requests.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
 
-	report, err := RunCalibration(context.Background(), calibrationTestConfig(t, server.URL))
-	if err != nil {
-		t.Fatalf("calibration error=%v report=%+v", err, report)
+	cfg := calibrationTestConfig(t, server.URL)
+	report, err := RunCalibration(context.Background(), cfg)
+	var unsupported *UnsupportedModelError
+	if !errors.As(err, &unsupported) || unsupported.Provider != "ollama" || unsupported.ModelID != "nemotron-3.5-lightning" {
+		t.Fatalf("error=%T %v, want typed retired-model error", err, err)
 	}
-	if !report.Result.Success {
-		t.Fatalf("expected success report=%+v", report)
+	if requests.Load() != 0 {
+		t.Fatalf("unsupported calibration contacted endpoint %d times", requests.Load())
 	}
-	if report.ModelID != "nemotron-3.5-lightning" || report.AdapterID != "ollama" {
-		t.Fatalf("report identity=%+v", report)
+	if report.ModelID != "" || cfg.Reasoning.Evaluation.Model != "nemotron-3.5-lightning" {
+		t.Fatalf("failed calibration report=%+v config model=%q", report, cfg.Reasoning.Evaluation.Model)
 	}
-	if report.Capability.ReasoningTier == "" {
-		t.Fatalf("capability observations missing: %+v", report.Capability)
+	if !strings.Contains(err.Error(), "no model substitution was made") {
+		t.Fatalf("unsupported error is not actionable: %v", err)
+	}
+}
+
+func TestRunCalibrationRejectsCodexBeforeExecutableResolution(t *testing.T) {
+	cfg := config.Config{Reasoning: config.ReasoningConfig{Provider: "codex-app-server"}}
+	report, err := RunCalibration(context.Background(), cfg)
+	if !errors.Is(err, ErrCalibrationUnsupported) {
+		t.Fatalf("error=%v, want ErrCalibrationUnsupported", err)
+	}
+	if report.ModelID != "" {
+		t.Fatalf("unsupported calibration emitted report: %+v", report)
 	}
 }
 

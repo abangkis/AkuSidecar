@@ -86,7 +86,7 @@ func (p *boundClientPool) get(ctx context.Context, profileID inference.ProfileID
 	}
 	optionID := model.ExactReasoningOption()
 	assurance := inference.AssurancePolicy(strings.TrimSpace(model.Assurance))
-	key := string(profileID) + "|" + modelID + "|" + optionID + "|" + model.MinimumTier() + "|" + string(assurance)
+	key := string(profileID) + "|" + modelID + "|" + optionID + "|" + model.MinimumTier() + "|" + string(assurance) + "|" + fmt.Sprint(modelMaxOutputTokens(model))
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
@@ -156,8 +156,10 @@ func closeInferenceClient(client inference.Client) error {
 	return nil
 }
 
-// Close releases cached bound-client leases exactly once, then closes the
-// composition-root adapter. A bound client's Close never owns the transport.
+// Close closes Codex first so its owned App Server can interrupt active
+// preflight and generation work, then drains binding flights and releases
+// cached leases. Other adapters retain the prior wait-before-close order.
+// A bound client's Close never owns the transport.
 func (p *boundClientPool) Close() error {
 	if p == nil {
 		return nil
@@ -166,6 +168,15 @@ func (p *boundClientPool) Close() error {
 		p.mu.Lock()
 		p.closed = true
 		p.mu.Unlock()
+		adapterClosed := false
+		if p.adapterID == "codex-app-server" {
+			if closer, ok := p.adapter.(interface{ Close() error }); ok {
+				adapterClosed = true
+				if err := closer.Close(); err != nil && p.closeErr == nil {
+					p.closeErr = err
+				}
+			}
+		}
 		p.flightWG.Wait()
 		p.mu.Lock()
 		clients := make([]inference.Client, 0, len(p.clients))
@@ -179,7 +190,11 @@ func (p *boundClientPool) Close() error {
 				p.closeErr = err
 			}
 		}
-		if closer, ok := p.adapter.(interface{ Close() error }); ok {
+		if !adapterClosed {
+			closer, ok := p.adapter.(interface{ Close() error })
+			if !ok {
+				return
+			}
 			if err := closer.Close(); err != nil && p.closeErr == nil {
 				p.closeErr = err
 			}
@@ -204,7 +219,7 @@ func invokeBound(ctx context.Context, pool *boundClientPool, profileID inference
 		ProfileID: profileID, Workload: string(profileID),
 		SystemPrompt: "Return only the requested structured JSON result.", UserPrompt: prompt,
 		ResponseFormat:  inference.JSONSchema(string(profileID), responseFormatName(profileID), "AkuSidecar structured result", rawSchema, true),
-		MaxOutputTokens: modelMaxOutputTokens(model),
+		MaxOutputTokens: requestMaxOutputTokens(pool.adapterID, model),
 	})
 	callerLatency := time.Since(started)
 	if err != nil {
@@ -215,6 +230,16 @@ func invokeBound(ctx context.Context, pool *boundClientPool, profileID inference
 	}
 	usage := modelUsageFromInferenceEvidence(response.Usage, &response.Receipt, response.Timing, response.DurationMillis, callerLatency)
 	return response.Text, usage, callerLatency, nil
+}
+
+// Codex App Server rejects bounded output requests. Keep the workload profile
+// limit positive for capability resolution, but send the connector's required
+// zero/unset request value. Other providers continue to receive their limits.
+func requestMaxOutputTokens(adapterID string, model config.ModelConfig) int {
+	if adapterID == "codex-app-server" {
+		return 0
+	}
+	return modelMaxOutputTokens(model)
 }
 
 func modelUsageFromInferenceFailure(err error, callerLatency time.Duration) domain.ModelUsage {

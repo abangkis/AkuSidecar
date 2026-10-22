@@ -17,6 +17,38 @@ import (
 // ollamaDefaultEndpoint is used when the reasoning endpoint is left unset.
 const ollamaDefaultEndpoint = "http://127.0.0.1:11434"
 
+// UnsupportedModelError reports a configured provider model that the SDK does
+// not currently expose in its maintained stable catalog. It deliberately
+// leaves the user's configured ID untouched and never opts into experimental
+// descriptors.
+type UnsupportedModelError struct {
+	Provider string
+	ModelID  string
+}
+
+func (e *UnsupportedModelError) Error() string {
+	if e == nil {
+		return "configured model is unsupported"
+	}
+	return fmt.Sprintf("%s model %q is not in the SDK maintained stable catalog; no model substitution was made", e.Provider, e.ModelID)
+}
+
+// ValidateOllamaModelSupport checks only the SDK's stable provider-owned
+// catalog. Experimental models require an explicit, separately designed
+// opt-in and are not accepted by this integration.
+func ValidateOllamaModelSupport(modelID string) error {
+	requested := strings.TrimSpace(modelID)
+	if requested == "" {
+		return fmt.Errorf("ollama model ID is required")
+	}
+	for _, descriptor := range ollama.KnownModelCatalog().List() {
+		if requested == descriptor.ModelID || requested == descriptor.ProviderModel {
+			return nil
+		}
+	}
+	return &UnsupportedModelError{Provider: "ollama", ModelID: requested}
+}
+
 // ollamaProfileOrder keeps the published profile catalog deterministic.
 var ollamaProfileOrder = []inference.ProfileID{
 	"structured_fast", "short_reasoning", "general_synthesis", "deep_reasoning",
@@ -40,6 +72,7 @@ type Ollama struct {
 	planSchema    any
 	resultSchema  any
 	transport     *ollama.Adapter
+	catalog       inference.ModelCatalog
 	clients       *boundClientPool
 	order         []inference.ProfileID
 }
@@ -55,6 +88,14 @@ func NewOllama(cfg config.Config) (*Ollama, error) {
 	}
 	if cfg.Reasoning.Planning.StableModelID() == "" {
 		return nil, fmt.Errorf("ollama planning model is required")
+	}
+	if err := ValidateOllamaModelSupport(cfg.Reasoning.Planning.StableModelID()); err != nil {
+		return nil, err
+	}
+	if evaluationID := cfg.Reasoning.Evaluation.StableModelID(); evaluationID != "" {
+		if err := ValidateOllamaModelSupport(evaluationID); err != nil {
+			return nil, err
+		}
 	}
 	planSchema, err := readSchema(filepath.Join(cfg.Root, "schemas", "acquisition-plan.schema.json"))
 	if err != nil {
@@ -91,6 +132,7 @@ func NewOllama(cfg config.Config) (*Ollama, error) {
 		planSchema:    planSchema,
 		resultSchema:  resultSchema,
 		transport:     transport,
+		catalog:       transport.ModelCatalog(),
 		clients:       clients,
 		order:         ollamaProfileOrder,
 	}
@@ -102,9 +144,9 @@ func (o *Ollama) Name() string { return o.name }
 func (o *Ollama) ProfileOptions() []ProfileOption {
 	options := make([]ProfileOption, 0, len(o.order))
 	model := o.planning.Model
-	modelID, modelErr := ollamaModelID(o.transport.ModelCatalog(), o.planning)
+	modelID, modelErr := ollamaModelID(o.catalog, o.planning)
 	if modelErr == nil {
-		if wire, wireErr := ollamaWireModel(o.transport.ModelCatalog(), modelID); wireErr == nil {
+		if wire, wireErr := ollamaWireModel(o.catalog, modelID); wireErr == nil {
 			model = wire
 		}
 	}
@@ -126,7 +168,7 @@ func (o *Ollama) ProfileOptions() []ProfileOption {
 func (o *Ollama) ResolveProfile(id string) (config.ModelConfig, bool) {
 	for _, option := range o.ProfileOptions() {
 		if option.ID == id {
-			modelID, err := ollamaModelID(o.transport.ModelCatalog(), o.planning)
+			modelID, err := ollamaModelID(o.catalog, o.planning)
 			if err != nil {
 				return config.ModelConfig{}, false
 			}
@@ -184,12 +226,12 @@ func (o *Ollama) AnalyzeWithModel(ctx context.Context, run domain.Run, observati
 }
 
 func (o *Ollama) invoke(parent context.Context, profileID inference.ProfileID, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
-	modelID, err := ollamaModelID(o.transport.ModelCatalog(), model)
+	modelID, err := ollamaModelID(o.catalog, model)
 	if err != nil {
 		return "", domain.ModelUsage{}, 0, err
 	}
 	if o.warmupTimeout > 0 {
-		wireModel, err := ollamaWireModel(o.transport.ModelCatalog(), modelID)
+		wireModel, err := ollamaWireModel(o.catalog, modelID)
 		if err != nil {
 			return "", domain.ModelUsage{}, 0, err
 		}
@@ -256,7 +298,7 @@ func ollamaModelID(catalog inference.ModelCatalog, model config.ModelConfig) (st
 			return descriptor.ModelID, nil
 		}
 	}
-	return "", fmt.Errorf("unknown Ollama model %q; use a provider-owned configured model ID", requested)
+	return "", &UnsupportedModelError{Provider: "ollama", ModelID: requested}
 }
 
 func ollamaWireModel(catalog inference.ModelCatalog, modelID string) (string, error) {

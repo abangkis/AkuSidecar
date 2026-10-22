@@ -14,16 +14,25 @@ import (
 )
 
 type poolTestAdapter struct {
-	bindCalls      atomic.Int32
-	preflightCalls atomic.Int32
-	closeCalls     atomic.Int32
-	failPreflight  atomic.Int32
-	preflightStart chan struct{}
-	release        chan struct{}
-	client         *poolTestClient
-	catalog        inference.ModelCatalog
-	responseTiming *inference.ResponseTiming
-	durationMillis int64
+	bindCalls       atomic.Int32
+	preflightCalls  atomic.Int32
+	closeCalls      atomic.Int32
+	failPreflight   atomic.Int32
+	adapterID       string
+	preflightStart  chan struct{}
+	release         chan struct{}
+	closeSignal     chan struct{}
+	closeOnce       sync.Once
+	blockClose      bool
+	closeEntered    chan struct{}
+	closeRelease    chan struct{}
+	blockGenerate   bool
+	generateStart   chan struct{}
+	generateRelease chan struct{}
+	client          *poolTestClient
+	catalog         inference.ModelCatalog
+	responseTiming  *inference.ResponseTiming
+	durationMillis  int64
 }
 
 type poolTestClient struct {
@@ -31,6 +40,8 @@ type poolTestClient struct {
 	closeOnce   sync.Once
 	closeCalls  atomic.Int32
 	generateErr error
+	requestMu   sync.Mutex
+	lastRequest inference.Request
 	usage       inference.Usage
 	receipt     inference.ExecutionReceipt
 }
@@ -49,19 +60,41 @@ func newPoolTestAdapter() *poolTestAdapter {
 	if err != nil {
 		panic(err)
 	}
-	adapter := &poolTestAdapter{preflightStart: make(chan struct{}), release: make(chan struct{}), catalog: catalog}
+	adapter := &poolTestAdapter{
+		preflightStart: make(chan struct{}), release: make(chan struct{}),
+		closeSignal: make(chan struct{}), generateStart: make(chan struct{}),
+		generateRelease: make(chan struct{}), closeEntered: make(chan struct{}),
+		closeRelease: make(chan struct{}), catalog: catalog,
+	}
 	adapter.client = &poolTestClient{adapter: adapter}
 	return adapter
 }
 
-func (a *poolTestAdapter) ID() string                           { return "pool-test" }
+func (a *poolTestAdapter) ID() string {
+	if a.adapterID != "" {
+		return a.adapterID
+	}
+	return "pool-test"
+}
 func (a *poolTestAdapter) Version() string                      { return "1" }
 func (a *poolTestAdapter) ModelCatalog() inference.ModelCatalog { return a.catalog }
 func (a *poolTestAdapter) BindResolved(inference.ResolvedBinding) (inference.Client, error) {
 	a.bindCalls.Add(1)
 	return a.client, nil
 }
-func (a *poolTestAdapter) Close() error { a.closeCalls.Add(1); return nil }
+func (a *poolTestAdapter) Close() error {
+	a.closeOnce.Do(func() {
+		a.closeCalls.Add(1)
+		close(a.closeSignal)
+		if a.blockClose {
+			close(a.closeEntered)
+			<-a.closeRelease
+		}
+	})
+	return nil
+}
+
+func (a *poolTestAdapter) Preflight(ctx context.Context) error { return a.preflight(ctx) }
 
 func (a *poolTestAdapter) preflight(ctx context.Context) error {
 	a.preflightCalls.Add(1)
@@ -76,18 +109,43 @@ func (a *poolTestAdapter) preflight(ctx context.Context) error {
 	select {
 	case <-a.release:
 		return nil
+	case <-a.closeSignal:
+		return errors.New("test adapter closed")
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 }
 
 func (c *poolTestClient) Preflight(ctx context.Context) error { return c.adapter.preflight(ctx) }
-func (c *poolTestClient) Generate(context.Context, inference.Request) (*inference.Response, error) {
+func (c *poolTestClient) Generate(ctx context.Context, request inference.Request) (*inference.Response, error) {
+	c.requestMu.Lock()
+	c.lastRequest = request
+	c.requestMu.Unlock()
 	if c.generateErr != nil {
 		return nil, c.generateErr
 	}
+	if c.adapter.blockGenerate {
+		select {
+		case <-c.adapter.generateStart:
+		default:
+			close(c.adapter.generateStart)
+		}
+		select {
+		case <-c.adapter.generateRelease:
+		case <-c.adapter.closeSignal:
+			return nil, errors.New("test adapter closed during generate")
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	response := &inference.Response{Text: "{}", DurationMillis: c.adapter.durationMillis, Timing: c.adapter.responseTiming, Usage: c.usage, Receipt: c.receipt}
 	return response, nil
+}
+
+func (c *poolTestClient) lastRequestSnapshot() inference.Request {
+	c.requestMu.Lock()
+	defer c.requestMu.Unlock()
+	return c.lastRequest
 }
 func (c *poolTestClient) Close() error {
 	c.closeOnce.Do(func() { c.closeCalls.Add(1) })
@@ -163,6 +221,84 @@ func TestBoundClientPoolFailureIsRetryable(t *testing.T) {
 		t.Fatalf("bind=%d preflight=%d, want two attempts", adapter.bindCalls.Load(), adapter.preflightCalls.Load())
 	}
 	_ = pool.Close()
+}
+
+func TestBoundClientPoolCloseInterruptsCodexPreflight(t *testing.T) {
+	adapter := newPoolTestAdapter()
+	adapter.adapterID = "codex-app-server"
+	pool, err := newBoundClientPool(adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	getDone := make(chan error, 1)
+	go func() {
+		_, err := pool.get(context.Background(), ExecutionProfileEvaluation, poolTestModel(), "test-model")
+		getDone <- err
+	}()
+	select {
+	case <-adapter.preflightStart:
+	case <-time.After(time.Second):
+		t.Fatal("binding did not reach preflight")
+	}
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- pool.Close() }()
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("pool close error=%v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("pool close waited behind blocked Codex preflight")
+	}
+	select {
+	case err := <-getDone:
+		if err == nil {
+			t.Fatal("preflight unexpectedly succeeded after adapter close")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Codex preflight did not observe adapter close")
+	}
+	if adapter.closeCalls.Load() != 1 {
+		t.Fatalf("adapter close calls=%d, want one", adapter.closeCalls.Load())
+	}
+}
+
+func TestInvokeBoundKeepsPositiveProfileBudgetAndUsesConnectorRequestContract(t *testing.T) {
+	for _, test := range []struct {
+		adapterID string
+		want      int
+	}{
+		{adapterID: "codex-app-server", want: 0},
+		{adapterID: "pool-test", want: 4096},
+	} {
+		t.Run(test.adapterID, func(t *testing.T) {
+			adapter := newPoolTestAdapter()
+			adapter.adapterID = test.adapterID
+			close(adapter.release)
+			pool, err := newBoundClientPool(adapter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			model := poolTestModel()
+			model.MaxOutputTokens = 4096
+			profile, err := newExecutionProfile(ExecutionProfileEvaluation, model)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if profile.Limits.MaxOutputTokens != 4096 {
+				t.Fatalf("profile max output tokens=%d, want 4096", profile.Limits.MaxOutputTokens)
+			}
+			if _, _, _, err := invokeBound(context.Background(), pool, ExecutionProfileEvaluation, "prompt", json.RawMessage(`{"type":"object"}`), model, "test-model"); err != nil {
+				t.Fatal(err)
+			}
+			if got := adapter.client.lastRequestSnapshot().MaxOutputTokens; got != test.want {
+				t.Fatalf("request max output tokens=%d, want %d", got, test.want)
+			}
+			if err := pool.Close(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
 }
 
 func TestInvokeBoundPreservesCallerAndResponseTiming(t *testing.T) {

@@ -176,6 +176,154 @@ func TestCodexAppServerCanSwitchValidatedExecutableWithoutReplacingProvider(t *t
 	}
 }
 
+func TestCodexCloseInterruptsBlockedPreflight(t *testing.T) {
+	adapter := newPoolTestAdapter()
+	adapter.adapterID = "codex-app-server"
+	pool, err := newBoundClientPool(adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &CodexAppServer{adapter: adapter, clients: pool}
+	preflightDone := make(chan error, 1)
+	go func() { preflightDone <- provider.Preflight(context.Background()) }()
+	select {
+	case <-adapter.preflightStart:
+	case <-time.After(time.Second):
+		t.Fatal("preflight did not block in adapter")
+	}
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- provider.Close() }()
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("close error=%v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("provider close waited behind preflight")
+	}
+	select {
+	case err := <-preflightDone:
+		if err == nil {
+			t.Fatal("preflight unexpectedly succeeded after close")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("preflight did not observe adapter close")
+	}
+}
+
+func TestCodexCloseInterruptsGenerateAndLeavesPositiveProfileBudgetUnenforced(t *testing.T) {
+	adapter := newPoolTestAdapter()
+	adapter.adapterID = "codex-app-server"
+	adapter.catalog = sdkcodex.KnownModelCatalog()
+	adapter.blockGenerate = true
+	close(adapter.release)
+	pool, err := newBoundClientPool(adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &CodexAppServer{adapter: adapter, clients: pool}
+	model := config.ModelConfig{
+		ModelID: string(sdkcodex.ModelLuna), Model: "gpt-5.6-luna",
+		MinReasoningTier: "high", ReasoningOptionID: "high", MaxOutputTokens: 4096,
+	}
+	invokeDone := make(chan error, 1)
+	go func() {
+		_, _, _, err := provider.invoke(context.Background(), ExecutionProfilePlanning, "prompt", json.RawMessage(`{"type":"object"}`), model)
+		invokeDone <- err
+	}()
+	select {
+	case <-adapter.client.adapter.generateStart:
+	case <-time.After(time.Second):
+		t.Fatal("generate did not reach the blocked adapter call")
+	}
+	if got := adapter.client.lastRequestSnapshot().MaxOutputTokens; got != 0 {
+		t.Fatalf("Codex request MaxOutputTokens=%d, want 0", got)
+	}
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- provider.Close() }()
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("close error=%v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("provider close waited behind active generation")
+	}
+	select {
+	case err := <-invokeDone:
+		if err == nil {
+			t.Fatal("generation unexpectedly succeeded after adapter close")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("generation did not observe adapter close")
+	}
+}
+
+func TestCodexCloseSerializesWithExecutableSwap(t *testing.T) {
+	initial := filepath.Join(t.TempDir(), "initial-codex.exe")
+	replacement := filepath.Join(t.TempDir(), "replacement-codex.exe")
+	adapter := newPoolTestAdapter()
+	adapter.adapterID = "codex-app-server"
+	adapter.blockClose = true
+	pool, err := newBoundClientPool(adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transportCfg := sdkcodex.Config{
+		WorkingDir: t.TempDir(), Timeout: time.Second, ClientName: "test", ClientVersion: "test",
+		Start: func() (sdkcodex.Session, error) { return sdkcodex.Session{}, nil },
+	}
+	provider := &CodexAppServer{executable: initial, adapter: adapter, clients: pool, transportCfg: transportCfg}
+	start := make(chan struct{})
+	useDone := make(chan struct{})
+	closeDone := make(chan error, 1)
+	go func() { <-start; provider.UseExecutable(replacement); close(useDone) }()
+	close(start)
+	select {
+	case <-adapter.closeEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("executable swap did not enter retired adapter close")
+	}
+	go func() { closeDone <- provider.Close() }()
+	select {
+	case err := <-closeDone:
+		t.Fatalf("provider close returned before retired adapter close finished: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	preflightDone := make(chan error, 1)
+	go func() { preflightDone <- provider.Preflight(context.Background()) }()
+	select {
+	case err := <-preflightDone:
+		if err == nil || !strings.Contains(err.Error(), "closed") {
+			t.Fatalf("preflight during close=%v, want immediate closed result", err)
+		}
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("close/swap held the lifecycle lock while retiring the old adapter")
+	}
+	close(adapter.closeRelease)
+	select {
+	case <-useDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("executable swap did not finish")
+	}
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("close error=%v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("close did not drain executable swap")
+	}
+	if adapter.closeCalls.Load() != 1 {
+		t.Fatalf("retired adapter close calls=%d, want one", adapter.closeCalls.Load())
+	}
+	before := provider.ExecutablePath()
+	provider.UseExecutable(filepath.Join(t.TempDir(), "after-close.exe"))
+	if got := provider.ExecutablePath(); got != before {
+		t.Fatalf("closed provider reopened executable from %q to %q", before, got)
+	}
+}
+
 func fakeCodexAppServer() {
 	scanner := bufio.NewScanner(os.Stdin)
 	thread := 0
@@ -200,6 +348,11 @@ func fakeCodexAppServer() {
 			}
 			fakeRPC(map[string]any{"id": id, "result": map[string]any{"userAgent": "fake"}})
 		case "thread/start":
+			if marker := os.Getenv("AKU_FAKE_CODEX_SYSTEM_PROMPT_MARKER"); marker != "" {
+				params, _ := request["params"].(map[string]any)
+				instruction, _ := params["developerInstructions"].(string)
+				_ = os.WriteFile(marker, []byte(instruction), 0o600)
+			}
 			if marker := os.Getenv("AKU_FAKE_CODEX_EXIT_ONCE"); marker != "" {
 				if _, err := os.Stat(marker); os.IsNotExist(err) {
 					_ = os.WriteFile(marker, []byte("exited once"), 0o600)
@@ -216,6 +369,9 @@ func fakeCodexAppServer() {
 			turn++
 			turnID := fmt.Sprintf("turn-%d", turn)
 			params, _ := request["params"].(map[string]any)
+			if marker := os.Getenv("AKU_FAKE_CODEX_TURN_MARKER"); marker != "" {
+				_ = os.WriteFile(marker, []byte("turn started"), 0o600)
+			}
 			threadID, _ := params["threadId"].(string)
 			fakeRPC(map[string]any{"id": id, "result": map[string]any{"turn": map[string]any{"id": turnID}}})
 			if os.Getenv("AKU_FAKE_CODEX_HANG_TURN") == fmt.Sprint(turn) {
@@ -498,6 +654,44 @@ func TestCodexAppServerUsesOneManagedStructuredTransport(t *testing.T) {
 	}
 	if !provider.transport.SessionActive() || provider.transport.NextRequestID() < 10 {
 		t.Fatalf("managed process was not reused: nextID=%d", provider.transport.NextRequestID())
+	}
+}
+
+func TestCodexSystemPromptIsSentAsDeveloperInstructions(t *testing.T) {
+	t.Setenv("AKU_FAKE_CODEX_APP_SERVER", "1")
+	marker := filepath.Join(t.TempDir(), "developer-instructions")
+	t.Setenv("AKU_FAKE_CODEX_SYSTEM_PROMPT_MARKER", marker)
+	provider := newFakeCodexAppServer(t)
+	defer provider.Close()
+	run, observation := fakeAppServerInput()
+	if _, _, err := provider.Plan(context.Background(), run, observation, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "Return only the requested structured JSON result." {
+		t.Fatalf("developerInstructions=%q", string(got))
+	}
+}
+
+func TestCodexRejectsExternalSchemaBeforeStartingTurn(t *testing.T) {
+	t.Setenv("AKU_FAKE_CODEX_APP_SERVER", "1")
+	marker := filepath.Join(t.TempDir(), "turn-started")
+	t.Setenv("AKU_FAKE_CODEX_TURN_MARKER", marker)
+	provider := newFakeCodexAppServer(t)
+	defer provider.Close()
+	model := config.ModelConfig{
+		ModelID: string(sdkcodex.ModelLuna), Model: "gpt-5.6-luna",
+		MinReasoningTier: "high", ReasoningOptionID: "high",
+	}
+	_, _, _, err := provider.InvokeStructured(context.Background(), string(ExecutionProfilePlanning), "prompt", json.RawMessage(`{"type":"object","$ref":"https://example.invalid/schema.json"}`), model)
+	if err == nil {
+		t.Fatal("external schema reference unexpectedly reached provider")
+	}
+	if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+		t.Fatalf("fake provider started a turn for invalid schema; marker stat=%v", statErr)
 	}
 }
 

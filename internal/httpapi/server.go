@@ -291,7 +291,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}
 		report, calErr := reasoning.RunCalibration(ctx, cfg)
 		if report.ModelID == "" && calErr != nil {
-			return apiError{Status: http.StatusInternalServerError, Code: "calibration_failed", Message: calErr.Error()}
+			status, code := calibrationFailureStatus(calErr)
+			return apiError{Status: status, Code: code, Message: calErr.Error()}
 		}
 		if appendErr := appendCalibrationReport(s.calibrationLedgerPath(), report); appendErr != nil {
 			s.logger.Printf("calibration ledger append failed: %v", appendErr)

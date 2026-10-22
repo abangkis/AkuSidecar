@@ -3,15 +3,20 @@ package reasoning
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/ai4u-inference-sdk-go/inference"
+	sdkollama "github.com/abangkis/ai4u-inference-sdk-go/providers/ollama"
 )
 
 func ollamaTestServer(t *testing.T, wantThink any, content string) *httptest.Server {
@@ -30,8 +35,8 @@ func ollamaTestServer(t *testing.T, wantThink any, content string) *httptest.Ser
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode ollama payload: %v", err)
 		}
-		if payload.Model != "nemotron-3.5-lightning:latest" {
-			t.Errorf("model = %v, want nemotron-3.5-lightning:latest", payload.Model)
+		if payload.Model != "saluki:8k" {
+			t.Errorf("model = %v, want saluki:8k", payload.Model)
 		}
 		if wantThink != nil && payload.Think != wantThink {
 			t.Errorf("think = %v, want %v", payload.Think, wantThink)
@@ -55,25 +60,72 @@ func ollamaTestConfig(t *testing.T, server *httptest.Server) config.Config {
 			Provider:   "ollama",
 			Endpoint:   server.URL,
 			TimeoutMS:  5000,
-			Planning:   config.ModelConfig{Model: "nemotron-3.5-lightning:latest", Effort: "high"},
-			Evaluation: config.ModelConfig{Model: "nemotron-3.5-lightning:latest", Effort: "high"},
+			Planning:   testOllamaModelConfig(),
+			Evaluation: testOllamaModelConfig(),
 		},
+	}
+}
+
+func testOllamaModelConfig() config.ModelConfig {
+	return config.ModelConfig{ModelID: string(sdkollama.ModelSaluki8K), Model: string(sdkollama.ModelSaluki8K), MinReasoningTier: "high", ReasoningOptionID: "xhigh", Effort: "high"}
+}
+
+// newOllamaTestProvider opts into one SDK experimental fixture explicitly for
+// tests. Production NewOllama intentionally accepts only the stable catalog.
+func newOllamaTestProvider(t *testing.T, cfg config.Config) *Ollama {
+	t.Helper()
+	endpoint := strings.TrimSpace(cfg.Reasoning.Endpoint)
+	if endpoint == "" {
+		endpoint = ollamaDefaultEndpoint
+	}
+	transport, err := sdkollama.New(sdkollama.Config{
+		BaseURL: endpoint, Timeout: time.Duration(cfg.Reasoning.TimeoutMS) * time.Millisecond,
+		MaxRetries: cfg.Reasoning.MaxRetries, KeepAliveSeconds: cfg.Reasoning.KeepAliveMinutes * 60,
+		NumCtx: cfg.Reasoning.NumCtx, MaxConcurrentInvocations: cfg.Reasoning.OllamaMaxConcurrentInvocations,
+		ExperimentalModelIDs: []sdkollama.ModelID{sdkollama.ModelSaluki8K},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clients, err := newBoundClientPool(transport)
+	if err != nil {
+		_ = transport.Close()
+		t.Fatal(err)
+	}
+	planSchema, err := readSchema(filepath.Join(cfg.Root, "schemas", "acquisition-plan.schema.json"))
+	if err != nil {
+		_ = clients.Close()
+		t.Fatal(err)
+	}
+	resultSchema, err := readSchema(filepath.Join(cfg.Root, "schemas", "reasoning-result.schema.json"))
+	if err != nil {
+		_ = clients.Close()
+		t.Fatal(err)
+	}
+	name := strings.TrimSpace(cfg.Reasoning.Provider)
+	if name == "" {
+		name = "ollama"
+	}
+	return &Ollama{
+		name: name, endpoint: endpoint, maxRetries: cfg.Reasoning.MaxRetries,
+		timeout:       time.Duration(cfg.Reasoning.TimeoutMS) * time.Millisecond,
+		warmupTimeout: time.Duration(cfg.Reasoning.WarmupTimeoutMS) * time.Millisecond,
+		planning:      cfg.Reasoning.Planning, evaluation: cfg.Reasoning.Evaluation,
+		planSchema: planSchema, resultSchema: resultSchema, transport: transport,
+		catalog: transport.ModelCatalog(), clients: clients, order: ollamaProfileOrder,
 	}
 }
 
 func TestOllamaProfileCatalog(t *testing.T) {
 	server := ollamaTestServer(t, nil, "")
-	provider, err := NewOllama(ollamaTestConfig(t, server))
-	if err != nil {
-		t.Fatal(err)
-	}
+	provider := newOllamaTestProvider(t, ollamaTestConfig(t, server))
 	defer provider.Close()
 	options := provider.ProfileOptions()
 	if len(options) != 4 {
 		t.Fatalf("options=%+v", options)
 	}
 	for _, id := range []string{"structured_fast", "short_reasoning", "general_synthesis", "deep_reasoning"} {
-		if model, ok := provider.ResolveProfile(id); !ok || model.Model != "nemotron-3.5-lightning:latest" || model.Effort == "" {
+		if model, ok := provider.ResolveProfile(id); !ok || model.Model != "saluki:8k" || model.Effort == "" {
 			t.Fatalf("profile %q model=%+v ok=%v", id, model, ok)
 		}
 	}
@@ -86,17 +138,13 @@ func TestOllamaProfileCatalog(t *testing.T) {
 }
 
 func TestOllamaDefaultsEndpointWhenUnset(t *testing.T) {
-	provider, err := NewOllama(config.Config{
+	provider := newOllamaTestProvider(t, config.Config{
 		Root: filepathRoot(t),
 		Reasoning: config.ReasoningConfig{
 			Provider: "ollama", TimeoutMS: 5000,
-			Planning:   config.ModelConfig{Model: "nemotron-3.5-lightning:latest", Effort: "high"},
-			Evaluation: config.ModelConfig{Model: "nemotron-3.5-lightning:latest", Effort: "high"},
+			Planning: testOllamaModelConfig(), Evaluation: testOllamaModelConfig(),
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer provider.Close()
 	if provider.endpoint != ollamaDefaultEndpoint {
 		t.Fatalf("endpoint=%q", provider.endpoint)
@@ -113,6 +161,34 @@ func TestOllamaRequiresPlanningModel(t *testing.T) {
 		},
 	}); err == nil || !strings.Contains(err.Error(), "ollama planning model") {
 		t.Fatalf("missing model error=%v", err)
+	}
+}
+
+func TestOllamaStableCatalogRejectionPreservesConfiguredIDAndSkipsEndpoint(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	cfg := ollamaTestConfig(t, server)
+	cfg.Reasoning.Planning = config.ModelConfig{Model: "nemotron-3.5-lightning:latest", Effort: "high"}
+	cfg.Reasoning.Evaluation = cfg.Reasoning.Planning
+	_, err := NewOllama(cfg)
+	var unsupported *UnsupportedModelError
+	if !errors.As(err, &unsupported) || unsupported.Provider != "ollama" || unsupported.ModelID != "nemotron-3.5-lightning:latest" {
+		t.Fatalf("error=%T %v, want typed unsupported-model error", err, err)
+	}
+	if requests.Load() != 0 {
+		t.Fatalf("unsupported model triggered %d endpoint requests", requests.Load())
+	}
+	if cfg.Reasoning.Planning.Model != "nemotron-3.5-lightning:latest" {
+		t.Fatalf("configured model was replaced: %+v", cfg.Reasoning.Planning)
+	}
+	if err := ValidateOllamaModelSupport("nemotron-3.5-lightning"); err == nil {
+		t.Fatal("retired stable ID unexpectedly accepted")
+	} else if !errors.As(err, &unsupported) || unsupported.ModelID != "nemotron-3.5-lightning" {
+		t.Fatalf("validation error=%T %v", err, err)
 	}
 }
 
@@ -146,20 +222,17 @@ func TestOllamaWarmsBeforeInvokeWhenWarmupConfigured(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider, err := NewOllama(config.Config{
+	provider := newOllamaTestProvider(t, config.Config{
 		Root: filepathRoot(t),
 		Reasoning: config.ReasoningConfig{
 			Provider:        "ollama-nemotron",
 			Endpoint:        server.URL,
 			TimeoutMS:       30000,
 			WarmupTimeoutMS: 30000,
-			Planning:        config.ModelConfig{Model: "nemotron-3.5-lightning:latest", Effort: "high"},
-			Evaluation:      config.ModelConfig{Model: "nemotron-3.5-lightning:latest", Effort: "high"},
+			Planning:        testOllamaModelConfig(),
+			Evaluation:      testOllamaModelConfig(),
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	defer provider.Close()
 
 	observation := domain.Observation{
@@ -174,28 +247,25 @@ func TestOllamaWarmsBeforeInvokeWhenWarmupConfigured(t *testing.T) {
 	if len(recorded) < 2 {
 		t.Fatalf("expected warm then invoke requests, got %d: %+v", len(recorded), recorded)
 	}
-	if !strings.Contains(recorded[0], "(warm preload)") {
+	if !strings.Contains(recorded[0], "(warm preload)") || !strings.HasPrefix(recorded[0], "think=false") {
 		t.Errorf("first request was not the warm call: %q", recorded[0])
 	}
-	if strings.HasPrefix(recorded[1], "think=false") || !strings.Contains(recorded[1], "content=") {
+	if !strings.HasPrefix(recorded[1], "think=true") || !strings.Contains(recorded[1], "content=") {
 		t.Errorf("second request was not the real invocation: %q", recorded[1])
 	}
 }
 
 func TestOllamaStructuredPlan(t *testing.T) {
 	content := `{"decision":"finish","reason":"enough bounded evidence"}`
-	server := ollamaTestServer(t, "high", content)
-	provider, err := NewOllama(ollamaTestConfig(t, server))
-	if err != nil {
-		t.Fatal(err)
-	}
+	server := ollamaTestServer(t, true, content)
+	provider := newOllamaTestProvider(t, ollamaTestConfig(t, server))
 	defer provider.Close()
 	run, observation := fakeAppServerInput()
 	plan, telemetry, err := provider.Plan(context.Background(), run, observation, nil)
 	if err != nil || plan.Decision != "finish" {
 		t.Fatalf("plan=%+v err=%v", plan, err)
 	}
-	if telemetry.Provider != "ollama" || telemetry.Model != "nemotron-3.5-lightning:latest" || telemetry.Effort != "high" || telemetry.Phase != "acquisition_planning" {
+	if telemetry.Provider != "ollama" || telemetry.Model != "saluki-8k" || telemetry.Effort != "high" || telemetry.Phase != "acquisition_planning" {
 		t.Fatalf("telemetry=%+v", telemetry)
 	}
 	if telemetry.InputTokens == nil || *telemetry.InputTokens != 10 {
@@ -213,11 +283,8 @@ func TestOllamaStructuredAnalyzeBindsEvidenceKeys(t *testing.T) {
 		CandidateAssessments: []domain.CandidateAssessment{{EvidenceKey: "candidate_001", TopicTags: []string{"ai"}, TopicFacets: []string{"ai_models"}, ContentType: "release", Novelty: .8, Urgency: .4, Actionability: .6, Materiality: .8, EvidenceStrength: .9, Rationale: "fixture", KnowledgeRelation: "new_information"}},
 		Limitations:          []string{},
 	})
-	server := ollamaTestServer(t, "high", conformReasoningFixture(t, raw))
-	provider, err := NewOllama(ollamaTestConfig(t, server))
-	if err != nil {
-		t.Fatal(err)
-	}
+	server := ollamaTestServer(t, true, conformReasoningFixture(t, raw))
+	provider := newOllamaTestProvider(t, ollamaTestConfig(t, server))
 	defer provider.Close()
 	run, observation := fakeAppServerInput()
 	result, telemetry, err := provider.Analyze(context.Background(), run, observation, nil)
@@ -238,10 +305,7 @@ func TestOllamaStructuredAnalyzeBindsEvidenceKeys(t *testing.T) {
 // the shared resolver.
 func TestOllamaCatalogSatisfiesBuiltinProfiles(t *testing.T) {
 	server := ollamaTestServer(t, nil, "")
-	provider, err := NewOllama(ollamaTestConfig(t, server))
-	if err != nil {
-		t.Fatal(err)
-	}
+	provider := newOllamaTestProvider(t, ollamaTestConfig(t, server))
 	defer provider.Close()
 	tier := map[string]inference.ReasoningEffort{
 		"off":    inference.ReasoningEffortNone,
@@ -265,7 +329,7 @@ func TestOllamaCatalogSatisfiesBuiltinProfiles(t *testing.T) {
 	}
 }
 
-func TestOllamaQwenXHighUsesNativeMaxAndRejectsExactXHigh(t *testing.T) {
+func TestOllamaSalukiXHighUsesNativeFlagAndRejectsUnsupportedMax(t *testing.T) {
 	var generations int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/show" {
@@ -275,42 +339,40 @@ func TestOllamaQwenXHighUsesNativeMaxAndRejectsExactXHigh(t *testing.T) {
 		}
 		var payload struct {
 			Model string `json:"model"`
-			Think string `json:"think"`
+			Think any    `json:"think"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode qwen payload: %v", err)
 		}
 		generations++
-		if payload.Model != "qwen3.8:27b" || payload.Think != "max" {
-			t.Errorf("qwen payload model=%q think=%q, want qwen3.8:27b/max", payload.Model, payload.Think)
+		if payload.Model != "saluki:8k" || payload.Think != true {
+			t.Errorf("Saluki payload model=%q think=%v, want saluki:8k/true", payload.Model, payload.Think)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprint(w, `{"message":{"content":"{\"decision\":\"finish\",\"reason\":\"ok\"}"},"done":true,"prompt_eval_count":1,"eval_count":1}`)
 	}))
 	defer server.Close()
 	base := ollamaTestConfig(t, server)
-	base.Reasoning.Planning = config.ModelConfig{ModelID: "qwen3.8-27b", MinReasoningTier: "xhigh"}
+	base.Reasoning.Planning = testOllamaModelConfig()
 	base.Reasoning.Evaluation = base.Reasoning.Planning
-	provider, err := NewOllama(base)
-	if err != nil {
-		t.Fatal(err)
-	}
+	provider := newOllamaTestProvider(t, base)
 	defer provider.Close()
-	if _, _, err := provider.Plan(context.Background(), domain.Run{ID: "qwen-max", Source: domain.SourceX}, domain.Observation{}, nil); err != nil {
-		t.Fatalf("xhigh requirement should resolve to native max: %v", err)
+	if _, _, err := provider.Plan(context.Background(), domain.Run{ID: "saluki-xhigh", Source: domain.SourceX}, domain.Observation{}, nil); err != nil {
+		t.Fatalf("xhigh requirement should resolve to native enabled thinking: %v", err)
 	}
 	if generations != 1 {
 		t.Fatalf("generation count=%d, want 1", generations)
 	}
 
-	base.Reasoning.Planning.ReasoningOptionID = "xhigh"
-	rejected, err := NewOllama(base)
-	if err != nil {
-		t.Fatal(err)
-	}
+	base.Reasoning.Planning.MinReasoningTier = "max"
+	base.Reasoning.Planning.ReasoningOptionID = "max"
+	rejected := newOllamaTestProvider(t, base)
 	defer rejected.Close()
-	if _, _, err := rejected.Plan(context.Background(), domain.Run{ID: "qwen-exact", Source: domain.SourceX}, domain.Observation{}, nil); err == nil {
-		t.Fatal("exact Qwen xhigh must fail closed before generation")
+	if _, _, err := rejected.Plan(context.Background(), domain.Run{ID: "saluki-max", Source: domain.SourceX}, domain.Observation{}, nil); err == nil {
+		t.Fatal("unsupported exact max must fail closed before generation")
+	}
+	if generations != 1 {
+		t.Fatalf("unsupported max reached generation endpoint; count=%d", generations)
 	}
 }
 
@@ -382,13 +444,15 @@ func TestProbeValidationDetail(t *testing.T) {
 	capturedBody = conformReasoningFixture(t, raw)
 
 	cfg := ollamaTestConfig(t, server)
-	provider, err := NewOllama(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	provider := newOllamaTestProvider(t, cfg)
 	defer provider.Close()
 	run, observation := fakeAppServerInput()
-	_, _, _ = provider.Analyze(context.Background(), run, observation, nil)
+	if _, _, err := provider.Analyze(context.Background(), run, observation, nil); err != nil {
+		t.Fatal(err)
+	}
+	if capturedSchema == nil {
+		t.Fatal("provider request did not include a structured schema")
+	}
 
 	schemaBytes, _ := json.Marshal(capturedSchema)
 	if detail := inference.ValidateJSONSchemaResponse(capturedBody, schemaBytes); detail != nil {

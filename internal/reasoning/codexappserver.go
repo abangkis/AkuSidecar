@@ -45,8 +45,12 @@ type CodexAppServer struct {
 	poolSize     int
 	transportCfg codexappserver.Config
 
-	exeMu  sync.Mutex
-	lifeMu sync.RWMutex
+	exeMu     sync.Mutex
+	lifeMu    sync.Mutex
+	swapMu    sync.Mutex
+	closeOnce sync.Once
+	closed    bool
+	closeErr  error
 }
 
 type boundedBuffer struct {
@@ -98,7 +102,7 @@ func NewCodexAppServer(cfg config.Config) (*CodexAppServer, error) {
 		Timeout:       provider.timeout,
 		ClientName:    "AkuSidecar",
 		ClientVersion: domain.ApplicationVersion,
-		Start:         provider.startSession,
+		Start:         provider.sessionStarter(executable, provider.pathDirs),
 	}
 	transport, err := newCodexTransport(transportConfig, cfg.Reasoning.CodexSessionPoolSize)
 	if err != nil {
@@ -135,9 +139,13 @@ func (c *CodexAppServer) Name() string { return "codex-app-server" }
 // The SDK deliberately creates no thread or turn, so this validates the local
 // runtime and signed-in session without consuming inference tokens.
 func (c *CodexAppServer) Preflight(ctx context.Context) error {
-	c.lifeMu.RLock()
-	defer c.lifeMu.RUnlock()
-	preflight, ok := c.adapter.(interface{ Preflight(context.Context) error })
+	c.lifeMu.Lock()
+	adapter, closed := c.adapter, c.closed
+	c.lifeMu.Unlock()
+	if closed || adapter == nil {
+		return errors.New("Codex App Server adapter is closed")
+	}
+	preflight, ok := adapter.(interface{ Preflight(context.Context) error })
 	if !ok {
 		return errors.New("Codex App Server adapter does not expose preflight")
 	}
@@ -159,25 +167,34 @@ func (c *CodexAppServer) DiscoverExecutable(ctx context.Context, requested strin
 }
 
 func (c *CodexAppServer) UseExecutable(executable string) {
+	c.swapMu.Lock()
+	defer c.swapMu.Unlock()
+	c.lifeMu.Lock()
+	if c.closed {
+		c.lifeMu.Unlock()
+		return
+	}
+	c.lifeMu.Unlock()
 	c.exeMu.Lock()
 	if filepath.Clean(executable) == filepath.Clean(c.executable) {
 		c.exeMu.Unlock()
 		return
 	}
 	c.exeMu.Unlock()
-	c.exeMu.Lock()
-	c.executable = executable
-	c.pathDirs = codexPathDirs(executable)
-	c.exeMu.Unlock()
-	// Recompose the transport so an opt-in SDK pool is not left permanently
-	// closed after an executable switch. Readers hold the lifecycle lock across
-	// invocation, preventing a close/rebind race with an in-flight request.
+
+	pathDirs := codexPathDirs(executable)
 	c.lifeMu.Lock()
-	defer c.lifeMu.Unlock()
-	if c.clients != nil {
-		_ = c.clients.Close()
+	needsTransport := c.adapter != nil || c.clients != nil
+	cfg := c.transportCfg
+	c.lifeMu.Unlock()
+	if !needsTransport && cfg.Start == nil {
+		c.exeMu.Lock()
+		c.executable, c.pathDirs = executable, pathDirs
+		c.exeMu.Unlock()
+		return
 	}
-	transport, err := newCodexTransport(c.transportCfg, c.poolSize)
+	cfg.Start = c.sessionStarter(executable, pathDirs)
+	transport, err := newCodexTransport(cfg, c.poolSize)
 	if err != nil {
 		return
 	}
@@ -186,11 +203,27 @@ func (c *CodexAppServer) UseExecutable(executable string) {
 		_ = transport.Close()
 		return
 	}
-	c.adapter, c.clients = transport, clients
+	c.lifeMu.Lock()
+	if c.closed {
+		c.lifeMu.Unlock()
+		_ = clients.Close()
+		return
+	}
+	oldClients, oldAdapter := c.clients, c.adapter
+	c.adapter, c.clients, c.transportCfg = transport, clients, cfg
 	if single, ok := transport.(*codexappserver.Adapter); ok {
 		c.transport = single
 	} else {
 		c.transport = nil
+	}
+	c.exeMu.Lock()
+	c.executable, c.pathDirs = executable, pathDirs
+	c.exeMu.Unlock()
+	c.lifeMu.Unlock()
+	if oldClients != nil {
+		_ = oldClients.Close()
+	} else if oldAdapter != nil {
+		_ = oldAdapter.Close()
 	}
 }
 
@@ -266,8 +299,6 @@ func (c *CodexAppServer) AnalyzeWithModel(ctx context.Context, run domain.Run, o
 }
 
 func (c *CodexAppServer) invoke(parent context.Context, profileID inference.ProfileID, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
-	c.lifeMu.RLock()
-	defer c.lifeMu.RUnlock()
 	modelID, ok := codexStableModelID(model.ModelID)
 	if !ok {
 		modelID, ok = codexStableModelID(model.Model)
@@ -275,7 +306,13 @@ func (c *CodexAppServer) invoke(parent context.Context, profileID inference.Prof
 	if !ok {
 		return "", domain.ModelUsage{}, 0, fmt.Errorf("unknown Codex App Server model %q; use a provider-owned stable model ID", model.StableModelID())
 	}
-	return invokeBound(parent, c.clients, profileID, prompt, schema, model, modelID)
+	c.lifeMu.Lock()
+	clients, closed := c.clients, c.closed
+	c.lifeMu.Unlock()
+	if closed || clients == nil {
+		return "", domain.ModelUsage{}, 0, errors.New("Codex App Server adapter is closed")
+	}
+	return invokeBound(parent, clients, profileID, prompt, schema, model, modelID)
 }
 
 func codexStableModelID(value string) (string, bool) {
@@ -353,8 +390,20 @@ func ProviderFailureFrom(err error) (ProviderFailure, bool) {
 func (c *CodexAppServer) startSession() (codexappserver.Session, error) {
 	c.exeMu.Lock()
 	executable := c.executable
-	pathDirs := c.pathDirs
+	pathDirs := append([]string(nil), c.pathDirs...)
 	c.exeMu.Unlock()
+	return c.startSessionAt(executable, pathDirs)
+}
+
+func (c *CodexAppServer) sessionStarter(executable string, pathDirs []string) func() (codexappserver.Session, error) {
+	executable = strings.TrimSpace(executable)
+	pathDirs = append([]string(nil), pathDirs...)
+	return func() (codexappserver.Session, error) {
+		return c.startSessionAt(executable, pathDirs)
+	}
+}
+
+func (c *CodexAppServer) startSessionAt(executable string, pathDirs []string) (codexappserver.Session, error) {
 	cmd := exec.Command(executable, "app-server", "--listen", "stdio://")
 	cmd.Dir = c.root
 	cmd.Env = codexEnvironment(pathDirs)
@@ -404,22 +453,24 @@ func (c *CodexAppServer) startSession() (codexappserver.Session, error) {
 }
 
 func (c *CodexAppServer) Close() error {
-	c.lifeMu.Lock()
-	defer c.lifeMu.Unlock()
-	if c.clients != nil {
-		err := c.clients.Close()
-		c.clients = nil
-		c.adapter = nil
-		c.transport = nil
-		return err
-	}
-	if c.adapter == nil {
-		return nil
-	}
-	err := c.adapter.Close()
-	c.adapter = nil
-	c.transport = nil
-	return err
+	c.closeOnce.Do(func() {
+		c.lifeMu.Lock()
+		c.closed = true
+		clients, adapter := c.clients, c.adapter
+		c.clients, c.adapter, c.transport = nil, nil, nil
+		c.lifeMu.Unlock()
+		if clients != nil {
+			c.closeErr = clients.Close()
+		} else if adapter != nil {
+			c.closeErr = adapter.Close()
+		}
+		// A replacement may have detached an older transport and still be
+		// closing it outside lifeMu. Waiting here lets that close finish without
+		// delaying the interruption of the currently published adapter above.
+		c.swapMu.Lock()
+		c.swapMu.Unlock()
+	})
+	return c.closeErr
 }
 
 func codexPathDirs(executable string) []string {

@@ -83,6 +83,10 @@ func (e *Engine) probeReasoningProvider(ctx context.Context, summary config.Prov
 	case "executable":
 		return e.probeCodexReadiness(ctx, summary, provider, settings)
 	case "local_endpoint":
+		if checked, unsupported := ollamaContractReadiness(summary, provider); unsupported {
+			summary = checked
+			return summary
+		}
 		endpoint := strings.TrimSpace(provider.Endpoint)
 		snapshot, cached := ollamaSnapshots[endpoint]
 		if !cached {

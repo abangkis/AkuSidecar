@@ -192,11 +192,15 @@ test binaries finish concurrently.
 ### Inference SDK dependency
 
 `go.mod` requires `github.com/abangkis/ai4u-inference-sdk-go` at the published
-`v0.9.0` tag and `github.com/abangkis/ai4u-common-execution-profile-go` at
-`v0.1.0` on GitHub; there is no local `replace` directive. The exact module
+`v0.23.0` tag and `github.com/abangkis/ai4u-common-execution-profile-go` at
+`v0.2.0` on GitHub; there is no local `replace` directive. The exact module
 hash is locked in `go.sum`. Bump the version when a newer SDK release is needed.
 Because the module is private, `GOPRIVATE=github.com/abangkis/*` must be set so
 `go` fetches directly from GitHub instead of the public proxy and checksum DB.
+
+See [the v0.23 upgrade contract](docs/inference-sdk-v023-upgrade.md) for Codex
+token-limit and calibration restrictions, unsupported Ollama models, and the
+offline validation command. Existing model selections are not migrated automatically.
 
 The legacy inference model fields `model` (provider wire-model name) and
 `effort` are deprecated as of AkuSidecar v0.8.0. New configuration must use the

@@ -1,6 +1,7 @@
 package reasoning
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,7 +10,9 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/config"
 )
 
-func TestNewProviderRoutesModelScopedOllamaEntries(t *testing.T) {
+func TestNewProviderRejectsOllamaEntriesWithoutStableModels(t *testing.T) {
+	// Codex's local runtime probe is satisfied by the package's fake executable;
+	// no installed account or provider process is consulted.
 	t.Setenv("AKU_FAKE_CODEX_APP_SERVER", "1")
 	base := config.Config{
 		Root: filepathRoot(t),
@@ -21,17 +24,20 @@ func TestNewProviderRoutesModelScopedOllamaEntries(t *testing.T) {
 			},
 		},
 	}
-	for _, provider := range []string{"ollama", "ollama-nemotron", "ollama-qwen"} {
+	for provider, modelID := range map[string]string{
+		"ollama": "nemotron", "ollama-nemotron": "nemotron", "ollama-qwen": "qwen3.8:27b",
+	} {
 		cfg := base
 		if err := cfg.Reasoning.Select(provider); err != nil {
 			t.Fatal(err)
 		}
-		got, err := NewProvider(cfg)
-		if err != nil {
-			t.Fatalf("NewProvider(%q) error=%v", provider, err)
+		_, err := NewProvider(cfg)
+		var unsupported *UnsupportedModelError
+		if !errors.As(err, &unsupported) || unsupported.Provider != "ollama" || unsupported.ModelID != modelID {
+			t.Fatalf("NewProvider(%q) error=%T %v, want unsupported model %q", provider, err, err, modelID)
 		}
-		if _, ok := got.(*Ollama); !ok {
-			t.Fatalf("NewProvider(%q) type=%T, want *Ollama", provider, got)
+		if cfg.Reasoning.Planning.StableModelID() != modelID {
+			t.Fatalf("provider %q configured model changed to %q", provider, cfg.Reasoning.Planning.StableModelID())
 		}
 	}
 

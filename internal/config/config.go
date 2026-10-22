@@ -141,7 +141,8 @@ type ModelConfig struct {
 	// Assurance optionally tightens structured-output resolution for this role.
 	Assurance string `json:"assurance,omitempty"`
 	// MaxOutputTokens optionally applies a provider/workload-specific output
-	// budget. Zero retains AkuSidecar's established default.
+	// budget. Zero retains AkuSidecar's established default. Codex keeps this
+	// as a profile target only; App Server cannot enforce an output token cap.
 	MaxOutputTokens int `json:"maxOutputTokens,omitempty"`
 	// ProfileID is internal invocation identity and is never persisted.
 	ProfileID string `json:"-"`
@@ -284,6 +285,10 @@ type ProviderSummary struct {
 	Available            bool   `json:"available"`
 	AvailabilityStatus   string `json:"availabilityStatus"`
 	AvailabilityMessage  string `json:"availabilityMessage,omitempty"`
+	// OutputTokenLimitEnforced describes the request capability, not the
+	// positive target required by the execution-profile schema. Codex cannot
+	// enforce that target through its App Server protocol.
+	OutputTokenLimitEnforced bool `json:"outputTokenLimitEnforced"`
 }
 
 // IsOllamaProvider reports whether the provider name routes to the Ollama
@@ -353,6 +358,7 @@ func (r ReasoningConfig) ProviderSummary() []ProviderSummary {
 			Name: name, Label: ProviderLabel(name), RuntimeKind: runtimeKind,
 			Configured: true, ConfigurationStatus: "ready",
 			AvailabilityRequired: requiresAvailability, AvailabilityStatus: "unchecked",
+			OutputTokenLimitEnforced: name == "groq" || IsGeminiProvider(name) || IsOllamaProvider(name),
 		})
 	}
 	return summaries

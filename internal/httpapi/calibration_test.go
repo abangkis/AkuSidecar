@@ -98,8 +98,9 @@ func TestCalibrationEndpointsHiddenWithoutDevFlag(t *testing.T) {
 	}
 }
 
-func TestCalibrationEndpointsRoundTrip(t *testing.T) {
+func TestCalibrationEndpointsRejectRetiredModelWithoutLedgerEntry(t *testing.T) {
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("unsupported model must not contact the provider")
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/api/show" {
 			_, _ = fmt.Fprint(w, "{\"capabilities\":[\"completion\",\"thinking\"]}")
@@ -145,13 +146,12 @@ func TestCalibrationEndpointsRoundTrip(t *testing.T) {
 	}
 	defer post.Body.Close()
 	var payload struct {
-		Report calibration.Report `json:"report"`
-		Error  string             `json:"error,omitempty"`
+		Error string `json:"error"`
 	}
 	if err := json.NewDecoder(post.Body).Decode(&payload); err != nil {
 		t.Fatal(err)
 	}
-	if post.StatusCode != http.StatusOK || !payload.Report.Result.Success || payload.Error != "" {
+	if post.StatusCode != http.StatusUnprocessableEntity || payload.Error != "model_unsupported" {
 		t.Fatalf("post status=%d payload=%+v", post.StatusCode, payload)
 	}
 
@@ -166,7 +166,7 @@ func TestCalibrationEndpointsRoundTrip(t *testing.T) {
 	if err := json.NewDecoder(get.Body).Decode(&listed); err != nil {
 		t.Fatal(err)
 	}
-	if len(listed.Reports) != 1 || listed.Reports[0].ModelID != "nemotron-3.5-lightning" {
+	if len(listed.Reports) != 0 {
 		t.Fatalf("ledger via API=%+v", listed.Reports)
 	}
 }

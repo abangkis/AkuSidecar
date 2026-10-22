@@ -12,28 +12,16 @@ import (
 	"github.com/abangkis/ai4u-inference-sdk-go/providers/ollama"
 )
 
-func TestConformanceOllamaBindingContract(t *testing.T) {
+func TestConformanceOllamaStableCatalogIsUnavailable(t *testing.T) {
 	adapter, err := ollama.New(ollama.Config{BaseURL: "http://127.0.0.1:9", Timeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
-	model := config.ModelConfig{Model: "nemotron-3.5-lightning", MinReasoningTier: "high"}
-	profile, err := newExecutionProfile(ExecutionProfileEvaluation, model)
-	if err != nil {
-		t.Fatal(err)
+	if len(adapter.ModelCatalog().List()) != 0 {
+		t.Fatalf("stable Ollama catalog unexpectedly has models: %+v", adapter.ModelCatalog().List())
 	}
-	report, err := conformance.Run(conformance.Contract{
-		Adapter: adapter,
-		Binding: conformance.BindingCase{
-			Profile: profile,
-			Binding: inference.Binding{AdapterID: "ollama", ModelID: "nemotron-3.5-lightning"},
-		},
-	})
-	if err != nil {
-		t.Fatalf("ollama conformance: %v", err)
-	}
-	if !report.BindingValidated {
-		t.Fatalf("binding was not validated: %+v", report)
+	if err := ValidateOllamaModelSupport("nemotron-3.5-lightning"); err == nil {
+		t.Fatal("retired Ollama model passed the maintained stable catalog gate")
 	}
 }
 

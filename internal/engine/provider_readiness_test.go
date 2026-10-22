@@ -55,7 +55,7 @@ func readinessEngine(t *testing.T, providers map[string]config.ProviderConfig, a
 	return New(state, reasoning.Deterministic{}, cfg, log.New(io.Discard, "", 0)), state
 }
 
-func TestOllamaReadinessChecksEndpointOnceAndMatchesProviderModels(t *testing.T) {
+func TestOllamaReadinessRejectsRetiredModelsBeforeEndpointProbe(t *testing.T) {
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
@@ -77,17 +77,17 @@ func TestOllamaReadinessChecksEndpointOnceAndMatchesProviderModels(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if requests.Load() != 1 {
-		t.Fatalf("Ollama tags requests=%d want=1", requests.Load())
+	if requests.Load() != 0 {
+		t.Fatalf("Ollama tags requests=%d want=0", requests.Load())
 	}
 	for _, provider := range providers {
-		if !provider.AvailabilityRequired || !provider.AvailabilityChecked || !provider.Available || provider.AvailabilityStatus != "model_ready" {
+		if !provider.AvailabilityRequired || !provider.AvailabilityChecked || provider.Available || provider.AvailabilityStatus != "model_unsupported" {
 			t.Fatalf("provider readiness=%+v", provider)
 		}
 	}
 }
 
-func TestOllamaReadinessDistinguishesMissingModelFromEndpointFailure(t *testing.T) {
+func TestOllamaReadinessKeepsUnsupportedContractDistinctFromEndpointFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"models":[{"name":"nemotron-3.5-lightning:latest"}]}`)
@@ -99,7 +99,7 @@ func TestOllamaReadinessDistinguishesMissingModelFromEndpointFailure(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(providers) != 1 || providers[0].Available || providers[0].AvailabilityStatus != "model_missing" || !strings.Contains(providers[0].AvailabilityMessage, "qwen3.8:27b") {
+	if len(providers) != 1 || providers[0].Available || providers[0].AvailabilityStatus != "model_unsupported" || !strings.Contains(providers[0].AvailabilityMessage, "qwen3.8-27b") {
 		t.Fatalf("missing model readiness=%+v", providers)
 	}
 
@@ -108,7 +108,7 @@ func TestOllamaReadinessDistinguishesMissingModelFromEndpointFailure(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if providers[0].Available || providers[0].AvailabilityStatus != "endpoint_unreachable" {
+	if providers[0].Available || providers[0].AvailabilityStatus != "model_unsupported" {
 		t.Fatalf("unreachable readiness=%+v", providers[0])
 	}
 }
