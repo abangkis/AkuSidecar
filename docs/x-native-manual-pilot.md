@@ -387,6 +387,65 @@ claim a successful identity/login observation. All 34 prepared source hashes
 match; native execution skipped before lease/profile access. Evidence:
 `runtime/qa/auth-session-sidecar/x-manual-retained-b145fe477dac4d919eeaea8c74e90181.prepare.log.txt`.
 
+### First failed redirect predicate and observation epoch (2026-10-23)
+
+The authorized `22438ae` retained run still rejected reader startup with
+`first=guard_request_unbound`, `trigger=request`, `provenance=redirect` before
+admission opened. Its old diagnostic tuple does not identify which redirect
+predicate failed or when the first event occurred. Offline reproduction can
+produce that entire tuple from an invented foreign resource redirect with no
+cookie attempt, before seed. This counterexample does not establish that the
+native request was foreign or pre-seed. The previous per-hop change repairs a
+correlation limitation, but native remediation remains unproven.
+
+Diagnostic-only V4 appends two closed fields to the private Node/Go trace:
+
+- `guardCondition`: the first false term of the existing redirect acceptance
+  predicate, in its existing evaluation order. Categories distinguish missing
+  predecessor, redirect shape, preceding response, completed/failed/cached
+  chain, predecessor/current resource eligibility, predecessor/current
+  origin/frame/loader scope, loader mismatch, redirect URL mismatch, redirect
+  status, ExtraInfo flag, header shape and response-cache rejection.
+- `guardEpoch`: the guard's observation state at its first rejection:
+  `before_seed`, `post_seed`, `reload_armed` or `document_committed`. These are
+  lifecycle checkpoints, not timestamps or proof that every setup action was
+  successful. Later baseline, arm, commit, cleanup and finish events cannot
+  replace this value.
+
+`unknown` means no applicable classified predicate or no known first guard
+failure. Earlier candidate/header failures keep their original cause and epoch;
+a later redirect must not relabel them. When several redirect terms are false,
+the reported term is the first predicate in code order, not an inference about
+causal importance. Resource eligibility remains the existing combined
+method/type/non-settings check. V2/V3 diagnostics remain decodable with the new
+fields marked unknown. V4 transports only catalog indices; Go renders
+`condition=... epoch=...`. URLs, IDs, account identifiers, cookie values, raw
+headers and exception messages are excluded.
+
+The legacy wrapper `observed_cookie_write` can still represent a structural
+guard rejection without a cookie attempt, and `bound_finish` remains a reporting
+phase. Use the separate cause, condition and epoch rather than interpreting
+either wrapper as evidence of a write at that time. Guard decisions, predicate
+order, attempt precedence, budgets, receipts and admission are unchanged.
+Unsupported no-cookie redirects still reject; this change neither ignores
+foreign traffic nor qualifies broader native traffic coverage.
+
+Regression coverage includes every classified redirect predicate, multiple
+simultaneously false terms, immutable first epochs, candidate/header precedence,
+sanitized reports, actual reader/collector dispatch, a pre-seed no-cookie
+redirect through the real binder/latch, and private Node-to-Go wire compatibility.
+All validation for this delta is offline. No new native run, retained-profile
+access, session transfer, Store operation or user-runtime activation is
+authorized or performed.
+
+Offline validation passed all 167 Node tests in the ten retained-preparation
+suites (23 added redirect/epoch regressions), the V4 catalog roundtrip with
+V2/V3 defaults, and all 21 standalone Node/Windows-RPC/Go startup diagnostic
+subcases. Four source-tag gates and dev/combined Engine builds passed. The
+standalone run kept all execution flags disabled and no Chrome executable
+configured; its owned staging/build root was removed. Bridge evidence:
+`runtime/qa/auth-session-sidecar/native-wire-v4-standalone-318bdcce064c45f1a63ac469e5c96b8e.log.txt`.
+
 ### Per-hop resource redirect correlation (2026-10-23)
 
 The last separately authorized run of source `c4d12c8` rejected startup after

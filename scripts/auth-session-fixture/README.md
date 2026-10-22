@@ -166,6 +166,14 @@ for fully correlated supported resource hops. Candidate or ambiguous evidence,
 missing correlation, and root/account-settings redirects still reject. No
 redirect can supply identity authority or authorize another native QA run.
 
+The [first failed redirect predicate and observation epoch](../../docs/x-native-manual-pilot.md#first-failed-redirect-predicate-and-observation-epoch-2026-10-23)
+add closed `guardCondition` and immutable `guardEpoch` fields to private V4
+diagnostics, with V2/V3 decode compatibility. A structural redirect rejection can
+occur without a cookie attempt, including before seed; the legacy
+`observed_cookie_write`/`bound_finish` wrapper does not establish either fact.
+This is diagnostic-only: unsupported redirects still reject and no native
+execution or transfer is authorized.
+
 Manual startup diagnostics also retain the [first cause separately from terminal
 failure](../../docs/x-native-manual-pilot.md#first-cause-and-separate-startup-diagnostics-2026-10-22).
 Generic early-capture fallback must not hide a prior cookie/scope rejection.

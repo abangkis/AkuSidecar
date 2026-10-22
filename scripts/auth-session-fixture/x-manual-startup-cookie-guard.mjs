@@ -75,6 +75,7 @@ export class ManualStartupCookieGuard {
   #events = 0; #lines = 0; #closed = false; #baseline; #claimed = false;
   #armed = false; #oldLoader; #rootId = null; #root = null; #commit = null; #records = 0;
   #rejection = 'unknown'; #trigger = 'unknown'; #provenance = 'unknown';
+  #condition = 'unknown'; #epoch = 'unknown';
   #onRejection;
   constructor(frameId, sessionId, { beforeSeed = false, onRejection = () => {} } = {}) {
     if (!ref(frameId) || typeof beforeSeed !== 'boolean' || beforeSeed && !ref(sessionId)) throw new Error('manual_cookie_guard_invalid');
@@ -97,16 +98,19 @@ export class ManualStartupCookieGuard {
     }
     this.#armed = true; this.#oldLoader = oldLoader;
   }
-  #note(reason, trigger, provenance = 'unknown') {
+  #note(reason, trigger, provenance = 'unknown', condition = 'unknown') {
     if (this.#rejection !== 'unknown') return;
     this.#rejection = reason; this.#trigger = trigger; this.#provenance = provenance;
+    this.#condition = condition;
+    // Capture the observation epoch once, not the later reporting phase.
+    this.#epoch = !this.#baseline ? 'before_seed' : this.#commit !== null ? 'document_committed' : this.#armed ? 'reload_armed' : 'post_seed';
     try{this.#onRejection(reason,this.trace());}catch{}
   }
-  #fail(reason = 'guard_metadata_shape', trigger = 'metadata', provenance = 'unknown') {
-    this.#note(reason,trigger,provenance); this.#ambiguous = Math.min(64,this.#ambiguous + 1);
+  #fail(reason = 'guard_metadata_shape', trigger = 'metadata', provenance = 'unknown', condition = 'unknown') {
+    this.#note(reason,trigger,provenance,condition); this.#ambiguous = Math.min(64,this.#ambiguous + 1);
   }
   rejection() { return this.#rejection; }
-  trace() { return Object.freeze({guardTrigger:this.#trigger,guardProvenance:this.#provenance}); }
+  trace() { return Object.freeze({guardTrigger:this.#trigger,guardProvenance:this.#provenance,guardCondition:this.#condition,guardEpoch:this.#epoch}); }
   category() { return this.#candidate ? 'candidate_observed' : this.#ambiguous ? 'ambiguous' : this.#other ? 'other_only' : 'not_observed'; }
   #attempt(headers, blocked, request, trigger, provenance = request?.provenance ?? 'absent') {
     if (!this.#baseline) return null;
@@ -148,11 +152,11 @@ export class ManualStartupCookieGuard {
     }
     return other;
   }
-  #apply(other, request, trigger, provenance = request?.provenance ?? 'absent') {
+  #apply(other, request, trigger, provenance = request?.provenance ?? 'absent', condition = 'unknown') {
     if(!other)return;
     for(const line of other){
       const scope=request?.scope;
-      if(!scope||request.provenance!=='scoped')this.#fail('guard_request_unbound',trigger,provenance);
+      if(!scope||request.provenance!=='scoped')this.#fail('guard_request_unbound',trigger,provenance,condition);
       else if(line.domain!==null&&!(scope.host===line.domain||scope.host==='api.x.com'&&line.domain==='x.com')||!QA_COOKIE_PATHS.includes(line.path??scope.path))this.#fail('guard_header_classification',trigger,provenance);
       else if(request.bad)this.#fail('guard_response_correlation',trigger,provenance);
       else this.#other=Math.min(64,this.#other+1);
@@ -225,12 +229,22 @@ export class ManualStartupCookieGuard {
       if(chain&&redirect===undefined){r.provenance='reused';current.bad=true;this.#fail('guard_request_unbound','request','reused');}
       if(redirect!==undefined){
         current.redirected=true;
-        if(!previous){r.provenance='redirect';current.bad=true;this.#apply(other,{provenance:'redirect'},'redirect');this.#fail('guard_request_unbound','request','redirect');}
+        if(!previous){r.provenance='redirect';current.bad=true;this.#apply(other,{provenance:'redirect'},'redirect','redirect','predecessor_missing');this.#fail('guard_request_unbound','request','redirect','predecessor_missing');}
         else{
           const status=data(redirect,'status'),extra=data(p,'redirectHasExtraInfo');
           const valid=object(redirect)&&!previous.response&&!current.completed&&!current.failed&&!current.cache&&previous.resource&&r.resource&&
             previous.provenance==='scoped'&&provenance==='scoped'&&previous.loaderId===loader&&data(redirect,'url')===previous.scope?.url&&redirectStatuses.has(status)&&typeof extra==='boolean'&&object(data(redirect,'headers'))&&!unsafeCache(redirect);
-          if(!valid){previous.bad=true;current.bad=true;this.#apply(other,{provenance:'redirect'},'redirect');this.#fail('guard_request_unbound','request','redirect');}
+          if(!valid){
+            // Diagnostic only: preserve the acceptance predicate and event order
+            // above. Report its first failed term using closed categories only.
+            const condition=!object(redirect)?'redirect_shape':previous.response?'previous_response':current.completed?'chain_completed':current.failed?'chain_failed':current.cache?'chain_cache':
+              !previous.resource?'previous_resource':!r.resource?'current_resource':
+              previous.provenance==='origin_scope'?'previous_origin':previous.provenance==='frame_scope'?'previous_frame':previous.provenance!=='scoped'?'previous_loader':
+              provenance==='origin_scope'?'current_origin':provenance==='frame_scope'?'current_frame':provenance!=='scoped'?'current_loader':
+              previous.loaderId!==loader?'loader_mismatch':data(redirect,'url')!==previous.scope?.url?'redirect_url':!redirectStatuses.has(status)?'redirect_status':
+              typeof extra!=='boolean'?'extra_flag':!object(data(redirect,'headers'))?'headers_shape':'response_cache';
+            previous.bad=true;current.bad=true;this.#apply(other,{provenance:'redirect'},'redirect','redirect',condition);this.#fail('guard_request_unbound','request','redirect',condition);
+          }
           else{previous.response=true;previous.status=status;previous.needsExtra=extra;previous.other=other;}
         }
       }

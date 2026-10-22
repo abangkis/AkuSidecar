@@ -75,7 +75,9 @@ for(const [mode,reason,trigger,provenance]of [
   ['unknown','guard_header_classification','redirect','redirect'],
   ['other','guard_request_unbound','redirect','redirect'],
 ])test(`actual collector transport delivers once and keeps repeat rejection closed: ${mode}`,async()=>{
-  const r=await collectorRepeatScenario(mode),expected={reason,guardTrigger:trigger,guardProvenance:provenance};
+  const r=await collectorRepeatScenario(mode),expected={reason,guardTrigger:trigger,guardProvenance:provenance,
+    guardCondition:['declared','other'].includes(mode)?'extra_flag':mode==='malformed'?'redirect_shape':'unknown',
+    guardEpoch:mode==='single'?'unknown':'reload_armed'};
   assert.ok(r.binder);assert.equal(r.received,mode==='single'?3:4);assert.equal(r.observed,r.received);assert.equal(r.maxCalls,1);
   assert.equal(r.commands.filter(m=>m==='Network.enable').length,1);
   assert.deepEqual(r.atDispatch,expected);assert.deepEqual(r.afterLate,expected);
@@ -261,8 +263,8 @@ test('pre-seed headers do not poison the epoch; structural coverage loss cannot 
   const malformed=passive();malformed.emit('Network.requestWillBeSent',{});malformed.g.beginPostSeed();assert.equal(malformed.g.rejection(),'guard_metadata_shape');
 });
 test('post-seed missing predecessor and seen rejected scope remain distinct, including blocked candidates',()=>{
-  const absent=passive();absent.g.beginPostSeed();absent.response('lang=en; Path=/');assert.deepEqual(absent.g.trace(),{guardTrigger:'response',guardProvenance:'absent'});
-  const foreign=passive();foreign.request('r',{frameId:'child'});foreign.g.beginPostSeed();foreign.response('lang=en; Path=/');assert.deepEqual(foreign.g.trace(),{guardTrigger:'response',guardProvenance:'frame_scope'});
+  const absent=passive();absent.g.beginPostSeed();absent.response('lang=en; Path=/');assert.deepEqual(absent.g.trace(),{guardTrigger:'response',guardProvenance:'absent',guardCondition:'unknown',guardEpoch:'post_seed'});
+  const foreign=passive();foreign.request('r',{frameId:'child'});foreign.g.beginPostSeed();foreign.response('lang=en; Path=/');assert.deepEqual(foreign.g.trace(),{guardTrigger:'response',guardProvenance:'frame_scope',guardCondition:'unknown',guardEpoch:'post_seed'});
   for(const scope of ['absent','scoped','foreign']){
     const s=passive();if(scope!=='absent')s.request('r',scope==='foreign'?{request:{method:'GET',url:'https://foreign.invalid/asset'}}:{});s.g.beginPostSeed();
     s.emit('Network.responseReceivedExtraInfo',{requestId:'r',statusCode:200,headers:{},blockedCookies:[{cookieLine:'ct0=; Max-Age=0; Path=/'}]});

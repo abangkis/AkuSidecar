@@ -125,9 +125,9 @@ type nativePilotInitialDetail struct {
 	peer                bool
 	trace               *nativePilotInitialTrace
 }
-type nativePilotInitialTrace struct{ firstCause, terminal, early, handoff, cookie, extra, guardTrigger, guardProvenance string }
+type nativePilotInitialTrace struct{ firstCause, terminal, early, handoff, cookie, extra, guardTrigger, guardProvenance, guardCondition, guardEpoch string }
 
-// Append-only V2 catalogs with the V3 guard fields; order matches STARTUP_TRACE in Node.
+// Append-only V2 catalogs with the V3/V4 guard fields; order matches STARTUP_TRACE in Node.
 var nativePilotTraceCatalogs = [][]string{
 	{"unknown", "cookie_candidate", "cookie_ambiguous", "context_lost", "target_lost", "navigation", "owner_scope", "event_cap", "identity_order", "identity_mismatch", "settings_order", "response_frame", "extra_shape", "extra_status", "extra_missing", "extra_unexpected", "generic_early", "stale_observation", "cleanup_failed", "guard_request_unbound", "guard_request_budget", "guard_header_classification", "guard_response_correlation", "guard_metadata_shape", "guard_completion_missing", "guard_header_budget", "guard_event_budget"},
 	{"unknown", "unavailable", "rejected", "identity_unavailable", "source_unavailable", "stale_observation", "cleanup_unverified", "scope_lost", "observed_cookie_write", "deadline", "canceled", "replay", "sample_missing", "sample_duplicate", "invalid_shape", "scope_mismatch", "time_invalid", "bound"},
@@ -137,13 +137,15 @@ var nativePilotTraceCatalogs = [][]string{
 	{"unknown", "not_selected", "not_required", "required_pending", "complete", "missing", "status_mismatch", "unexpected", "invalid"},
 	{"unknown", "baseline", "arm", "metadata", "request", "document", "response", "extra", "redirect", "finish"},
 	{"unknown", "absent", "scoped", "origin_scope", "frame_scope", "loader_missing", "redirect", "reused", "root_scope"},
+	{"unknown", "predecessor_missing", "redirect_shape", "previous_response", "chain_completed", "chain_failed", "chain_cache", "previous_resource", "current_resource", "previous_origin", "previous_frame", "previous_loader", "current_origin", "current_frame", "current_loader", "loader_mismatch", "redirect_url", "redirect_status", "extra_flag", "headers_shape", "response_cache"},
+	{"unknown", "before_seed", "post_seed", "reload_armed", "document_committed"},
 }
 
-func (v nativePilotInitialTrace) values() [8]string {
-	return [8]string{v.firstCause, v.terminal, v.early, v.handoff, v.cookie, v.extra, v.guardTrigger, v.guardProvenance}
+func (v nativePilotInitialTrace) values() [10]string {
+	return [10]string{v.firstCause, v.terminal, v.early, v.handoff, v.cookie, v.extra, v.guardTrigger, v.guardProvenance, v.guardCondition, v.guardEpoch}
 }
-func nativePilotTraceValues(v [8]string) nativePilotInitialTrace {
-	return nativePilotInitialTrace{v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7]}
+func nativePilotTraceValues(v [10]string) nativePilotInitialTrace {
+	return nativePilotInitialTrace{v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9]}
 }
 func (v nativePilotInitialTrace) closed() nativePilotInitialTrace {
 	values := v.values()
@@ -160,7 +162,7 @@ func (v nativePilotInitialTrace) closed() nativePilotInitialTrace {
 }
 func (v nativePilotInitialTrace) String() string {
 	v = v.closed()
-	return fmt.Sprintf("first=%s terminal=%s early=%s handoff=%s cookie=%s extra=%s trigger=%s provenance=%s", v.firstCause, v.terminal, v.early, v.handoff, v.cookie, v.extra, v.guardTrigger, v.guardProvenance)
+	return fmt.Sprintf("first=%s terminal=%s early=%s handoff=%s cookie=%s extra=%s trigger=%s provenance=%s condition=%s epoch=%s", v.firstCause, v.terminal, v.early, v.handoff, v.cookie, v.extra, v.guardTrigger, v.guardProvenance, v.guardCondition, v.guardEpoch)
 }
 func (v nativePilotInitialTrace) GoString() string { return v.String() }
 
@@ -217,22 +219,26 @@ func nativePilotInitialWrap(err error, role, phase string) error {
 	return &nativePilotInitialError{(nativePilotInitialDetail{role: role, phase: phase, reason: reason}).closed()}
 }
 func nativePilotInitialCode(code string) (nativePilotInitialDetail, bool) {
-	if strings.HasPrefix(code, "manual_initial_v2_") || strings.HasPrefix(code, "manual_initial_v3_") {
+	if strings.HasPrefix(code, "manual_initial_v2_") || strings.HasPrefix(code, "manual_initial_v3_") || strings.HasPrefix(code, "manual_initial_v4_") {
 		if len(code) > 80 {
 			return nativePilotInitialDetail{}, false
 		}
-		prefix, count := "manual_initial_v3_", 12
+		prefix, traceCount := "manual_initial_v4_", 10
 		if strings.HasPrefix(code, "manual_initial_v2_") {
-			prefix, count = "manual_initial_v2_", 10
+			prefix, traceCount = "manual_initial_v2_", 6
+		} else if strings.HasPrefix(code, "manual_initial_v3_") {
+			prefix, traceCount = "manual_initial_v3_", 8
 		}
 		parts := strings.Split(strings.TrimPrefix(code, prefix), "_")
-		if len(parts) != count {
+		if len(parts) != 4+traceCount {
 			return nativePilotInitialDetail{}, false
 		}
 		catalogs := [][]string{nativePilotInitialRoles, nativePilotInitialPhases, nativePilotInitialReasons, {"primary", "peer"}}
-		catalogs = append(catalogs, nativePilotTraceCatalogs...)
-		values := make([]string, 12)
-		values[10], values[11] = "unknown", "unknown"
+		catalogs = append(catalogs, nativePilotTraceCatalogs[:traceCount]...)
+		values := make([]string, 14)
+		for i := range values {
+			values[i] = "unknown"
+		}
 		for i, part := range parts {
 			n, err := strconv.Atoi(part)
 			if err != nil || n < 0 || n >= len(catalogs[i]) || strconv.Itoa(n) != part {
@@ -240,7 +246,7 @@ func nativePilotInitialCode(code string) (nativePilotInitialDetail, bool) {
 			}
 			values[i] = catalogs[i][n]
 		}
-		trace := nativePilotTraceValues([8]string(values[4:]))
+		trace := nativePilotTraceValues([10]string{values[4], values[5], values[6], values[7], values[8], values[9], values[10], values[11], values[12], values[13]})
 		return nativePilotInitialDetail{role: values[0], phase: values[1], reason: values[2], peer: values[3] == "peer", trace: &trace}, true
 	}
 	if len(code) <= 96 {

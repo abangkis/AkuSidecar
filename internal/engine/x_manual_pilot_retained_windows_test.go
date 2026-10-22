@@ -620,6 +620,7 @@ return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!c
 					t.Fatalf("first cause lost: %s", detail)
 				}
 				wantTrigger, wantProvenance := "response", "scoped"
+				wantCondition, wantEpoch := "unknown", "post_seed"
 				switch role {
 				case "trace-budget", "trace-budget-candidate":
 					wantTrigger, wantProvenance = "request", "unknown"
@@ -627,12 +628,13 @@ return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!c
 					wantProvenance = "absent"
 				case "trace-redirect", "trace-redirect-peer-first":
 					wantTrigger, wantProvenance = "request", "redirect"
+					wantCondition = "extra_flag"
 				case "trace-reused":
 					wantTrigger, wantProvenance = "request", "reused"
 				case "trace-completion":
 					wantTrigger = "finish"
 				}
-				if detail.trace.guardTrigger != wantTrigger || detail.trace.guardProvenance != wantProvenance || !strings.Contains(detail.String(), "trigger="+wantTrigger+" provenance="+wantProvenance) {
+				if detail.trace.guardTrigger != wantTrigger || detail.trace.guardProvenance != wantProvenance || detail.trace.guardCondition != wantCondition || detail.trace.guardEpoch != wantEpoch || !strings.Contains(detail.String(), "trigger="+wantTrigger+" provenance="+wantProvenance+" condition="+wantCondition+" epoch="+wantEpoch) {
 					t.Fatalf("immutable guard discriminator lost across Node/Windows RPC/Go formatter: %s", detail)
 				}
 				if role == "trace-peer-first" || role == "trace-guard-peer-first" || role == "trace-redirect-peer-first" {
@@ -672,22 +674,51 @@ func TestXManualPilotRetainedTraceCodes(t *testing.T) {
 	}
 	want := [][]string{nativePilotInitialRoles, nativePilotInitialPhases, nativePilotInitialReasons, {"primary", "peer"}}
 	want = append(want, nativePilotTraceCatalogs...)
-	if !reflect.DeepEqual(payload.Catalogs, want) || len(payload.Codes) < 40 {
+	if !reflect.DeepEqual(payload.Catalogs, want) || len(payload.Codes) == 0 {
 		t.Fatal("Node/Go trace catalog order diverged")
 	}
 	legacy, ok := nativePilotInitialCode("manual_initial_v2_0_8_7_0_2_7_6_2_3_0")
-	if !ok || legacy.trace.firstCause != "cookie_ambiguous" || legacy.trace.cookie != "ambiguous" || legacy.trace.guardTrigger != "unknown" || legacy.trace.guardProvenance != "unknown" {
+	if !ok || legacy.trace.firstCause != "cookie_ambiguous" || legacy.trace.cookie != "ambiguous" || legacy.trace.guardTrigger != "unknown" || legacy.trace.guardProvenance != "unknown" || legacy.trace.guardCondition != "unknown" || legacy.trace.guardEpoch != "unknown" {
 		t.Fatal("legacy V2 catalog index changed")
 	}
-	for _, code := range payload.Codes {
-		detail, ok := nativePilotInitialCode(code)
-		if !ok || len(code) > 80 || detail.trace == nil {
-			t.Fatal("valid bounded trace code rejected")
+	legacyV3, ok := nativePilotInitialCode("manual_initial_v3_0_0_0_0_0_0_0_0_0_0_8_8")
+	if !ok || legacyV3.trace.guardTrigger != "redirect" || legacyV3.trace.guardProvenance != "root_scope" || legacyV3.trace.guardCondition != "unknown" || legacyV3.trace.guardEpoch != "unknown" || !strings.Contains(legacyV3.String(), "condition=unknown epoch=unknown") {
+		t.Fatal("legacy V3 trace did not retain its fields and default appended fields")
+	}
+	cursor := 0
+	for field, values := range nativePilotTraceCatalogs {
+		for _, wantValue := range values {
+			if cursor >= len(payload.Codes) {
+				t.Fatal("Node omitted a trace catalog wire value")
+			}
+			code := payload.Codes[cursor]
+			detail, ok := nativePilotInitialCode(code)
+			if !ok || len(code) > 80 || detail.trace == nil {
+				t.Fatal("valid bounded trace code rejected")
+			}
+			for i, got := range detail.trace.values() {
+				wantValueForField := "unknown"
+				if i == field {
+					wantValueForField = wantValue
+				}
+				if got != wantValueForField {
+					t.Fatalf("Node/Go trace RPC roundtrip mismatch at field %d: got %q want %q", i, got, wantValueForField)
+				}
+			}
+			cursor++
 		}
+	}
+	if cursor != len(payload.Codes) {
+		t.Fatal("Node emitted unexpected extra trace wire values")
 	}
 	for _, code := range []string{"manual_initial_v3_0_0_0_0_0_0_0_0_0_0", "manual_initial_v3_0_0_0_0_0_0_0_0_0_0_99_0", "manual_initial_v3_0_0_0_0_0_0_0_0_0_0_0_99", "manual_initial_v3_0_0_0_0_0_0_0_0_0_0_00_0", "manual_initial_v3_0_0_0_0_0_0_0_0_0_0_0_0_extra"} {
 		if _, ok := nativePilotInitialCode(code); ok {
 			t.Fatal("noncanonical V3 guard trace accepted")
+		}
+	}
+	for _, code := range []string{"manual_initial_v4_0_0_0_0_0_0_0_0_0_0_0_0_0", "manual_initial_v4_0_0_0_0_0_0_0_0_0_0_0_0_0_99", "manual_initial_v4_0_0_0_0_0_0_0_0_0_0_0_0_0_00", "manual_initial_v4_0_0_0_0_0_0_0_0_0_0_0_0_0_0_extra"} {
+		if _, ok := nativePilotInitialCode(code); ok {
+			t.Fatal("noncanonical V4 guard trace accepted")
 		}
 	}
 	for _, code := range []string{"manual_initial_v2_0_0_0_0_0_0_0_0_0", "manual_initial_v2_00_0_0_0_0_0_0_0_0_0", "manual_initial_v2_0_0_0_2_0_0_0_0_0_0", "manual_initial_v2_0_0_0_0_-1_0_0_0_0_0", "manual_initial_v2_0_0_0_0_0_99_0_0_0_0", "manual_initial_v2_0_0_0_0_0_0_0_0_0_0_extra", "manual_initial_v2_0_0_0_0_0_0_0_0_0_0 ", "manual_initial_v2_+0_0_0_0_0_0_0_0_0_0", "manual_initial_v2_0_0_0_0_0_0_0_0_0_0" + strings.Repeat("0", 80)} {

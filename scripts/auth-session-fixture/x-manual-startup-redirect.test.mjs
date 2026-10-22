@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ManualStartupCookieGuard} from './x-manual-startup-cookie-guard.mjs';
+import {createManualV2BoundObservation} from './x-qa-bound-observation.mjs';
+import {startupFailureLatch,startupFailure,requireBoundStartup,startupDiagnostic} from './x-manual-startup-diagnostic.mjs';
 
 const urls=['https://x.com/asset','https://api.x.com/asset2','https://x.com/asset3'];
 const other={'Set-Cookie':'lang=PRIVATE_VALUE; Path=/'};
@@ -176,4 +178,72 @@ test('same-ID hop chains and pending metadata consume the lifetime record budget
 test('a later candidate cannot replace the first structural rejection or revive an abandoned chain',()=>{
   const s=fixture();s.request();s.request(1);const first=s.g.trace();s.extra(302,{'Set-Cookie':'ct0=PRIVATE_VALUE; Path=/'});
   assert.equal(s.g.rejection(),'guard_request_unbound');assert.deepEqual(s.g.trace(),first);assert.equal(s.g.finish().diagnostic,'candidate_observed');
+});
+
+// Every case changes one term of the existing redirect envelope. These are
+// invented accountless events; passing them does not qualify native X traffic.
+for(const condition of ['predecessor_missing','redirect_shape','previous_response','chain_completed','chain_failed','chain_cache','previous_resource','current_resource','previous_origin','previous_frame','previous_loader','current_origin','current_frame','current_loader','loader_mismatch','redirect_url','redirect_status','extra_flag','headers_shape','response_cache']){
+  test(`first failed redirect condition is ${condition} without changing rejection`,()=>{
+    const s=fixture();
+    const old=condition==='previous_resource'?{type:'Document'}:condition==='previous_origin'?{request:{method:'GET',url:'https://PRIVATE.invalid/old'}}:condition==='previous_frame'?{frameId:'PRIVATE_FRAME'}:condition==='previous_loader'?{loaderId:''}:{};
+    if(condition!=='predecessor_missing')s.request(0,old);
+    if(condition==='previous_response')s.response(0);
+    if(condition==='chain_completed')s.emit('Network.loadingFinished',{requestId:'chain'});
+    if(condition==='chain_failed')s.emit('Network.loadingFailed',{requestId:'chain'});
+    if(condition==='chain_cache')s.emit('Network.requestServedFromCache',{requestId:'chain'});
+    const patch=condition==='redirect_shape'?{redirectResponse:null}:condition==='current_resource'?{request:{method:'POST',url:urls[1]}}:condition==='current_origin'?{request:{method:'GET',url:'https://PRIVATE.invalid/new'}}:condition==='current_frame'?{frameId:'PRIVATE_FRAME'}:condition==='current_loader'?{loaderId:''}:condition==='loader_mismatch'?{loaderId:'PRIVATE_LOADER'}:condition==='redirect_url'?{redirectResponse:{url:urls[2],status:302,headers:{}}}:condition==='redirect_status'?{status:304}:condition==='extra_flag'?{redirectHasExtraInfo:undefined}:condition==='headers_shape'?{redirectResponse:{url:urls[0],status:302}}:condition==='response_cache'?{redirectResponse:{url:urls[0],status:302,headers:{},fromServiceWorker:true}}:{};
+    assert.equal(s.redirect(1,patch),true);
+    assert.equal(s.g.rejection(),'guard_request_unbound');
+    const trace=s.g.trace();assert.equal(trace.guardCondition,condition);assert.equal(trace.guardEpoch,'post_seed');
+    s.extra(302,{'Set-Cookie':'ct0=PRIVATE_VALUE; Path=/'});s.response();
+    assert.equal(s.g.finish().diagnostic,'candidate_observed');assert.deepEqual(s.g.trace(),trace);
+    for(const raw of [...urls,'PRIVATE','ct0','https://','loader='])assert.equal(JSON.stringify(trace).includes(raw),false);
+  });
+}
+
+test('first guard epoch is immutable across seed, reload, commit and finish',()=>{
+  for(const epoch of ['before_seed','post_seed','reload_armed','document_committed']){
+    let callback;
+    const g=new ManualStartupCookieGuard('frame','session',{beforeSeed:true,onRejection:(reason,trace)=>{callback={reason,trace};}});
+    const emit=(method,params)=>g.observe({method,params,sessionId:'session'});
+    if(epoch!=='before_seed')g.beginPostSeed();
+    if(['reload_armed','document_committed'].includes(epoch))g.armReload('old');
+    if(epoch==='document_committed')emit('Page.frameNavigated',{frame:{id:'frame',loaderId:'new',url:'https://x.com/home'}});
+    emit('Network.requestWillBeSent',{requestId:'private',frameId:'frame',loaderId:'new',type:'Image',request:{method:'GET',url:urls[1]},redirectHasExtraInfo:false,redirectResponse:{url:urls[0],status:302,headers:{}}});
+    const trace=g.trace();assert.equal(trace.guardEpoch,epoch);assert.equal(trace.guardCondition,'predecessor_missing');assert.deepEqual(callback,{reason:'guard_request_unbound',trace});
+    if(epoch==='before_seed')g.beginPostSeed();
+    if(['before_seed','post_seed'].includes(epoch))g.armReload('old');
+    if(epoch!=='document_committed')emit('Page.frameNavigated',{frame:{id:'frame',loaderId:'new',url:'https://x.com/home'}});
+    g.finish();assert.deepEqual(g.trace(),trace);assert.deepEqual(callback.trace,trace);
+  }
+});
+
+test('earlier candidate or header rejection keeps its own epoch and is not relabeled as a redirect predicate',()=>{
+  for(const headers of [{'Set-Cookie':'ct0=PRIVATE_VALUE; Path=/'},{'Set-Cookie':'unknown_private=PRIVATE_VALUE; Path=/'}]){
+    const s=fixture();s.request();s.redirect(1,{headers,request:{method:'POST',url:urls[1]}});
+    assert.equal(s.g.trace().guardCondition,'unknown');assert.equal(s.g.trace().guardEpoch,'post_seed');
+    assert.equal(s.g.rejection(),headers['Set-Cookie'].startsWith('ct0')?'cookie_candidate':'guard_header_classification');
+  }
+  const s=fixture();s.request(0,{type:'Document',frameId:'foreign'});s.redirect(1,{request:{method:'POST',url:urls[1]},status:304});
+  assert.equal(s.g.trace().guardCondition,'previous_resource'); // Predicate order, not a guess at causal importance.
+});
+
+test('pre-seed no-cookie redirect failure survives the real binder and diagnostic latch with its original epoch',async()=>{
+  const diagnostics=startupFailureLatch();let receipts=0,bodyReads=0;
+  const g=new ManualStartupCookieGuard('frame','session',{beforeSeed:true,onRejection:(reason,trace)=>diagnostics.record(startupFailure('reader','bound_finish','observed_cookie_write',false,undefined,{firstCause:reason,...trace}),'reader','bound_finish','observed_cookie_write')});
+  const emit=(method,params)=>g.observe({method,params,sessionId:'session'});
+  emit('Network.requestWillBeSent',{requestId:'PRIVATE_ID',frameId:'frame',loaderId:'old',type:'Image',request:{method:'GET',url:'https://PRIVATE.invalid/a'}});
+  emit('Network.requestWillBeSent',{requestId:'PRIVATE_ID',frameId:'frame',loaderId:'old',type:'Image',request:{method:'GET',url:'https://PRIVATE.invalid/b'},redirectHasExtraInfo:false,redirectResponse:{url:'https://PRIVATE.invalid/a',status:302,headers:{}}});
+  g.beginPostSeed();
+  const scope={owner:1,profileId:'PRIVATE_PROFILE',sessionId:'session',targetId:'PRIVATE_TARGET'};
+  const binder=createManualV2BoundObservation(scope,'frame',async()=>{bodyReads++;throw Error('forbidden');},()=>100,()=>{},
+    {deferCookieMutation:false,onPrivateResult(){},onPrivateStartup(){receipts++;}},
+    (reason,trace)=>diagnostics.record(startupFailure('reader','bound_finish',reason,false,undefined,trace),'reader','bound_finish',reason),g);
+  binder.checkCookieGuard();assert.throws(()=>binder.armManualReload('old'));binder.earlyOutcome('setup_failed',false);
+  const report=await binder.finish(true);let detail;
+  assert.throws(()=>requireBoundStartup(report,'reader',diagnostics),error=>{detail=startupDiagnostic(error);return true;});
+  assert.equal(detail.trace.firstCause,'guard_request_unbound');assert.equal(detail.trace.guardCondition,'previous_origin');assert.equal(detail.trace.guardEpoch,'before_seed');
+  assert.equal(detail.trace.terminal,'scope_lost');assert.equal(detail.trace.early,'setup_failed');
+  assert.equal(report.manualCookieGuard.candidateAttempts,0);assert.equal(report.manualCookieGuard.otherAttempts,0);
+  assert.equal(receipts,0);assert.equal(bodyReads,0);assert.equal(JSON.stringify(detail).includes('PRIVATE'),false);
 });

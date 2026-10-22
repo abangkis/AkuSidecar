@@ -66,9 +66,17 @@ test('event-time first cause survives peer-first delivery without importing peer
 test('trace wire uses closed append-only canonical indices and never invokes spoofed getters',()=>{
   let reads=0;
   const unsafe=Object.defineProperty({terminal:'PRIVATE',extra:'x'.repeat(20000)},'firstCause',{get(){reads++;throw new Error('PRIVATE');}});
-  assert.deepEqual(closedStartupTrace(unsafe),{firstCause:'unknown',terminal:'unknown',early:'unknown',handoff:'unknown',cookie:'unknown',extra:'unknown',guardTrigger:'unknown',guardProvenance:'unknown'});
+  assert.deepEqual(closedStartupTrace(unsafe),{firstCause:'unknown',terminal:'unknown',early:'unknown',handoff:'unknown',cookie:'unknown',extra:'unknown',guardTrigger:'unknown',guardProvenance:'unknown',guardCondition:'unknown',guardEpoch:'unknown'});
   const codes=[];
-  for(const [key,values]of Object.entries(STARTUP_TRACE))for(const value of values){const code=startupRPCCode(startupFailure('collector','inspect_before','observed_cookie_write',true,undefined,{[key]:value}));assert.match(code,/^manual_initial_v3_(?:0|[1-9][0-9]*)(?:_(?:0|[1-9][0-9]*)){11}$/);assert.ok(code.length<=80);codes.push(code);}
+  const guarded=Object.defineProperties({}, {
+    guardCondition:{get(){reads++;throw new Error('PRIVATE');}},
+    guardEpoch:{get(){reads++;throw new Error('PRIVATE');}},
+  });
+  assert.deepEqual([closedStartupTrace(guarded).guardCondition,closedStartupTrace(guarded).guardEpoch],['unknown','unknown']);
+  for(const [key,values]of Object.entries(STARTUP_TRACE))for(const value of values){const code=startupRPCCode(startupFailure('collector','inspect_before','observed_cookie_write',true,undefined,{[key]:value}));assert.match(code,/^manual_initial_v4_(?:0|[1-9][0-9]*)(?:_(?:0|[1-9][0-9]*)){13}$/);assert.ok(code.length<=80);codes.push(code);}
+  const maximum=Object.fromEntries(Object.entries(STARTUP_TRACE).map(([key,values])=>[key,values.at(-1)]));
+  const maximumCode=startupRPCCode(startupFailure('collector','inspect_before','observed_cookie_write',true,undefined,maximum));
+  assert.match(maximumCode,/^manual_initial_v4_(?:0|[1-9][0-9]*)(?:_(?:0|[1-9][0-9]*)){13}$/);assert.ok(maximumCode.length<=80);
   const report=Object.defineProperty({},'diagnostic',{get(){reads++;return 'bound';}});
   assert.throws(()=>requireBoundStartup(report,'reader',startupFailureLatch()));assert.equal(reads,0);
   assert.equal(startupRPCCode({trace:unsafe}),'manual_initial_unknown_acquire_rpc_unavailable_primary');assert.ok(codes.length>40);
