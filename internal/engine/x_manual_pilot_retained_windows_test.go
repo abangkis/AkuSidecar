@@ -426,8 +426,8 @@ func TestXManualPilotRetainedQA(t *testing.T) {
 }
 
 func TestXManualPilotRetainedSeedDiagnostics(t *testing.T) {
-	seedCacheCode := "manual_seed_v2_9_3_0_v5_0_8_7_0_19_0_0_0_0_0_8_6_20_1_3_2_1"
-	seedCacheWant := "phase=seed_write reason=rejected write=not_attempted initial=(role=reader phase=bound_finish reason=observed_cookie_write kind=primary first=guard_request_unbound terminal=unknown early=unknown handoff=unknown cookie=unknown extra=unknown trigger=redirect provenance=redirect condition=response_cache epoch=before_seed disk_cache=true service_worker=false prefetch_cache=absent)"
+	seedCacheCode := "manual_seed_v2_9_3_0_v6_0_8_7_0_19_0_0_0_0_0_8_6_20_1_3_2_1_4"
+	seedCacheWant := "phase=seed_write reason=rejected write=not_attempted initial=(role=reader phase=bound_finish reason=observed_cookie_write kind=primary first=guard_request_unbound terminal=unknown early=unknown handoff=unknown cookie=unknown extra=unknown trigger=redirect provenance=redirect condition=response_cache epoch=before_seed disk_cache=true service_worker=false prefetch_cache=absent request_frame=matching)"
 	for _, sample := range []struct {
 		err  error
 		want string
@@ -440,6 +440,7 @@ func TestXManualPilotRetainedSeedDiagnostics(t *testing.T) {
 		{errors.New("manual_seed_v2_09_3_0_v5_0_8_7_0_19_0_0_0_0_0_8_6_20_1_3_2_1"), "phase=rpc reason=unavailable write=unknown"},
 		{errors.New("manual_seed_v2_9_3_00_v5_0_8_7_0_19_0_0_0_0_0_8_6_20_1_3_2_1"), "phase=rpc reason=unavailable write=unknown"},
 		{errors.New("manual_seed_v2_9_3_0_v5_0_8_7_0_19_0_0_0_0_0_8_6_20_1_3_2_1_extra"), "phase=rpc reason=unavailable write=unknown"},
+		{errors.New("manual_seed_v2_9_3_0_v6_0_8_7_0_19_0_0_0_0_0_8_6_20_1_3_2_1_99"), "phase=rpc reason=unavailable write=unknown"},
 		{errors.New(seedCacheCode), seedCacheWant},
 		{errors.New("xnp_private_cookie_body"), "phase=rpc reason=unavailable write=unknown"},
 		{context.DeadlineExceeded, "phase=rpc reason=deadline write=unknown"},
@@ -506,7 +507,7 @@ for await(const line of createInterface({input:process.stdin})){const q=JSON.par
 	case <-ctx.Done():
 		t.Fatal("offline diagnostic handshake timeout")
 	}
-	for _, want := range []string{"phase=seed_write reason=rejected write=not_attempted initial=(role=reader phase=bound_finish reason=observed_cookie_write kind=primary first=guard_request_unbound terminal=unknown early=unknown handoff=unknown cookie=unknown extra=unknown trigger=redirect provenance=redirect condition=response_cache epoch=before_seed disk_cache=true service_worker=false prefetch_cache=absent)", "phase=preconditions reason=replay write=not_attempted"} {
+	for _, want := range []string{"phase=seed_write reason=rejected write=not_attempted initial=(role=reader phase=bound_finish reason=observed_cookie_write kind=primary first=guard_request_unbound terminal=unknown early=unknown handoff=unknown cookie=unknown extra=unknown trigger=redirect provenance=redirect condition=response_cache epoch=before_seed disk_cache=true service_worker=false prefetch_cache=absent request_frame=unknown)", "phase=preconditions reason=replay write=not_attempted"} {
 		err = b.rpc(ctx, "manual_seed_bootstrap", map[string]any{"owner": 1}, nil)
 		if xManualRetainedSeedRPCDiagnostic(err) != want {
 			t.Fatal("Node-to-Go closed seed diagnostic lost")
@@ -691,7 +692,7 @@ func TestXManualPilotRetainedTraceCodes(t *testing.T) {
 	if !filepath.IsAbs(project) || !filepath.IsAbs(node) {
 		t.Skip("accountless trace parity requires helper")
 	}
-	const script = `import{pathToFileURL}from'node:url';const m=await import(pathToFileURL(process.argv[1]));const catalogs=[m.STARTUP_ROLES,m.STARTUP_PHASES,m.STARTUP_REASONS,['primary','peer'],...Object.values(m.STARTUP_TRACE)],codes=[];for(const[key,values]of Object.entries(m.STARTUP_TRACE))for(const value of values)codes.push(m.startupRPCCode(m.startupFailure('collector','inspect_before','observed_cookie_write',true,undefined,{[key]:value})));const combined=Object.fromEntries(Object.entries(m.STARTUP_TRACE).map(([key,values])=>[key,values[0]]));combined.firstCause='guard_request_unbound';combined.guardTrigger='redirect';combined.guardProvenance='redirect';combined.guardCondition='response_cache';combined.guardEpoch='before_seed';combined.guardDiskCache='true';combined.guardServiceWorker='false';combined.guardPrefetchCache='absent';const combinedCode=m.startupRPCCode(m.startupFailure('reader','bound_finish','observed_cookie_write',false,undefined,combined));console.log(JSON.stringify({catalogs,codes,combinedCode}));`
+	const script = `import{pathToFileURL}from'node:url';const m=await import(pathToFileURL(process.argv[1]));const catalogs=[m.STARTUP_ROLES,m.STARTUP_PHASES,m.STARTUP_REASONS,['primary','peer'],...Object.values(m.STARTUP_TRACE)],codes=[];for(const[key,values]of Object.entries(m.STARTUP_TRACE))for(const value of values)codes.push(m.startupRPCCode(m.startupFailure('collector','inspect_before','observed_cookie_write',true,undefined,{[key]:value})));const combined=Object.fromEntries(Object.entries(m.STARTUP_TRACE).map(([key,values])=>[key,values[0]]));combined.firstCause='guard_request_unbound';combined.guardTrigger='redirect';combined.guardProvenance='redirect';combined.guardCondition='response_cache';combined.guardEpoch='before_seed';combined.guardDiskCache='true';combined.guardServiceWorker='false';combined.guardPrefetchCache='absent';combined.guardRequestFrame='matching';const combinedCode=m.startupRPCCode(m.startupFailure('reader','bound_finish','observed_cookie_write',false,undefined,combined));console.log(JSON.stringify({catalogs,codes,combinedCode}));`
 	cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(project, "scripts", "auth-session-fixture", "x-manual-startup-diagnostic.mjs"))
 	cmd.Stderr = io.Discard
 	raw, err := cmd.Output()
@@ -713,11 +714,11 @@ func TestXManualPilotRetainedTraceCodes(t *testing.T) {
 		t.Fatal("Node/Go trace catalog order diverged")
 	}
 	legacy, ok := nativePilotInitialCode("manual_initial_v2_0_8_7_0_2_7_6_2_3_0")
-	if !ok || legacy.trace.firstCause != "cookie_ambiguous" || legacy.trace.cookie != "ambiguous" || legacy.trace.guardTrigger != "unknown" || legacy.trace.guardProvenance != "unknown" || legacy.trace.guardCondition != "unknown" || legacy.trace.guardEpoch != "unknown" || legacy.trace.guardDiskCache != "unknown" || legacy.trace.guardServiceWorker != "unknown" || legacy.trace.guardPrefetchCache != "unknown" {
+	if !ok || legacy.trace.firstCause != "cookie_ambiguous" || legacy.trace.cookie != "ambiguous" || legacy.trace.guardTrigger != "unknown" || legacy.trace.guardProvenance != "unknown" || legacy.trace.guardCondition != "unknown" || legacy.trace.guardEpoch != "unknown" || legacy.trace.guardDiskCache != "unknown" || legacy.trace.guardServiceWorker != "unknown" || legacy.trace.guardPrefetchCache != "unknown" || legacy.trace.guardRequestFrame != "unknown" {
 		t.Fatal("legacy V2 catalog index changed")
 	}
 	legacyV3, ok := nativePilotInitialCode("manual_initial_v3_0_0_0_0_0_0_0_0_0_0_8_8")
-	if !ok || legacyV3.trace.guardTrigger != "redirect" || legacyV3.trace.guardProvenance != "root_scope" || legacyV3.trace.guardCondition != "unknown" || legacyV3.trace.guardEpoch != "unknown" || legacyV3.trace.guardDiskCache != "unknown" || legacyV3.trace.guardServiceWorker != "unknown" || legacyV3.trace.guardPrefetchCache != "unknown" || !strings.Contains(legacyV3.String(), "condition=unknown epoch=unknown") {
+	if !ok || legacyV3.trace.guardTrigger != "redirect" || legacyV3.trace.guardProvenance != "root_scope" || legacyV3.trace.guardCondition != "unknown" || legacyV3.trace.guardEpoch != "unknown" || legacyV3.trace.guardDiskCache != "unknown" || legacyV3.trace.guardServiceWorker != "unknown" || legacyV3.trace.guardPrefetchCache != "unknown" || legacyV3.trace.guardRequestFrame != "unknown" || !strings.Contains(legacyV3.String(), "condition=unknown epoch=unknown") {
 		t.Fatal("legacy V3 trace did not retain its fields and default appended fields")
 	}
 	legacyV4Code := "manual_initial_v4"
@@ -725,8 +726,16 @@ func TestXManualPilotRetainedTraceCodes(t *testing.T) {
 		legacyV4Code += "_0"
 	}
 	legacyV4, ok := nativePilotInitialCode(legacyV4Code)
-	if !ok || legacyV4.trace.guardCondition != "unknown" || legacyV4.trace.guardEpoch != "unknown" || legacyV4.trace.guardDiskCache != "unknown" || legacyV4.trace.guardServiceWorker != "unknown" || legacyV4.trace.guardPrefetchCache != "unknown" {
+	if !ok || legacyV4.trace.guardCondition != "unknown" || legacyV4.trace.guardEpoch != "unknown" || legacyV4.trace.guardDiskCache != "unknown" || legacyV4.trace.guardServiceWorker != "unknown" || legacyV4.trace.guardPrefetchCache != "unknown" || legacyV4.trace.guardRequestFrame != "unknown" {
 		t.Fatal("legacy V4 trace arity or appended cache defaults changed")
+	}
+	legacyV5Code := "manual_initial_v5"
+	for i := 0; i < 17; i++ {
+		legacyV5Code += "_0"
+	}
+	legacyV5, ok := nativePilotInitialCode(legacyV5Code)
+	if !ok || legacyV5.trace.guardDiskCache != "unknown" || legacyV5.trace.guardServiceWorker != "unknown" || legacyV5.trace.guardPrefetchCache != "unknown" || legacyV5.trace.guardRequestFrame != "unknown" {
+		t.Fatal("legacy V5 trace arity or appended request-frame default changed")
 	}
 	cursor := 0
 	for field, values := range nativePilotTraceCatalogs {
@@ -755,8 +764,8 @@ func TestXManualPilotRetainedTraceCodes(t *testing.T) {
 		t.Fatal("Node emitted unexpected extra trace wire values")
 	}
 	combined, ok := nativePilotInitialCode(payload.CombinedCode)
-	if !ok || len(payload.CombinedCode) > 80 || combined.trace.guardCondition != "response_cache" || combined.trace.guardEpoch != "before_seed" || combined.trace.guardDiskCache != "true" || combined.trace.guardServiceWorker != "false" || combined.trace.guardPrefetchCache != "absent" || !strings.Contains(combined.String(), "disk_cache=true service_worker=false prefetch_cache=absent") {
-		t.Fatal("Node-to-Go cache trace rendering diverged")
+	if !ok || len(payload.CombinedCode) > 80 || combined.trace.guardCondition != "response_cache" || combined.trace.guardEpoch != "before_seed" || combined.trace.guardDiskCache != "true" || combined.trace.guardServiceWorker != "false" || combined.trace.guardPrefetchCache != "absent" || combined.trace.guardRequestFrame != "matching" || !strings.Contains(combined.String(), "disk_cache=true service_worker=false prefetch_cache=absent request_frame=matching") {
+		t.Fatal("Node-to-Go request-frame trace rendering diverged")
 	}
 	for _, code := range []string{"manual_initial_v3_0_0_0_0_0_0_0_0_0_0", "manual_initial_v3_0_0_0_0_0_0_0_0_0_0_99_0", "manual_initial_v3_0_0_0_0_0_0_0_0_0_0_0_99", "manual_initial_v3_0_0_0_0_0_0_0_0_0_0_00_0", "manual_initial_v3_0_0_0_0_0_0_0_0_0_0_0_0_extra"} {
 		if _, ok := nativePilotInitialCode(code); ok {
@@ -771,6 +780,19 @@ func TestXManualPilotRetainedTraceCodes(t *testing.T) {
 	for _, code := range []string{"manual_initial_v5_0_0_0_0_0_0_0_0_0_0_0_0_0_0_0_0", "manual_initial_v5_0_0_0_0_0_0_0_0_0_0_0_0_0_0_0_0_99", "manual_initial_v5_0_0_0_0_0_0_0_0_0_0_0_0_0_0_0_00", "manual_initial_v5_0_0_0_0_0_0_0_0_0_0_0_0_0_0_0_0_extra", "manual_initial_v5_0_0_0_0_0_0_0_0_0_0_0_0_0_0_0_0_0" + strings.Repeat("0", 80)} {
 		if _, ok := nativePilotInitialCode(code); ok {
 			t.Fatal("noncanonical V5 cache trace accepted")
+		}
+	}
+	validV6 := "manual_initial_v6"
+	for i := 0; i < 18; i++ {
+		validV6 += "_0"
+	}
+	v6WithoutLast := validV6[:strings.LastIndex(validV6, "_")]
+	v6WithBadFinal := strings.TrimSuffix(validV6, "_0") + "_99"
+	v6WithNoncanonicalFinal := strings.TrimSuffix(validV6, "_0") + "_00"
+	v6WithNoncanonicalHead := strings.Replace(validV6, "_0_", "_00_", 1)
+	for _, code := range []string{v6WithoutLast, validV6 + "_0", v6WithBadFinal, v6WithNoncanonicalFinal, v6WithNoncanonicalHead, validV6 + strings.Repeat("0", 80)} {
+		if _, ok := nativePilotInitialCode(code); ok {
+			t.Fatal("noncanonical or unbounded V6 request-frame trace accepted")
 		}
 	}
 	for _, code := range []string{"manual_initial_v2_0_0_0_0_0_0_0_0_0", "manual_initial_v2_00_0_0_0_0_0_0_0_0_0", "manual_initial_v2_0_0_0_2_0_0_0_0_0_0", "manual_initial_v2_0_0_0_0_-1_0_0_0_0_0", "manual_initial_v2_0_0_0_0_0_99_0_0_0_0", "manual_initial_v2_0_0_0_0_0_0_0_0_0_0_extra", "manual_initial_v2_0_0_0_0_0_0_0_0_0_0 ", "manual_initial_v2_+0_0_0_0_0_0_0_0_0_0", "manual_initial_v2_0_0_0_0_0_0_0_0_0_0" + strings.Repeat("0", 80)} {

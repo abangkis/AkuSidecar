@@ -28,6 +28,80 @@ function rejected(s,reason){
   if(reason)assert.equal(s.g.rejection(),reason);return result;
 }
 
+const frameCases=[['absent','absent'],['undefined','malformed'],['empty','malformed'],['number','malformed'],
+  ['object','malformed'],['oversized','malformed'],['accessor','malformed'],['different','different'],['matching','matching']];
+function frameParams(kind,onRead=()=>{}){
+  const params={requestId:'chain',loaderId:'loader',type:'Image',request:{method:'GET',url:urls[0]}};
+  if(kind==='accessor')Object.defineProperty(params,'frameId',{get(){onRead();throw new Error('PRIVATE_FRAME_GETTER');}});
+  else if(kind!=='absent')params.frameId={undefined:undefined,empty:'',number:42,object:{private:'PRIVATE_FRAME_VALUE'},
+    oversized:'PRIVATE_FRAME_VALUE'.repeat(40),different:'PRIVATE_CHILD_FRAME',matching:'frame'}[kind];
+  return params;
+}
+for(const [kind,state]of frameCases)test(`request frame diagnostic is descriptor-only and preserves known-other decision: ${kind}`,()=>{
+  const s=fixture();let reads=0;
+  s.emit('Network.requestWillBeSent',frameParams(kind,()=>reads++));
+  assert.equal(s.extra(200,other),kind!=='matching');
+  if(kind==='matching'){s.response(0,{extra:true});accepted(s,1);assert.equal(s.g.trace().guardRequestFrame,'unknown');}
+  else{
+    assert.equal(s.g.rejection(),'guard_request_unbound');
+    assert.equal(s.g.trace().guardProvenance,'frame_scope');assert.equal(s.g.trace().guardRequestFrame,state);
+    const first=s.g.trace();s.request();s.extra(200,{'Set-Cookie':'ct0=PRIVATE_VALUE; Path=/'});
+    for(let i=0;i<130;i++)s.request();
+    s.g.finish();assert.deepEqual(s.g.trace(),first);assert.equal(s.g.category(),'candidate_observed');
+  }
+  assert.equal(reads,0);
+  for(const raw of ['PRIVATE_FRAME_VALUE','PRIVATE_FRAME_GETTER','PRIVATE_CHILD_FRAME',...urls])assert.equal(JSON.stringify(s.g.trace()).includes(raw),false);
+});
+
+test('unseen request remains unknown and a late matching request cannot repair its first frame diagnostic',()=>{
+  const s=fixture();s.extra(200,other);assert.equal(s.g.rejection(),'guard_request_unbound');
+  const first=s.g.trace();assert.equal(first.guardProvenance,'absent');assert.equal(first.guardRequestFrame,'unknown');
+  s.request();s.response(0,{extra:true});s.g.finish();assert.deepEqual(s.g.trace(),first);
+});
+
+test('matching request with missing or different response frame remains response correlation, never request frame scope',()=>{
+  for(const kind of ['absent','different','accessor']){
+    const s=fixture();s.request();let reads=0;
+    const params={requestId:'chain',loaderId:'loader',hasExtraInfo:false,response:{url:urls[0],status:200,headers:other}};
+    if(kind==='different')params.frameId='PRIVATE_RESPONSE_FRAME';
+    if(kind==='accessor')Object.defineProperty(params,'frameId',{get(){reads++;throw Error('PRIVATE_FRAME_GETTER');}});
+    s.emit('Network.responseReceived',params);rejected(s,'guard_response_correlation');
+    assert.equal(s.g.trace().guardProvenance,'scoped');assert.equal(s.g.trace().guardRequestFrame,'matching');assert.equal(reads,0);
+  }
+});
+
+test('frame diagnostics cannot change candidate, blocked, mixed or malformed-header precedence',()=>{
+  for(const [kind,state]of frameCases)for(const source of ['candidate','blocked','mixed','unknown','malformed']){
+    const s=fixture();s.emit('Network.requestWillBeSent',frameParams(kind));
+    const candidate='ct0=PRIVATE_VALUE; Path=/';
+    s.extra(200,source==='blocked'?{}:{'Set-Cookie':source==='candidate'?candidate:source==='mixed'?`lang=x; Path=/\n${candidate}`:source==='unknown'?'unknown_private=x; Path=/':['lang=x']},
+      source==='blocked'?{blockedCookies:[{cookieLine:candidate}]}:{});
+    assert.equal(s.g.rejection(),['candidate','blocked','mixed'].includes(source)?'cookie_candidate':source==='unknown'?'guard_header_classification':'guard_metadata_shape');
+    assert.equal(s.g.trace().guardRequestFrame,state);s.g.finish();
+  }
+});
+
+test('redirect frame diagnostic follows the failed predicate and header attempts keep their predecessor snapshot',()=>{
+  for(const [kind,state]of frameCases.filter(([kind])=>kind!=='matching')){
+    const previous=fixture();previous.emit('Network.requestWillBeSent',frameParams(kind));previous.redirect();
+    assert.equal(previous.g.trace().guardCondition,'previous_frame');assert.equal(previous.g.trace().guardRequestFrame,state);rejected(previous,'guard_request_unbound');
+    const current=fixture();current.request();const params=frameParams(kind);
+    params.request.url=urls[1];params.redirectHasExtraInfo=false;params.redirectResponse={url:urls[0],status:302,headers:{}};
+    current.emit('Network.requestWillBeSent',params);
+    assert.equal(current.g.trace().guardCondition,'current_frame');assert.equal(current.g.trace().guardRequestFrame,state);rejected(current,'guard_request_unbound');
+    const attempt=fixture();attempt.request();params.redirectResponse.headers={'Set-Cookie':'ct0=PRIVATE_VALUE; Path=/'};
+    attempt.emit('Network.requestWillBeSent',params);assert.equal(attempt.g.rejection(),'cookie_candidate');assert.equal(attempt.g.trace().guardRequestFrame,'matching');attempt.g.finish();
+  }
+});
+
+test('root frame pin, old-loader requests and cookie-free unsupported traffic keep their original behavior',()=>{
+  const s=fixture();s.g.armReload('old');
+  s.emit('Page.frameNavigated',{frame:{id:'PRIVATE_CHILD_FRAME',loaderId:'other',url:'https://x.com/home'}});
+  s.request(0,{frameId:'PRIVATE_CHILD_FRAME'});s.extra(200,other);assert.equal(s.g.trace().guardRequestFrame,'different');rejected(s,'guard_request_unbound');
+  const old=fixture();old.g.armReload('old');old.request(0,{loaderId:'old'});old.response(0,{loaderId:'old',headers:other});accepted(old,1);
+  for(const [kind]of frameCases){const clean=fixture();clean.emit('Network.requestWillBeSent',frameParams(kind));accepted(clean,0);}
+});
+
 test('declared resource redirects classify each exact hop without replacing the predecessor',()=>{
   const s=fixture();s.request();assert.equal(s.redirect(1,{headers:other}),false);assert.equal(s.g.category(),'not_observed');s.response(1,{headers:other});assert.equal(s.g.category(),'not_observed');accepted(s,2);
   const clean=fixture();clean.request();clean.redirect();clean.response();accepted(clean,0);
@@ -186,7 +260,7 @@ test('cache projection survives an earlier known-other latch and stays immutable
   const known=fixture();known.request();
   known.redirect(1,{headers:otherCookie,redirectResponse:{url:urls[0],status:302,headers:otherCookie,fromDiskCache:true}});
   assert.equal(known.g.rejection(),'guard_request_unbound');
-  assert.deepEqual(known.g.trace(),{guardTrigger:'redirect',guardProvenance:'redirect',guardCondition:'response_cache',guardEpoch:'post_seed',guardDiskCache:'true',guardServiceWorker:'absent',guardPrefetchCache:'absent'});
+  assert.deepEqual(known.g.trace(),{guardTrigger:'redirect',guardProvenance:'redirect',guardCondition:'response_cache',guardEpoch:'post_seed',guardDiskCache:'true',guardServiceWorker:'absent',guardPrefetchCache:'absent',guardRequestFrame:'matching'});
 
   const before=fixture({beforeSeed:true});before.request();
   before.redirect(1,{redirectResponse:{url:urls[0],status:302,headers:{},fromServiceWorker:true}});
@@ -201,7 +275,7 @@ test('final redirect response cache flags are retained when completion rejects t
   s.response(1,{response:{url:urls[1],status:200,headers:{},fromDiskCache:false,fromServiceWorker:true,fromPrefetchCache:'malformed-private'}});
   assert.equal(s.g.rejection(),'unknown');
   rejected(s,'guard_response_correlation');
-  assert.deepEqual(s.g.trace(),{guardTrigger:'finish',guardProvenance:'scoped',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'false',guardServiceWorker:'true',guardPrefetchCache:'malformed'});
+  assert.deepEqual(s.g.trace(),{guardTrigger:'finish',guardProvenance:'scoped',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'false',guardServiceWorker:'true',guardPrefetchCache:'malformed',guardRequestFrame:'matching'});
   assert.equal(JSON.stringify(s.g.trace()).includes('malformed-private'),false);
 });
 
@@ -209,12 +283,12 @@ test('a prior candidate or metadata failure is never relabeled by a later cache 
   const candidate=fixture();candidate.request();
   candidate.redirect(1,{redirectResponse:{url:urls[0],status:302,headers:{'Set-Cookie':'ct0=PRIVATE_VALUE; Path=/'},fromDiskCache:true}});
   assert.equal(candidate.g.rejection(),'cookie_candidate');
-  assert.deepEqual(candidate.g.trace(),{guardTrigger:'redirect',guardProvenance:'redirect',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown'});
+  assert.deepEqual(candidate.g.trace(),{guardTrigger:'redirect',guardProvenance:'redirect',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'matching'});
 
   const shape=fixture();shape.request();shape.extra(302,{'Set-Cookie':'unknown_private=PRIVATE_VALUE; Path=/'});
   shape.redirect(1,{redirectResponse:{url:urls[0],status:302,headers:{},fromPrefetchCache:true}});
   assert.equal(shape.g.rejection(),'guard_header_classification');
-  assert.deepEqual(shape.g.trace(),{guardTrigger:'extra',guardProvenance:'scoped',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown'});
+  assert.deepEqual(shape.g.trace(),{guardTrigger:'extra',guardProvenance:'scoped',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'matching'});
 });
 
 test('pre-seed projections stay outside the attempt epoch while late prior-hop candidates revoke post-seed',()=>{

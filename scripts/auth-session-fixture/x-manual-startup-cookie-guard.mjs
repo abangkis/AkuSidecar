@@ -9,6 +9,13 @@ const data = (v, k) => {
   return d ? Object.hasOwn(d, 'value') ? d.value : invalid : undefined;
 };
 const ref = v => typeof v === 'string' && v.length > 0 && v.length <= 512;
+// Diagnostic only. Never replace the guard's existing frame equality checks.
+function requestFrameProjection(params, root) {
+  const d = Object.getOwnPropertyDescriptor(params, 'frameId');
+  if (!d) return 'absent';
+  if (!Object.hasOwn(d, 'value') || !ref(d.value)) return 'malformed';
+  return d.value === root ? 'matching' : 'different';
+}
 const candidate = new Set(['auth_token', 'ct0']);
 const token = /^[!#$%&'*+.^_`|~0-9a-z-]+$/i;
 function setter(url) {
@@ -93,6 +100,7 @@ export class ManualStartupCookieGuard {
   #rejection = 'unknown'; #trigger = 'unknown'; #provenance = 'unknown';
   #condition = 'unknown'; #epoch = 'unknown';
   #guardDiskCache = 'unknown'; #guardServiceWorker = 'unknown'; #guardPrefetchCache = 'unknown';
+  #guardRequestFrame = 'unknown';
   #onRejection;
   constructor(frameId, sessionId, { beforeSeed = false, onRejection = () => {} } = {}) {
     if (!ref(frameId) || typeof beforeSeed !== 'boolean' || beforeSeed && !ref(sessionId)) throw new Error('manual_cookie_guard_invalid');
@@ -115,10 +123,11 @@ export class ManualStartupCookieGuard {
     }
     this.#armed = true; this.#oldLoader = oldLoader;
   }
-  #note(reason, trigger, provenance = 'unknown', condition = 'unknown', cache = null) {
+  #note(reason, trigger, provenance = 'unknown', condition = 'unknown', cache = null, frame = 'unknown') {
     if (this.#rejection !== 'unknown') return;
     this.#rejection = reason; this.#trigger = trigger; this.#provenance = provenance;
     this.#condition = condition;
+    this.#guardRequestFrame = frame;
     if (cache) {
       this.#guardDiskCache = cache.guardDiskCache;
       this.#guardServiceWorker = cache.guardServiceWorker;
@@ -128,12 +137,12 @@ export class ManualStartupCookieGuard {
     this.#epoch = !this.#baseline ? 'before_seed' : this.#commit !== null ? 'document_committed' : this.#armed ? 'reload_armed' : 'post_seed';
     try{this.#onRejection(reason,this.trace());}catch{}
   }
-  #fail(reason = 'guard_metadata_shape', trigger = 'metadata', provenance = 'unknown', condition = 'unknown', cache = null) {
-    this.#note(reason,trigger,provenance,condition,cache); this.#ambiguous = Math.min(64,this.#ambiguous + 1);
+  #fail(reason = 'guard_metadata_shape', trigger = 'metadata', provenance = 'unknown', condition = 'unknown', cache = null, frame = 'unknown') {
+    this.#note(reason,trigger,provenance,condition,cache,frame); this.#ambiguous = Math.min(64,this.#ambiguous + 1);
   }
   rejection() { return this.#rejection; }
   trace() { return Object.freeze({guardTrigger:this.#trigger,guardProvenance:this.#provenance,guardCondition:this.#condition,guardEpoch:this.#epoch,
-    guardDiskCache:this.#guardDiskCache,guardServiceWorker:this.#guardServiceWorker,guardPrefetchCache:this.#guardPrefetchCache}); }
+    guardDiskCache:this.#guardDiskCache,guardServiceWorker:this.#guardServiceWorker,guardPrefetchCache:this.#guardPrefetchCache,guardRequestFrame:this.#guardRequestFrame}); }
   category() { return this.#candidate ? 'candidate_observed' : this.#ambiguous ? 'ambiguous' : this.#other ? 'other_only' : 'not_observed'; }
   #attempt(headers, blocked, request, trigger, provenance = request?.provenance ?? 'absent') {
     if (!this.#baseline) return null;
@@ -161,16 +170,17 @@ export class ManualStartupCookieGuard {
     }
     if(!present&&!malformed)return null;
     if(request)request.cookie=true;
-    if(++this.#events>64){this.#fail('guard_event_budget',trigger,provenance);return null;}
-    if(lines.length>32||this.#lines+lines.length>32){this.#fail('guard_header_budget',trigger,provenance);return null;}
+    const frame=request?.frameStatus??'unknown';
+    if(++this.#events>64){this.#fail('guard_event_budget',trigger,provenance,'unknown',null,frame);return null;}
+    if(lines.length>32||this.#lines+lines.length>32){this.#fail('guard_header_budget',trigger,provenance,'unknown',null,frame);return null;}
     this.#lines+=lines.length;
     const kinds=lines.map(line=>lineKind(line));
-    if(kinds.includes('candidate'))this.#note('cookie_candidate',trigger,provenance);
-    if(malformed||!lines.length)this.#fail(malformedReason,trigger,provenance);
+    if(kinds.includes('candidate'))this.#note('cookie_candidate',trigger,provenance,'unknown',null,frame);
+    if(malformed||!lines.length)this.#fail(malformedReason,trigger,provenance,'unknown',null,frame);
     const other=[];
     for(const kind of kinds){
       if(kind==='candidate')this.#candidate=Math.min(64,this.#candidate+1);
-      else if(kind==='ambiguous')this.#fail('guard_header_classification',trigger,provenance);
+      else if(kind==='ambiguous')this.#fail('guard_header_classification',trigger,provenance,'unknown',null,frame);
       else other.push(kind);
     }
     return other;
@@ -179,20 +189,21 @@ export class ManualStartupCookieGuard {
     if(!other)return;
     for(const line of other){
       const scope=request?.scope;
-      if(!scope||request.provenance!=='scoped')this.#fail('guard_request_unbound',trigger,provenance,condition,cache);
-      else if(line.domain!==null&&!(scope.host===line.domain||scope.host==='api.x.com'&&line.domain==='x.com')||!QA_COOKIE_PATHS.includes(line.path??scope.path))this.#fail('guard_header_classification',trigger,provenance,condition,cache);
-      else if(request.bad)this.#fail('guard_response_correlation',trigger,provenance,condition,cache);
+      const frame=request?.frameStatus??'unknown';
+      if(!scope||request.provenance!=='scoped')this.#fail('guard_request_unbound',trigger,provenance,condition,cache,frame);
+      else if(line.domain!==null&&!(scope.host===line.domain||scope.host==='api.x.com'&&line.domain==='x.com')||!QA_COOKIE_PATHS.includes(line.path??scope.path))this.#fail('guard_header_classification',trigger,provenance,condition,cache,frame);
+      else if(request.bad)this.#fail('guard_response_correlation',trigger,provenance,condition,cache,frame);
       else this.#other=Math.min(64,this.#other+1);
     }
   }
-  #reserve(trigger, provenance) {
+  #reserve(trigger, provenance, frame = 'unknown') {
     // Hops and queued ExtraInfo projections share the lifetime record budget.
     // Reusing a request ID never replenishes it, including across the seed.
-    if(this.#records>=128){this.#fail('guard_request_budget',trigger,provenance);return false;}
+    if(this.#records>=128){this.#fail('guard_request_budget',trigger,provenance,'unknown',null,frame);return false;}
     this.#records++;return true;
   }
   #chainFailure(chain, trigger, provenance) {
-    if(chain?.redirected||chain?.hops.some(r=>r.cookie||r.root))this.#fail('guard_response_correlation',trigger,provenance);
+    if(chain?.redirected||chain?.hops.some(r=>r.cookie||r.root))this.#fail('guard_response_correlation',trigger,provenance,'unknown',null,chain.hops.at(-1)?.frameStatus??'unknown');
   }
   #complete(chain) {
     const relevant=chain.redirected||chain.hops.some(r=>r.cookie||r.root);
@@ -201,13 +212,13 @@ export class ManualStartupCookieGuard {
     for(const r of chain.hops){
       const cacheFailure=chain.redirected&&!chain.cache&&!chain.failed&&!r.bad&&!chain.bad&&r.cache;
       if(r.bad||chain.bad||chain.redirected&&(chain.cache||chain.failed||r.cache||r.provenance!=='scoped'||!r.resource||r.response&&r===last&&(r.status<200||r.status>=300&&r.status<400))){
-        this.#fail('guard_response_correlation','finish',r.provenance,'unknown',cacheFailure?r.cacheProjection:null);return;
+        this.#fail('guard_response_correlation','finish',r.provenance,'unknown',cacheFailure?r.cacheProjection:null,r.frameStatus);return;
       }
-      if(!r.response||r.root&&this.#commit!==r.loaderId){this.#fail('guard_completion_missing','finish',r.provenance);return;}
+      if(!r.response||r.root&&this.#commit!==r.loaderId){this.#fail('guard_completion_missing','finish',r.provenance,'unknown',null,r.frameStatus);return;}
     }
     const required=chain.hops.filter(r=>r.needsExtra===true);
     if(required.length!==chain.extras.length){
-      this.#fail(chain.extras.length>required.length?'guard_response_correlation':'guard_completion_missing','finish',last.provenance);return;
+      this.#fail(chain.extras.length>required.length?'guard_response_correlation':'guard_completion_missing','finish',last.provenance,'unknown',null,last.frameStatus);return;
     }
     // CDP permits ExtraInfo before or after the normal response, but does not
     // promise a cross-hop order. Admit only a unique status-consistent pairing
@@ -216,10 +227,10 @@ export class ManualStartupCookieGuard {
     for(const extra of chain.extras){
       const choices=required.filter(r=>r.status===extra.status);
       if(chain.redirected&&(!extra.headersShape||!extra.blockedShape)){
-        this.#fail('guard_metadata_shape','finish',last.provenance);return;
+        this.#fail('guard_metadata_shape','finish',last.provenance,'unknown',null,last.frameStatus);return;
       }
       if(extra.bad||choices.length!==1||matched.has(choices[0])){
-        this.#fail('guard_response_correlation','finish',last.provenance);return;
+        this.#fail('guard_response_correlation','finish',last.provenance,'unknown',null,last.frameStatus);return;
       }
       matched.add(choices[0]);
     }
@@ -237,23 +248,24 @@ export class ManualStartupCookieGuard {
       if(this.#commit!==null||!ref(loader)||loader===this.#oldLoader||data(frame,'url')!=='https://x.com/home'||data(frame,'parentId')!==undefined)this.#fail('guard_response_correlation','document','root_scope');
       else this.#commit=loader;
       const root=this.#root;
-      if(root&&root.loaderId!==loader){root.bad=true;this.#fail('guard_response_correlation','document','root_scope');}
+      if(root&&root.loaderId!==loader){root.bad=true;this.#fail('guard_response_correlation','document','root_scope','unknown',null,root.frameStatus);}
     }
     const id=data(p,'requestId');
     if(method==='Network.requestWillBeSent'){
       const redirect=data(p,'redirectResponse'),chain=this.#requests.get(id),previous=chain?.hops.at(-1);
       const other=redirect!==undefined?this.#attempt(data(redirect,'headers'),undefined,previous,'redirect','redirect'):null;
       if(!ref(id)){this.#fail('guard_metadata_shape','request');return true;}
-      if(!this.#reserve('request',redirect!==undefined?'redirect':chain?'reused':'unknown'))return true;
+      const frameStatus=requestFrameProjection(p,this.#frame);
+      if(!this.#reserve('request',redirect!==undefined?'redirect':chain?'reused':'unknown',frameStatus))return true;
       const scope=setter(data(data(p,'request'),'url')),loader=data(p,'loaderId');
       const provenance=!scope?'origin_scope':data(p,'frameId')!==this.#frame?'frame_scope':!ref(loader)?'loader_missing':'scoped';
-      const r={scope,provenance,loaderId:ref(loader)?loader:null,response:false,bad:false,cookie:false,status:null,needsExtra:null,root:false,cache:false,cacheProjection:null,other:null,
+      const r={scope,provenance,frameStatus,loaderId:ref(loader)?loader:null,response:false,bad:false,cookie:false,status:null,needsExtra:null,root:false,cache:false,cacheProjection:null,other:null,
         resource:resourceTypes.has(data(p,'type'))&&data(data(p,'request'),'method')==='GET'&&!settingsScope(scope)};
       const current=chain??{hops:[],extras:[],redirected:false,bad:false,cache:false,failed:false,completed:false};
-      if(chain&&redirect===undefined){r.provenance='reused';current.bad=true;this.#fail('guard_request_unbound','request','reused');}
+      if(chain&&redirect===undefined){r.provenance='reused';current.bad=true;this.#fail('guard_request_unbound','request','reused','unknown',null,frameStatus);}
       if(redirect!==undefined){
         current.redirected=true;
-        if(!previous){r.provenance='redirect';current.bad=true;this.#apply(other,{provenance:'redirect'},'redirect','redirect','predecessor_missing');this.#fail('guard_request_unbound','request','redirect','predecessor_missing');}
+        if(!previous){r.provenance='redirect';current.bad=true;this.#apply(other,{provenance:'redirect',frameStatus},'redirect','redirect','predecessor_missing');this.#fail('guard_request_unbound','request','redirect','predecessor_missing',null,frameStatus);}
         else{
           const status=data(redirect,'status'),extra=data(p,'redirectHasExtraInfo');
           const valid=object(redirect)&&!previous.response&&!current.completed&&!current.failed&&!current.cache&&previous.resource&&r.resource&&
@@ -268,7 +280,10 @@ export class ManualStartupCookieGuard {
               previous.loaderId!==loader?'loader_mismatch':data(redirect,'url')!==previous.scope?.url?'redirect_url':!redirectStatuses.has(status)?'redirect_status':
               typeof extra!=='boolean'?'extra_flag':!object(data(redirect,'headers'))?'headers_shape':'response_cache';
             const cache=condition==='response_cache'?cacheProjection(redirect):null;
-            previous.bad=true;current.bad=true;this.#apply(other,{provenance:'redirect'},'redirect','redirect',condition,cache);this.#fail('guard_request_unbound','request','redirect',condition,cache);
+            // The predicate identifies which request frame failed. Header
+            // attempts above retain their own predecessor snapshot instead.
+            const failedFrame=condition==='previous_frame'?previous.frameStatus:frameStatus;
+            previous.bad=true;current.bad=true;this.#apply(other,{provenance:'redirect',frameStatus:failedFrame},'redirect','redirect',condition,cache);this.#fail('guard_request_unbound','request','redirect',condition,cache,failedFrame);
           }
           else{previous.response=true;previous.status=status;previous.needsExtra=extra;previous.other=other;}
         }
@@ -276,7 +291,7 @@ export class ManualStartupCookieGuard {
       current.hops.push(r);this.#requests.set(id,current);
       if(this.#armed&&data(p,'type')==='Document'&&data(p,'frameId')===this.#frame){
         const valid=this.#rootId===null&&!chain&&redirect===undefined&&provenance==='scoped'&&data(data(p,'request'),'method')==='GET'&&scope.url==='https://x.com/home'&&loader!==this.#oldLoader&&(!this.#commit||this.#commit===loader);
-        if(!valid){r.provenance='root_scope';this.#fail('guard_request_unbound','request','root_scope');}
+        if(!valid){r.provenance='root_scope';this.#fail('guard_request_unbound','request','root_scope','unknown',null,frameStatus);}
         else{r.root=true;this.#rootId=id;this.#root=r;}
       }
     }
@@ -289,7 +304,7 @@ export class ManualStartupCookieGuard {
         const status=data(response,'status'),extra=data(p,'hasExtraInfo');
         r.bad ||= r.response||data(p,'loaderId')!==r.loaderId||data(p,'frameId')!==this.#frame||data(response,'url')!==r.scope?.url||!statusValid(status)||r.root&&status!==200||typeof extra!=='boolean';
         if(!r.cache&&unsafeCache(response)){r.cache=true;r.cacheProjection=cacheProjection(response);}
-        if(chain.redirected&&!object(data(response,'headers'))){r.bad=true;this.#fail('guard_metadata_shape','response',r.provenance);}
+        if(chain.redirected&&!object(data(response,'headers'))){r.bad=true;this.#fail('guard_metadata_shape','response',r.provenance,'unknown',null,r.frameStatus);}
         r.response=true;r.status=statusValid(status)?status:null;r.needsExtra=typeof extra==='boolean'?extra:null;
         // A single hop can be checked immediately; a redirect chain waits for
         // all declarations, because a late ExtraInfo may belong to any hop.
@@ -297,7 +312,7 @@ export class ManualStartupCookieGuard {
         if(chain.redirected)r.other=other;else this.#apply(other,r,'response');
       }else if(method==='Network.responseReceivedExtraInfo'&&r){
         const status=data(p,'statusCode');
-        if(this.#reserve('extra',r.provenance))chain.extras.push({status:statusValid(status)?status:null,bad:!statusValid(status),other,headersShape:object(data(p,'headers')),blockedShape:blockedShape(data(p,'blockedCookies'))});
+        if(this.#reserve('extra',r.provenance,r.frameStatus))chain.extras.push({status:statusValid(status)?status:null,bad:!statusValid(status),other,headersShape:object(data(p,'headers')),blockedShape:blockedShape(data(p,'blockedCookies'))});
         if(!chain.redirected&&(chain.extras.length>1||!statusValid(status)||r.response&&(r.needsExtra!==true||status!==r.status)))r.bad=true;
         if(r.provenance!=='scoped')this.#apply(other,r,'extra');
       }else this.#apply(other,r,method==='Network.responseReceived'?'response':'extra');

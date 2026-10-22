@@ -81,7 +81,7 @@ for(const [mode,reason,trigger,provenance]of [
 ])test(`actual collector transport delivers once and keeps repeat rejection closed: ${mode}`,async()=>{
   const r=await collectorRepeatScenario(mode),expected={reason,guardTrigger:trigger,guardProvenance:provenance,
     guardCondition:['declared','other'].includes(mode)?'extra_flag':mode==='malformed'?'redirect_shape':'unknown',
-    guardEpoch:mode==='single'?'unknown':'reload_armed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown'};
+    guardEpoch:mode==='single'?'unknown':'reload_armed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:mode==='single'?'unknown':'matching'};
   assert.ok(r.binder);assert.equal(r.received,mode==='single'?3:4);assert.equal(r.observed,r.received);assert.equal(r.maxCalls,1);
   assert.equal(r.commands.filter(m=>m==='Network.enable').length,1);
   assert.deepEqual(r.atDispatch,expected);assert.deepEqual(r.afterLate,expected);
@@ -222,6 +222,13 @@ async function driverScenario(scenario, continuous=false, injectedCookie='lang=e
     if(['before-observer-late-response','after-enable-old-loader','observed-before-seed'].includes(scenario))response('pending',undefined,'old');
     if(['precommit-resource','postcommit-resource'].includes(scenario))response('asset');
     if(scenario==='foreign-origin'){request('foreign','https://static.invalid/asset');response('foreign','https://static.invalid/asset');}
+    if(scenario.startsWith('request-frame-')){
+      const params={requestId:'asset',loaderId:'new',type:'Image',request:{method:'GET',url:'https://x.com/asset'}};
+      if(scenario==='request-frame-empty')params.frameId='';
+      if(scenario==='request-frame-number')params.frameId=42;
+      if(scenario==='request-frame-different')params.frameId='PRIVATE_CHILD_FRAME';
+      emit('Network.requestWillBeSent',params);response('asset');
+    }
     if(scenario==='resource-redirect'){request('redirect');request('redirect','https://x.com/asset2','new','Image',{redirectResponse:{url:'https://x.com/asset',status:302,headers:{'Set-Cookie':'lang=en; Path=/'}}});}
     if(scenario.startsWith('qualified-redirect')){
       const headers={'Set-Cookie':scenario==='qualified-redirect-candidate'?'ct0=; Max-Age=0; Path=/':'lang=en; Path=/'};
@@ -254,6 +261,14 @@ for(const scenario of ['clean','precommit-resource','postcommit-resource','obser
   const r=await driverScenario(scenario,true);assert.equal(r.diagnostic,'bound');assert.equal(r.receipts,1);assert.equal(r.evaluations,2);
   assert.equal(r.commands.filter(v=>v==='Network.enable').length,1);
   assert.ok(r.commands.indexOf('Network.disable')>r.commands.indexOf('receipt'));
+});
+for(const [kind,state]of [['absent','absent'],['empty','malformed'],['number','malformed'],['different','different']])test(`actual reader dispatcher retains first request frame status through binder and latch: ${kind}`,async()=>{
+  const r=await driverScenario('request-frame-'+kind,true);
+  assert.equal(r.receipts,0);assert.equal(r.evaluations,0);
+  assert.equal(r.trace.firstCause,'guard_request_unbound');assert.equal(r.trace.guardTrigger,'extra');
+  assert.equal(r.trace.guardProvenance,'frame_scope');assert.equal(r.trace.guardRequestFrame,state);
+  assert.equal(r.trace.guardEpoch,'document_committed');assert.equal(r.trace.terminal,'scope_lost');
+  assert.equal(JSON.stringify(r.trace).includes('PRIVATE_CHILD_FRAME'),false);
 });
 test('actual reader dispatcher rejects a pending redirect chain before publishing and candidates before identity reads',async()=>{
   const missing=await driverScenario('qualified-redirect-missing',true);assert.equal(missing.receipts,0);assert.equal(missing.evaluations,2);
@@ -361,8 +376,8 @@ test('pre-seed headers do not poison the epoch; structural coverage loss cannot 
   const malformed=passive();malformed.emit('Network.requestWillBeSent',{});malformed.g.beginPostSeed();assert.equal(malformed.g.rejection(),'guard_metadata_shape');
 });
 test('post-seed missing predecessor and seen rejected scope remain distinct, including blocked candidates',()=>{
-  const absent=passive();absent.g.beginPostSeed();absent.response('lang=en; Path=/');assert.deepEqual(absent.g.trace(),{guardTrigger:'response',guardProvenance:'absent',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown'});
-  const foreign=passive();foreign.request('r',{frameId:'child'});foreign.g.beginPostSeed();foreign.response('lang=en; Path=/');assert.deepEqual(foreign.g.trace(),{guardTrigger:'response',guardProvenance:'frame_scope',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown'});
+  const absent=passive();absent.g.beginPostSeed();absent.response('lang=en; Path=/');assert.deepEqual(absent.g.trace(),{guardTrigger:'response',guardProvenance:'absent',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'unknown'});
+  const foreign=passive();foreign.request('r',{frameId:'child'});foreign.g.beginPostSeed();foreign.response('lang=en; Path=/');assert.deepEqual(foreign.g.trace(),{guardTrigger:'response',guardProvenance:'frame_scope',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'different'});
   for(const scope of ['absent','scoped','foreign']){
     const s=passive();if(scope!=='absent')s.request('r',scope==='foreign'?{request:{method:'GET',url:'https://foreign.invalid/asset'}}:{});s.g.beginPostSeed();
     s.emit('Network.responseReceivedExtraInfo',{requestId:'r',statusCode:200,headers:{},blockedCookies:[{cookieLine:'ct0=; Max-Age=0; Path=/'}]});

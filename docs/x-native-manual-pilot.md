@@ -431,6 +431,38 @@ later cache metadata cannot replace an earlier cause. The original rejection
 predicate, precedence, scope, budgets and first observation epoch are unchanged.
 V2/V3/V4 startup codes remain decodable with missing fields marked unknown.
 
+Private V6 startup diagnostics append `guardRequestFrame`, rendered as
+`request_frame` by Go. This is a request-time descriptor projection against
+the immutable root frame pin, not a frame identifier or a new admission rule:
+
+- `absent`: an observed request has no own `frameId` property.
+- `malformed`: its own property is an accessor, empty, non-string, undefined,
+  or longer than the existing 512-character reference bound.
+- `different`: a valid reference differs from the root pin.
+- `matching`: a valid reference equals the root pin.
+- `unknown`: no applicable observed request snapshot owns the first failure,
+  or the diagnostic predates V6. An unseen request is not an observed request
+  with an absent property.
+
+No getter is invoked and no frame ID is retained in the diagnostic. Candidate
+and malformed-header precedence is unchanged. A matching request followed by
+a response with a missing or different frame remains a response-correlation
+failure with `request_frame=matching`. Redirect predicate failures use the
+current request snapshot, except `previous_frame`, which uses the predecessor;
+header attempts parsed before that predicate keep their predecessor snapshot.
+Document-only failures without an applicable request remain unknown. The
+first failure owns this field permanently, including an unknown value: later
+events, candidates, budget exhaustion, seed transitions, peer failures and
+latch enrichment cannot replace it. The root pin is never rebound.
+
+V6 uses the same closed numeric, 80-character-bounded startup and seed wires.
+V2 through V5 keep their exact historical arities and decode the appended
+frame field as unknown. Offline regressions cover descriptor categories,
+request-versus-response attribution, immutable first failure, redirect order,
+raw driver dispatch through binder/latch, wire parity and seed wrapping. These
+diagnostics do not establish why native X supplied an unqualified frame;
+that remains unverified until a separately authorized QA observation.
+
 Seed failures with a branded first startup trace use a bounded numeric
 `manual_seed_v2_...` envelope so an early abort does not discard the original
 role, cause, condition, epoch and cache attributes. It includes the existing
