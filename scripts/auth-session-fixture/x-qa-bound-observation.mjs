@@ -3,11 +3,17 @@ import { performance } from 'node:perf_hooks';
 import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, validateBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
 import { QADirectCapture } from './x-qa-direct-ab.mjs';
 import { qaSourceRoute } from './x-qa-source-qualification.mjs';
+import { ManualStartupCookieGuard } from './x-manual-startup-cookie-guard.mjs';
 
 const own = (v, k) => Object.getOwnPropertyDescriptor(v, k)?.value;
 const stableId = v => typeof v === 'string' && /^[1-9][0-9]{0,19}$/.test(v);
 const safe = v => typeof v === 'string' && v.length > 0 && v.length <= 4096;
 const error = () => new Error('qa_bound_observation_invalid');
+const manualV2CookiePolicy = Symbol();
+// Selected by trusted Manual V2 owner code only, never by a JSON option.
+export function createManualV2BoundObservation(scope, frameId, readBody, now, observeCookieWrites, pointOptions) {
+  return new QABoundObservation(scope, frameId, readBody, now, observeCookieWrites, pointOptions, manualV2CookiePolicy);
+}
 
 export function identityProjectionMatches(p) {
   return p?.diagnostic === 'projected' && p.bootstrapState === 'object' && p.sessionState === 'object' &&
@@ -51,19 +57,22 @@ export class QABoundObservation {
   #scope; #now; #last; #start; #frame; #loader = null; #context = null; #id = null;
   #identityAt = null; #sourceAt = null; #projection = null; #failure = null; #events = 0; #closed = false;
   #startupCookieWriteObserved = false;
+  #manualCookieGuard;
   #needsExtra = null; #extraStatus = null; #resolveDone;
   #observeCookieWrites;
   #pointOptions; #requestAt = null; #networkRequest = null; #networkInterval = null;
-  constructor(scope, frameId, readBody, now = () => performance.now(), observeCookieWrites = () => {}, pointOptions = { deferCookieMutation: false, onPrivateResult: () => {} }) {
+  constructor(scope, frameId, readBody, now = () => performance.now(), observeCookieWrites = () => {}, pointOptions = { deferCookieMutation: false, onPrivateResult: () => {} }, cookiePolicy) {
     if (!scope || Object.keys(scope).sort().join(',') !== 'owner,profileId,sessionId,targetId' ||
         !Number.isSafeInteger(scope.owner) || scope.owner <= 0 || !['profileId', 'sessionId', 'targetId'].every(k => safe(scope[k])) ||
         !safe(frameId) || typeof now !== 'function' || typeof observeCookieWrites !== 'function' ||
         !pointOptions || !['deferCookieMutation,onPrivateResult', 'deferCookieMutation,onPrivateResult,onPrivateStartup'].includes(Object.keys(pointOptions).sort().join(',')) ||
         Object.hasOwn(pointOptions, 'onPrivateStartup') && typeof pointOptions.onPrivateStartup !== 'function' ||
-        typeof pointOptions.deferCookieMutation !== 'boolean' || typeof pointOptions.onPrivateResult !== 'function') throw error();
+        typeof pointOptions.deferCookieMutation !== 'boolean' || typeof pointOptions.onPrivateResult !== 'function' ||
+        cookiePolicy !== undefined && cookiePolicy !== manualV2CookiePolicy || cookiePolicy === manualV2CookiePolicy && pointOptions.deferCookieMutation) throw error();
     this.#scope = Object.freeze({ ...scope }); this.#frame = frameId; this.#now = now;
     this.#observeCookieWrites = observeCookieWrites;
     this.#pointOptions = Object.freeze({ ...pointOptions });
+    this.#manualCookieGuard = cookiePolicy === manualV2CookiePolicy ? new ManualStartupCookieGuard(frameId) : null;
     this.#start = this.#last = now();
     if (!Number.isFinite(this.#start)) throw error();
     this.capture = new QADirectCapture('a', frameId, readBody, now);
@@ -126,12 +135,14 @@ export class QABoundObservation {
     }
     if (!raw.method?.startsWith('Network.')) return;
     this.#observeCookieWrites(raw, this.#identityAt === null ? 'before_identity' : 'after_identity', this.#loader);
+    if (this.#manualCookieGuard?.observe(raw, this.#loader, this.#context)) this.invalidate('observed_cookie_write');
     if (!this.#loader) return; // Do not adopt old-document requests.
-    // The baseline begins at the first valid identity. Startup writes can
-    // precede it; the selected request MUST begin after it. Every observed
-    // write thereafter fences this sample. This is not worker-wide coverage.
+    // Ordinary QA starts its write baseline at the first valid identity;
+    // the selected request MUST begin after it. Manual V2 instead uses its
+    // post-seed startup guard above, including attempts before identity.
+    // Neither policy claims worker-wide or full manual-window coverage.
     const headers = raw.method === 'Network.responseReceivedExtraInfo' ? p.headers : p.response?.headers;
-    if (headers && Object.keys(headers).some(k => k.toLowerCase() === 'set-cookie')) {
+    if (!this.#manualCookieGuard && headers && Object.keys(headers).some(k => k.toLowerCase() === 'set-cookie')) {
       if (this.#identityAt === null) this.#startupCookieWriteObserved = true;
       else this.invalidate('observed_cookie_write');
     }
@@ -170,6 +181,8 @@ export class QABoundObservation {
     // The ordinary report deliberately discards this private request reference.
     const settingsRequestId = this.capture.chosen;
     const source = await this.capture.finish();
+    const cookieGuard = this.#manualCookieGuard?.finish();
+    if (cookieGuard && (cookieGuard.candidateAttempts || cookieGuard.ambiguousAttempts)) this.invalidate('observed_cookie_write');
     const t = this.#tick();
     this.#closed = true;
     const identity = this.#id !== null && identityProjectionMatches(this.#projection);
@@ -199,6 +212,7 @@ export class QABoundObservation {
       binding: diagnostic === 'bound' ? 'same_document_observed' : 'unknown', freshness: fresh ? 'within_5s' : 'unknown',
       bootstrap: this.#projection, source, cleanupVerified: cleanupVerified === true,
       startupCookieWriteObserved: this.#startupCookieWriteObserved,
+      ...(cookieGuard ? { manualCookieGuard: cookieGuard } : {}),
       enrollment: 'not_verified', continuity: 'unknown', canAuthorize: false, sessionTransferred: false });
   }
 }

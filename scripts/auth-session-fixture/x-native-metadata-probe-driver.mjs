@@ -21,7 +21,7 @@ import { QAGuestCapture, qaGuestCommand, QA_GUEST_HOME, finishQAAuthControl } fr
 import { QADirectCapture, qaABCommand, QA_AB_URL, projectQADirectBody, finishQADirectAB } from './x-qa-direct-ab.mjs';
 import { qaWebCommand, QA_WEB_INSTALL, QA_WEB_SNAPSHOT, QA_WEB_START, QA_WEB_DISPOSE, validateQAWebHook, finishQAWebABA } from './x-qa-web-aba.mjs';
 import { projectQA401Body, finishQAWeb401 } from './x-qa-401-projection.mjs';
-import { QABoundObservation, QA_BOUND_BOOTSTRAP_EXPRESSION, projectBoundBootstrap } from './x-qa-bound-observation.mjs';
+import { QABoundObservation, createManualV2BoundObservation, QA_BOUND_BOOTSTRAP_EXPRESSION, projectBoundBootstrap } from './x-qa-bound-observation.mjs';
 import { QACookieWriteCapture, finishQACookieWriteScope } from './x-qa-cookie-writes.mjs';
 import { shortQACheckpoint, selectQAShortCookies, runQAShortFeasibility } from './x-qa-short-feasibility.mjs';
 import { QACheckpointRendezvous, synchronizedQAReport } from './x-qa-checkpoint-rendezvous.mjs';
@@ -1673,13 +1673,13 @@ async function qualifyBoundObservation(message, cookieWriteScope = false) {
   return boundCheckpoint(current, cookieWriteScope);
 }
 
-async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, afterIdentity, beforeIdentityRead,initialFailure) {
+async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, afterIdentity, beforeIdentityRead,initialFailure, observationFactory = (...args) => new QABoundObservation(...args)) {
   current.earlyRunning = true;
   const bound = current.bound = { running: true, sampling: false, binder: null, networkDisabled: false };
   try {
     const { frameId } = await send('Page.getFrameTree', {}, current.sessionId);
     const writes = cookieWriteScope ? new QACookieWriteCapture(frameId) : null;
-    bound.binder = new QABoundObservation(boundScope(current), frameId,
+    bound.binder = observationFactory(boundScope(current), frameId,
       requestId => send('Network.getResponseBody', { requestId }, current.sessionId), () => performance.now(),
       writes ? (raw, phase, loader) => writes.observe(raw, phase, loader) : undefined, pointOptions);
     bound.sampling = true;
@@ -1774,7 +1774,7 @@ async function closeShortCollector(current) {
   return disposed && s.closed;
 }
 
-async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup, beforeIdentityRead,initialFailure) {
+async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup, beforeIdentityRead,initialFailure, observationFactory = (...args) => new QABoundObservation(...args)) {
   const s = current.shortFeasibility;
   if (!s.navigated) {
     s.navigated = true;
@@ -1844,7 +1844,7 @@ async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup
     const { frameId } = await command('Page.getFrameTree');
     const pointOptions = { deferCookieMutation: !onPrivateStartup, onPrivateResult: r => { privateResult = r; } };
     if (onPrivateStartup) pointOptions.onPrivateStartup = onPrivateStartup;
-    binder = new QABoundObservation(scope, frameId, requestId => command('Network.getResponseBody', { requestId }),
+    binder = observationFactory(scope, frameId, requestId => command('Network.getResponseBody', { requestId }),
       () => performance.now(), undefined, pointOptions);
     sampling = true;
     await command('Network.enable', { maxTotalBufferSize: MAX_TOTAL_NETWORK_BUFFER_BYTES, maxResourceBufferSize: MAX_RESOURCE_NETWORK_BUFFER_BYTES, maxPostDataSize: 0 });
@@ -1888,9 +1888,9 @@ export function createOwnedManualStartupOwners(message,diagnostics=startupFailur
       if (role === 'reader') {
         current.gate.beginObservation(); current.earlyAttempted = true;
         observation=await boundCheckpoint(current, false, { deferCookieMutation: false, onPrivateResult: () => {},
-          onPrivateStartup: sink.onPrivateStartup },together,sink.beforeIdentityRead,failure);
+          onPrivateStartup: sink.onPrivateStartup },together,sink.beforeIdentityRead,failure,createManualV2BoundObservation);
       }else{
-        const result=await collectorShortCheckpoint(current,together,sink.onPrivateStartup,sink.beforeIdentityRead,failure);
+        const result=await collectorShortCheckpoint(current,together,sink.onPrivateStartup,sink.beforeIdentityRead,failure,createManualV2BoundObservation);
         observation=result?.checkpoint?.observation;
       }
       requireBoundStartup(observation,role,diagnostics);

@@ -130,6 +130,13 @@ required by this policy; observed invalidations still stop use. Account/session
 changes after the checkpoint can remain undetected until observation or expiry.
 This supersedes V1 renewal as the MVP gate without changing V1 fixture behavior.
 
+The manual path uses the [conservative V2 startup cookie guard](../../docs/x-native-manual-pilot.md#conservative-startup-cookie-guard-v2-2026-10-22):
+post-seed `auth_token`/`ct0` attempts reject even before identity; clearly
+classified other cookies are diagnostic-only; ambiguous observations reject.
+Ordinary QA and deferred-mutation receipt rules stay unchanged. This is startup
+coverage only, with full account/login verification still required in both roles.
+Offline tests do not authorize a new retained-QA transfer.
+
 Run `.\scripts\test-native-manual-pilot-adapter.ps1` for the new dev-only private
 receipt adapter. It performs named-file standard-library offline tests, four tag
 gates and dev/combined Engine compilation without package runtime execution.

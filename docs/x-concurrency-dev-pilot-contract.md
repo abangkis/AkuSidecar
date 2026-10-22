@@ -9,6 +9,11 @@ reference contracts; they are not silently reinterpreted or relaxed. Parser
 research remains deferred. This policy change alone does not activate native
 capture, authorize transfer or change Store admission.
 
+Manual V2 also defines its own [conservative startup cookie guard](x-native-manual-pilot.md#conservative-startup-cookie-guard-v2-2026-10-22):
+post-seed candidate attempts and ambiguous observations reject; only clearly
+classified non-candidate headers are diagnostic-only. The historical V1 table
+below does not supply this policy.
+
 Decision date: 2026-10-21. V1 reference status: implemented synthetic model,
 controller bridge and main/broker/Coordinator fixture path. Manual V2 now has a
 private offline-tested receipt adapter; native producer/controller registration

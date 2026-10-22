@@ -28,7 +28,9 @@ if(mode!==undefined){
     'x-qa-feasibility-collector.mjs','x-manual-startup-owner.mjs',
     'x-manual-enrollment-capture.mjs','x-manual-enrollment-capture.test.mjs',
     'x-bootstrap-breakpoint-handoff.mjs','x-early-bootstrap-capture.mjs',
-    'x-manual-startup-diagnostic.mjs','x-manual-startup-diagnostic.test.mjs'].map(file=>{
+    'x-manual-startup-diagnostic.mjs','x-manual-startup-diagnostic.test.mjs',
+    'x-qa-bound-observation.mjs','x-qa-bound-observation.test.mjs','x-qa-cookie-writes.mjs',
+    'x-manual-startup-cookie-guard.mjs','x-manual-startup-cookie-guard.test.mjs'].map(file=>{
     const source='scripts/auth-session-fixture/'+file;
     return {source,sha256:hash(fs.readFileSync(path.join(project,source)))};
   });

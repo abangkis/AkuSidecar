@@ -54,6 +54,55 @@ remain undetected until an observed invalidation or attempt expiry. Native sessi
 continuity, complete writer/worker coverage, refresh/rotation and instantaneous
 revocation detection remain unknown or unqualified. Full renewal is deferred.
 
+## Conservative startup cookie guard V2 (2026-10-22)
+
+This is an explicit manual V2 policy change. It does not reinterpret the
+historical snapshot V1 allowance for unclassified cookie headers, relax the
+ordinary QA guard, or permit deferred-mutation observations to publish startup
+receipts. Only the trusted manual startup path uses this classification, after
+its separately authorized seed has completed and before startup admission.
+
+| Observed response cookie header | Manual V2 startup action |
+| --- | --- |
+| An `auth_token` or `ct0` write/attempt after seed | Reject, including before identity capture, deletion/expiry, blocked attempts and a candidate mixed with other or malformed lines |
+| Only clearly classified other cookies with supported, correlated X scope | Keep a bounded diagnostic; this alone does not reject startup |
+| Ambiguous name, syntax, scope, unsupported attributes, missing correlation or exhausted observation bounds | Reject; uncertainty is not a non-candidate exemption |
+
+The guard classifies header attempts, not accepted writes or value changes. It
+does not read cookie storage, compare values, prove unchanged session lineage or
+infer harmlessness from a non-candidate classification. An absent header is not
+evidence of complete mutation coverage. Both roles must still pass the same
+fresh account/login, owner/context/document, one-use challenge, joint timing and
+cleanup checks before a private startup receipt can be published.
+
+Classification is bounded and private. Diagnostics contain fixed categories and
+counts, never cookie values, raw headers, unknown cookie names, URLs, account IDs
+or arbitrary exceptions. The policy cannot be selected through a public setting,
+untrusted RPC payload or a sanitized QA success flag. Default-off gates and the
+original absolute 60-second attempt deadline remain unchanged.
+
+This guard covers the startup observation window. Network observation is torn
+down at startup completion; it is not continuous cookie monitoring during the
+manual attempt. Existing lifecycle invalidations still apply. Post-checkpoint
+account/session changes, complete worker coverage and refresh/rotation remain
+the acknowledged deferred limitations, rather than new MVP prerequisites.
+
+Offline implementation uses `x-manual-startup-cookie-guard.mjs` through a trusted
+bound-observation factory selected for both manual reader and collector startup.
+The guard preserves the closed `observed_cookie_write` rejection reason and
+adds a value-free category/counter projection. Ordinary QA construction remains
+strict; deferred-mutation samples still cannot publish startup receipts.
+
+Run `scripts/prepare-x-manual-retained-qa.ps1` with no switches for offline
+regression and default-off preparation only. Run
+`9c87833c8ec84c35b9fd95314e54d92e` passed 73 Node tests (13 dedicated guard tests),
+three Go top-level tests with three startup subcases, four build tag gates and
+standalone Windows compilation. The native entry skipped before lease/profile
+access with all four execution gates disabled. No browser, retained profile,
+X request, transfer, Store or user runtime was accessed. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-9c87833c8ec84c35b9fd95314e54d92e.prepare.log.txt`.
+This is offline acceptance only; native V2 classification remains untested.
+
 ## Implementation and execution boundary
 
 The minimum dev-only native adapter accepts private typed receipts through trusted
@@ -603,6 +652,17 @@ readback. It verifies diagnostic transport only; native ownership remains outsid
 this accountless test. The native QA entry skipped before lease/profile access
 with all four execution gates disabled. Evidence:
 `runtime/qa/auth-session-sidecar/x-manual-retained-3d49942164334b6baf4266b2cc8572d4.prepare.log.txt`.
+
+The separately authorized one-shot run of source `99af7c1` then failed after
+10.51 seconds with `reader/bound_finish/observed_cookie_write` as the primary
+startup cause. Enrollment and seed setup passed; admission did not open. This
+identifies a post-identity Set-Cookie observation, not a proven `auth_token` or
+`ct0` change. The earlier guard did not classify its name/scope. Owned Job cleanup
+and clean retained-lease release passed, the disposable root was removed, and
+the retained QA profile was preserved. No retry ran. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-3d49942164334b6baf4266b2cc8572d4.run.log.txt`.
+The conservative V2 guard above is the subsequent offline policy implementation;
+it is not a successful native rerun or permission for another transfer.
 
 Related canonical startup regressions
 `3e02bb678c5d403e99c069c0e13ea391` passed 30 Node tests, Go startup/controller
