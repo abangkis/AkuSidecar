@@ -905,6 +905,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     }
   }
   let projectionKind = webCommand ? 'qa_web' : abCommand ? 'qa_ab' : guestCommand ? 'qa_guest' : null;
+  if(bound?.running && active?.manualStartupSelected && method==='Page.getFrameTree')projectionKind='manual_frame';
   if(manualControl)projectionKind=method==='Page.getFrameTree'?'manual_frame':method==='Target.getTargets'?'manual_inventory':null;
   if(manualEnrollment)projectionKind='manual_enrollment_capture';
   if (liveCommand) projectionKind = 'qa_live_self';
@@ -1677,7 +1678,7 @@ async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, 
   current.earlyRunning = true;
   const bound = current.bound = { running: true, sampling: false, binder: null, networkDisabled: false };
   try {
-    const { frameId } = await send('Page.getFrameTree', {}, current.sessionId);
+    const { frameId, loaderId: oldLoader } = await send('Page.getFrameTree', {}, current.sessionId);
     const writes = cookieWriteScope ? new QACookieWriteCapture(frameId) : null;
     bound.binder = observationFactory(boundScope(current), frameId,
       requestId => send('Network.getResponseBody', { requestId }, current.sessionId), () => performance.now(),
@@ -1690,9 +1691,14 @@ async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, 
     current.earlyCapture = new BootstrapHandoffCapture({ boundIdentity: true,
       beforeIdentityRead: contextId => beforeIdentityRead?.(bound.binder.startupPins(contextId)),
       send: async (method, params, purpose) => {
+        if(method==='Page.reload' && current.manualStartupSelected)bound.binder.armManualReload(oldLoader);
         let result;
         try{result=await send(method,params,current.sessionId,purpose);}
         catch(error){throw initialFailure?initialFailure(error,method==='Debugger.evaluateOnCallFrame'?'identity':['Runtime.disable','Debugger.disable','Debugger.removeBreakpoint'].includes(method)?'cleanup':'prepare'):error;}
+        if(method==='Page.getFrameTree' && current.manualStartupSelected) {
+          try{result=manualReloadFrameProjection(result,frameId,oldLoader);}
+          catch(error){bound.binder.invalidate('scope_lost','navigation');throw error;}
+        }
         if (afterIdentity && !synchronized && method === 'Debugger.evaluateOnCallFrame' && bound.binder.identityReady()) {
           synchronized = true; await afterIdentity();
         }
@@ -1791,14 +1797,15 @@ async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup
     }
     if (!ready) return { checkpoint: shortQACheckpoint(null), accountId: null, start: null, end: null };
   }
-  let binder, capture, instrumentationId, sampling = false, networkDisabled = false, synchronized = false, privateResult = {};
+  let binder, capture, instrumentationId, frameId, oldLoader, sampling = false, networkDisabled = false, synchronized = false, privateResult = {};
   const owned = current.manualStartupSelected ? s.transport.ownership() : null;
   const scope = { owner: owned ? owned.pid : current.owner + 1, profileId: owned ? owned.profileId : 'derived-headless-owned-context', sessionId: s.sessionId, targetId: s.targetId };
   const project = (method, r) => {
     if (!isObject(r)) throw probeError('qa_short_collector_invalid');
     if (method === 'Page.getFrameTree') {
       if (!safeId(r.frameTree?.frame?.id) || !isHomeTarget(r.frameTree.frame.url)) throw probeError('qa_short_collector_invalid');
-      return { frameId: r.frameTree.frame.id };
+      if(current.manualStartupSelected && !safeId(r.frameTree.frame.loaderId))throw probeError('qa_short_collector_invalid');
+      return { frameId: r.frameTree.frame.id, ...(current.manualStartupSelected?{loaderId:r.frameTree.frame.loaderId}:{}) };
     }
     if (method === 'Debugger.setInstrumentationBreakpoint') {
       if (!safeId(r.breakpointId)) throw probeError('qa_short_collector_invalid');
@@ -1820,6 +1827,7 @@ async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup
     return { acknowledged: true };
   };
   const command = async (method, params = {}, purpose) => {
+    if(method==='Page.reload' && current.manualStartupSelected)binder.armManualReload(oldLoader);
     if (method === 'Debugger.setBreakpoint' && !capture?.handoff.canInstall(params.location)) throw probeError('qa_short_collector_invalid');
     if (method === 'Network.getResponseBody' && !binder?.capture.consumeRead(params.requestId)) throw probeError('qa_short_collector_invalid');
     if (method === 'Debugger.evaluateOnCallFrame' && !isEarlyBootstrapCallFrameRead(params, capture, true)) throw probeError('qa_short_collector_invalid');
@@ -1827,6 +1835,10 @@ async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup
     let result;
     try{result=await s.transport.send(method,params,s.sessionId,r=>project(method,r));}
     catch(error){throw initialFailure?initialFailure(error,method==='Debugger.evaluateOnCallFrame'?'identity':['Runtime.disable','Debugger.disable','Debugger.removeBreakpoint'].includes(method)?'cleanup':method.startsWith('Network.')?'settings':'prepare'):error;}
+    if(method==='Page.getFrameTree' && binder && current.manualStartupSelected) {
+      try{result=manualReloadFrameProjection(result,frameId,oldLoader);}
+      catch(error){binder.invalidate('scope_lost','navigation');throw error;}
+    }
     if (afterIdentity && !synchronized && method === 'Debugger.evaluateOnCallFrame' && binder.identityReady()) {
       synchronized = true; await afterIdentity();
     }
@@ -1841,7 +1853,7 @@ async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup
     } catch { binder?.invalidate(); }
   });
   try {
-    const { frameId } = await command('Page.getFrameTree');
+    ({ frameId, loaderId:oldLoader } = await command('Page.getFrameTree'));
     const pointOptions = { deferCookieMutation: !onPrivateStartup, onPrivateResult: r => { privateResult = r; } };
     if (onPrivateStartup) pointOptions.onPrivateStartup = onPrivateStartup;
     binder = observationFactory(scope, frameId, requestId => command('Network.getResponseBody', { requestId }),
@@ -1872,6 +1884,13 @@ async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup
 // No main provider selects it. The trusted bridge binds actual startup pins and
 // invokes both captures together. This hook never seeds cookies or adopts a
 // different document/context to make a requested binding pass.
+export function manualReloadFrameProjection(value,frameId,oldLoader){
+  if(!isObject(value)||Object.keys(value).sort().join(',')!=='frameId,loaderId'||!safeId(frameId)||!safeId(oldLoader))throw probeError('manual_startup_unavailable');
+  const fields=Object.getOwnPropertyDescriptors(value);
+  if(fields.frameId?.value!==frameId||fields.loaderId?.value!==oldLoader)throw probeError('manual_startup_unavailable');
+  // EarlyBootstrapCapture deliberately accepts exactly one projected key.
+  return {frameId};
+}
 export function createOwnedManualStartupOwners(message,diagnostics=startupFailureLatch()) {
   if (process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED !== '1') throw probeError('manual_startup_disabled');
   const current = requireOwner(message), collector = current.shortFeasibility;

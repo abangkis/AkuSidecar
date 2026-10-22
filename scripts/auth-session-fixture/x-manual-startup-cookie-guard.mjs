@@ -54,9 +54,23 @@ function lineKind(line, scope) {
 
 export class ManualStartupCookieGuard {
   #frame; #requests = new Map(); #candidate = 0; #other = 0; #ambiguous = 0; #events = 0; #lines = 0; #closed = false;
-  constructor(frameId) {
+  #session; #armed = false; #oldLoader; #rootId = null; #commit = null; #context = null; #precommit = false;
+  constructor(frameId, sessionId) {
     if (!ref(frameId)) throw new Error('manual_cookie_guard_invalid');
     this.#frame = frameId;
+    this.#session = sessionId;
+  }
+  armReload(oldLoader) {
+    if (this.#closed || this.#armed || this.#precommit || !ref(oldLoader) || !ref(this.#session)) { this.#fail(); throw new Error('manual_cookie_guard_invalid'); }
+    this.#armed = true; this.#oldLoader = oldLoader;
+  }
+  #bindRoot(loaderId, contextId) {
+    const r = this.#requests.get(this.#rootId);
+    if (!r) return;
+    if (loaderId && loaderId !== r.loaderId || contextId && this.#context && contextId !== this.#context) r.bad = true;
+    r.bound = !r.bad && this.#commit === r.loaderId && Number.isSafeInteger(this.#context) && this.#context > 0;
+    if (r.bound) r.contextId = this.#context;
+    if (r.bad) this.#fail();
   }
   #fail() { this.#ambiguous = Math.min(64, this.#ambiguous + 1); }
   category() { return this.#candidate ? 'candidate_observed' : this.#ambiguous ? 'ambiguous' : this.#other ? 'other_only' : 'not_observed'; }
@@ -98,27 +112,51 @@ export class ManualStartupCookieGuard {
   }
   observe(raw, loaderId, contextId) {
     if (this.#closed) return true;
-    const method = data(raw, 'method'), p = data(raw, 'params');
+    const method = data(raw, 'method');
+    if(typeof method!=='string' || !(method.startsWith('Network.') || ['Page.frameNavigated','Runtime.executionContextCreated'].includes(method)))return this.#candidate > 0 || this.#ambiguous > 0;
+    const p = data(raw, 'params');
     if (!object(p)) { this.#fail(); return true; }
+    if (this.#armed && data(raw,'sessionId') !== this.#session) return this.#candidate > 0 || this.#ambiguous > 0;
+    if (!this.#armed && method === 'Page.frameNavigated' && data(data(p,'frame'),'id') === this.#frame)this.#precommit=true;
+    if (this.#armed && method === 'Page.frameNavigated' && data(data(p,'frame'),'id') === this.#frame) {
+      const frame=data(p,'frame'), loader=data(frame,'loaderId');
+      if (this.#commit !== null || !ref(loader) || loader === this.#oldLoader || data(frame,'url') !== 'https://x.com/home' || data(frame,'parentId') !== undefined) this.#fail();
+      else this.#commit=loader;
+    }
+    if (this.#armed && method === 'Runtime.executionContextCreated' && data(data(data(p,'context'),'auxData'),'isDefault') === true && data(data(data(p,'context'),'auxData'),'frameId') === this.#frame && this.#commit !== null) {
+      const context=data(p,'context'),id=data(context,'id');
+      if(this.#context !== null || data(context,'origin') !== 'https://x.com' || !Number.isSafeInteger(id) || id<=0)this.#fail();
+      else this.#context=id;
+    }
+    if(this.#armed)this.#bindRoot(loaderId,contextId);
     const id = data(p, 'requestId');
     if (method === 'Network.requestWillBeSent') {
       const redirect = data(p, 'redirectResponse');
       if (redirect !== undefined) this.#attempt(data(redirect, 'headers'), undefined, null, false, null);
       if (!ref(id)) { this.#fail(); return true; }
+      if(this.#rootId!==null && id===this.#rootId)this.#fail();
       if (this.#requests.size >= 128) { this.#fail(); return true; }
       const scope = setter(data(data(p, 'request'), 'url'));
       const valid = redirect === undefined && !this.#requests.has(id) && scope && loaderId && contextId && data(p, 'loaderId') === loaderId && data(p, 'frameId') === this.#frame;
       if (this.#requests.get(id)?.cookie) this.#fail();
-      this.#requests.set(id, valid ? { scope, loaderId, contextId, response: false, extra: false, bad: false, cookie: false, status: null, extraStatus: null, needsExtra: null } : null);
+      const root = this.#armed && data(p,'type') === 'Document' && data(p,'frameId') === this.#frame;
+      const provisional = root && this.#rootId === null && !this.#requests.has(id) && redirect === undefined &&
+        data(data(p,'request'),'method') === 'GET' && scope?.url === 'https://x.com/home' && ref(data(p,'loaderId')) &&
+        data(p,'loaderId') !== this.#oldLoader && (!this.#commit || this.#commit === data(p,'loaderId'));
+      if(root && !provisional)this.#fail();
+      const r = valid || provisional ? { scope, loaderId:provisional?data(p,'loaderId'):loaderId, contextId,
+        provisional, bound:!provisional, response: false, extra: false, bad: false, cookie: false, status: null, extraStatus: null, needsExtra: null } : null;
+      this.#requests.set(id,r);
+      if(provisional){this.#rootId=id;this.#bindRoot(loaderId,contextId);}
     }
     if (['Network.responseReceived', 'Network.responseReceivedExtraInfo'].includes(method)) {
       const r = this.#requests.get(id), response = data(p, 'response');
-      let correlated = !!r && !!loaderId && !!contextId && r.loaderId === loaderId && r.contextId === contextId;
+      let correlated = !!r && (r.provisional ? !r.bad && (!loaderId || loaderId === r.loaderId) && (!contextId || !r.bound || contextId === r.contextId) : !!loaderId && !!contextId && r.loaderId === loaderId && r.contextId === contextId);
       if (method === 'Network.responseReceived') {
-        correlated &&= data(p, 'loaderId') === loaderId && data(p, 'frameId') === this.#frame && data(response, 'url') === r.scope.url && !r.response;
+        correlated &&= data(p, 'loaderId') === r.loaderId && data(p, 'frameId') === this.#frame && data(response, 'url') === r.scope.url && !r.response;
         if (r) {
           const status = data(response, 'status'), extra = data(p, 'hasExtraInfo');
-          r.bad ||= !correlated || !Number.isInteger(status) || status < 100 || status > 599 || typeof extra !== 'boolean';
+          r.bad ||= !correlated || !Number.isInteger(status) || status < 100 || status > 599 || r.provisional && status !== 200 || typeof extra !== 'boolean';
           r.response = true; r.status = status; r.needsExtra = extra;
           if (r.extra && (extra !== true || r.extraStatus !== status)) r.bad = true;
         }
@@ -138,7 +176,7 @@ export class ManualStartupCookieGuard {
   finish() {
     if (this.#closed) throw new Error('manual_cookie_guard_replayed');
     this.#closed = true;
-    for (const r of this.#requests.values()) if (r?.cookie && (!r.response || r.bad || r.needsExtra === true && !r.extra)) this.#fail();
+    for (const r of this.#requests.values()) if ((r?.cookie || r?.provisional) && (!r.response || r.bad || r.provisional && !r.bound || r.needsExtra === true && !r.extra)) this.#fail();
     this.#requests.clear();
     return Object.freeze({ schema: 'aku.x.manual-startup-cookie-guard.v1',
       diagnostic: this.category(),

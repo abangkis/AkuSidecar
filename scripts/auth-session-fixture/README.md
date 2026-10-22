@@ -137,6 +137,12 @@ Ordinary QA and deferred-mutation receipt rules stay unchanged. This is startup
 coverage only, with full account/login verification still required in both roles.
 Offline tests do not authorize a new retained-QA transfer.
 
+The [provisional root-navigation correction](../../docs/x-native-manual-pilot.md#provisional-root-navigation-correlation-2026-10-22)
+lets one exact root `/home` navigation wait for matching commit/default-context
+evidence during the trusted reload. Only parsed known non-candidate headers may
+wait; candidate attempts and truly ambiguous headers still reject immediately.
+Unresolved or contradictory pending state cannot publish a startup receipt.
+
 Manual startup diagnostics also retain the [first cause separately from terminal
 failure](../../docs/x-native-manual-pilot.md#first-cause-and-separate-startup-diagnostics-2026-10-22).
 Generic early-capture fallback must not hide a prior cookie/scope rejection.

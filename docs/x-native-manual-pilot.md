@@ -66,7 +66,7 @@ its separately authorized seed has completed and before startup admission.
 | --- | --- |
 | An `auth_token` or `ct0` write/attempt after seed | Reject, including before identity capture, deletion/expiry, blocked attempts and a candidate mixed with other or malformed lines |
 | Only clearly classified other cookies with supported, correlated X scope | Keep a bounded diagnostic; this alone does not reject startup |
-| Ambiguous name, syntax, scope, unsupported attributes, missing correlation or exhausted observation bounds | Reject; uncertainty is not a non-candidate exemption |
+| Ambiguous name, syntax, scope, unsupported attributes, unresolved correlation or exhausted observation bounds | Reject; only the bounded root-navigation correlation below may remain pending until its document evidence arrives |
 
 The guard classifies header attempts, not accepted writes or value changes. It
 does not read cookie storage, compare values, prove unchanged session lineage or
@@ -102,6 +102,61 @@ access with all four execution gates disabled. No browser, retained profile,
 X request, transfer, Store or user runtime was accessed. Evidence:
 `runtime/qa/auth-session-sidecar/x-manual-retained-9c87833c8ec84c35b9fd95314e54d92e.prepare.log.txt`.
 This is offline acceptance only; native V2 classification remains untested.
+
+### Provisional root-navigation correlation (2026-10-22)
+
+The single authorized run of source `c9e98fb` rejected startup after 9.29 seconds
+with `first=cookie_ambiguous terminal=scope_lost early=evaluation_failed`,
+`handoff=accepted`, and `extra=complete`. Seed setup passed, admission stayed
+closed, and final owned-Job cleanup and retained-lease release were verified.
+No retry ran. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-fce1ad89700b4b09b584fdb2ecccdb01.run.log.txt`.
+
+Astra reproduced that exact trace offline with the real bound-observation and
+bootstrap-handoff classes. A known synthetic non-candidate header arrived on the
+root document before commit, or after commit but before its default context.
+The old guard stored an unbound request permanently; later correct document
+evidence could not complete correlation. The same header after context creation
+passed. This proves a local lifecycle defect, not which native header or event
+sequence caused the preceding QA failure.
+
+The correction permits one provisional root `Document` request: `GET` to exactly
+`https://x.com/home`, during the trusted startup reload. The driver observes the
+previous root loader and arms this boundary immediately before issuing that
+reload. Earlier traffic, the previous document, redirects, repeated IDs,
+additional provisional roots, foreign frames and contradictory scope are not
+adopted as the new document.
+
+Only fully parsed known non-candidate cookie classifications may wait for exact
+root frame/loader/default-context correlation and complete response/ExtraInfo.
+Pending state is bounded and keeps classifications/counts, not raw headers or
+cookie values. An unresolved or contradictory pending record rejects at finish.
+Candidate `auth_token`/`ct0` attempts, including blocked/deletion attempts, and
+truly ambiguous names/syntax/scope/attributes still reject immediately.
+
+Both reader and collector use this trusted manual-only boundary. Ordinary strict
+and deferred QA behavior, private first-cause diagnostics, account/login checks,
+receipt schema, admission timing, Store authority and default-off gates remain
+unchanged. This increment authorizes offline implementation/regression only;
+there is no native run, retained-profile access or transfer authorization.
+
+Canonical offline preparation `7f479c23ec7c4b42ac6f19babfcda73b` passed 91 Node
+tests, four Go top-level tests with seven startup bridge subcases, four build tag
+gates and standalone Windows compilation. The nine dedicated root-navigation
+tests exercise the real bound-observation/bootstrap-handoff classes in both
+roles: known non-candidate headers before commit or context now produce
+`bound`/`other_only` with one private synthetic receipt. Candidate and unknown
+headers still stop identity evaluation and publish no receipt. Pending metadata,
+scope drift, old/reused/redirected requests, one-use arming and strict capture
+projection remain fenced. Unrelated no-parameter events do not become cookie
+ambiguity; the existing request-cap policy is unchanged.
+
+The native entry skipped before lease/profile access with all execution gates
+disabled. No browser, retained profile, X request, transfer, Store or user runtime
+ran. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-7f479c23ec7c4b42ac6f19babfcda73b.prepare.log.txt`.
+This proves the offline ordering correction only; native acceptance remains
+unverified.
 
 ## Implementation and execution boundary
 

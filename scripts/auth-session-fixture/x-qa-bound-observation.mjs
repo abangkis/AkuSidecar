@@ -75,7 +75,7 @@ export class QABoundObservation {
     this.#scope = Object.freeze({ ...scope }); this.#frame = frameId; this.#now = now;
     this.#observeCookieWrites = observeCookieWrites;
     this.#pointOptions = Object.freeze({ ...pointOptions });
-    this.#manualCookieGuard = cookiePolicy === manualV2CookiePolicy ? new ManualStartupCookieGuard(frameId) : null;
+    this.#manualCookieGuard = cookiePolicy === manualV2CookiePolicy ? new ManualStartupCookieGuard(frameId,scope.sessionId) : null;
     this.#onManualFailure = onManualFailure;
     this.#start = this.#last = now();
     if (!Number.isFinite(this.#start)) throw error();
@@ -106,6 +106,14 @@ export class QABoundObservation {
     const trace = closedStartupTrace({ early: stopReason, handoff: handoffRejected === true ? 'rejected' : handoffRejected === false ? 'accepted' : 'unknown' });
     this.#early = trace.early; this.#handoff = trace.handoff;
     if (stopReason !== 'captured' || handoffRejected !== false) this.invalidate('scope_lost','generic_early');
+  }
+  armManualReload(oldLoader) {
+    this.#tick();
+    if(!this.#manualCookieGuard || this.#closed || this.#failure || this.#loader !== null || this.#context !== null || this.#id !== null) {
+      this.invalidate('scope_lost','navigation'); throw error();
+    }
+    try { this.#manualCookieGuard.armReload(oldLoader); }
+    catch { this.invalidate('observed_cookie_write','cookie_ambiguous'); throw error(); }
   }
   acceptIdentity(id, projection) {
     const t = this.#tick();
@@ -151,9 +159,9 @@ export class QABoundObservation {
       if (this.#context !== null || p.context.origin !== 'https://x.com' || !Number.isSafeInteger(p.context.id) || p.context.id <= 0) this.invalidate('scope_lost','context_lost');
       else this.#context = p.context.id;
     }
+    if (this.#manualCookieGuard?.observe(raw, this.#loader, this.#context)) this.invalidate('observed_cookie_write',this.#manualCookieGuard.category()==='candidate_observed'?'cookie_candidate':'cookie_ambiguous');
     if (!raw.method?.startsWith('Network.')) return;
     this.#observeCookieWrites(raw, this.#identityAt === null ? 'before_identity' : 'after_identity', this.#loader);
-    if (this.#manualCookieGuard?.observe(raw, this.#loader, this.#context)) this.invalidate('observed_cookie_write',this.#manualCookieGuard.category()==='candidate_observed'?'cookie_candidate':'cookie_ambiguous');
     if (!this.#loader) return; // Do not adopt old-document requests.
     // Ordinary QA starts its write baseline at the first valid identity;
     // the selected request MUST begin after it. Manual V2 instead uses its
