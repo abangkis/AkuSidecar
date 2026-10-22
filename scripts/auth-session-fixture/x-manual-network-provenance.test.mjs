@@ -2,14 +2,18 @@ import fs from 'node:fs/promises';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ManualStartupCookieGuard} from './x-manual-startup-cookie-guard.mjs';
-import {createRetainedManualSetup,manualSeedFailure} from './x-manual-retained-setup.mjs';
+import {createRetainedManualSetup,manualSeedFailure,manualSeedDiagnostic,manualSeedDiagnosticCode} from './x-manual-retained-setup.mjs';
 import vm from 'node:vm';
 import {pathToFileURL} from 'node:url';
 import {resolve} from 'node:path';
 import {createManualV2BoundObservation,projectBoundBootstrap} from './x-qa-bound-observation.mjs';
-import {requireBoundStartup,startupDiagnostic,startupFailureLatch} from './x-manual-startup-diagnostic.mjs';
+import {requireBoundStartup,startupDiagnostic,startupFailureLatch,startupFailure} from './x-manual-startup-diagnostic.mjs';
 const path=resolve('scripts/auth-session-fixture/x-native-metadata-probe-driver.mjs');
 let code=await fs.readFile(path,'utf8');
+// Extract the production seed function before registering any async test.
+const seedSource=code.slice(code.indexOf('export async function seedRetainedManualPilot('),code.indexOf('\nasync function openRetainedManualReader(')).replace('export async','async');
+const provenanceSource=code.slice(code.indexOf('const manualProvenance='),code.indexOf('const manualEnrollment=')).replace('const manualProvenance=','return ');
+const allowProvenance=new Function('active','method','params','sessionId','purpose','qualificationMode','driverMode','MAX_TOTAL_NETWORK_BUFFER_BYTES','MAX_RESOURCE_NETWORK_BUFFER_BYTES',provenanceSource);
 code=code.replace(/from '(\.\/[^']+)'/g,(_,p)=>`from '${new URL(p,pathToFileURL(path)).href}'`);
 code+=`\nexport function offlineHarness(current,transport){active=current;send=transport;return {dispatch:dispatchCDP,start:()=>startManualCookieObservation(current),run:(options,factory)=>boundCheckpoint(current,false,options,undefined,()=>{},undefined,factory),collector:factory=>collectorShortCheckpoint(current,undefined,()=>{},()=>{},undefined,factory)};}\n`;
 const driver=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
@@ -77,7 +81,7 @@ for(const [mode,reason,trigger,provenance]of [
 ])test(`actual collector transport delivers once and keeps repeat rejection closed: ${mode}`,async()=>{
   const r=await collectorRepeatScenario(mode),expected={reason,guardTrigger:trigger,guardProvenance:provenance,
     guardCondition:['declared','other'].includes(mode)?'extra_flag':mode==='malformed'?'redirect_shape':'unknown',
-    guardEpoch:mode==='single'?'unknown':'reload_armed'};
+    guardEpoch:mode==='single'?'unknown':'reload_armed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown'};
   assert.ok(r.binder);assert.equal(r.received,mode==='single'?3:4);assert.equal(r.observed,r.received);assert.equal(r.maxCalls,1);
   assert.equal(r.commands.filter(m=>m==='Network.enable').length,1);
   assert.deepEqual(r.atDispatch,expected);assert.deepEqual(r.afterLate,expected);
@@ -86,6 +90,100 @@ for(const [mode,reason,trigger,provenance]of [
     assert.equal(r.first.trace.firstCause,reason);assert.equal(r.first.trace.guardTrigger,trigger);assert.equal(r.first.trace.guardProvenance,provenance);
   }
 });
+
+// Run the production setup and observer functions with accountless transports.
+// Faults are injected on either exact role at await/dispatch boundaries.
+async function guardedSeedScenario(role,fault){
+  const names=['AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED','AKU_X_MANUAL_RETAINED_TRANSFER_ONCE','AKU_X_QA_SHORT_TRANSFER_ALLOWED'],prior=names.map(k=>process.env[k]);
+  const methods=[];let collectorObserver,harness,reads=0,writes=0,checks=0,enrollments=0,closed=0;
+  const current={pid:1,owner:1,profileId:'reader',sessionId:'s',targetId:'t',gate:{loginVisible:true,observationStarted:false}};
+  const poison=()=>{
+    const frameId=role==='reader'?'f':'cf',sessionId=role==='reader'?'s':'cs';
+    const emit=(method,params)=>{const raw={method,params,sessionId};if(role==='reader')harness.dispatch(raw);else collectorObserver(raw);};
+    const params={requestId:'PRIVATE_REQUEST',frameId,loaderId:'old',type:'Image',request:{method:'GET',url:'https://x.com/private-asset'}};
+    emit('Network.requestWillBeSent',params);
+    emit('Network.requestWillBeSent',{...params,request:{method:'GET',url:'https://api.x.com/private-asset'},redirectHasExtraInfo:false,
+      redirectResponse:{url:params.request.url,status:302,headers:{},fromDiskCache:true}});
+  };
+  const cacheResult=(who)=>{
+    if(role===who&&fault==='cache-timeout')throw new Error('PRIVATE_TIMEOUT');
+    return role===who&&fault==='cache-ack'?{acknowledged:false}:{};
+  };
+  current.shortFeasibility={sessionId:'cs',transport:{ownership:()=>({alive:true,pid:2,profileId:'collector'}),subscribe:callback=>{collectorObserver=callback;return()=>{};},send:async(method,params,session,project)=>{
+    methods.push('collector:'+method);assert.equal(session,'cs');
+    if(method==='Network.setCacheDisabled'){assert.deepEqual(params,{cacheDisabled:true});return project(cacheResult('collector'));}
+    if(method==='Network.setCookies'){
+      writes++;
+      if(['pending-write','pending-no-ack'].includes(fault))poison();
+      if(fault==='pending-no-ack')throw new Error('PRIVATE_WRITE_FAILED');
+      const result=project({});if(fault==='ack-batch')poison();return result;
+    }
+    return project(method==='Page.getFrameTree'?{frameTree:{frame:{id:'cf'}}}:{});
+  }}};
+  const transport=async(method,params,session,purpose)=>{
+    methods.push('reader:'+method);assert.equal(session,'s');
+    if(method==='Page.getFrameTree')return{frameId:'f',loaderId:'old'};
+    if(method==='Network.setCacheDisabled'){assert.equal(purpose,'manual_provenance');assert.deepEqual(params,{cacheDisabled:true});const r=cacheResult('reader');return{acknowledged:Object.keys(r).length===0};}
+    if(method==='Network.getCookies'){reads++;if(fault==='export')poison();return[{name:'auth_token'},{name:'ct0'}];}
+    return{acknowledged:true};
+  };
+  harness=driver.offlineHarness(current,transport);
+  class Enrollment{
+    observe(){}
+    async run(){
+      enrollments++;
+      assert.equal(current.manualCacheControlReady,true);
+      for(const who of ['reader','collector'])assert.ok(methods.indexOf(who+':Network.setCacheDisabled')<methods.indexOf('reader:Network.enable'));
+      methods.push('enrollment');if(fault==='enrollment')poison();return'123456';
+    }
+    async check(){checks++;if(fault==='before-export'&&checks===1||fault==='before-write'&&checks===3)poison();}
+    assertCurrent(){if(fault==='pre-dispatch')poison();}
+    async close(){closed++;if(fault==='cleanup')poison();}
+  }
+  try{
+    for(const name of names)process.env[name]='1';
+    const setup=options=>{const run=createRetainedManualSetup(options);return async()=>{const result=await run();if(fault==='after-setup')poison();return result;};};
+    const seed=new Function('requireOwner','qualificationMode','driverMode','retainedQAScope','createRetainedManualSetup','ManualEnrollmentCapture','startManualCookieObservation','send','exactKeys','manualSeedFailure','childExited','cdpFailure','projectCDPEvent','qaCookieRequest','startupFailure',seedSource+';return seedRetainedManualPilot;')(
+      ()=>current,()=>true,'retained_source_qualification',{reuse:true},setup,Enrollment,()=>harness.start(),transport,()=>{},manualSeedFailure,false,null,()=>{},()=>({urls:['https://api.x.com/1.1/account/settings.json']}),startupFailure);
+    let error,result;
+    try{result=await seed({id:1,op:'manual_seed_bootstrap',owner:1});}catch(e){error=e;}
+    return{error,result,reads,writes,enrollments,closed,methods,diagnostic:manualSeedDiagnostic(error),code:manualSeedDiagnosticCode(error),first:current.manualCookieDiagnostics?.current(),seeded:current.manualSeeded};
+  }finally{names.forEach((key,i)=>{if(prior[i]===undefined)delete process.env[key];else process.env[key]=prior[i];});}
+}
+
+test('production early-cache command gate requires exact owned session, params, setup and one preparation epoch',()=>{
+  const names=['AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED','AKU_X_MANUAL_RETAINED_TRANSFER_ONCE'],prior=names.map(k=>process.env[k]);
+  const active={sessionId:'s',manualSetup:{}};
+  const allowed=(state=active,params={cacheDisabled:true},session='s',purpose='manual_provenance')=>Boolean(allowProvenance(state,'Network.setCacheDisabled',params,session,purpose,()=>true,'retained_source_qualification',1,1));
+  try{
+    for(const name of names)process.env[name]='1';
+    assert.equal(allowed(),true);
+    for(const params of [{},{cacheDisabled:false},{cacheDisabled:'true'},{cacheDisabled:true,extra:true},Object.create({cacheDisabled:true})])assert.equal(allowed(active,params),false);
+    assert.equal(allowed(active,{cacheDisabled:true},'foreign'),false);assert.equal(allowed(active,{cacheDisabled:true},undefined,'wrong'),false);
+    for(const state of [null,{sessionId:'s'},{...active,manualStartupPort:{}},{...active,manualCacheControlReady:true}])assert.equal(allowed(state),false);
+    for(const name of names){process.env[name]='0';assert.equal(allowed(),false);process.env[name]='1';}
+  }finally{names.forEach((key,i)=>{if(prior[i]===undefined)delete process.env[key];else process.env[key]=prior[i];});}
+});
+
+for(const role of ['reader','collector'])for(const fault of ['cache-ack','cache-timeout','enrollment','before-export','export','before-write','pre-dispatch','pending-write','pending-no-ack','ack-batch','cleanup','after-setup','none']){
+  test(`${role} exact setup closes transfer at ${fault}`,async()=>{
+    const r=await guardedSeedScenario(role,fault);
+    if(fault==='none'){
+      assert.equal(r.error,undefined);assert.equal(r.result.seeded,true);assert.equal(r.seeded,true);assert.equal(r.reads,1);assert.equal(r.writes,1);assert.equal(r.closed,1);return;
+    }
+    assert.ok(r.error);assert.equal(r.seeded,undefined);
+    const cache=fault.startsWith('cache-'),early=['enrollment','before-export'].includes(fault);
+    assert.equal(r.reads,cache||early?0:1);assert.equal(r.writes,['pending-write','pending-no-ack','ack-batch','cleanup','after-setup'].includes(fault)?1:0);
+    assert.equal(r.enrollments,cache?0:1);assert.equal(r.closed,cache?0:1);
+    assert.equal(r.diagnostic.write,fault==='pending-no-ack'?'unknown':['pending-write','ack-batch','cleanup','after-setup'].includes(fault)?'acknowledged':'not_attempted');
+    if(!cache){
+      assert.equal(r.first.role,role);assert.equal(r.first.trace.firstCause,'guard_request_unbound');assert.equal(r.first.trace.guardCondition,'response_cache');
+      assert.equal(r.first.trace.guardEpoch,['ack-batch','cleanup','after-setup'].includes(fault)?'post_seed':'before_seed');
+      assert.match(r.code,/^manual_seed_v2_/);assert.ok(r.code.length<=80);
+    }
+    assert.equal(JSON.stringify({code:r.code,first:r.first}).includes('PRIVATE'),false);
+  });
+}
 async function driverScenario(scenario, continuous=false, injectedCookie='lang=en; Path=/') {
   let normal=null,instrumentation=true,index=0,phase='instrumentation',evaluations=0,receipts=0,first=null,settings=false;
   const current={owner:1,pid:1,profileId:'p',sessionId:'s',targetId:'t',manualStartupSelected:true,gate:{networkEnabled:false,setLoginVisible(){}}};
@@ -263,8 +361,8 @@ test('pre-seed headers do not poison the epoch; structural coverage loss cannot 
   const malformed=passive();malformed.emit('Network.requestWillBeSent',{});malformed.g.beginPostSeed();assert.equal(malformed.g.rejection(),'guard_metadata_shape');
 });
 test('post-seed missing predecessor and seen rejected scope remain distinct, including blocked candidates',()=>{
-  const absent=passive();absent.g.beginPostSeed();absent.response('lang=en; Path=/');assert.deepEqual(absent.g.trace(),{guardTrigger:'response',guardProvenance:'absent',guardCondition:'unknown',guardEpoch:'post_seed'});
-  const foreign=passive();foreign.request('r',{frameId:'child'});foreign.g.beginPostSeed();foreign.response('lang=en; Path=/');assert.deepEqual(foreign.g.trace(),{guardTrigger:'response',guardProvenance:'frame_scope',guardCondition:'unknown',guardEpoch:'post_seed'});
+  const absent=passive();absent.g.beginPostSeed();absent.response('lang=en; Path=/');assert.deepEqual(absent.g.trace(),{guardTrigger:'response',guardProvenance:'absent',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown'});
+  const foreign=passive();foreign.request('r',{frameId:'child'});foreign.g.beginPostSeed();foreign.response('lang=en; Path=/');assert.deepEqual(foreign.g.trace(),{guardTrigger:'response',guardProvenance:'frame_scope',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown'});
   for(const scope of ['absent','scoped','foreign']){
     const s=passive();if(scope!=='absent')s.request('r',scope==='foreign'?{request:{method:'GET',url:'https://foreign.invalid/asset'}}:{});s.g.beginPostSeed();
     s.emit('Network.responseReceivedExtraInfo',{requestId:'r',statusCode:200,headers:{},blockedCookies:[{cookieLine:'ct0=; Max-Age=0; Path=/'}]});
@@ -279,8 +377,6 @@ test('provenance cannot be replayed, rebound, or repaired by later events',()=>{
 
 // Execute the exact production seed function with an enrollment test double.
 // All transport functions are stubs; no native helper, browser or cookie API runs.
-const originalDriver=await fs.readFile(path,'utf8');
-const seedSource=originalDriver.slice(originalDriver.indexOf('export async function seedRetainedManualPilot('),originalDriver.indexOf('\nasync function openRetainedManualReader(')).replace('export async','async');
 test('actual seed acknowledgment dispatch starts both baselines before same-batch and cleanup events',async()=>{
   const names=['AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED','AKU_X_MANUAL_RETAINED_TRANSFER_ONCE','AKU_X_QA_SHORT_TRANSFER_ALLOWED'],previous=names.map(k=>process.env[k]);
   try{
@@ -302,9 +398,11 @@ test('actual seed acknowledgment dispatch starts both baselines before same-batc
         async run(){assert.ok(methods.includes('reader:Network.enable'));assert.ok(methods.includes('collector:Network.enable'));assert.equal(methods.some(v=>v.endsWith('Page.navigate')),false);request('preseed');emit('preseed','ct0=x; Path=/');request('pending');return'123456';}
         async check(){} assertCurrent(){} async close(){if(when==='cleanup')emit('pending','ct0=; Path=/');}
       }
-      const seed=new Function('requireOwner','qualificationMode','driverMode','retainedQAScope','createRetainedManualSetup','ManualEnrollmentCapture','startManualCookieObservation','send','exactKeys','manualSeedFailure','childExited','cdpFailure','projectCDPEvent','qaCookieRequest',seedSource+';return seedRetainedManualPilot;')(
-        ()=>current,()=>true,'retained_source_qualification',{reuse:true},createRetainedManualSetup,Enrollment,()=>harness.start(),transport,()=>{},manualSeedFailure,false,null,()=>{},()=>({urls:['https://api.x.com/1.1/account/settings.json']}));
-      await seed({id:1,op:'manual_seed_bootstrap',owner:1});assert.equal(seedCalls,1);assert.equal(methods.some(v=>v.endsWith('Network.disable')),false);
+      const seed=new Function('requireOwner','qualificationMode','driverMode','retainedQAScope','createRetainedManualSetup','ManualEnrollmentCapture','startManualCookieObservation','send','exactKeys','manualSeedFailure','childExited','cdpFailure','projectCDPEvent','qaCookieRequest','startupFailure',seedSource+';return seedRetainedManualPilot;')(
+        ()=>current,()=>true,'retained_source_qualification',{reuse:true},createRetainedManualSetup,Enrollment,()=>harness.start(),transport,()=>{},manualSeedFailure,false,null,()=>{},()=>({urls:['https://api.x.com/1.1/account/settings.json']}),startupFailure);
+      if(when==='none')await seed({id:1,op:'manual_seed_bootstrap',owner:1});
+      else await assert.rejects(seed({id:1,op:'manual_seed_bootstrap',owner:1}),error=>manualSeedDiagnostic(error)?.write==='acknowledged');
+      assert.equal(seedCalls,1);assert.equal(methods.some(v=>v.endsWith('Network.disable')),false);
       assert.equal(current.manualCookieGuard.rejection(),when==='none'?'unknown':'cookie_candidate');
       assert.equal(current.manualCookieDiagnostics.current()?.trace.guardProvenance,when==='none'?undefined:'scoped');
       collectorObserver({method:'Network.responseReceivedExtraInfo',sessionId:'cs',params:{requestId:'unseen',statusCode:200,headers:{'Set-Cookie':'ct0=; Path=/'}}});

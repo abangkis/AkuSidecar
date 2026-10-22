@@ -166,6 +166,14 @@ for fully correlated supported resource hops. Candidate or ambiguous evidence,
 missing correlation, and root/account-settings redirects still reject. No
 redirect can supply identity authority or authorize another native QA run.
 
+The [early cache preparation and pre-transfer fences](../../docs/x-native-manual-pilot.md#early-cache-preparation-and-pre-transfer-guard-fences-2026-10-23)
+require acknowledged cache disabling before enrollment on both owned sessions,
+and stop export/write when either guard has already rejected. V5 adds closed
+cache-attribute diagnostics; the seed diagnostic envelope preserves the first
+guard trace and truthful `not_attempted`/`unknown`/`acknowledged` write status.
+This adds no SW bypass, cache clearing, guard reset or broader traffic authority.
+Validation remains offline and grants no new transfer permission.
+
 The [first failed redirect predicate and observation epoch](../../docs/x-native-manual-pilot.md#first-failed-redirect-predicate-and-observation-epoch-2026-10-23)
 add closed `guardCondition` and immutable `guardEpoch` fields to private V4
 diagnostics, with V2/V3 decode compatibility. A structural redirect rejection can

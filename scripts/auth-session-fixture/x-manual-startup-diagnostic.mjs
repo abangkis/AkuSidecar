@@ -4,7 +4,7 @@ export const STARTUP_ROLES=Object.freeze(['reader','collector','pair','unknown']
 export const STARTUP_PHASES=Object.freeze(['prepare','inspect_before','inspect_after','acquire_rpc','identity','rendezvous','settings','cleanup','bound_finish','wire_decode','joint']);
 export const STARTUP_REASONS=Object.freeze(['unavailable','rejected','identity_unavailable','source_unavailable','stale_observation','cleanup_unverified','scope_lost','observed_cookie_write','deadline','canceled','replay','sample_missing','sample_duplicate','invalid_shape','scope_mismatch','time_invalid']);
 export const STARTUP_GUARD_CAUSES=Object.freeze(['guard_request_unbound','guard_request_budget','guard_header_classification','guard_response_correlation','guard_metadata_shape','guard_completion_missing','guard_header_budget','guard_event_budget']);
-// Append-only V2 catalog prefix plus V3/V4 guard fields form the private wire contract.
+// Append-only V2 catalog prefix plus V3/V4/V5 guard fields form the private wire contract.
 export const STARTUP_TRACE=Object.freeze({
   firstCause:Object.freeze(['unknown','cookie_candidate','cookie_ambiguous','context_lost','target_lost','navigation','owner_scope','event_cap','identity_order','identity_mismatch','settings_order','response_frame','extra_shape','extra_status','extra_missing','extra_unexpected','generic_early','stale_observation','cleanup_failed',...STARTUP_GUARD_CAUSES]),
   terminal:Object.freeze(['unknown',...STARTUP_REASONS,'bound']),
@@ -16,6 +16,9 @@ export const STARTUP_TRACE=Object.freeze({
   guardProvenance:Object.freeze(['unknown','absent','scoped','origin_scope','frame_scope','loader_missing','redirect','reused','root_scope']),
   guardCondition:Object.freeze(['unknown','predecessor_missing','redirect_shape','previous_response','chain_completed','chain_failed','chain_cache','previous_resource','current_resource','previous_origin','previous_frame','previous_loader','current_origin','current_frame','current_loader','loader_mismatch','redirect_url','redirect_status','extra_flag','headers_shape','response_cache']),
   guardEpoch:Object.freeze(['unknown','before_seed','post_seed','reload_armed','document_committed']),
+  guardDiskCache:Object.freeze(['unknown','absent','false','true','malformed']),
+  guardServiceWorker:Object.freeze(['unknown','absent','false','true','malformed']),
+  guardPrefetchCache:Object.freeze(['unknown','absent','false','true','malformed']),
 });
 const boundTraces=new WeakMap();
 export function closedStartupTrace(input={}){
@@ -44,7 +47,7 @@ export function startupRPCCode(error){
   if(d.trace){
     const head=[STARTUP_ROLES.indexOf(d.role),STARTUP_PHASES.indexOf(d.phase),STARTUP_REASONS.indexOf(d.reason),d.peer?1:0];
     const tail=Object.entries(STARTUP_TRACE).map(([key,values])=>values.indexOf(d.trace[key]));
-    return 'manual_initial_v4_'+[...head,...tail].join('_');
+    return 'manual_initial_v5_'+[...head,...tail].join('_');
   }
   return `manual_initial_${d.role}_${d.phase}_${d.reason}_${d.peer?'peer':'primary'}`;
 }
@@ -57,7 +60,11 @@ export function startupFailureLatch(){
       // Enrich only the original observation. Its cause and origin never change.
       if(first.trace&&d.trace&&first.role===d.role&&role===first.role&&!d.peer&&first.trace.firstCause===d.trace.firstCause){
         const trace={...first.trace};
-        for(const key of Object.keys(STARTUP_TRACE))if(trace[key]==='unknown'&&d.trace[key]!=='unknown')trace[key]=d.trace[key];
+        for(const key of Object.keys(STARTUP_TRACE)){
+          if(['guardDiskCache','guardServiceWorker','guardPrefetchCache'].includes(key))continue;
+          if(key==='guardCondition'&&d.trace.guardCondition==='response_cache'&&trace.guardCondition!=='response_cache')continue;
+          if(trace[key]==='unknown'&&d.trace[key]!=='unknown')trace[key]=d.trace[key];
+        }
         first=Object.freeze({...first,trace:closedStartupTrace(trace)});
       }
       return startupFailure(first.role,first.phase,first.reason,role!==first.role&&role!=='pair'||d.peer,message,first.trace);

@@ -387,6 +387,80 @@ claim a successful identity/login observation. All 34 prepared source hashes
 match; native execution skipped before lease/profile access. Evidence:
 `runtime/qa/auth-session-sidecar/x-manual-retained-b145fe477dac4d919eeaea8c74e90181.prepare.log.txt`.
 
+### Early cache preparation and pre-transfer guard fences (2026-10-23)
+
+The single authorized run of `2f72026` rejected reader startup after 10.49
+seconds with `condition=response_cache epoch=before_seed`. Admission never
+opened. Final owned Job cleanup and lease release succeeded; the retained
+manifest was clean and the disposable root was removed. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-2dacb05a6cc44c9aa2ca927c2e169098.run.log.txt`.
+The earlier outer `cleanup-uncertain` result is separate from that final cleanup
+proof. The trace does not identify which cache flag rejected or establish a
+cookie write. `before_seed` means before the write acknowledgment boundary;
+it does not prove that the write command had not yet been sent.
+
+Offline review found that Network observation began before enrollment while
+cache disabling occurred only at the later startup checkpoint. It also found
+that enrollment checks before cookie export/write did not inspect either
+existing cookie guard rejection. The correction preserves the current uncached
+acceptance envelope:
+
+- Both exact owned sessions must acknowledge
+  `Network.setCacheDisabled({cacheDisabled:true})` before Network enable and
+  enrollment traffic. Only the narrowly scoped setup command gate is extended;
+  parameters, role/session ownership and one-use setup remain checked. Failure
+  or unavailable acknowledgment prevents enrollment and export. No cache
+  clearing, service-worker bypass or change to the reload command is added.
+- Check both guards after observer setup and enrollment, before export, after
+  awaited export/enrollment checks, and around the final write boundary.
+  The final guard/enrollment assertion is synchronous and shares a JavaScript
+  turn with collector command dispatch. A previous rejection cannot be reset
+  by seed, reload, cleanup, a later event or a healthy peer.
+- Preserve truthful write status. A failure before dispatch is
+  `not_attempted`; an issued command without acknowledgment remains `unknown`.
+  The private acknowledgment hook records `acknowledged` before starting both
+  post-seed baselines inside CDP reply dispatch. A rejection during reply
+  processing, the same pipe batch or cleanup cannot turn that known write into
+  a claim that no write occurred, and cannot publish a successful seed DTO.
+
+Private V5 startup diagnostics append `guardDiskCache`, `guardServiceWorker`
+and `guardPrefetchCache`. Each is a closed category: `unknown`, `absent`,
+`false`, `true` or `malformed`. Descriptor inspection never invokes getters or
+exports arbitrary values. The first relevant cache failure owns these fields;
+later cache metadata cannot replace an earlier cause. The original rejection
+predicate, precedence, scope, budgets and first observation epoch are unchanged.
+V2/V3/V4 startup codes remain decodable with missing fields marked unknown.
+
+Seed failures with a branded first startup trace use a bounded numeric
+`manual_seed_v2_...` envelope so an early abort does not discard the original
+role, cause, condition, epoch and cache attributes. It includes the existing
+closed seed phase/reason/write state; old seed codes remain supported. Raw
+headers, URLs, account identifiers, cookie values and arbitrary exception
+properties never enter either wire. Diagnostic codes keep the existing
+80-character bound.
+
+Regressions exercise either role's cache-control failure, pre-existing
+rejection, rejection during export, the last synchronous pre-dispatch check,
+write without acknowledgment, rejection before/after acknowledgment, cleanup,
+and a healthy control. Cache attributes, accessors, sanitized reports, immutable
+first failure and legacy/private Node-to-Go wire compatibility are covered.
+All execution for this delta is offline. No retained profile, Chrome process,
+native X request, transfer, Store operation or user runtime is accessed.
+Early HTTP cache control is preparation, not proof that SW/prefetch provenance
+cannot appear or that the last native failure is fixed. Cached/unsupported
+redirect chains still reject under the unchanged guard; cache provenance never
+grants account/login authority.
+
+Validation passed all 200 Node tests in the ten retained-preparation suites
+(33 added regressions), plus all four selected standalone Go diagnostic tests
+and 21 startup bridge subcases with no skips. The Go binary was compiled from
+the canonical ten-file allowlist, with both development/fixture tags, all
+execution gates disabled and no Chrome executable configured. Its owned build
+root was removed. Evidence:
+`runtime/qa/auth-session-sidecar/cache-seed-final-4355b5e5abb34aedb6ca72db28efb91f.node.log.txt`
+and
+`runtime/qa/auth-session-sidecar/cache-attribute-diagnostics-verbose-58aab741-20261023.go.log.txt`.
+
 ### First failed redirect predicate and observation epoch (2026-10-23)
 
 The authorized `22438ae` retained run still rejected reader startup with

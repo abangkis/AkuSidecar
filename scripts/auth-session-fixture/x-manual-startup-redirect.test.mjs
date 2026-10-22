@@ -157,6 +157,66 @@ test('cache, serviceworker, failed/completed requests, and final redirect status
   }
 });
 
+test('each redirect cache attribute is summarized by descriptor category without invoking accessors',()=>{
+  const attributes=[['fromDiskCache','guardDiskCache'],['fromServiceWorker','guardServiceWorker'],['fromPrefetchCache','guardPrefetchCache']];
+  for(const [key,field]of attributes)for(const category of ['true','absent','false','malformed','accessor']){
+    const s=fixture();s.request();let reads=0;
+    const response={url:urls[0],status:302,headers:{}};
+    const trigger=attributes.find(([other])=>other!==key)[0];
+    if(category==='true')response[key]=true;
+    else if(category==='absent')response[trigger]=true;
+    else if(category==='false'){response[key]=false;response[trigger]=true;}
+    else if(category==='malformed')response[key]='PRIVATE_CACHE_VALUE';
+    else Object.defineProperty(response,key,{get(){reads++;throw new Error('PRIVATE_CACHE_GETTER');}});
+    s.redirect(1,{redirectResponse:response});
+    const trace=s.g.trace();
+    assert.equal(s.g.rejection(),'guard_request_unbound',`${key} ${category}`);
+    assert.equal(trace.guardCondition,'response_cache',`${key} ${category}`);
+    const states=Object.fromEntries(attributes.map(([attribute,name])=>[name,
+      attribute===key?(category==='true'?'true':category==='absent'?'absent':category==='false'?'false':'malformed'):
+        attribute===trigger&&['absent','false'].includes(category)?'true':'absent']));
+    assert.deepEqual({guardDiskCache:trace.guardDiskCache,guardServiceWorker:trace.guardServiceWorker,guardPrefetchCache:trace.guardPrefetchCache},states);
+    assert.equal(reads,0,`${key} accessor`);
+    for(const raw of ['PRIVATE_CACHE_VALUE','PRIVATE_CACHE_GETTER',...urls])assert.equal(JSON.stringify(trace).includes(raw),false);
+  }
+});
+
+test('cache projection survives an earlier known-other latch and stays immutable across seed',()=>{
+  const otherCookie={'Set-Cookie':'lang=x; Domain=api.x.com; Path=/'};
+  const known=fixture();known.request();
+  known.redirect(1,{headers:otherCookie,redirectResponse:{url:urls[0],status:302,headers:otherCookie,fromDiskCache:true}});
+  assert.equal(known.g.rejection(),'guard_request_unbound');
+  assert.deepEqual(known.g.trace(),{guardTrigger:'redirect',guardProvenance:'redirect',guardCondition:'response_cache',guardEpoch:'post_seed',guardDiskCache:'true',guardServiceWorker:'absent',guardPrefetchCache:'absent'});
+
+  const before=fixture({beforeSeed:true});before.request();
+  before.redirect(1,{redirectResponse:{url:urls[0],status:302,headers:{},fromServiceWorker:true}});
+  const first=before.g.trace();assert.equal(first.guardEpoch,'before_seed');assert.equal(first.guardServiceWorker,'true');
+  before.g.beginPostSeed();before.extra(302,{'Set-Cookie':'ct0=PRIVATE_VALUE; Path=/'});before.response();
+  assert.equal(before.g.rejection(),'guard_request_unbound');assert.deepEqual(before.g.trace(),first);
+  assert.equal(JSON.stringify(first).includes('PRIVATE'),false);
+});
+
+test('final redirect response cache flags are retained when completion rejects the chain',()=>{
+  const s=fixture();s.request();s.redirect(1);
+  s.response(1,{response:{url:urls[1],status:200,headers:{},fromDiskCache:false,fromServiceWorker:true,fromPrefetchCache:'malformed-private'}});
+  assert.equal(s.g.rejection(),'unknown');
+  rejected(s,'guard_response_correlation');
+  assert.deepEqual(s.g.trace(),{guardTrigger:'finish',guardProvenance:'scoped',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'false',guardServiceWorker:'true',guardPrefetchCache:'malformed'});
+  assert.equal(JSON.stringify(s.g.trace()).includes('malformed-private'),false);
+});
+
+test('a prior candidate or metadata failure is never relabeled by a later cache redirect',()=>{
+  const candidate=fixture();candidate.request();
+  candidate.redirect(1,{redirectResponse:{url:urls[0],status:302,headers:{'Set-Cookie':'ct0=PRIVATE_VALUE; Path=/'},fromDiskCache:true}});
+  assert.equal(candidate.g.rejection(),'cookie_candidate');
+  assert.deepEqual(candidate.g.trace(),{guardTrigger:'redirect',guardProvenance:'redirect',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown'});
+
+  const shape=fixture();shape.request();shape.extra(302,{'Set-Cookie':'unknown_private=PRIVATE_VALUE; Path=/'});
+  shape.redirect(1,{redirectResponse:{url:urls[0],status:302,headers:{},fromPrefetchCache:true}});
+  assert.equal(shape.g.rejection(),'guard_header_classification');
+  assert.deepEqual(shape.g.trace(),{guardTrigger:'extra',guardProvenance:'scoped',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown'});
+});
+
 test('pre-seed projections stay outside the attempt epoch while late prior-hop candidates revoke post-seed',()=>{
   const clean=fixture({beforeSeed:true});clean.request();clean.extra(302,{'Set-Cookie':'ct0=PRIVATE_VALUE; Path=/'});clean.redirect(1,{extra:true});clean.g.beginPostSeed();clean.response();accepted(clean,0);
   for(const blocked of [false,true]){

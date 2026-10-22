@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRetainedManualSetup,manualSeedDiagnostic,manualSeedDiagnosticCode} from './x-manual-retained-setup.mjs';
+import {startupFailure} from './x-manual-startup-diagnostic.mjs';
 function fixture(fault){
   let reads=0,writes=0,clock=0,ownReads=0;
   const state={readerPID:1,readerProfile:'qa-reader',collectorPID:2,collectorProfile:'qa-collector'};
@@ -92,5 +93,28 @@ test('failed, expired or owner-changing setup stays one-shot and has no raw erro
     await assert.rejects(f.run(),e=>e.message==='xnp_manual_setup_unavailable');
     if(fault==='account-shape')assert.deepEqual(f.counts(),{reads:0,writes:0});
     if(fault==='deadline')assert.deepEqual(f.counts(),{reads:1,writes:0});
+  }
+});
+
+test('synchronous final assertion prevents dispatch while acknowledgment survives later failure and cleanup',async()=>{
+  for(const stage of ['assert','async-assert','pending','ack','cleanup','none']){
+    let writes=0,cleaned=0,lateAck;
+    const failure=()=>startupFailure('reader','bound_finish','observed_cookie_write',false,undefined,
+      {firstCause:'guard_request_unbound',guardCondition:'response_cache',guardEpoch:'before_seed',guardDiskCache:'true',guardServiceWorker:'absent',guardPrefetchCache:'false'});
+    const run=createRetainedManualSetup({enabled:true,transferAllowed:true,now:()=>0,
+      ownership:async()=>({readerPID:1,readerProfile:'r',collectorPID:2,collectorProfile:'c'}),readEnrollment:async()=> '123',readAllowedCookies:async()=>[{},{}],
+      assertBeforeWrite:()=>{if(stage==='assert')throw failure();if(stage==='async-assert')return Promise.resolve();},
+      writeAllowedCookies:async(_,ack)=>{writes++;lateAck=ack;if(stage==='pending')throw failure();ack();if(stage==='ack')throw failure();return true;},
+      cleanupEnrollment:async()=>{cleaned++;if(stage==='cleanup')throw failure();},
+    });
+    if(stage==='none')await run();
+    else await assert.rejects(run(),error=>{
+      const write=['assert','async-assert'].includes(stage)?'not_attempted':stage==='pending'?'unknown':'acknowledged';
+      assert.equal(manualSeedDiagnostic(error).write,write);
+      const code=manualSeedDiagnosticCode(error);assert.ok(code.length<=80);assert.equal(code.includes('PRIVATE'),false);
+      if(stage!=='async-assert')assert.match(code,/^manual_seed_v2_/);return true;
+    });
+    assert.equal(writes,['assert','async-assert'].includes(stage)?0:1);assert.equal(cleaned,1);
+    if(lateAck)assert.throws(lateAck,error=>manualSeedDiagnostic(error)?.reason==='replay');
   }
 });

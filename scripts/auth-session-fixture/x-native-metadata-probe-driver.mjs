@@ -838,7 +838,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
   }
   const webState = active?.webABA;
   const manualProvenance=purpose==='manual_provenance'&&qualificationMode(driverMode)&&process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED==='1'&&process.env.AKU_X_MANUAL_RETAINED_TRANSFER_ONCE==='1'&&!!active?.manualSetup&&!active.manualStartupPort&&sessionId===active.sessionId&&(
-    method==='Page.getFrameTree'&&Object.keys(params).length===0||method==='Network.enable'&&JSON.stringify(params)===JSON.stringify({maxTotalBufferSize:MAX_TOTAL_NETWORK_BUFFER_BYTES,maxResourceBufferSize:MAX_RESOURCE_NETWORK_BUFFER_BYTES,maxPostDataSize:0}));
+    method==='Page.getFrameTree'&&Object.keys(params).length===0||method==='Network.setCacheDisabled'&&!active.manualCacheControlReady&&JSON.stringify(params)==='{"cacheDisabled":true}'||method==='Network.enable'&&JSON.stringify(params)===JSON.stringify({maxTotalBufferSize:MAX_TOTAL_NETWORK_BUFFER_BYTES,maxResourceBufferSize:MAX_RESOURCE_NETWORK_BUFFER_BYTES,maxPostDataSize:0}));
   const manualEnrollment=purpose==='manual_enrollment'&&process.env.AKU_X_MANUAL_RETAINED_TRANSFER_ONCE==='1'&&qualificationMode(driverMode)&&active?.manualEnrollment?.command(method,params,sessionId)===true;
   if(method==='Target.detachFromTarget'&&!manualEnrollment)return Promise.reject(probeError('manual_enrollment_detach_denied'));
   const manualControl=!!active?.manualStartupPort&&purpose==='manual_owner'&&(
@@ -2032,6 +2032,15 @@ async function startManualCookieObservation(current) {
   });
   s.manualCookieGuard=make(collector.frameId,s.sessionId,'collector');
   s.manualCookieUnsubscribe=s.transport.subscribe(raw=>s.manualCookieGuard.observe(raw));
+  // Prepare the existing uncached envelope before enrollment traffic. This
+  // neither bypasses service workers nor repairs an earlier provenance loss.
+  const readerCache=await send('Network.setCacheDisabled',{cacheDisabled:true},current.sessionId,'manual_provenance');
+  if(readerCache?.acknowledged!==true)throw probeError('manual_setup_unavailable');
+  await s.transport.send('Network.setCacheDisabled',{cacheDisabled:true},s.sessionId,r=>{
+    if(!isObject(r)||Object.keys(r).length!==0)throw probeError('manual_setup_unavailable');
+    return{acknowledged:true};
+  });
+  current.manualCacheControlReady=true;
   const params={maxTotalBufferSize:MAX_TOTAL_NETWORK_BUFFER_BYTES,maxResourceBufferSize:MAX_RESOURCE_NETWORK_BUFFER_BYTES,maxPostDataSize:0};
   await send('Network.enable',params,current.sessionId,'manual_provenance');
   await s.transport.send('Network.enable',params,s.sessionId,()=>({acknowledged:true}));
@@ -2044,44 +2053,58 @@ export async function seedRetainedManualPilot(message){
   const current=requireOwner(message),s=current.shortFeasibility;
   if(!qualificationMode(driverMode)||!retainedQAScope?.reuse||!current.gate.loginVisible||current.gate.observationStarted||
     !s||s.closed||s.ran||s.exportIssued||current.manualStartupPort||current.manualSetup)throw manualSeedFailure('preconditions',current.manualSetup?'replay':'rejected',current.manualSetup?'unknown':'not_attempted');
+  const assertGuards=()=>{
+    for(const [role,guard]of [['reader',current.manualCookieGuard],['collector',s.manualCookieGuard]]){
+      if(!guard)throw manualSeedFailure('preconditions','rejected');
+      const reason=guard.rejection();
+      if(reason!=='unknown')throw current.manualCookieDiagnostics.record(
+        startupFailure(role,'bound_finish','observed_cookie_write',false,undefined,{firstCause:reason,...guard.trace()}),role,'bound_finish','observed_cookie_write');
+    }
+  };
   current.manualSetup=createRetainedManualSetup({enabled:true,transferAllowed:true,
     ownership:async()=>{
-      if(current.manualEnrollment)await current.manualEnrollment.check();
+      if(current.manualEnrollment){await current.manualEnrollment.check();assertGuards();}
       const owned=s.transport.ownership();if(childExited||cdpFailure||!owned.alive)throw probeError('manual_setup_unavailable');
       return {readerPID:current.pid,readerProfile:current.profileId,collectorPID:owned.pid,collectorProfile:owned.profileId};
     },
     readEnrollment:async()=>{
       await startManualCookieObservation(current);
+      assertGuards();
       current.manualEnrollment=new ManualEnrollmentCapture({
         scope:{pid:current.pid,profileId:current.profileId,targetId:current.targetId,sessionId:current.sessionId},
         send:(method,params,sessionId)=>send(method,params,sessionId,'manual_enrollment'),
         snapshot:async()=>({pid:current.pid,profileId:current.profileId,targetId:current.targetId,sessionId:current.sessionId,alive:!childExited&&!cdpFailure}),
         projectEvent:projectCDPEvent,
       });
-      return current.manualEnrollment.run();
+      const account=await current.manualEnrollment.run();assertGuards();return account;
     },
     readAllowedCookies:async()=>{
-      await current.manualEnrollment.check();
+      assertGuards();await current.manualEnrollment.check();assertGuards();
       s.exporting=true;
-      try{const selected=await send('Network.getCookies',qaCookieRequest('api_v1'),current.sessionId);await current.manualEnrollment.check();return selected;}
+      try{const selected=await send('Network.getCookies',qaCookieRequest('api_v1'),current.sessionId);assertGuards();await current.manualEnrollment.check();assertGuards();return selected;}
       finally{s.exporting=false;}
     },
-    beforeWrite:()=>current.manualEnrollment.check(),
-    writeAllowedCookies:async cookies=>{
-      current.manualEnrollment.assertCurrent();
-      await s.transport.send('Network.setCookies',{cookies},s.sessionId,()=>{
+    beforeWrite:async()=>{assertGuards();await current.manualEnrollment.check();assertGuards();},
+    assertBeforeWrite:()=>{current.manualEnrollment.assertCurrent();assertGuards();},
+    writeAllowedCookies:async(cookies,acknowledgeWrite)=>{
+      try{await s.transport.send('Network.setCookies',{cookies},s.sessionId,()=>{
+        // Receipt of the CDP success is distinct from post-ack guard health.
+        acknowledgeWrite();
         // Set the baseline inside acknowledgment dispatch, before another event
         // in the same pipe batch or enrollment cleanup can be processed.
         current.manualCookieGuard.beginPostSeed();s.manualCookieGuard.beginPostSeed();
+        assertGuards();
         return{acknowledged:true};
-      });
-      return true;
+      });}catch(error){assertGuards();throw error;}
+      assertGuards();return true;
     },
-    cleanupEnrollment:async()=>{if(current.manualEnrollment)await current.manualEnrollment.close();},
+    cleanupEnrollment:async()=>{if(current.manualEnrollment){await current.manualEnrollment.close();assertGuards();}},
   });
   // homeReady retains the earlier fixed UI check's meaning; the enrollment
   // reload does not assert a new UI check or grant identity/login authority.
-  const result=await current.manualSetup();current.manualSeeded=true;return result;
+  const result=await current.manualSetup();
+  try{assertGuards();}catch(error){throw manualSeedFailure('enrollment_cleanup','rejected','acknowledged',error);}
+  current.manualSeeded=true;return result;
 }
 
 async function openRetainedManualReader(message){

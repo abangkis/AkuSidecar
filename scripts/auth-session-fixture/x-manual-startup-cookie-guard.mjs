@@ -60,6 +60,22 @@ const statusValid = v => Number.isInteger(v) && v >= 100 && v <= 599;
 const unsafeCache = response => ['fromDiskCache', 'fromServiceWorker', 'fromPrefetchCache'].some(key => {
   const value = data(response, key); return value !== undefined && value !== false;
 });
+const cacheFields = Object.freeze([
+  ['fromDiskCache', 'guardDiskCache'],
+  ['fromServiceWorker', 'guardServiceWorker'],
+  ['fromPrefetchCache', 'guardPrefetchCache'],
+]);
+function cacheProjection(response) {
+  const result = {};
+  for (const [key, field] of cacheFields) {
+    let descriptor;
+    try { descriptor = object(response) ? Object.getOwnPropertyDescriptor(response, key) : undefined; }
+    catch { descriptor = invalid; }
+    result[field] = descriptor === undefined ? 'absent' : descriptor === invalid || !Object.hasOwn(descriptor, 'value') ? 'malformed' :
+      descriptor.value === true ? 'true' : descriptor.value === false ? 'false' : 'malformed';
+  }
+  return Object.freeze(result);
+}
 const blockedShape = value => Array.isArray(value) && value.length <= 32 && Array.from({length:value.length},(_,i)=>
   data(Object.getOwnPropertyDescriptor(value,String(i))?.value,'cookieLine')).every(line=>typeof line==='string');
 function settingsScope(scope) {
@@ -76,6 +92,7 @@ export class ManualStartupCookieGuard {
   #armed = false; #oldLoader; #rootId = null; #root = null; #commit = null; #records = 0;
   #rejection = 'unknown'; #trigger = 'unknown'; #provenance = 'unknown';
   #condition = 'unknown'; #epoch = 'unknown';
+  #guardDiskCache = 'unknown'; #guardServiceWorker = 'unknown'; #guardPrefetchCache = 'unknown';
   #onRejection;
   constructor(frameId, sessionId, { beforeSeed = false, onRejection = () => {} } = {}) {
     if (!ref(frameId) || typeof beforeSeed !== 'boolean' || beforeSeed && !ref(sessionId)) throw new Error('manual_cookie_guard_invalid');
@@ -98,19 +115,25 @@ export class ManualStartupCookieGuard {
     }
     this.#armed = true; this.#oldLoader = oldLoader;
   }
-  #note(reason, trigger, provenance = 'unknown', condition = 'unknown') {
+  #note(reason, trigger, provenance = 'unknown', condition = 'unknown', cache = null) {
     if (this.#rejection !== 'unknown') return;
     this.#rejection = reason; this.#trigger = trigger; this.#provenance = provenance;
     this.#condition = condition;
+    if (cache) {
+      this.#guardDiskCache = cache.guardDiskCache;
+      this.#guardServiceWorker = cache.guardServiceWorker;
+      this.#guardPrefetchCache = cache.guardPrefetchCache;
+    }
     // Capture the observation epoch once, not the later reporting phase.
     this.#epoch = !this.#baseline ? 'before_seed' : this.#commit !== null ? 'document_committed' : this.#armed ? 'reload_armed' : 'post_seed';
     try{this.#onRejection(reason,this.trace());}catch{}
   }
-  #fail(reason = 'guard_metadata_shape', trigger = 'metadata', provenance = 'unknown', condition = 'unknown') {
-    this.#note(reason,trigger,provenance,condition); this.#ambiguous = Math.min(64,this.#ambiguous + 1);
+  #fail(reason = 'guard_metadata_shape', trigger = 'metadata', provenance = 'unknown', condition = 'unknown', cache = null) {
+    this.#note(reason,trigger,provenance,condition,cache); this.#ambiguous = Math.min(64,this.#ambiguous + 1);
   }
   rejection() { return this.#rejection; }
-  trace() { return Object.freeze({guardTrigger:this.#trigger,guardProvenance:this.#provenance,guardCondition:this.#condition,guardEpoch:this.#epoch}); }
+  trace() { return Object.freeze({guardTrigger:this.#trigger,guardProvenance:this.#provenance,guardCondition:this.#condition,guardEpoch:this.#epoch,
+    guardDiskCache:this.#guardDiskCache,guardServiceWorker:this.#guardServiceWorker,guardPrefetchCache:this.#guardPrefetchCache}); }
   category() { return this.#candidate ? 'candidate_observed' : this.#ambiguous ? 'ambiguous' : this.#other ? 'other_only' : 'not_observed'; }
   #attempt(headers, blocked, request, trigger, provenance = request?.provenance ?? 'absent') {
     if (!this.#baseline) return null;
@@ -152,13 +175,13 @@ export class ManualStartupCookieGuard {
     }
     return other;
   }
-  #apply(other, request, trigger, provenance = request?.provenance ?? 'absent', condition = 'unknown') {
+  #apply(other, request, trigger, provenance = request?.provenance ?? 'absent', condition = 'unknown', cache = null) {
     if(!other)return;
     for(const line of other){
       const scope=request?.scope;
-      if(!scope||request.provenance!=='scoped')this.#fail('guard_request_unbound',trigger,provenance,condition);
-      else if(line.domain!==null&&!(scope.host===line.domain||scope.host==='api.x.com'&&line.domain==='x.com')||!QA_COOKIE_PATHS.includes(line.path??scope.path))this.#fail('guard_header_classification',trigger,provenance);
-      else if(request.bad)this.#fail('guard_response_correlation',trigger,provenance);
+      if(!scope||request.provenance!=='scoped')this.#fail('guard_request_unbound',trigger,provenance,condition,cache);
+      else if(line.domain!==null&&!(scope.host===line.domain||scope.host==='api.x.com'&&line.domain==='x.com')||!QA_COOKIE_PATHS.includes(line.path??scope.path))this.#fail('guard_header_classification',trigger,provenance,condition,cache);
+      else if(request.bad)this.#fail('guard_response_correlation',trigger,provenance,condition,cache);
       else this.#other=Math.min(64,this.#other+1);
     }
   }
@@ -176,8 +199,9 @@ export class ManualStartupCookieGuard {
     if(!relevant)return;
     const last=chain.hops.at(-1);
     for(const r of chain.hops){
+      const cacheFailure=chain.redirected&&!chain.cache&&!chain.failed&&!r.bad&&!chain.bad&&r.cache;
       if(r.bad||chain.bad||chain.redirected&&(chain.cache||chain.failed||r.cache||r.provenance!=='scoped'||!r.resource||r.response&&r===last&&(r.status<200||r.status>=300&&r.status<400))){
-        this.#fail('guard_response_correlation','finish',r.provenance);return;
+        this.#fail('guard_response_correlation','finish',r.provenance,'unknown',cacheFailure?r.cacheProjection:null);return;
       }
       if(!r.response||r.root&&this.#commit!==r.loaderId){this.#fail('guard_completion_missing','finish',r.provenance);return;}
     }
@@ -223,7 +247,7 @@ export class ManualStartupCookieGuard {
       if(!this.#reserve('request',redirect!==undefined?'redirect':chain?'reused':'unknown'))return true;
       const scope=setter(data(data(p,'request'),'url')),loader=data(p,'loaderId');
       const provenance=!scope?'origin_scope':data(p,'frameId')!==this.#frame?'frame_scope':!ref(loader)?'loader_missing':'scoped';
-      const r={scope,provenance,loaderId:ref(loader)?loader:null,response:false,bad:false,cookie:false,status:null,needsExtra:null,root:false,cache:false,other:null,
+      const r={scope,provenance,loaderId:ref(loader)?loader:null,response:false,bad:false,cookie:false,status:null,needsExtra:null,root:false,cache:false,cacheProjection:null,other:null,
         resource:resourceTypes.has(data(p,'type'))&&data(data(p,'request'),'method')==='GET'&&!settingsScope(scope)};
       const current=chain??{hops:[],extras:[],redirected:false,bad:false,cache:false,failed:false,completed:false};
       if(chain&&redirect===undefined){r.provenance='reused';current.bad=true;this.#fail('guard_request_unbound','request','reused');}
@@ -243,7 +267,8 @@ export class ManualStartupCookieGuard {
               provenance==='origin_scope'?'current_origin':provenance==='frame_scope'?'current_frame':provenance!=='scoped'?'current_loader':
               previous.loaderId!==loader?'loader_mismatch':data(redirect,'url')!==previous.scope?.url?'redirect_url':!redirectStatuses.has(status)?'redirect_status':
               typeof extra!=='boolean'?'extra_flag':!object(data(redirect,'headers'))?'headers_shape':'response_cache';
-            previous.bad=true;current.bad=true;this.#apply(other,{provenance:'redirect'},'redirect','redirect',condition);this.#fail('guard_request_unbound','request','redirect',condition);
+            const cache=condition==='response_cache'?cacheProjection(redirect):null;
+            previous.bad=true;current.bad=true;this.#apply(other,{provenance:'redirect'},'redirect','redirect',condition,cache);this.#fail('guard_request_unbound','request','redirect',condition,cache);
           }
           else{previous.response=true;previous.status=status;previous.needsExtra=extra;previous.other=other;}
         }
@@ -263,7 +288,7 @@ export class ManualStartupCookieGuard {
       if(method==='Network.responseReceived'&&r){
         const status=data(response,'status'),extra=data(p,'hasExtraInfo');
         r.bad ||= r.response||data(p,'loaderId')!==r.loaderId||data(p,'frameId')!==this.#frame||data(response,'url')!==r.scope?.url||!statusValid(status)||r.root&&status!==200||typeof extra!=='boolean';
-        r.cache ||= unsafeCache(response);
+        if(!r.cache&&unsafeCache(response)){r.cache=true;r.cacheProjection=cacheProjection(response);}
         if(chain.redirected&&!object(data(response,'headers'))){r.bad=true;this.#fail('guard_metadata_shape','response',r.provenance);}
         r.response=true;r.status=statusValid(status)?status:null;r.needsExtra=typeof extra==='boolean'?extra:null;
         // A single hop can be checked immediately; a redirect chain waits for
