@@ -137,7 +137,7 @@ Ordinary QA and deferred-mutation receipt rules stay unchanged. This is startup
 coverage only, with full account/login verification still required in both roles.
 Offline tests do not authorize a new retained-QA transfer.
 
-The [provisional root-navigation correction](../../docs/x-native-manual-pilot.md#provisional-root-navigation-correlation-2026-10-22)
+The historical [provisional root-navigation correction](../../docs/x-native-manual-pilot.md#provisional-root-navigation-correlation-2026-10-22)
 lets one exact root `/home` navigation wait for matching commit/default-context
 evidence during the trusted reload. Only parsed known non-candidate headers may
 wait; candidate attempts and truly ambiguous headers still reject immediately.
@@ -148,6 +148,14 @@ also let bounded same-document resources wait for the default context after a
 verified new-root commit. Private diagnostics distinguish binding, capacity,
 classification and metadata/completion failures; the first cause remains intact.
 Parser rules, observation limits and admission authority are unchanged.
+
+The [network-provenance revision](../../docs/x-native-manual-pilot.md#network-provenance-and-explicit-post-seed-boundary-2026-10-22)
+supersedes that document/context coupling for cookie safety. Bounded request
+provenance survives the enrollment/seed/startup boundary, with an explicit
+post-seed decision epoch. Identity receipts still require the exact new document
+and default context. Missing request predecessors and disqualified records stay
+distinct in private closed diagnostics; unknown scope and candidate attempts
+remain fenced. This authorizes offline implementation and tests only.
 
 Manual startup diagnostics also retain the [first cause separately from terminal
 failure](../../docs/x-native-manual-pilot.md#first-cause-and-separate-startup-diagnostics-2026-10-22).

@@ -597,7 +597,7 @@ return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!c
 					wantRole = "collector"
 				}
 				if detail.trace == nil {
-					t.Fatal("private trace lost across startup bridge")
+					t.Fatalf("private trace lost across startup bridge: %s", detail)
 				}
 				wantFirst, wantCookie := "cookie_candidate", "candidate_observed"
 				switch role {
@@ -618,6 +618,18 @@ return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!c
 				}
 				if detail.trace.firstCause != wantFirst {
 					t.Fatalf("first cause lost: %s", detail)
+				}
+				wantTrigger, wantProvenance := "response", "scoped"
+				switch role {
+				case "trace-budget", "trace-budget-candidate":
+					wantTrigger, wantProvenance = "request", "unknown"
+				case "trace-unbound":
+					wantProvenance = "absent"
+				case "trace-completion":
+					wantTrigger = "finish"
+				}
+				if detail.trace.guardTrigger != wantTrigger || detail.trace.guardProvenance != wantProvenance || !strings.Contains(detail.String(), "trigger="+wantTrigger+" provenance="+wantProvenance) {
+					t.Fatalf("immutable guard discriminator lost across Node/Windows RPC/Go formatter: %s", detail)
 				}
 				if role == "trace-peer-first" || role == "trace-guard-peer-first" {
 					if !detail.peer || detail.trace.terminal != "unknown" {
@@ -660,13 +672,18 @@ func TestXManualPilotRetainedTraceCodes(t *testing.T) {
 		t.Fatal("Node/Go trace catalog order diverged")
 	}
 	legacy, ok := nativePilotInitialCode("manual_initial_v2_0_8_7_0_2_7_6_2_3_0")
-	if !ok || legacy.trace.firstCause != "cookie_ambiguous" || legacy.trace.cookie != "ambiguous" {
+	if !ok || legacy.trace.firstCause != "cookie_ambiguous" || legacy.trace.cookie != "ambiguous" || legacy.trace.guardTrigger != "unknown" || legacy.trace.guardProvenance != "unknown" {
 		t.Fatal("legacy V2 catalog index changed")
 	}
 	for _, code := range payload.Codes {
 		detail, ok := nativePilotInitialCode(code)
 		if !ok || len(code) > 80 || detail.trace == nil {
 			t.Fatal("valid bounded trace code rejected")
+		}
+	}
+	for _, code := range []string{"manual_initial_v3_0_0_0_0_0_0_0_0_0_0", "manual_initial_v3_0_0_0_0_0_0_0_0_0_0_99_0", "manual_initial_v3_0_0_0_0_0_0_0_0_0_0_0_99", "manual_initial_v3_0_0_0_0_0_0_0_0_0_0_00_0", "manual_initial_v3_0_0_0_0_0_0_0_0_0_0_0_0_extra"} {
+		if _, ok := nativePilotInitialCode(code); ok {
+			t.Fatal("noncanonical V3 guard trace accepted")
 		}
 	}
 	for _, code := range []string{"manual_initial_v2_0_0_0_0_0_0_0_0_0", "manual_initial_v2_00_0_0_0_0_0_0_0_0_0", "manual_initial_v2_0_0_0_2_0_0_0_0_0_0", "manual_initial_v2_0_0_0_0_-1_0_0_0_0_0", "manual_initial_v2_0_0_0_0_0_99_0_0_0_0", "manual_initial_v2_0_0_0_0_0_0_0_0_0_0_extra", "manual_initial_v2_0_0_0_0_0_0_0_0_0_0 ", "manual_initial_v2_+0_0_0_0_0_0_0_0_0_0", "manual_initial_v2_0_0_0_0_0_0_0_0_0_0" + strings.Repeat("0", 80)} {

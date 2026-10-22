@@ -61,12 +61,14 @@ historical snapshot V1 allowance for unclassified cookie headers, relax the
 ordinary QA guard, or permit deferred-mutation observations to publish startup
 receipts. Only the trusted manual startup path uses this classification, after
 its separately authorized seed has completed and before startup admission.
+The network-provenance revision below defines the current observation boundary;
+the provisional-navigation sections retain the history of earlier corrections.
 
 | Observed response cookie header | Manual V2 startup action |
 | --- | --- |
 | An `auth_token` or `ct0` write/attempt after seed | Reject, including before identity capture, deletion/expiry, blocked attempts and a candidate mixed with other or malformed lines |
 | Only clearly classified other cookies with supported, correlated X scope | Keep a bounded diagnostic; this alone does not reject startup |
-| Ambiguous name, syntax, scope, unsupported attributes, unresolved correlation or exhausted observation bounds | Reject; only the bounded startup correlations below may remain pending until their document evidence arrives |
+| Ambiguous name, syntax, scope, unsupported attributes, unresolved provenance or exhausted observation bounds | Reject; bounded response/required ExtraInfo completion may remain pending, independently of JavaScript identity context |
 
 The guard classifies header attempts, not accepted writes or value changes. It
 does not read cookie storage, compare values, prove unchanged session lineage or
@@ -232,6 +234,106 @@ lease/profile access. Evidence:
 `runtime/qa/auth-session-sidecar/x-manual-retained-047a5b35eb56488fae50dc756e0b3f10.prepare.log.txt`.
 This confirms the offline correction and diagnostics; the original native cause
 and native acceptance remain unverified.
+
+### Network provenance and explicit post-seed boundary (2026-10-22)
+
+The single authorized run of source `f7fd506` rejected startup after 9.97 seconds.
+Seed validation passed; admission remained closed. The immutable initial detail
+was `reader/bound_finish/observed_cookie_write`, with
+`first=guard_request_unbound terminal=scope_lost early=evaluation_failed`,
+`handoff=accepted`, `cookie=guard_request_unbound` and `extra=complete`.
+The outer result reported `cleanup-uncertain` during failure handling. Final
+test cleanup subsequently verified the owned Job empty and lease release; the
+retained manifest was `clean`, the disposable root was removed and the retained
+profile preserved. No retry ran. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-047a5b35eb56488fae50dc756e0b3f10.run.log.txt`.
+
+Astra reproduced the exact trace through the actual driver dispatcher,
+checkpoint, binder and bootstrap handoff using an offline transport. Separate
+cases covered a request before guard creation with a late response, an observed
+old-loader request and a new-loader resource before commit. Foreign-origin and
+redirect cases also produced the trace, as conservative scope rejections. Clean,
+post-commit-resource and unrelated-session controls passed. These results expose
+a structural provenance gap; they do not identify the native event that caused
+the preceding run.
+
+The former implementation observed target-session responses but retained only
+requests admitted by document/context binding. It discarded other records to
+`null` and created a fresh request map after enrollment and seed. Consequently,
+"never observed" and "observed but disqualified" became indistinguishable.
+The root and post-commit exceptions above corrected specific orderings but did
+not remove that mismatch.
+
+The network-provenance revision separates two decisions:
+
+| Decision | Required evidence |
+| --- | --- |
+| Response-cookie safety classification | Bounded request provenance from the owned session/root frame and supported HTTPS X/API scope, plus consistent response/required ExtraInfo |
+| Account/login startup receipt | The existing exact fresh account, new document/default context, owner pins, challenge, joint timing and cleanup checks |
+
+HTTP request provenance does not depend on the availability of a JavaScript
+default context. Observed request metadata and closed disqualification reasons
+are retained within the existing request limit. Known non-candidate headers on
+an older observed request can be classified without granting that request any
+identity authority. Missing predecessors, unknown scope, redirects, reused IDs,
+contradictions and unsupported headers remain closed; candidate attempts do not
+need valid identity binding to cause rejection.
+
+The reader observer starts before the enrollment reload and remains active
+through seeding, enrollment cleanup and startup. The collector receives the
+corresponding trusted observer before its controlled startup traffic. An
+explicit post-seed baseline begins when the permitted seed write is acknowledged,
+before asynchronous cleanup. Pre-seed cookie-attempt decisions do not poison the
+new decision epoch. Baseline transition preserves request provenance and
+structural coverage failures rather than manufacturing completeness. A response
+from an older request that attempts a candidate write after baseline still
+rejects. A request never observed before observer startup is not reconstructed
+or silently accepted from its later response.
+The 128-record limit now spans this continuous observation lifetime; longer
+traffic can exhaust it earlier. Such exhaustion remains an explicit closed
+`guard_request_budget` failure, not an implicit reset or silent eviction.
+
+Private diagnostics retain the first rejection trigger and distinguish absent
+request provenance from an observed disqualified record. Only closed enums cross
+the private Node/Go boundary; no request IDs, URLs, cookie names or values, raw
+headers, account IDs or arbitrary exceptions are added to reports. Earlier wire
+versions remain decodable. Public coarse categories and receipt authority remain
+unchanged.
+
+The private V3 diagnostic wire appends `guardTrigger` and `guardProvenance` to
+the six existing trace dimensions. Trigger labels identify baseline/arming,
+metadata/request/document checks, response/ExtraInfo, redirect or finish.
+Provenance labels distinguish `absent`, `scoped`, `origin_scope`, `frame_scope`,
+`loader_missing`, `redirect`, `reused` and `root_scope`, with `unknown` retained
+when no evidence exists. This is a diagnostic wire revision, not a new admission
+policy or a change to receipt schemas. Legacy unversioned and V2 errors remain
+supported.
+
+This revision supersedes the document/context-dependent network correlation in
+the two preceding provisional sections. It does not raise observation limits,
+broaden parser allowlists, discard foreign traffic, change Store policy or extend
+monitoring beyond startup. Default-off gates, the absolute 60-second attempt
+horizon and acknowledged manual-pilot limitations remain in force. Implementation
+and validation are offline only; no new native run or transfer is authorized.
+
+Final canonical offline preparation `a6b8cdd77f6741f4b8f70b80447267d6` passed
+113 Node tests, four standalone Go tests with 18 Node/Windows-RPC/Go diagnostic
+subcases, four build-tag gates and Windows compilation. The actual-driver tests
+exercise provenance across context creation and enrollment/seed/startup, older
+observed requests, missing and disqualified predecessors, same-acknowledgment
+batch/cleanup candidate attempts, and a single continuous network subscription.
+Private V3 discriminator formatting, canonical decoding and legacy V2 indices
+are covered. All 34 prepared source fingerprints match the validated inputs.
+Native execution skipped before lease/profile access. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-a6b8cdd77f6741f4b8f70b80447267d6.prepare.log.txt`.
+
+Validation also exposed a separate diagnostic-fixture timing collision: the
+healthy synthetic peer could sample within the same integer wall-clock tick as
+Go's higher-resolution challenge, causing `time_invalid` before the intended
+guard fault. The offline fixture now waits for a real wall-clock tick after
+challenge release; boundary, rollback and stalled-clock tests cover that wait.
+Production clocks, precision and receipt timing checks are unchanged. This does
+not establish native timing qualification or identify the prior native branch.
 
 ## Implementation and execution boundary
 

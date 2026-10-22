@@ -32,6 +32,7 @@ import { createManualStartupOwner } from './x-manual-startup-owner.mjs';
 import { createXManualOwnerPort, manualOwnerOperation } from './x-native-manual-owner-port.mjs';
 import { createRetainedManualSetup, manualSeedFailure, manualSeedDiagnosticCode } from './x-manual-retained-setup.mjs';
 import { ManualEnrollmentCapture } from './x-manual-enrollment-capture.mjs';
+import { ManualStartupCookieGuard } from './x-manual-startup-cookie-guard.mjs';
 import {startupFailure,startupFailureLatch,startupRPCCode,requireBoundStartup} from './x-manual-startup-diagnostic.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
@@ -836,6 +837,8 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     return Promise.reject(probeError('cdp_command_invalid'));
   }
   const webState = active?.webABA;
+  const manualProvenance=purpose==='manual_provenance'&&qualificationMode(driverMode)&&process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED==='1'&&process.env.AKU_X_MANUAL_RETAINED_TRANSFER_ONCE==='1'&&!!active?.manualSetup&&!active.manualStartupPort&&sessionId===active.sessionId&&(
+    method==='Page.getFrameTree'&&Object.keys(params).length===0||method==='Network.enable'&&JSON.stringify(params)===JSON.stringify({maxTotalBufferSize:MAX_TOTAL_NETWORK_BUFFER_BYTES,maxResourceBufferSize:MAX_RESOURCE_NETWORK_BUFFER_BYTES,maxPostDataSize:0}));
   const manualEnrollment=purpose==='manual_enrollment'&&process.env.AKU_X_MANUAL_RETAINED_TRANSFER_ONCE==='1'&&qualificationMode(driverMode)&&active?.manualEnrollment?.command(method,params,sessionId)===true;
   if(method==='Target.detachFromTarget'&&!manualEnrollment)return Promise.reject(probeError('manual_enrollment_detach_denied'));
   const manualControl=!!active?.manualStartupPort&&purpose==='manual_owner'&&(
@@ -873,7 +876,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
   if (abCommand && (!qualificationMode(driverMode) || !qaABCommand(method, params, sessionId, active.ab))) return Promise.reject(probeError('qa_ab_command_not_authorized'));
   if (!manualEnrollment && !manualControl && !abCommand && guestCommand && (!qualificationMode(driverMode) || !active?.authControlAttempted ||
       !qaGuestCommand(method, params, sessionId, active.guest))) return Promise.reject(probeError('qa_guest_command_not_authorized'));
-  if (purpose !== null && !manualControl && !manualEnrollment && !(purpose === 'normal_remove' && method === 'Debugger.removeBreakpoint' &&
+  if (purpose !== null && !manualControl && !manualEnrollment && !manualProvenance && !(purpose === 'normal_remove' && method === 'Debugger.removeBreakpoint' &&
       active?.earlyCapture?.handoff.breakpoints.has(params.breakpointId))) return Promise.reject(probeError('early_command_not_authorized'));
   if (shortCookieExport && (process.env.AKU_X_QA_SHORT_TRANSFER_ALLOWED !== '1' || active.shortFeasibility.exportIssued ||
       sessionId !== active.sessionId || JSON.stringify(params) !== JSON.stringify(qaCookieRequest('api_v1')))) return Promise.reject(probeError('qa_short_transfer_denied'));
@@ -889,7 +892,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
   }
   if (method === 'Network.setCacheDisabled' && !webCommand && !abCommand && !guestCommand && (!bodyMode(driverMode) || sessionId !== active?.sessionId ||
       Object.keys(params).join(',') !== 'cacheDisabled' || params.cacheDisabled !== true)) return Promise.reject(probeError('account_cache_not_authorized'));
-  if (!manualControl && !manualEnrollment && !liveCommand && !webCommand && !abCommand && !guestCommand && (EARLY_CDP_METHODS.has(method) || method === 'Page.reload' && (driverMode === 'retained_bootstrap' || bound?.running))) {
+  if (!manualControl && !manualEnrollment && !manualProvenance && !liveCommand && !webCommand && !abCommand && !guestCommand && (EARLY_CDP_METHODS.has(method) || method === 'Page.reload' && (driverMode === 'retained_bootstrap' || bound?.running))) {
     const keys = Object.keys(params);
     let valid = keys.length === 0;
     if (method === 'Debugger.setInstrumentationBreakpoint') valid = keys.length === 1 && params.instrumentation === 'beforeScriptExecution';
@@ -906,6 +909,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
   }
   let projectionKind = webCommand ? 'qa_web' : abCommand ? 'qa_ab' : guestCommand ? 'qa_guest' : null;
   if(bound?.running && active?.manualStartupSelected && method==='Page.getFrameTree')projectionKind='manual_frame';
+  if(manualProvenance&&method==='Page.getFrameTree')projectionKind='manual_frame';
   if(manualControl)projectionKind=method==='Page.getFrameTree'?'manual_frame':method==='Target.getTargets'?'manual_inventory':null;
   if(manualEnrollment)projectionKind='manual_enrollment_capture';
   if (liveCommand) projectionKind = 'qa_live_self';
@@ -984,6 +988,7 @@ function dispatchCDP(raw) {
   if (own(raw, 'method')) {
     exactCDPKeys(raw, raw.sessionId === undefined ? ['method', 'params'] : ['method', 'params', 'sessionId']);
     active?.manualEnrollment?.observe(raw);
+    active?.manualCookieGuard?.observe(raw);
     if(active?.manualObserver&&raw.sessionId===active.manualObserver.sessionId&&raw.method==='Runtime.executionContextCreated'){
       const context=raw.params?.context;
       if(context?.auxData?.isDefault&&context.auxData.frameId===active.manualObserver.frameId&&context.origin===X_ORIGIN)active.manualObserver.context=context.id;
@@ -1684,7 +1689,7 @@ async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, 
       requestId => send('Network.getResponseBody', { requestId }, current.sessionId), () => performance.now(),
       writes ? (raw, phase, loader) => writes.observe(raw, phase, loader) : undefined, pointOptions);
     bound.sampling = true;
-    await send('Network.enable', { maxTotalBufferSize: MAX_TOTAL_NETWORK_BUFFER_BYTES,
+    if(!current.manualCookieGuard)await send('Network.enable', { maxTotalBufferSize: MAX_TOTAL_NETWORK_BUFFER_BYTES,
       maxResourceBufferSize: MAX_RESOURCE_NETWORK_BUFFER_BYTES, maxPostDataSize: 0 }, current.sessionId);
     await send('Network.setCacheDisabled', { cacheDisabled: true }, current.sessionId);
     let synchronized = false;
@@ -1717,9 +1722,10 @@ async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, 
     current.earlyCleanupVerified = early.cleanupVerified;
     current.earlyHandoffAccepted = !handoff.handoffRejected;
     bound.binder.earlyOutcome(early.stopReason,handoff.handoffRejected);
+    const continuousObservation = current.manualCookieGuard ? await bound.binder.finish(early.cleanupVerified && !handoff.handoffRejected) : null;
     await send('Network.disable', {}, current.sessionId);
     bound.networkDisabled = true;
-    const observation = await bound.binder.finish(early.cleanupVerified && !handoff.handoffRejected);
+    const observation = continuousObservation ?? await bound.binder.finish(early.cleanupVerified && !handoff.handoffRejected);
     return writes ? finishQACookieWriteScope(observation, writes.finish()) : observation;
   } finally {
     bound.sampling = false;
@@ -1859,7 +1865,7 @@ async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup
     binder = observationFactory(scope, frameId, requestId => command('Network.getResponseBody', { requestId }),
       () => performance.now(), undefined, pointOptions);
     sampling = true;
-    await command('Network.enable', { maxTotalBufferSize: MAX_TOTAL_NETWORK_BUFFER_BYTES, maxResourceBufferSize: MAX_RESOURCE_NETWORK_BUFFER_BYTES, maxPostDataSize: 0 });
+    if(!s.manualCookieGuard)await command('Network.enable', { maxTotalBufferSize: MAX_TOTAL_NETWORK_BUFFER_BYTES, maxResourceBufferSize: MAX_RESOURCE_NETWORK_BUFFER_BYTES, maxPostDataSize: 0 });
     await command('Network.setCacheDisabled', { cacheDisabled: true });
     capture = new BootstrapHandoffCapture({ boundIdentity: true, send: command,
       beforeIdentityRead: contextId => beforeIdentityRead?.(binder.startupPins(contextId)), beforeRuntimeDisable: async () => {
@@ -1870,12 +1876,13 @@ async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup
     const early = await capture.run();
     const rejected = capture.diagnostics().handoffRejected;
     binder.earlyOutcome(early.stopReason,rejected);
+    const continuousObservation=s.manualCookieGuard?await binder.finish(early.cleanupVerified&&!rejected):null;
     await command('Network.disable');
     networkDisabled = true;
-    const observation = await binder.finish(early.cleanupVerified && !rejected);
+    const observation = continuousObservation ?? await binder.finish(early.cleanupVerified && !rejected);
     return { checkpoint: shortQACheckpoint(observation), ...privateResult };
   } finally {
-    sampling = false; unsubscribe();
+    sampling = false; unsubscribe();s.manualCookieUnsubscribe?.();
     if (!networkDisabled) await command('Network.disable').catch(() => {});
   }
 }
@@ -1903,7 +1910,7 @@ export function createOwnedManualStartupOwners(message,diagnostics=startupFailur
     const failure=(error,phase)=>diagnostics.record(error,role,phase);
     const manualObservation=(...args)=>createManualV2BoundObservation(...args,(reason,trace)=>{
       diagnostics.record(startupFailure(role,'bound_finish',reason,false,undefined,trace),role,'bound_finish',reason);
-    });
+    },role==='reader'?current.manualCookieGuard:collector.manualCookieGuard);
     const together=async()=>{try{await rendezvous.arrive(role);}catch{throw diagnostics.record(startupFailure('pair','rendezvous','deadline'),'pair','rendezvous');}};
     try {
       let observation;
@@ -1946,7 +1953,7 @@ export async function executeManualOwnerRPC(message) {
   if(!current.manualStartupPort){
     current.manualStartupSelected=true;
     try{
-      const diagnostics=startupFailureLatch();
+      const diagnostics=current.manualCookieDiagnostics??startupFailureLatch();
       current.manualStartupPort=createXManualOwnerPort({enabled:true,owner:current.owner,diagnostics,
         createOwners:()=>createOwnedManualStartupOwners(message,diagnostics),
         snapshot:async(role,document,pins)=>{
@@ -2008,6 +2015,28 @@ export async function executeManualOwnerRPC(message) {
   return result;
 }
 
+// Begin passive request provenance before enrollment reload, and keep it through
+// seed acknowledgment and startup. No cookie read or write is added here.
+async function startManualCookieObservation(current) {
+  const s=current.shortFeasibility;
+  if(current.manualCookieGuard||s.manualCookieGuard)throw probeError('manual_setup_unavailable');
+  const diagnostics=current.manualCookieDiagnostics=startupFailureLatch();
+  const make=(frameId,sessionId,role)=>new ManualStartupCookieGuard(frameId,sessionId,{beforeSeed:true,onRejection:(reason,trace)=>{
+    diagnostics.record(startupFailure(role,'bound_finish','observed_cookie_write',false,undefined,{firstCause:reason,...trace}),role,'bound_finish','observed_cookie_write');
+  }});
+  const reader=await send('Page.getFrameTree',{},current.sessionId,'manual_provenance');
+  current.manualCookieGuard=make(reader.frameId,current.sessionId,'reader');
+  const collector=await s.transport.send('Page.getFrameTree',{},s.sessionId,r=>{
+    if(!safeId(r.frameTree?.frame?.id))throw probeError('manual_setup_unavailable');
+    return{frameId:r.frameTree.frame.id};
+  });
+  s.manualCookieGuard=make(collector.frameId,s.sessionId,'collector');
+  s.manualCookieUnsubscribe=s.transport.subscribe(raw=>s.manualCookieGuard.observe(raw));
+  const params={maxTotalBufferSize:MAX_TOTAL_NETWORK_BUFFER_BYTES,maxResourceBufferSize:MAX_RESOURCE_NETWORK_BUFFER_BYTES,maxPostDataSize:0};
+  await send('Network.enable',params,current.sessionId,'manual_provenance');
+  await s.transport.send('Network.enable',params,s.sessionId,()=>({acknowledged:true}));
+}
+
 export async function seedRetainedManualPilot(message){
   exactKeys(message,['id','op','owner'],'manual_setup_unavailable');
   if(message.op!=='manual_seed_bootstrap'||process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED!=='1'||
@@ -2022,6 +2051,7 @@ export async function seedRetainedManualPilot(message){
       return {readerPID:current.pid,readerProfile:current.profileId,collectorPID:owned.pid,collectorProfile:owned.profileId};
     },
     readEnrollment:async()=>{
+      await startManualCookieObservation(current);
       current.manualEnrollment=new ManualEnrollmentCapture({
         scope:{pid:current.pid,profileId:current.profileId,targetId:current.targetId,sessionId:current.sessionId},
         send:(method,params,sessionId)=>send(method,params,sessionId,'manual_enrollment'),
@@ -2039,7 +2069,12 @@ export async function seedRetainedManualPilot(message){
     beforeWrite:()=>current.manualEnrollment.check(),
     writeAllowedCookies:async cookies=>{
       current.manualEnrollment.assertCurrent();
-      await s.transport.send('Network.setCookies',{cookies},s.sessionId,()=>({acknowledged:true}));
+      await s.transport.send('Network.setCookies',{cookies},s.sessionId,()=>{
+        // Set the baseline inside acknowledgment dispatch, before another event
+        // in the same pipe batch or enrollment cleanup can be processed.
+        current.manualCookieGuard.beginPostSeed();s.manualCookieGuard.beginPostSeed();
+        return{acknowledged:true};
+      });
       return true;
     },
     cleanupEnrollment:async()=>{if(current.manualEnrollment)await current.manualEnrollment.close();},

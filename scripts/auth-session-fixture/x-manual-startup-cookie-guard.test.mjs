@@ -116,7 +116,7 @@ test('unknown names, malformed headers/attributes and ambiguous declared scope r
   assert.equal(getterReads, 0);
 });
 
-test('missing startup loader/context and unbound root request scope never admit an other cookie', async () => {
+test('identity readiness remains independent of header provenance and rejected request scope never admits a receipt', async () => {
   for (const fault of ['loader', 'context', 'frame', 'request-loader', 'foreign-url', 'reused-id']) {
     const s = sample();
     if (fault !== 'loader') {
@@ -127,7 +127,7 @@ test('missing startup loader/context and unbound root request scope never admit 
     if (fault === 'reused-id') s.request();
     s.response('other', { 'Set-Cookie': 'lang=en; Path=/' });
     const r = await s.binder.finish(true);
-    assert.equal(r.diagnostic, 'observed_cookie_write'); assert.equal(s.published(), 0);
+    assert.equal(r.diagnostic, ['loader','context'].includes(fault) ? 'identity_unavailable' : 'observed_cookie_write'); assert.equal(s.published(), 0);
   }
 });
 

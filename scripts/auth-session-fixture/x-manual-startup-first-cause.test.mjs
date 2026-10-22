@@ -1,11 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {STARTUP_TRACE,closedStartupTrace,startupFailure,startupFailureLatch,startupDiagnostic,startupRPCCode,requireBoundStartup} from './x-manual-startup-diagnostic.mjs';
-import {offlineFirstCausePair} from './x-manual-startup-first-cause-offline.mjs';
+import {offlineFirstCausePair,awaitOfflineWallTick} from './x-manual-startup-first-cause-offline.mjs';
 import {offlineStartupOwner} from './x-manual-startup-offline-fixture.mjs';
 import {createManualV2BoundObservation} from './x-qa-bound-observation.mjs';
 import {inspectBootstrapCurrentSelf} from './x-bootstrap-current-self.mjs';
 const q=(op,role,extra={})=>({id:1,owner:1,op,role,...extra});
+test('offline diagnostic clock waits past a same-ms challenge and accepts an already advanced real tick',async()=>{
+  for(const ticks of [[1000,1000,1000,1001],[1000,1001]]){
+    let reads=0,waits=0;
+    await awaitOfflineWallTick(()=>ticks[reads++],async()=>{waits++;});
+    assert.equal(reads,ticks.length);assert.equal(waits,ticks.length-1);
+    // A nanosecond-resolution Go challenge inside the original ms is earlier
+    // only after the actual wall tick, never through a forged future timestamp.
+    assert.ok(ticks.at(-1)>1000.9);
+  }
+  await assert.rejects(awaitOfflineWallTick(()=>1000,async()=>{}),/offline_clock_stalled/);
+  let n=0;await assert.rejects(awaitOfflineWallTick(()=>n++?999:1000,async()=>{}),/offline_clock_invalid/);
+});
 async function run(fault,role){
   const f=offlineFirstCausePair({fault,faultRole:role});
   const ready=await Promise.all(['reader','collector'].map(r=>f.port.execute(q('manual_prepare',r))));
@@ -54,9 +66,9 @@ test('event-time first cause survives peer-first delivery without importing peer
 test('trace wire uses closed append-only canonical indices and never invokes spoofed getters',()=>{
   let reads=0;
   const unsafe=Object.defineProperty({terminal:'PRIVATE',extra:'x'.repeat(20000)},'firstCause',{get(){reads++;throw new Error('PRIVATE');}});
-  assert.deepEqual(closedStartupTrace(unsafe),{firstCause:'unknown',terminal:'unknown',early:'unknown',handoff:'unknown',cookie:'unknown',extra:'unknown'});
+  assert.deepEqual(closedStartupTrace(unsafe),{firstCause:'unknown',terminal:'unknown',early:'unknown',handoff:'unknown',cookie:'unknown',extra:'unknown',guardTrigger:'unknown',guardProvenance:'unknown'});
   const codes=[];
-  for(const [key,values]of Object.entries(STARTUP_TRACE))for(const value of values){const code=startupRPCCode(startupFailure('collector','inspect_before','observed_cookie_write',true,undefined,{[key]:value}));assert.match(code,/^manual_initial_v2_(?:0|[1-9][0-9]*)(?:_(?:0|[1-9][0-9]*)){9}$/);assert.ok(code.length<=80);codes.push(code);}
+  for(const [key,values]of Object.entries(STARTUP_TRACE))for(const value of values){const code=startupRPCCode(startupFailure('collector','inspect_before','observed_cookie_write',true,undefined,{[key]:value}));assert.match(code,/^manual_initial_v3_(?:0|[1-9][0-9]*)(?:_(?:0|[1-9][0-9]*)){11}$/);assert.ok(code.length<=80);codes.push(code);}
   const report=Object.defineProperty({},'diagnostic',{get(){reads++;return 'bound';}});
   assert.throws(()=>requireBoundStartup(report,'reader',startupFailureLatch()));assert.equal(reads,0);
   assert.equal(startupRPCCode({trace:unsafe}),'manual_initial_unknown_acquire_rpc_unavailable_primary');assert.ok(codes.length>40);

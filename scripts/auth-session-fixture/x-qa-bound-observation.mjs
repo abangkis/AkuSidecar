@@ -12,8 +12,8 @@ const safe = v => typeof v === 'string' && v.length > 0 && v.length <= 4096;
 const error = () => new Error('qa_bound_observation_invalid');
 const manualV2CookiePolicy = Symbol();
 // Selected by trusted Manual V2 owner code only, never by a JSON option.
-export function createManualV2BoundObservation(scope, frameId, readBody, now, observeCookieWrites, pointOptions, onFailure = () => {}) {
-  return new QABoundObservation(scope, frameId, readBody, now, observeCookieWrites, pointOptions, manualV2CookiePolicy, onFailure);
+export function createManualV2BoundObservation(scope, frameId, readBody, now, observeCookieWrites, pointOptions, onFailure = () => {}, provenance) {
+  return new QABoundObservation(scope, frameId, readBody, now, observeCookieWrites, pointOptions, manualV2CookiePolicy, onFailure, provenance);
 }
 
 export function identityProjectionMatches(p) {
@@ -59,11 +59,12 @@ export class QABoundObservation {
   #identityAt = null; #sourceAt = null; #projection = null; #failure = null; #events = 0; #closed = false;
   #startupCookieWriteObserved = false;
   #manualCookieGuard;
+  #externalCookieGuard = false;
   #firstCause = 'unknown'; #hasFirst = false; #onManualFailure; #early = 'unknown'; #handoff = 'unknown';
   #needsExtra = null; #extraStatus = null; #resolveDone;
   #observeCookieWrites;
   #pointOptions; #requestAt = null; #networkRequest = null; #networkInterval = null;
-  constructor(scope, frameId, readBody, now = () => performance.now(), observeCookieWrites = () => {}, pointOptions = { deferCookieMutation: false, onPrivateResult: () => {} }, cookiePolicy, onManualFailure) {
+  constructor(scope, frameId, readBody, now = () => performance.now(), observeCookieWrites = () => {}, pointOptions = { deferCookieMutation: false, onPrivateResult: () => {} }, cookiePolicy, onManualFailure, provenance) {
     if (!scope || Object.keys(scope).sort().join(',') !== 'owner,profileId,sessionId,targetId' ||
         !Number.isSafeInteger(scope.owner) || scope.owner <= 0 || !['profileId', 'sessionId', 'targetId'].every(k => safe(scope[k])) ||
         !safe(frameId) || typeof now !== 'function' || typeof observeCookieWrites !== 'function' ||
@@ -71,11 +72,12 @@ export class QABoundObservation {
         Object.hasOwn(pointOptions, 'onPrivateStartup') && typeof pointOptions.onPrivateStartup !== 'function' ||
         typeof pointOptions.deferCookieMutation !== 'boolean' || typeof pointOptions.onPrivateResult !== 'function' ||
         cookiePolicy !== undefined && cookiePolicy !== manualV2CookiePolicy || cookiePolicy === manualV2CookiePolicy && (pointOptions.deferCookieMutation || typeof onManualFailure !== 'function') ||
-        cookiePolicy === undefined && onManualFailure !== undefined) throw error();
+        cookiePolicy === undefined && (onManualFailure !== undefined || provenance !== undefined) || provenance !== undefined && !(provenance instanceof ManualStartupCookieGuard)) throw error();
     this.#scope = Object.freeze({ ...scope }); this.#frame = frameId; this.#now = now;
     this.#observeCookieWrites = observeCookieWrites;
     this.#pointOptions = Object.freeze({ ...pointOptions });
-    this.#manualCookieGuard = cookiePolicy === manualV2CookiePolicy ? new ManualStartupCookieGuard(frameId,scope.sessionId) : null;
+    this.#manualCookieGuard = cookiePolicy === manualV2CookiePolicy ? provenance?.claim(frameId,scope.sessionId) ?? new ManualStartupCookieGuard(frameId,scope.sessionId) : null;
+    this.#externalCookieGuard = provenance !== undefined;
     this.#onManualFailure = onManualFailure;
     this.#start = this.#last = now();
     if (!Number.isFinite(this.#start)) throw error();
@@ -92,7 +94,7 @@ export class QABoundObservation {
       this.#hasFirst = true; this.#firstCause = closedStartupTrace({ firstCause: cause }).firstCause;
       // Trusted manual callback records the originating event before peers can
       // report cancellation. Callback failure never repairs this observation.
-      try { this.#onManualFailure?.(reason, { firstCause: this.#firstCause }); } catch {}
+      try { this.#onManualFailure?.(reason, { firstCause: this.#firstCause, ...this.#manualCookieGuard?.trace() }); } catch {}
     }
   }
   invalidate(reason = 'scope_lost', cause = 'unknown') {
@@ -131,11 +133,15 @@ export class QABoundObservation {
   // These are observed pins, not requested pins or a public QA projection.
   startupPins(contextId) {
     this.#tick();
+    this.checkCookieGuard();
     if (this.#closed || this.#failure || this.#id !== null || !this.#loader ||
         !this.#context || contextId !== this.#context) throw error();
     return Object.freeze({ ownerId: String(this.#scope.owner), profileId: this.#scope.profileId,
       contextId: String(this.#context), targetId: this.#scope.targetId,
       frameId: this.#frame, documentId: this.#loader });
+  }
+  checkCookieGuard() {
+    if(this.#manualCookieGuard?.rejection() !== undefined && this.#manualCookieGuard.rejection() !== 'unknown')this.invalidate('observed_cookie_write',this.#manualCookieGuard.rejection());
   }
   observe(raw, scope) {
     if (this.#closed) return;
@@ -159,7 +165,8 @@ export class QABoundObservation {
       if (this.#context !== null || p.context.origin !== 'https://x.com' || !Number.isSafeInteger(p.context.id) || p.context.id <= 0) this.invalidate('scope_lost','context_lost');
       else this.#context = p.context.id;
     }
-    if (this.#manualCookieGuard?.observe(raw, this.#loader, this.#context)) this.invalidate('observed_cookie_write',this.#manualCookieGuard.rejection());
+    if(!this.#externalCookieGuard)this.#manualCookieGuard?.observe(raw);
+    this.checkCookieGuard();
     if (!raw.method?.startsWith('Network.')) return;
     this.#observeCookieWrites(raw, this.#identityAt === null ? 'before_identity' : 'after_identity', this.#loader);
     if (!this.#loader) return; // Do not adopt old-document requests.
@@ -253,6 +260,6 @@ export class QABoundObservation {
       ...(cookieGuard ? { manualCookieGuard: cookieGuard } : {}),
       enrollment: 'not_verified', continuity: 'unknown', canAuthorize: false, sessionTransferred: false });
     return this.#manualCookieGuard ? rememberBoundStartup(report,{firstCause:this.#firstCause,terminal:diagnostic,
-      early:this.#early,handoff:this.#handoff,cookie:STARTUP_GUARD_CAUSES.includes(this.#manualCookieGuard.rejection())?this.#manualCookieGuard.rejection():cookieGuard.diagnostic,extra:this.#extraSummary()}) : report;
+      early:this.#early,handoff:this.#handoff,cookie:STARTUP_GUARD_CAUSES.includes(this.#manualCookieGuard.rejection())?this.#manualCookieGuard.rejection():cookieGuard.diagnostic,extra:this.#extraSummary(),...this.#manualCookieGuard.trace()}) : report;
   }
 }

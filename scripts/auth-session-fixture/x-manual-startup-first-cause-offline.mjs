@@ -9,6 +9,20 @@ import {startupFailureLatch,startupFailure,requireBoundStartup} from './x-manual
 const settingsURL='https://api.x.com/1.1/account/settings.json';
 const projection=inspectBootstrapCurrentSelf({location:{origin:'https://x.com',pathname:'/home'},__INITIAL_STATE__:{session:{user_id:'1908123456789012345'},entities:{users:{entities:{'1908123456789012345':{id_str:'1908123456789012345'}}}}}});
 
+// Real CDP observation is asynchronous. This diagnostic-only synthetic runner
+// must cross a real wall-clock tick after acquisition so Date.now() truncation
+// cannot make its healthy peer appear earlier than Go's sub-ms challenge.
+export async function awaitOfflineWallTick(wallNow=()=>Date.now(),wait=()=>new Promise(resolve=>setTimeout(resolve,1))){
+  const start=wallNow();
+  for(let i=0;i<32;i++){
+    await wait();
+    const current=wallNow();
+    if(current>start)return;
+    if(current<start)throw new Error('offline_clock_invalid');
+  }
+  throw new Error('offline_clock_stalled');
+}
+
 export function offlineFirstCausePair({faultRole='reader',fault='cookie'}={}){
   if(!['reader','collector'].includes(faultRole)||!['cookie','ambiguous','context-first','cookie-context','settings-order','extra-missing','extra-status','early-deadline','early-rejected','cleanup','guard-priority','guard-budget','guard-unbound','guard-response','guard-metadata','guard-completion','context-priority','generic-priority','budget-candidate','candidate-budget'].includes(fault))throw new Error('offline_diagnostic_invalid');
   const diagnostics=startupFailureLatch(),states={},reports={};
@@ -54,6 +68,7 @@ export function offlineFirstCausePair({faultRole='reader',fault='cookie'}={}){
     emit('Page.frameNavigated',{frame:{id:pins.frameId,loaderId:pins.documentId,url:'https://x.com/home'}});
     emit('Runtime.executionContextCreated',{context:{id:Number(pins.contextId),origin:'https://x.com',auxData:{isDefault:true,frameId:pins.frameId}}});
     await sink.beforeIdentityRead(binder.startupPins(Number(pins.contextId)));
+    await awaitOfflineWallTick();
     const selected=role===faultRole;
     if(selected)fail(role,fault);
     if(!selected||['extra-missing','extra-status'].includes(fault)){

@@ -44,8 +44,8 @@ test('ambiguous syntax, unknown names and declared scopes never wait for provisi
     const s=guardFixture();s.arm();s.request();assert.equal(s.extra({'Set-Cookie':line}),true);assert.equal(s.g.finish().diagnostic,'ambiguous');
   }
 });
-test('provisional root must resolve commit, context, response and required ExtraInfo before finish',()=>{
-  for(const missing of ['commit','context','response','extra']){
+test('root network provenance requires commit, response and required ExtraInfo independently of JS context',()=>{
+  for(const missing of ['commit','response','extra']){
     const s=guardFixture();s.arm();s.request();
     if(missing!=='response')s.response({'Set-Cookie':'lang=en; Path=/'});
     if(missing!=='extra')s.extra(missing==='response'?{'Set-Cookie':'lang=en; Path=/'}:{});
@@ -65,10 +65,10 @@ test('old, pre-arm, reused, redirected, child, foreign and contradictory root me
     assert.equal(s.g.finish().diagnostic,'ambiguous',fault);
   }
 });
-test('arming is single use, requires a predecessor and cannot follow adopted document state',()=>{
+test('arming is single use and requires a predecessor; earlier observed documents remain network provenance',()=>{
   const repeated=guardFixture();repeated.arm();assert.throws(()=>repeated.arm());assert.equal(repeated.g.finish().diagnostic,'ambiguous');
   const missing=guardFixture();assert.throws(()=>missing.g.armReload(''));
-  const adopted=guardFixture();adopted.commit();assert.throws(()=>adopted.arm());
+  const adopted=guardFixture();adopted.commit();assert.doesNotThrow(()=>adopted.arm());
   const noParams=guardFixture();noParams.arm();
   assert.equal(noParams.emit('Debugger.resumed'),false);assert.equal(noParams.emit('Runtime.executionContextsCleared'),false);
   assert.equal(noParams.g.finish().diagnostic,'not_observed');
@@ -159,23 +159,23 @@ test('same-document provisional GET resource may finish before or after its matc
     if(!contextFirst)s.context();assert.equal(s.g.finish().diagnostic,'other_only');assert.equal(s.g.rejection(),'unknown');
   }
 });
-test('pending resource without final context, response or ExtraInfo fails closed with completion reason',()=>{
-  for(const missing of ['context','response','extra']){
+test('network cookie attempt without response or ExtraInfo fails closed with completion reason',()=>{
+  for(const missing of ['response','extra']){
     const s=resourceFixture();s.ready();s.assetRequest();if(missing!=='response')s.assetResponse({'Set-Cookie':'lang=en; Path=/'});
     if(missing!=='extra')s.assetExtra(missing==='response'?{'Set-Cookie':'lang=en; Path=/'}:{});if(missing!=='context')s.context();
     assert.equal(s.g.finish().diagnostic,'ambiguous');assert.equal(s.g.rejection(),'guard_completion_missing');
   }
 });
-test('resource provisional boundary rejects old, pre-commit, pre-epoch, foreign, reused and redirect metadata',()=>{
-  for(const fault of ['pre-commit','pre-epoch','old-loader','frame','foreign-session','foreign-url','method','type','reuse','redirect']){
-    const s=resourceFixture();if(fault==='pre-epoch')s.assetRequest();s.arm();s.request();s.response({}, {hasExtraInfo:false});
-    if(fault==='pre-commit')s.assetRequest();s.commit();
-    if(fault==='foreign-session')s.emit('Network.requestWillBeSent',{requestId:'asset',frameId:frame,loaderId:next,type:'Image',request:{method:'GET',url:'https://x.com/asset'}},'foreign');
-    else if(fault!=='pre-commit')s.assetRequest(fault==='old-loader'?{loaderId:oldLoader}:fault==='frame'?{frameId:'child'}:fault==='foreign-url'?{request:{method:'GET',url:'https://foreign.invalid/asset'}}:fault==='method'?{request:{method:'POST',url:'https://x.com/asset'}}:fault==='type'?{type:'UnknownType'}:fault==='redirect'?{redirectResponse:{headers:{}}}:{});
+test('network provenance preserves rejected scope and redirects without context-based admission islands',()=>{
+  for(const fault of ['frame','foreign-session','foreign-url','reuse','redirect']){
+    const s=resourceFixture();s.ready();
+    if(fault==='foreign-session')s.emit('Network.requestWillBeSent',{requestId:'asset',frameId:frame,loaderId:next,request:{method:'GET',url:'https://x.com/asset'}},'foreign');
+    else s.assetRequest(fault==='frame'?{frameId:'child'}:fault==='foreign-url'?{request:{method:'GET',url:'https://foreign.invalid/asset'}}:fault==='redirect'?{redirectResponse:{headers:{}}}:{});
     if(fault==='reuse')s.assetRequest();s.context();assert.equal(s.assetResponse({'Set-Cookie':'lang=en; Path=/'}),true);s.assetExtra();
     assert.equal(s.g.rejection(),'guard_request_unbound',fault);assert.equal(s.g.finish().diagnostic,'ambiguous');
   }
 });
+
 test('guard first rejection distinguishes unbound, classification, correlation, shape and unchanged budgets',()=>{
   const unbound=resourceFixture();unbound.ready();unbound.assetResponse({'Set-Cookie':'lang=en; Path=/'});assert.equal(unbound.g.rejection(),'guard_request_unbound');
   const priority=resourceFixture();priority.ready();priority.assetRequest();priority.assetResponse({'Set-Cookie':'lang=en; Path=/; Priority=High'});assert.equal(priority.g.rejection(),'guard_header_classification');
