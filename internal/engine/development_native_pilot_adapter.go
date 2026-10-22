@@ -9,6 +9,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -121,7 +123,45 @@ type nativePilotDiagnostic struct {
 type nativePilotInitialDetail struct {
 	role, phase, reason string
 	peer                bool
+	trace               *nativePilotInitialTrace
 }
+type nativePilotInitialTrace struct{ firstCause, terminal, early, handoff, cookie, extra string }
+
+// Append-only V2 index catalogs; order is shared with STARTUP_TRACE in Node.
+var nativePilotTraceCatalogs = [][]string{
+	{"unknown", "cookie_candidate", "cookie_ambiguous", "context_lost", "target_lost", "navigation", "owner_scope", "event_cap", "identity_order", "identity_mismatch", "settings_order", "response_frame", "extra_shape", "extra_status", "extra_missing", "extra_unexpected", "generic_early", "stale_observation", "cleanup_failed"},
+	{"unknown", "unavailable", "rejected", "identity_unavailable", "source_unavailable", "stale_observation", "cleanup_unverified", "scope_lost", "observed_cookie_write", "deadline", "canceled", "replay", "sample_missing", "sample_duplicate", "invalid_shape", "scope_mismatch", "time_invalid", "bound"},
+	{"unknown", "captured", "deadline", "script_limit", "wrong_page", "unexpected_pause", "evaluation_failed", "setup_failed"},
+	{"unknown", "accepted", "rejected"},
+	{"unknown", "not_observed", "candidate_observed", "ambiguous", "other_only"},
+	{"unknown", "not_selected", "not_required", "required_pending", "complete", "missing", "status_mismatch", "unexpected", "invalid"},
+}
+
+func (v nativePilotInitialTrace) values() [6]string {
+	return [6]string{v.firstCause, v.terminal, v.early, v.handoff, v.cookie, v.extra}
+}
+func nativePilotTraceValues(v [6]string) nativePilotInitialTrace {
+	return nativePilotInitialTrace{v[0], v[1], v[2], v[3], v[4], v[5]}
+}
+func (v nativePilotInitialTrace) closed() nativePilotInitialTrace {
+	values := v.values()
+	for i, value := range values {
+		values[i] = "unknown"
+		for _, known := range nativePilotTraceCatalogs[i] {
+			if value == known {
+				values[i] = value
+				break
+			}
+		}
+	}
+	return nativePilotTraceValues(values)
+}
+func (v nativePilotInitialTrace) String() string {
+	v = v.closed()
+	return fmt.Sprintf("first=%s terminal=%s early=%s handoff=%s cookie=%s extra=%s", v.firstCause, v.terminal, v.early, v.handoff, v.cookie, v.extra)
+}
+func (v nativePilotInitialTrace) GoString() string { return v.String() }
+
 type nativePilotInitialError struct{ detail nativePilotInitialDetail }
 
 var nativePilotInitialRoles = []string{"reader", "collector", "pair", "unknown"}
@@ -142,11 +182,19 @@ func (d nativePilotInitialDetail) closed() nativePilotInitialDetail {
 	if !has(nativePilotInitialRoles, d.role) || !has(nativePilotInitialPhases, d.phase) || !has(nativePilotInitialReasons, d.reason) {
 		return nativePilotInitialDetail{role: "unknown", phase: "acquire_rpc", reason: "unavailable"}
 	}
+	if d.trace != nil {
+		safe := d.trace.closed()
+		d.trace = &safe
+	}
 	return d
 }
 func (d nativePilotInitialDetail) String() string {
 	d = d.closed()
-	return fmt.Sprintf("role=%s phase=%s reason=%s kind=%s", d.role, d.phase, d.reason, map[bool]string{false: "primary", true: "peer"}[d.peer])
+	value := fmt.Sprintf("role=%s phase=%s reason=%s kind=%s", d.role, d.phase, d.reason, map[bool]string{false: "primary", true: "peer"}[d.peer])
+	if d.trace != nil {
+		value += " " + d.trace.String()
+	}
+	return value
 }
 func (d nativePilotInitialDetail) GoString() string { return d.String() }
 func nativePilotInitialWrap(err error, role, phase string) error {
@@ -167,6 +215,27 @@ func nativePilotInitialWrap(err error, role, phase string) error {
 	return &nativePilotInitialError{(nativePilotInitialDetail{role: role, phase: phase, reason: reason}).closed()}
 }
 func nativePilotInitialCode(code string) (nativePilotInitialDetail, bool) {
+	if strings.HasPrefix(code, "manual_initial_v2_") {
+		if len(code) > 80 {
+			return nativePilotInitialDetail{}, false
+		}
+		parts := strings.Split(strings.TrimPrefix(code, "manual_initial_v2_"), "_")
+		if len(parts) != 10 {
+			return nativePilotInitialDetail{}, false
+		}
+		catalogs := [][]string{nativePilotInitialRoles, nativePilotInitialPhases, nativePilotInitialReasons, {"primary", "peer"}}
+		catalogs = append(catalogs, nativePilotTraceCatalogs...)
+		values := make([]string, 10)
+		for i, part := range parts {
+			n, err := strconv.Atoi(part)
+			if err != nil || n < 0 || n >= len(catalogs[i]) || strconv.Itoa(n) != part {
+				return nativePilotInitialDetail{}, false
+			}
+			values[i] = catalogs[i][n]
+		}
+		trace := nativePilotTraceValues([6]string(values[4:]))
+		return nativePilotInitialDetail{role: values[0], phase: values[1], reason: values[2], peer: values[3] == "peer", trace: &trace}, true
+	}
 	if len(code) <= 96 {
 		for _, role := range nativePilotInitialRoles {
 			for _, phase := range nativePilotInitialPhases {

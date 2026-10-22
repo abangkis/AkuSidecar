@@ -15,7 +15,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -504,7 +506,7 @@ func (p *xManualInitialOfflineBackend) cleanup(ctx context.Context, role, handle
 }
 
 func TestXManualPilotRetainedStartupDiagnostic(t *testing.T) {
-	for _, role := range []string{"reader", "collector", "peer-first"} {
+	for _, role := range []string{"reader", "collector", "peer-first", "trace-reader", "trace-collector", "trace-ambiguous", "trace-peer-first"} {
 		t.Run(role, func(t *testing.T) {
 			project, node := os.Getenv("AKU_NATIVE_MANUAL_PROJECT_ROOT"), os.Getenv("AKU_CHROME_FIXTURE_NODE")
 			if !filepath.IsAbs(project) || !filepath.IsAbs(node) {
@@ -515,15 +517,17 @@ func TestXManualPilotRetainedStartupDiagnostic(t *testing.T) {
 const {offlineXManualOwnerPort}=await import(pathToFileURL(process.argv[1]));
 const {executeManualReply}=await import(pathToFileURL(process.argv[2]));
 const {startupFailure}=await import(pathToFileURL(process.argv[3]));
-const fault=process.argv[4],port=offlineXManualOwnerPort({afterRelease:async role=>{if(role===fault)throw startupFailure(role,'settings','source_unavailable');}});
+const {offlineFirstCausePair}=await import(pathToFileURL(process.argv[5]));
+const fault=process.argv[4],traced=fault.startsWith('trace-'),trace=traced?offlineFirstCausePair({faultRole:fault==='trace-collector'?'collector':'reader',fault:fault==='trace-ambiguous'?'ambiguous':'cookie'}):null;
+const port=trace?trace.port:offlineXManualOwnerPort({afterRelease:async role=>{if(role===fault)throw startupFailure(role,'settings','source_unavailable');}}),peerFirst=fault==='peer-first'||fault==='trace-peer-first';
 let fired=false,releasePeer;const peerDone=new Promise(resolve=>{releasePeer=resolve;});
 console.log(JSON.stringify({ready:true}));
 const tasks=new Set();for await(const line of createInterface({input:process.stdin})){const q=JSON.parse(line),task=executeManualReply(q,async()=>{
-if(fault==='peer-first'&&q.op==='manual_acquire'&&!fired){fired=true;port.observe('reader',{sessionId:'offline-session-reader',method:'Runtime.executionContextDestroyed',params:{executionContextId:7}});}
-if(fault==='peer-first'&&fired&&q.role==='reader'&&['manual_inspect','manual_acquire'].includes(q.op))await peerDone;
+if(peerFirst&&q.op==='manual_acquire'&&!fired){fired=true;if(trace){trace.fail('reader');port.invalidate('collector');}else port.observe('reader',{sessionId:'offline-session-reader',method:'Runtime.executionContextDestroyed',params:{executionContextId:7}});}
+if(peerFirst&&fired&&q.role==='reader'&&['manual_inspect','manual_acquire'].includes(q.op))await peerDone;
 return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!code,...(code?{code}:{result})}));if(code&&q.role==='collector')releasePeer();});tasks.add(task);void task.finally(()=>tasks.delete(task));}await Promise.allSettled(tasks);`
 			dir := filepath.Join(project, "scripts", "auth-session-fixture")
-			cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(dir, "x-native-manual-owner-offline.mjs"), filepath.Join(dir, "x-native-metadata-probe-driver.mjs"), filepath.Join(dir, "x-manual-startup-diagnostic.mjs"), role)
+			cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(dir, "x-native-manual-owner-offline.mjs"), filepath.Join(dir, "x-native-metadata-probe-driver.mjs"), filepath.Join(dir, "x-manual-startup-diagnostic.mjs"), role, filepath.Join(dir, "x-manual-startup-first-cause-offline.mjs"))
 			cmd.Stderr = io.Discard
 			stdout, err := cmd.StdoutPipe()
 			if err != nil {
@@ -587,9 +591,74 @@ return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!c
 					t.Fatal("peer delivery marker lost")
 				}
 			}
+			if strings.HasPrefix(role, "trace-") {
+				wantRole, wantPhase, wantReason = "reader", "bound_finish", "observed_cookie_write"
+				if role == "trace-collector" {
+					wantRole = "collector"
+				}
+				if detail.trace == nil {
+					t.Fatal("private trace lost across startup bridge")
+				}
+				wantFirst, wantCookie := "cookie_candidate", "candidate_observed"
+				if role == "trace-ambiguous" {
+					wantFirst, wantCookie = "cookie_ambiguous", "ambiguous"
+				}
+				if detail.trace.firstCause != wantFirst {
+					t.Fatalf("first cause lost: %s", detail)
+				}
+				if role == "trace-peer-first" {
+					if !detail.peer || detail.trace.terminal != "unknown" {
+						t.Fatal("peer trace invented terminal outcome")
+					}
+				} else if detail.trace.terminal != "scope_lost" || detail.trace.early != "evaluation_failed" || detail.trace.handoff != "rejected" || detail.trace.cookie != wantCookie {
+					t.Fatalf("separate terminal summary lost: %s", detail)
+				}
+			}
 			if d.Reason != "source-unavailable" || d.OfflineValidated || d.ManualEligible || d.CanAuthorize || d.NativeQualified || d.StorePermit || detail.role != wantRole || detail.phase != wantPhase || detail.reason != wantReason {
 				t.Fatalf("closed startup diagnostic path lost: %s", detail)
 			}
 		})
+	}
+}
+
+func TestXManualPilotRetainedTraceCodes(t *testing.T) {
+	project, node := os.Getenv("AKU_NATIVE_MANUAL_PROJECT_ROOT"), os.Getenv("AKU_CHROME_FIXTURE_NODE")
+	if !filepath.IsAbs(project) || !filepath.IsAbs(node) {
+		t.Skip("accountless trace parity requires helper")
+	}
+	const script = `import{pathToFileURL}from'node:url';const m=await import(pathToFileURL(process.argv[1]));const catalogs=[m.STARTUP_ROLES,m.STARTUP_PHASES,m.STARTUP_REASONS,['primary','peer'],...Object.values(m.STARTUP_TRACE)],codes=[];for(const[key,values]of Object.entries(m.STARTUP_TRACE))for(const value of values)codes.push(m.startupRPCCode(m.startupFailure('collector','inspect_before','observed_cookie_write',true,undefined,{[key]:value})));console.log(JSON.stringify({catalogs,codes}));`
+	cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(project, "scripts", "auth-session-fixture", "x-manual-startup-diagnostic.mjs"))
+	cmd.Stderr = io.Discard
+	raw, err := cmd.Output()
+	if err != nil || len(raw) > 16384 {
+		t.Fatal("closed trace parity unavailable")
+	}
+	defer clear(raw)
+	var payload struct {
+		Catalogs [][]string
+		Codes    []string
+	}
+	if json.Unmarshal(raw, &payload) != nil {
+		t.Fatal("closed trace parity malformed")
+	}
+	want := [][]string{nativePilotInitialRoles, nativePilotInitialPhases, nativePilotInitialReasons, {"primary", "peer"}}
+	want = append(want, nativePilotTraceCatalogs...)
+	if !reflect.DeepEqual(payload.Catalogs, want) || len(payload.Codes) < 40 {
+		t.Fatal("Node/Go trace catalog order diverged")
+	}
+	for _, code := range payload.Codes {
+		detail, ok := nativePilotInitialCode(code)
+		if !ok || len(code) > 80 || detail.trace == nil {
+			t.Fatal("valid bounded trace code rejected")
+		}
+	}
+	for _, code := range []string{"manual_initial_v2_0_0_0_0_0_0_0_0_0", "manual_initial_v2_00_0_0_0_0_0_0_0_0_0", "manual_initial_v2_0_0_0_2_0_0_0_0_0_0", "manual_initial_v2_0_0_0_0_-1_0_0_0_0_0", "manual_initial_v2_0_0_0_0_0_99_0_0_0_0", "manual_initial_v2_0_0_0_0_0_0_0_0_0_0_extra", "manual_initial_v2_0_0_0_0_0_0_0_0_0_0 ", "manual_initial_v2_+0_0_0_0_0_0_0_0_0_0", "manual_initial_v2_0_0_0_0_0_0_0_0_0_0" + strings.Repeat("0", 80)} {
+		if _, ok := nativePilotInitialCode(code); ok {
+			t.Fatal("noncanonical or unbounded trace accepted")
+		}
+	}
+	unsafe := nativePilotInitialDetail{role: "reader", phase: "identity", reason: "rejected", trace: &nativePilotInitialTrace{firstCause: "PRIVATE", terminal: strings.Repeat("x", 20000)}}
+	if strings.Contains(fmt.Sprintf("%#v", unsafe), "PRIVATE") || strings.Contains(unsafe.String(), strings.Repeat("x", 20)) {
+		t.Fatal("malformed typed trace escaped closed formatter")
 	}
 }

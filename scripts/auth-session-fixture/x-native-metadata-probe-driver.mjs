@@ -1710,14 +1710,14 @@ async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, 
     const handoff = current.earlyCapture.diagnostics();
     current.earlyCleanupVerified = early.cleanupVerified;
     current.earlyHandoffAccepted = !handoff.handoffRejected;
-    if (early.stopReason !== 'captured' || handoff.handoffRejected) bound.binder.invalidate();
+    bound.binder.earlyOutcome(early.stopReason,handoff.handoffRejected);
     await send('Network.disable', {}, current.sessionId);
     bound.networkDisabled = true;
     const observation = await bound.binder.finish(early.cleanupVerified && !handoff.handoffRejected);
     return writes ? finishQACookieWriteScope(observation, writes.finish()) : observation;
   } finally {
     bound.sampling = false;
-    if (!bound.networkDisabled) await send('Network.disable', {}, current.sessionId).catch(() => { bound.binder?.invalidate(); });
+    if (!bound.networkDisabled) await send('Network.disable', {}, current.sessionId).catch(() => { bound.binder?.invalidate('scope_lost','cleanup_failed'); });
     bound.running = false; current.earlyRunning = false; current.earlyCapture = null;
     current.gate.setLoginVisible(false);
   }
@@ -1857,7 +1857,7 @@ async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup
     } });
     const early = await capture.run();
     const rejected = capture.diagnostics().handoffRejected;
-    if (early.stopReason !== 'captured' || rejected) binder.invalidate();
+    binder.earlyOutcome(early.stopReason,rejected);
     await command('Network.disable');
     networkDisabled = true;
     const observation = await binder.finish(early.cleanupVerified && !rejected);
@@ -1882,15 +1882,18 @@ export function createOwnedManualStartupOwners(message,diagnostics=startupFailur
     const abort = () => rendezvous.cancel();
     sink.signal?.addEventListener('abort', abort, { once: true });
     const failure=(error,phase)=>diagnostics.record(error,role,phase);
+    const manualObservation=(...args)=>createManualV2BoundObservation(...args,(reason,trace)=>{
+      diagnostics.record(startupFailure(role,'bound_finish',reason,false,undefined,trace),role,'bound_finish',reason);
+    });
     const together=async()=>{try{await rendezvous.arrive(role);}catch{throw diagnostics.record(startupFailure('pair','rendezvous','deadline'),'pair','rendezvous');}};
     try {
       let observation;
       if (role === 'reader') {
         current.gate.beginObservation(); current.earlyAttempted = true;
         observation=await boundCheckpoint(current, false, { deferCookieMutation: false, onPrivateResult: () => {},
-          onPrivateStartup: sink.onPrivateStartup },together,sink.beforeIdentityRead,failure,createManualV2BoundObservation);
+          onPrivateStartup: sink.onPrivateStartup },together,sink.beforeIdentityRead,failure,manualObservation);
       }else{
-        const result=await collectorShortCheckpoint(current,together,sink.onPrivateStartup,sink.beforeIdentityRead,failure,createManualV2BoundObservation);
+        const result=await collectorShortCheckpoint(current,together,sink.onPrivateStartup,sink.beforeIdentityRead,failure,manualObservation);
         observation=result?.checkpoint?.observation;
       }
       requireBoundStartup(observation,role,diagnostics);

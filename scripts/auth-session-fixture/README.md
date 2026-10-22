@@ -137,6 +137,13 @@ Ordinary QA and deferred-mutation receipt rules stay unchanged. This is startup
 coverage only, with full account/login verification still required in both roles.
 Offline tests do not authorize a new retained-QA transfer.
 
+Manual startup diagnostics also retain the [first cause separately from terminal
+failure](../../docs/x-native-manual-pilot.md#first-cause-and-separate-startup-diagnostics-2026-10-22).
+Generic early-capture fallback must not hide a prior cookie/scope rejection.
+Only closed, value-free categories cross the private diagnostic boundary;
+startup receipts and admission requirements are unchanged. Default preparation
+remains offline and does not consume permission for a native transfer.
+
 Run `.\scripts\test-native-manual-pilot-adapter.ps1` for the new dev-only private
 receipt adapter. It performs named-file standard-library offline tests, four tag
 gates and dev/combined Engine compilation without package runtime execution.

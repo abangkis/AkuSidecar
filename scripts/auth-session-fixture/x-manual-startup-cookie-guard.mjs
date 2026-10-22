@@ -59,6 +59,7 @@ export class ManualStartupCookieGuard {
     this.#frame = frameId;
   }
   #fail() { this.#ambiguous = Math.min(64, this.#ambiguous + 1); }
+  category() { return this.#candidate ? 'candidate_observed' : this.#ambiguous ? 'ambiguous' : this.#other ? 'other_only' : 'not_observed'; }
   #attempt(headers, blocked, scope, correlated, request) {
     const lines = []; let malformed = false, present = false;
     if (headers !== undefined) {
@@ -140,7 +141,7 @@ export class ManualStartupCookieGuard {
     for (const r of this.#requests.values()) if (r?.cookie && (!r.response || r.bad || r.needsExtra === true && !r.extra)) this.#fail();
     this.#requests.clear();
     return Object.freeze({ schema: 'aku.x.manual-startup-cookie-guard.v1',
-      diagnostic: this.#candidate ? 'candidate_observed' : this.#ambiguous ? 'ambiguous' : this.#other ? 'other_only' : 'not_observed',
+      diagnostic: this.category(),
       candidateAttempts: this.#candidate, otherAttempts: this.#other, ambiguousAttempts: this.#ambiguous });
   }
 }

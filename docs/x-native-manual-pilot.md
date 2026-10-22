@@ -674,3 +674,75 @@ retention, wire scope/time rejection, owner inspection stages, and peer delivery
 without attribution changes. No browser, retained profile, X request, credential
 transfer, Store or user-runtime action ran. The cause of the earlier native
 `source-unavailable` remains unknown until a separately authorized observation.
+
+### First cause and separate startup diagnostics (2026-10-22)
+
+The single authorized run of source `f9d7f1b` completed enrollment/seed setup but
+rejected initial admission after 9.83 seconds. Its private detail was
+`reader/bound_finish/scope_lost` (`primary`), while the outer broker reason was
+`cleanup-uncertain`. Admission never opened. Final owned-Job termination and clean
+retained-lease release were verified separately; the disposable collector/build
+root was removed and the retained reader profile preserved. No retry ran.
+Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-9c87833c8ec84c35b9fd95314e54d92e.run.log.txt`.
+
+The subsequent Astra review proved a diagnostic masking path offline, not the
+native cause. A cookie rejection before identity makes `startupPins` reject.
+The early-capture failure then reaches a generic `invalidate()` call; this can
+replace `observed_cookie_write` with `scope_lost`. The old pair latch preserves
+the first branded diagnostic it receives, which is not necessarily the first
+underlying binder event. Therefore the native log alone proves neither actual
+document/context replacement nor resolution of the earlier cookie rejection.
+
+The authorized follow-up retains an immutable private first cause and reports
+the terminal rejection separately. Closed categories distinguish actual scope
+events, request ordering, ExtraInfo completeness, early-capture/handoff outcome
+and the cookie guard category. Later fallback, peer cancellation and cleanup
+must not erase the first cause. The outer cleanup result remains separate from
+the initial-evidence diagnostic and from final owned-Job cleanup proof.
+
+"First" means the first failure observed by the trusted startup diagnostic path,
+not a reconstructed ordering of server events or unsynchronized browser clocks.
+Missing events and unobserved worker traffic cannot be inferred from this trace.
+
+The trace has six closed fields: `firstCause`, `terminal`, `early`, `handoff`,
+`cookie` and `extra`. A trusted manual callback records the first invalidation
+when it is observed. A later snapshot may enrich the same originating failure,
+but cannot replace its cause or borrow another role's terminal outcome. Legacy
+public QA diagnostics retain their existing terminal behavior; the additional
+trace is private and cannot turn a failed observation into startup evidence.
+
+Private transport uses versioned `manual_initial_v2_` codes with bounded catalog
+indices and strict Node/Go catalog parity. Catalog order is append-only within
+this version; legacy `manual_initial_<role>_<phase>_<reason>_<kind>` codes remain
+accepted. Human-readable broker output prints validated labels, not arbitrary
+payload text. The startup receipt schema and its authorization checks do not
+change.
+
+These fields are diagnostics only. They must survive the private Node/Windows
+RPC/Go broker readback without identifiers, URLs, raw headers/bodies, cookie
+values or arbitrary exception text. Unknown and unavailable remain explicit;
+no diagnostic can supply a receipt, relax rejection or extend the attempt.
+Account/login evidence, source and owner/document binding, startup timing,
+default-off gates, one-shot transfer rules and Store authority remain unchanged.
+This increment authorizes offline implementation/tests only, with no native
+execution, retained-profile access, transfer or user-runtime operation.
+
+For example, the synthetic cookie-before-identity regression reports
+`first=cookie_candidate terminal=scope_lost early=evaluation_failed`, preserving
+both the original guard rejection and the later generic startup fallback. This
+is an offline regression result, not a diagnosis of the previous native run.
+
+Canonical offline preparation `fce1ad89700b4b09b584fdb2ecccdb01` passed 82 Node
+tests (nine dedicated first-cause tests), four Go top-level tests with seven
+startup bridge subcases, four build tag gates and standalone Windows compilation.
+The accountless transport tests retain candidate/ambiguous cookie causes for
+both roles, preserve the origin on peer-first delivery, and validate closed
+Node/Go catalog parity and canonical codes. Late ExtraInfo during an awaited
+body projection updates the final summary without repairing an earlier rejected
+observation. Legacy strict/deferred QA behavior remains covered.
+
+The native entry skipped before lease/profile access with all four execution
+gates disabled. No browser, retained profile, X request, transfer, Store or user
+runtime ran. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-fce1ad89700b4b09b584fdb2ecccdb01.prepare.log.txt`.

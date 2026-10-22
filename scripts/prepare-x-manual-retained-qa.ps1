@@ -36,7 +36,7 @@ try{
  $env:AKU_X_MANUAL_RETAINED_QA_ENABLED='0';$env:AKU_X_MANUAL_RETAINED_TRANSFER_ONCE='0';$env:AKU_X_QA_SHORT_TRANSFER_ALLOWED='0';$env:AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED='0'
  Write-Output ('Retained manual QA '+$(if($RunPrepared){'execution'}else{'preparation'})+': '+$id) | Tee-Object -FilePath $log
  if(!$RunPrepared){
-  & $node --test --test-timeout=15000 scripts/auth-session-fixture/x-manual-retained-setup.test.mjs scripts/auth-session-fixture/x-native-metadata-probe-driver.test.mjs scripts/auth-session-fixture/x-manual-enrollment-capture.test.mjs scripts/auth-session-fixture/x-manual-startup-diagnostic.test.mjs scripts/auth-session-fixture/x-manual-startup-cookie-guard.test.mjs scripts/auth-session-fixture/x-qa-bound-observation.test.mjs 2>&1 | Tee-Object -FilePath $log -Append
+  & $node --test --test-timeout=15000 scripts/auth-session-fixture/x-manual-retained-setup.test.mjs scripts/auth-session-fixture/x-native-metadata-probe-driver.test.mjs scripts/auth-session-fixture/x-manual-enrollment-capture.test.mjs scripts/auth-session-fixture/x-manual-startup-diagnostic.test.mjs scripts/auth-session-fixture/x-manual-startup-cookie-guard.test.mjs scripts/auth-session-fixture/x-qa-bound-observation.test.mjs scripts/auth-session-fixture/x-manual-startup-first-cause.test.mjs 2>&1 | Tee-Object -FilePath $log -Append
   if($LASTEXITCODE -ne 0){throw 'Retained setup offline regressions failed.'}
   foreach($mode in @('default','auth_session_dev','auth_session_fixture','auth_session_dev auth_session_fixture')){
    $arguments=@('list','-f','{{range .TestGoFiles}}{{println .}}{{end}}')
@@ -51,7 +51,7 @@ try{
   $sources=@($stage.files | ForEach-Object {Join-Path $stage.stage $_})
   & go test -c -tags 'auth_session_dev auth_session_fixture' -o $exe @sources 2>&1 | Tee-Object -FilePath $log -Append
   if($LASTEXITCODE -ne 0){throw 'Retained QA standalone compilation failed.'}
-  & $exe '-test.run=^TestXManualPilotRetained(QA|SeedDiagnostics|SeedNodeDiagnostic|StartupDiagnostic)$' '-test.timeout=10s' '-test.v' 2>&1 | Tee-Object -FilePath $log -Append
+  & $exe '-test.run=^TestXManualPilotRetained(QA|SeedDiagnostics|SeedNodeDiagnostic|StartupDiagnostic|TraceCodes)$' '-test.timeout=10s' '-test.v' 2>&1 | Tee-Object -FilePath $log -Append
   if($LASTEXITCODE -ne 0){throw 'Default-off entry rejection failed.'}
   $provenance=Get-Content -LiteralPath (Join-Path $root 'staging-provenance.json') -Raw | ConvertFrom-Json
   $paths=@($provenance.copied.source)+@($provenance.extracted.source)+@($provenance.nodeSources.source)+@('scripts/auth-session-fixture/x-manual-retained-setup.mjs','scripts/auth-session-fixture/x-retained-source-qualification-driver.mjs','scripts/prepare-x-manual-retained-qa.ps1')

@@ -4,6 +4,7 @@ import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, validateBootstrapCurrentSelf } from 
 import { QADirectCapture } from './x-qa-direct-ab.mjs';
 import { qaSourceRoute } from './x-qa-source-qualification.mjs';
 import { ManualStartupCookieGuard } from './x-manual-startup-cookie-guard.mjs';
+import { closedStartupTrace, rememberBoundStartup } from './x-manual-startup-diagnostic.mjs';
 
 const own = (v, k) => Object.getOwnPropertyDescriptor(v, k)?.value;
 const stableId = v => typeof v === 'string' && /^[1-9][0-9]{0,19}$/.test(v);
@@ -11,8 +12,8 @@ const safe = v => typeof v === 'string' && v.length > 0 && v.length <= 4096;
 const error = () => new Error('qa_bound_observation_invalid');
 const manualV2CookiePolicy = Symbol();
 // Selected by trusted Manual V2 owner code only, never by a JSON option.
-export function createManualV2BoundObservation(scope, frameId, readBody, now, observeCookieWrites, pointOptions) {
-  return new QABoundObservation(scope, frameId, readBody, now, observeCookieWrites, pointOptions, manualV2CookiePolicy);
+export function createManualV2BoundObservation(scope, frameId, readBody, now, observeCookieWrites, pointOptions, onFailure = () => {}) {
+  return new QABoundObservation(scope, frameId, readBody, now, observeCookieWrites, pointOptions, manualV2CookiePolicy, onFailure);
 }
 
 export function identityProjectionMatches(p) {
@@ -58,21 +59,24 @@ export class QABoundObservation {
   #identityAt = null; #sourceAt = null; #projection = null; #failure = null; #events = 0; #closed = false;
   #startupCookieWriteObserved = false;
   #manualCookieGuard;
+  #firstCause = 'unknown'; #hasFirst = false; #onManualFailure; #early = 'unknown'; #handoff = 'unknown';
   #needsExtra = null; #extraStatus = null; #resolveDone;
   #observeCookieWrites;
   #pointOptions; #requestAt = null; #networkRequest = null; #networkInterval = null;
-  constructor(scope, frameId, readBody, now = () => performance.now(), observeCookieWrites = () => {}, pointOptions = { deferCookieMutation: false, onPrivateResult: () => {} }, cookiePolicy) {
+  constructor(scope, frameId, readBody, now = () => performance.now(), observeCookieWrites = () => {}, pointOptions = { deferCookieMutation: false, onPrivateResult: () => {} }, cookiePolicy, onManualFailure) {
     if (!scope || Object.keys(scope).sort().join(',') !== 'owner,profileId,sessionId,targetId' ||
         !Number.isSafeInteger(scope.owner) || scope.owner <= 0 || !['profileId', 'sessionId', 'targetId'].every(k => safe(scope[k])) ||
         !safe(frameId) || typeof now !== 'function' || typeof observeCookieWrites !== 'function' ||
         !pointOptions || !['deferCookieMutation,onPrivateResult', 'deferCookieMutation,onPrivateResult,onPrivateStartup'].includes(Object.keys(pointOptions).sort().join(',')) ||
         Object.hasOwn(pointOptions, 'onPrivateStartup') && typeof pointOptions.onPrivateStartup !== 'function' ||
         typeof pointOptions.deferCookieMutation !== 'boolean' || typeof pointOptions.onPrivateResult !== 'function' ||
-        cookiePolicy !== undefined && cookiePolicy !== manualV2CookiePolicy || cookiePolicy === manualV2CookiePolicy && pointOptions.deferCookieMutation) throw error();
+        cookiePolicy !== undefined && cookiePolicy !== manualV2CookiePolicy || cookiePolicy === manualV2CookiePolicy && (pointOptions.deferCookieMutation || typeof onManualFailure !== 'function') ||
+        cookiePolicy === undefined && onManualFailure !== undefined) throw error();
     this.#scope = Object.freeze({ ...scope }); this.#frame = frameId; this.#now = now;
     this.#observeCookieWrites = observeCookieWrites;
     this.#pointOptions = Object.freeze({ ...pointOptions });
     this.#manualCookieGuard = cookiePolicy === manualV2CookiePolicy ? new ManualStartupCookieGuard(frameId) : null;
+    this.#onManualFailure = onManualFailure;
     this.#start = this.#last = now();
     if (!Number.isFinite(this.#start)) throw error();
     this.capture = new QADirectCapture('a', frameId, readBody, now);
@@ -80,21 +84,35 @@ export class QABoundObservation {
   }
   #tick() {
     const t = this.#now();
-    if (!Number.isFinite(t) || t < this.#last || t - this.#start > 10000) this.invalidate('stale_observation');
+    if (!Number.isFinite(t) || t < this.#last || t - this.#start > 10000) this.invalidate('stale_observation','stale_observation');
     this.#last = t; return t;
   }
-  invalidate(reason = 'scope_lost') {
+  #noteCause(reason, cause) {
+    if (!this.#hasFirst) {
+      this.#hasFirst = true; this.#firstCause = closedStartupTrace({ firstCause: cause }).firstCause;
+      // Trusted manual callback records the originating event before peers can
+      // report cancellation. Callback failure never repairs this observation.
+      try { this.#onManualFailure?.(reason, { firstCause: this.#firstCause }); } catch {}
+    }
+  }
+  invalidate(reason = 'scope_lost', cause = 'unknown') {
+    this.#noteCause(reason,cause);
     if (!this.#failure || this.#failure === 'observed_cookie_write' && reason !== 'observed_cookie_write') this.#failure = reason;
     // Only the separately gated short-QA mode can retain a source observation
     // across cookie writes. The V1 binding remains rejected and non-authorizing.
     if (!(reason === 'observed_cookie_write' && this.#pointOptions.deferCookieMutation)) this.capture.invalidate();
   }
+  earlyOutcome(stopReason, handoffRejected) {
+    const trace = closedStartupTrace({ early: stopReason, handoff: handoffRejected === true ? 'rejected' : handoffRejected === false ? 'accepted' : 'unknown' });
+    this.#early = trace.early; this.#handoff = trace.handoff;
+    if (stopReason !== 'captured' || handoffRejected !== false) this.invalidate('scope_lost','generic_early');
+  }
   acceptIdentity(id, projection) {
     const t = this.#tick();
-    if (this.#closed || !this.#context || !this.#loader) { this.invalidate(); return; }
+    if (this.#closed || !this.#context || !this.#loader) { this.invalidate('scope_lost','identity_order'); return; }
     if (id === null) return;
-    if (!stableId(id) || !identityProjectionMatches(projection)) { this.invalidate(); return; }
-    if (this.#id !== null && this.#id !== id) { this.invalidate(); return; }
+    if (!stableId(id) || !identityProjectionMatches(projection)) { this.invalidate('scope_lost','identity_mismatch'); return; }
+    if (this.#id !== null && this.#id !== id) { this.invalidate('scope_lost','identity_mismatch'); return; }
     this.#id = id; this.#identityAt ??= t; this.#projection = projection;
   }
   identityReady() {
@@ -114,28 +132,28 @@ export class QABoundObservation {
   observe(raw, scope) {
     if (this.#closed) return;
     this.#tick();
-    if (!scope || Object.keys(this.#scope).some(k => scope[k] !== this.#scope[k])) { this.invalidate(); return; }
-    if (++this.#events > 4096) { this.invalidate(); return; }
+    if (!scope || Object.keys(this.#scope).some(k => scope[k] !== this.#scope[k])) { this.invalidate('scope_lost','owner_scope'); return; }
+    if (++this.#events > 4096) { this.invalidate('scope_lost','event_cap'); return; }
     const p = raw.params ?? {};
     if (raw.method === 'Target.detachedFromTarget' && p.sessionId === this.#scope.sessionId ||
-        raw.method === 'Target.targetDestroyed' && p.targetId === this.#scope.targetId) this.invalidate();
+        raw.method === 'Target.targetDestroyed' && p.targetId === this.#scope.targetId) this.invalidate('scope_lost','target_lost');
     if (raw.sessionId !== this.#scope.sessionId) return;
     if (['Inspector.detached', 'Inspector.targetCrashed'].includes(raw.method) ||
-        raw.method === 'Page.frameDetached' && p.frameId === this.#frame) this.invalidate();
+        raw.method === 'Page.frameDetached' && p.frameId === this.#frame) this.invalidate('scope_lost','target_lost');
     if (raw.method === 'Page.frameNavigated' && p.frame?.id === this.#frame) {
-      if (this.#loader !== null || p.frame.url !== 'https://x.com/home' || !safe(p.frame.loaderId) || p.frame.parentId) this.invalidate();
+      if (this.#loader !== null || p.frame.url !== 'https://x.com/home' || !safe(p.frame.loaderId) || p.frame.parentId) this.invalidate('scope_lost','navigation');
       else this.#loader = p.frame.loaderId;
     }
     if (raw.method === 'Runtime.executionContextsCleared' && this.#context !== null ||
-        raw.method === 'Runtime.executionContextDestroyed' && p.executionContextId === this.#context) this.invalidate();
+        raw.method === 'Runtime.executionContextDestroyed' && p.executionContextId === this.#context) this.invalidate('scope_lost','context_lost');
     if (raw.method === 'Runtime.executionContextCreated' && p.context?.auxData?.isDefault === true && p.context.auxData.frameId === this.#frame) {
       if (!this.#loader) return; // Runtime.enable reports the pre-reload context.
-      if (this.#context !== null || p.context.origin !== 'https://x.com' || !Number.isSafeInteger(p.context.id) || p.context.id <= 0) this.invalidate();
+      if (this.#context !== null || p.context.origin !== 'https://x.com' || !Number.isSafeInteger(p.context.id) || p.context.id <= 0) this.invalidate('scope_lost','context_lost');
       else this.#context = p.context.id;
     }
     if (!raw.method?.startsWith('Network.')) return;
     this.#observeCookieWrites(raw, this.#identityAt === null ? 'before_identity' : 'after_identity', this.#loader);
-    if (this.#manualCookieGuard?.observe(raw, this.#loader, this.#context)) this.invalidate('observed_cookie_write');
+    if (this.#manualCookieGuard?.observe(raw, this.#loader, this.#context)) this.invalidate('observed_cookie_write',this.#manualCookieGuard.category()==='candidate_observed'?'cookie_candidate':'cookie_ambiguous');
     if (!this.#loader) return; // Do not adopt old-document requests.
     // Ordinary QA starts its write baseline at the first valid identity;
     // the selected request MUST begin after it. Manual V2 instead uses its
@@ -147,18 +165,24 @@ export class QABoundObservation {
       else this.invalidate('observed_cookie_write');
     }
     if (raw.method === 'Network.requestWillBeSent' && p.request?.method === 'GET' && qaSourceRoute(p.request.url) === 'api_v1' &&
-        (!this.#loader || !this.#context || this.#identityAt === null || p.loaderId !== this.#loader || p.frameId !== this.#frame)) this.invalidate();
+        (!this.#loader || !this.#context || this.#identityAt === null || p.loaderId !== this.#loader || p.frameId !== this.#frame)) this.invalidate('scope_lost','settings_order');
     if (raw.method === 'Network.responseReceived' && p.requestId === this.capture.chosen &&
-        (p.loaderId !== this.#loader || p.frameId !== this.#frame)) this.invalidate();
+        (p.loaderId !== this.#loader || p.frameId !== this.#frame)) this.invalidate('scope_lost','response_frame');
     if (raw.method === 'Network.responseReceived' && p.requestId === this.capture.chosen) {
-      if (typeof p.hasExtraInfo !== 'boolean') this.invalidate();
+      if (typeof p.hasExtraInfo !== 'boolean') this.invalidate('scope_lost','extra_shape');
       else this.#needsExtra = p.hasExtraInfo;
     }
     if (raw.method === 'Network.responseReceivedExtraInfo' && p.requestId === this.capture.chosen) {
-      if (this.#extraStatus !== null || !Number.isInteger(p.statusCode)) this.invalidate();
+      if (this.#extraStatus !== null || !Number.isInteger(p.statusCode)) this.invalidate('scope_lost','extra_status');
       else this.#extraStatus = p.statusCode;
     }
     this.capture.observe(raw.method, p);
+    // Diagnose observed contradictions at event time; rejection still uses the
+    // existing finish checks, so this note does not alter capture acceptance.
+    if (p.requestId === this.capture.chosen && this.#extraStatus !== null) {
+      if (this.#needsExtra === false) this.#noteCause('scope_lost','extra_unexpected');
+      else if (this.#needsExtra === true && this.capture.status !== null && this.#extraStatus !== this.capture.status) this.#noteCause('scope_lost','extra_status');
+    }
     if (raw.method === 'Network.requestWillBeSent' && p.requestId === this.capture.chosen && this.#requestAt === null) {
       this.#requestAt = this.#tick();
       if (Number.isFinite(p.timestamp) && Number.isFinite(p.wallTime) && p.timestamp > 0 && p.wallTime > 0 &&
@@ -173,16 +197,22 @@ export class QABoundObservation {
     }
     if (this.capture.completed && (this.#needsExtra === false || this.#needsExtra === true && this.#extraStatus !== null)) this.#resolveDone();
   }
+  #extraSummary() {
+    return !this.capture.matching ? 'not_selected' : this.#needsExtra === null ? 'invalid' :
+      this.#needsExtra ? this.#extraStatus === null ? 'missing' : this.#extraStatus !== this.capture.status ? 'status_mismatch' : 'complete' :
+        this.#extraStatus !== null ? 'unexpected' : 'not_required';
+  }
   async finish(cleanupVerified) {
     if (this.#closed) throw error();
     this.#tick();
-    if (this.capture.matching && (this.#needsExtra === null || this.#needsExtra === true && this.#extraStatus !== this.capture.status ||
-        this.#needsExtra === false && this.#extraStatus !== null)) this.invalidate();
+    const extra = this.#extraSummary();
+    if (['invalid','missing','status_mismatch','unexpected'].includes(extra)) this.invalidate('scope_lost',
+      {invalid:'extra_shape',missing:'extra_missing',status_mismatch:'extra_status',unexpected:'extra_unexpected'}[extra]);
     // The ordinary report deliberately discards this private request reference.
     const settingsRequestId = this.capture.chosen;
     const source = await this.capture.finish();
     const cookieGuard = this.#manualCookieGuard?.finish();
-    if (cookieGuard && (cookieGuard.candidateAttempts || cookieGuard.ambiguousAttempts)) this.invalidate('observed_cookie_write');
+    if (cookieGuard && (cookieGuard.candidateAttempts || cookieGuard.ambiguousAttempts)) this.invalidate('observed_cookie_write',cookieGuard.candidateAttempts?'cookie_candidate':'cookie_ambiguous');
     const t = this.#tick();
     this.#closed = true;
     const identity = this.#id !== null && identityProjectionMatches(this.#projection);
@@ -207,12 +237,14 @@ export class QABoundObservation {
       }
     }
     finally { this.#id = null; this.#scope = null; this.#networkRequest = null; this.#networkInterval = null; }
-    return Object.freeze({ schema: 'aku.x.qa-bound-observation.v1', sourceQualification: QA_BOUND_QUALIFICATION,
+    const report = Object.freeze({ schema: 'aku.x.qa-bound-observation.v1', sourceQualification: QA_BOUND_QUALIFICATION,
       diagnostic, identity: identity ? 'current_self_observed' : 'unknown', login: login ? 'protected_response_observed' : 'unknown',
       binding: diagnostic === 'bound' ? 'same_document_observed' : 'unknown', freshness: fresh ? 'within_5s' : 'unknown',
       bootstrap: this.#projection, source, cleanupVerified: cleanupVerified === true,
       startupCookieWriteObserved: this.#startupCookieWriteObserved,
       ...(cookieGuard ? { manualCookieGuard: cookieGuard } : {}),
       enrollment: 'not_verified', continuity: 'unknown', canAuthorize: false, sessionTransferred: false });
+    return this.#manualCookieGuard ? rememberBoundStartup(report,{firstCause:this.#firstCause,terminal:diagnostic,
+      early:this.#early,handoff:this.#handoff,cookie:cookieGuard.diagnostic,extra:this.#extraSummary()}) : report;
   }
 }
