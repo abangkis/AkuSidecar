@@ -159,8 +159,12 @@ remain fenced. This authorizes offline implementation and tests only.
 
 The [redirect/reuse discriminator](../../docs/x-native-manual-pilot.md#declared-redirect-versus-undeclared-request-reuse-2026-10-23)
 reports same-ID declared redirects separately from undeclared request reuse.
-Both remain rejected; header safety and immutable first-cause precedence are
-unchanged. This does not enable redirect acceptance or authorize another QA run.
+That increment rejected both branches. The subsequent
+[per-hop resource correlation](../../docs/x-native-manual-pilot.md#per-hop-resource-redirect-correlation-2026-10-23)
+keeps undeclared reuse closed and permits known-other cookie classification only
+for fully correlated supported resource hops. Candidate or ambiguous evidence,
+missing correlation, and root/account-settings redirects still reject. No
+redirect can supply identity authority or authorize another native QA run.
 
 Manual startup diagnostics also retain the [first cause separately from terminal
 failure](../../docs/x-native-manual-pilot.md#first-cause-and-separate-startup-diagnostics-2026-10-22).

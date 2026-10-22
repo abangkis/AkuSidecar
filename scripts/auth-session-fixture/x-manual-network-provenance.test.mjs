@@ -123,6 +123,14 @@ async function driverScenario(scenario, continuous=false, injectedCookie='lang=e
     if(['precommit-resource','postcommit-resource'].includes(scenario))response('asset');
     if(scenario==='foreign-origin'){request('foreign','https://static.invalid/asset');response('foreign','https://static.invalid/asset');}
     if(scenario==='resource-redirect'){request('redirect');request('redirect','https://x.com/asset2','new','Image',{redirectResponse:{url:'https://x.com/asset',status:302,headers:{'Set-Cookie':'lang=en; Path=/'}}});}
+    if(scenario.startsWith('qualified-redirect')){
+      const headers={'Set-Cookie':scenario==='qualified-redirect-candidate'?'ct0=; Max-Age=0; Path=/':'lang=en; Path=/'};
+      request('redirect');
+      if(scenario==='qualified-redirect-early')emit('Network.responseReceivedExtraInfo',{requestId:'redirect',statusCode:302,headers,blockedCookies:[]});
+      request('redirect','https://x.com/asset2','new','Image',{redirectHasExtraInfo:true,redirectResponse:{url:'https://x.com/asset',status:302,headers:{}}});
+      if(scenario!=='qualified-redirect-missing'&&scenario!=='qualified-redirect-early')emit('Network.responseReceivedExtraInfo',{requestId:'redirect',statusCode:302,headers,blockedCookies:[]});
+      response('redirect','https://x.com/asset2','new','lang=en; Path=/');
+    }
     if(scenario==='foreign-session-response')response('unseen',undefined,'new','lang=en; Path=/','observer-session');
     pause();
    }
@@ -142,10 +150,89 @@ async function driverScenario(scenario, continuous=false, injectedCookie='lang=e
   return {scenario,evaluations,receipts,diagnostic:observation.diagnostic,first,trace,commands,observation};
 }
 
-for(const scenario of ['clean','precommit-resource','postcommit-resource','observed-before-seed','foreign-session-response'])test(`actual driver retains bounded network provenance: ${scenario}`,async()=>{
+for(const scenario of ['clean','precommit-resource','postcommit-resource','observed-before-seed','foreign-session-response','qualified-redirect-late','qualified-redirect-early'])test(`actual driver retains bounded network provenance: ${scenario}`,async()=>{
   const r=await driverScenario(scenario,true);assert.equal(r.diagnostic,'bound');assert.equal(r.receipts,1);assert.equal(r.evaluations,2);
   assert.equal(r.commands.filter(v=>v==='Network.enable').length,1);
   assert.ok(r.commands.indexOf('Network.disable')>r.commands.indexOf('receipt'));
+});
+test('actual reader dispatcher rejects a pending redirect chain before publishing and candidates before identity reads',async()=>{
+  const missing=await driverScenario('qualified-redirect-missing',true);assert.equal(missing.receipts,0);assert.equal(missing.evaluations,2);
+  assert.equal(missing.trace.firstCause,'guard_completion_missing');assert.equal(missing.observation.manualCookieGuard.diagnostic,'ambiguous');
+  const candidate=await driverScenario('qualified-redirect-candidate',true);assert.equal(candidate.receipts,0);assert.equal(candidate.evaluations,0);
+  assert.equal(candidate.trace.firstCause,'cookie_candidate');assert.equal(candidate.observation.manualCookieGuard.diagnostic,'candidate_observed');
+});
+
+async function collectorRedirectScenario(mode){
+  const transport=collectorModule.createQAFeasibilityCollector({FrameDecoder:driver.CDPFrameDecoder}),decoder=new driver.CDPFrameDecoder();
+  const commands=[],context=vm.createContext({location:{origin:'https://x.com',pathname:'/home'}});
+  const scripts=['globalThis.__INITIAL_STATE__={session:{user_id:"123456"},entities:{users:{entities:{"123456":{id_str:"123456"}}}}}','void 0','delete globalThis.__INITIAL_STATE__','void 0'];
+  let guard,binder,normal=null,instrumentation=true,index=0,phase='instrumentation',evaluations=0,receipts=0,settings=false,received=0,observed=0,maxCalls=0;
+  const counts=new WeakMap(),original=ManualStartupCookieGuard.prototype.observe;
+  ManualStartupCookieGuard.prototype.observe=function(raw){
+    if(this===guard&&raw.method.startsWith('Network.')){observed++;const n=(counts.get(raw.params)||0)+1;counts.set(raw.params,n);maxCalls=Math.max(maxCalls,n);}
+    return original.call(this,raw);
+  };
+  const emit=(method,params)=>{
+    if(method.startsWith('Network.'))received++;
+    decoder.push(Buffer.from(JSON.stringify({method,params,sessionId:'cs'})+'\0'),transport.deliver);
+  };
+  const request=(id,url='https://x.com/asset',type='Image',patch={})=>emit('Network.requestWillBeSent',{requestId:id,frameId:'cf',loaderId:'new',type,request:{method:'GET',url},...patch});
+  const extra=(id,status=200,headers={},patch={})=>emit('Network.responseReceivedExtraInfo',{requestId:id,statusCode:status,headers,blockedCookies:[],...patch});
+  const response=(id,url='https://x.com/asset2',hasExtraInfo=false)=>emit('Network.responseReceived',{requestId:id,frameId:'cf',loaderId:'new',hasExtraInfo,response:{url,status:200,headers:{}}});
+  const pause=(ordinary=false)=>{
+    phase=ordinary?'normal':'instrumentation';
+    emit('Debugger.scriptParsed',{scriptId:'script-'+index,executionContextId:1,executionContextAuxData:{isDefault:true,frameId:'cf'}});
+    emit('Debugger.paused',{reason:ordinary?'other':'instrumentation',hitBreakpoints:ordinary?[normal]:[],callFrames:[{callFrameId:'call',location:{scriptId:'script-'+index,lineNumber:0,columnNumber:0}}]});
+  };
+  const execute=()=>{if(index<scripts.length)vm.runInContext(scripts[index++],context);if(index<scripts.length&&instrumentation)pause();else while(index<scripts.length)vm.runInContext(scripts[index++],context);};
+  const emitSettings=()=>{
+    if(settings)return;settings=true;const url='https://api.x.com/1.1/account/settings.json';request('settings',url,'XHR');
+    emit('Network.responseReceived',{requestId:'settings',frameId:'cf',loaderId:'new',hasExtraInfo:true,response:{url,status:200,headers:{},mimeType:'application/json',fromDiskCache:false,fromServiceWorker:false,fromPrefetchCache:false}});
+    extra('settings');emit('Network.loadingFinished',{requestId:'settings',encodedDataLength:32});
+  };
+  const current={owner:1,sessionId:'reader',manualStartupSelected:true,shortFeasibility:{sessionId:'cs',targetId:'ct',navigated:true}};
+  current.shortFeasibility.transport={subscribe:transport.subscribe,ownership:()=>({pid:2,profileId:'collector',alive:true}),send:async(method,params,session,project)=>{
+    commands.push(method);let result={};
+    if(method==='Page.getFrameTree')result={frameTree:{frame:{id:'cf',loaderId:'old',url:'https://x.com/home'}}};
+    if(method==='Page.reload'){
+      request('root','https://x.com/home','Document');response('root','https://x.com/home');
+      request('asset');
+      if(mode==='early')extra('asset',302,{'Set-Cookie':'lang=en; Path=/'});
+      request('asset','https://x.com/asset2','Image',{redirectHasExtraInfo:true,redirectResponse:{url:'https://x.com/asset',status:302,headers:{}}});
+      if(!['early','missing','reordered'].includes(mode))extra('asset',302,mode==='candidate'?{}:{'Set-Cookie':'lang=en; Path=/'},mode==='candidate'?{blockedCookies:[{cookieLine:'ct0=; Max-Age=0; Path=/'}]}:{});
+      extra('asset',200,{'Set-Cookie':'lang=en; Path=/'});response('asset','https://x.com/asset2',true);
+      if(mode==='reordered')extra('asset',302,{'Set-Cookie':'lang=en; Path=/'});
+      emit('Page.frameNavigated',{frame:{id:'cf',loaderId:'new',url:'https://x.com/home'}});
+      emit('Runtime.executionContextCreated',{context:{id:1,origin:'https://x.com',auxData:{isDefault:true,frameId:'cf'}}});pause();
+    }
+    if(method==='Debugger.setInstrumentationBreakpoint')result={breakpointId:'instrumentation'};
+    if(method==='Debugger.setBreakpoint'){normal='normal-'+index;result={breakpointId:normal,actualLocation:{...params.location}};}
+    if(method==='Debugger.removeBreakpoint'){if(params.breakpointId===normal)normal=null;else instrumentation=false;}
+    if(method==='Debugger.resume'){emit('Debugger.resumed',{});if(normal&&phase==='instrumentation')pause(true);else execute();}
+    if(method==='Debugger.evaluateOnCallFrame'){evaluations++;result={result:{type:'object',value:JSON.parse(JSON.stringify(vm.runInContext(params.expression,context)))}};}
+    if(method==='Debugger.disable')emitSettings();
+    if(method==='Network.getResponseBody')result={body:JSON.stringify({language:'en',time_zone:null,protected:false,always_use_https:true,discoverable_by_email:false,discoverable_by_mobile_phone:false}),base64Encoded:false};
+    return project(result);
+  }};
+  try{
+    const h=driver.offlineHarness(current,async method=>method==='Page.getFrameTree'?{frameId:'rf'}:{acknowledged:true});
+    await h.start();guard=current.shortFeasibility.manualCookieGuard;
+    current.manualCookieGuard.beginPostSeed();guard.beginPostSeed();
+    const result=await h.collector((...args)=>{args[5]={...args[5],onPrivateStartup:()=>{receipts++;commands.push('receipt');}};binder=createManualV2BoundObservation(...args,()=>{},guard);return binder;});
+    return{observation:result.checkpoint.observation,evaluations,receipts,commands,received,observed,maxCalls,first:current.manualCookieDiagnostics.current()};
+  }finally{ManualStartupCookieGuard.prototype.observe=original;}
+}
+for(const mode of ['early','late','reordered','missing','candidate'])test(`actual collector transport preserves hop provenance through final receipt gate: ${mode}`,async()=>{
+  const r=await collectorRedirectScenario(mode);assert.equal(r.received,r.observed);assert.equal(r.maxCalls,1);
+  assert.equal(r.commands.filter(m=>m==='Network.enable').length,1);
+  if(['missing','candidate'].includes(mode)){
+    assert.equal(r.receipts,0);assert.equal(r.evaluations,mode==='candidate'?0:2);
+    assert.equal(r.first.role,'collector');assert.equal(r.first.trace.firstCause,mode==='candidate'?'cookie_candidate':'guard_completion_missing');
+    assert.equal(r.observation.manualCookieGuard.diagnostic,mode==='candidate'?'candidate_observed':'ambiguous');
+  }else{
+    assert.equal(r.observation.diagnostic,'bound');assert.equal(r.receipts,1);assert.equal(r.evaluations,2);assert.equal(r.observation.manualCookieGuard.otherAttempts,2);
+    assert.ok(r.commands.indexOf('Network.disable')>r.commands.indexOf('receipt'));assert.equal(r.observation.continuity,'unknown');assert.equal(r.observation.canAuthorize,false);
+  }
 });
 for(const [scenario,provenance,trigger]of [['before-observer-late-response','absent','extra'],['foreign-origin','origin_scope','extra'],['resource-redirect','redirect','redirect']])test(`actual driver keeps unqualified provenance closed: ${scenario}`,async()=>{
   const r=await driverScenario(scenario,true);assert.equal(r.receipts,0);assert.equal(r.evaluations,0);

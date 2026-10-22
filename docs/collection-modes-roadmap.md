@@ -2,6 +2,14 @@
 
 ### Current MVP gate: manual startup pilot (2026-10-21)
 
+Current native blocker (2026-10-23): the last authorized attempt of `c4d12c8`
+rejected the reader startup at a declared redirect before admission opened.
+The next scoped correction is
+[offline per-hop resource correlation](x-native-manual-pilot.md#per-hop-resource-redirect-correlation-2026-10-23),
+with candidate/scope/ambiguity guards retained. It does not reopen deferred
+renewal work or authorize another transfer. This remains work inside MVP-2;
+native acceptance and separately approved dev activation are still pending.
+
 The user explicitly selected [`aku.x.dev-pilot.manual-startup.v2`](x-native-manual-pilot.md):
 one manually initiated attempt of at most 60 seconds, with strict initial
 account/login verification for both roles. Initial samples remain at most five

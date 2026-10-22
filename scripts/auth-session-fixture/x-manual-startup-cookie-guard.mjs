@@ -20,7 +20,9 @@ function setter(url) {
     return { host: u.hostname, path, url };
   } catch { return null; }
 }
-function lineKind(line, scope) {
+// Retain only scope constraints for a pending ExtraInfo line, never its value
+// or unknown name. Candidate and malformed evidence is decided immediately.
+function lineKind(line) {
   if (typeof line !== 'string' || !line || line.length > 4096 || /[\x00-\x1f\x7f]/.test(line)) return 'ambiguous';
   const parts = line.split(';');
   if (parts.length > 32) return 'ambiguous';
@@ -31,8 +33,7 @@ function lineKind(line, scope) {
   let value = first.slice(i + 1);
   if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
   if (!/^[\x21\x23-\x2b\x2d-\x3a\x3c-\x5b\x5d-\x7e]*$/.test(value)) return 'ambiguous';
-  if (!scope) return 'unbound';
-  const seen = new Set(); let path = scope.path;
+  const seen = new Set(); let path = null, domain = null;
   for (const part of parts) {
     const text = part.trim(), equal = text.indexOf('='), key = (equal < 0 ? text : text.slice(0, equal)).trim().toLowerCase();
     const v = equal < 0 ? null : text.slice(equal + 1).trim();
@@ -41,8 +42,8 @@ function lineKind(line, scope) {
     if (['secure', 'httponly'].includes(key)) { if (v !== null) return 'ambiguous'; }
     else if (key === 'domain') {
       if (typeof v !== 'string' || !/^\.?[a-z0-9-]+(?:\.[a-z0-9-]+)*$/i.test(v)) return 'ambiguous';
-      const domain = v.toLowerCase().replace(/^\./, '');
-      if (!['x.com', 'api.x.com'].includes(domain) || !(scope.host === domain || scope.host === 'api.x.com' && domain === 'x.com')) return 'ambiguous';
+      domain = v.toLowerCase().replace(/^\./, '');
+      if (!['x.com', 'api.x.com'].includes(domain)) return 'ambiguous';
     } else if (key === 'path') { path = v; }
     else if (key === 'samesite') { if (typeof v !== 'string' || !['lax', 'strict', 'none'].includes(v.toLowerCase())) return 'ambiguous'; }
     else if (key === 'max-age') { if (typeof v !== 'string' || !/^-?[0-9]{1,12}$/.test(v)) return 'ambiguous'; }
@@ -50,7 +51,21 @@ function lineKind(line, scope) {
       if (typeof v !== 'string' || !/^[A-Za-z]{3}, [0-9]{2} [A-Za-z]{3} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT$/.test(v) || !Number.isFinite(Date.parse(v))) return 'ambiguous';
     } else return 'ambiguous'; // Includes unqualified partitioned/unknown attributes.
   }
-  return QA_COOKIE_PATHS.includes(path) ? 'other' : 'ambiguous';
+  return path !== null && !QA_COOKIE_PATHS.includes(path) ? 'ambiguous' : { path, domain };
+}
+
+const redirectStatuses = new Set([301, 302, 303, 307, 308]);
+const resourceTypes = new Set(['Image', 'Script', 'Stylesheet', 'Font', 'Media', 'XHR', 'Fetch', 'Other', 'Manifest', 'TextTrack']);
+const statusValid = v => Number.isInteger(v) && v >= 100 && v <= 599;
+const unsafeCache = response => ['fromDiskCache', 'fromServiceWorker', 'fromPrefetchCache'].some(key => {
+  const value = data(response, key); return value !== undefined && value !== false;
+});
+const blockedShape = value => Array.isArray(value) && value.length <= 32 && Array.from({length:value.length},(_,i)=>
+  data(Object.getOwnPropertyDescriptor(value,String(i))?.value,'cookieLine')).every(line=>typeof line==='string');
+function settingsScope(scope) {
+  if (!scope) return false;
+  const path = new URL(scope.url).pathname;
+  return path === '/1.1/account/settings.json' || path === '/i/api/1.1/account/settings.json';
 }
 
 // Request provenance is browser metadata. JavaScript context belongs to the
@@ -58,7 +73,7 @@ function lineKind(line, scope) {
 export class ManualStartupCookieGuard {
   #frame; #session; #requests = new Map(); #candidate = 0; #other = 0; #ambiguous = 0;
   #events = 0; #lines = 0; #closed = false; #baseline; #claimed = false;
-  #armed = false; #oldLoader; #rootId = null; #commit = null;
+  #armed = false; #oldLoader; #rootId = null; #root = null; #commit = null; #records = 0;
   #rejection = 'unknown'; #trigger = 'unknown'; #provenance = 'unknown';
   #onRejection;
   constructor(frameId, sessionId, { beforeSeed = false, onRejection = () => {} } = {}) {
@@ -93,9 +108,8 @@ export class ManualStartupCookieGuard {
   rejection() { return this.#rejection; }
   trace() { return Object.freeze({guardTrigger:this.#trigger,guardProvenance:this.#provenance}); }
   category() { return this.#candidate ? 'candidate_observed' : this.#ambiguous ? 'ambiguous' : this.#other ? 'other_only' : 'not_observed'; }
-  #attempt(headers, blocked, request, trigger) {
-    if (!this.#baseline) return;
-    const scope=request?.scope, provenance=request?.provenance ?? 'absent';
+  #attempt(headers, blocked, request, trigger, provenance = request?.provenance ?? 'absent') {
+    if (!this.#baseline) return null;
     const lines=[]; let malformed=false,present=false,malformedReason='guard_metadata_shape';
     if (headers !== undefined) {
       if (!object(headers) || Reflect.ownKeys(headers).length > 128 || Reflect.ownKeys(headers).some(k=>typeof k!=='string')) {
@@ -118,21 +132,71 @@ export class ManualStartupCookieGuard {
         if(typeof line!=='string')malformed=true;else lines.push(line);
       }
     }
-    if(!present&&!malformed)return;
-    if(++this.#events>64){this.#fail('guard_event_budget',trigger,provenance);return;}
-    if(lines.length>32||this.#lines+lines.length>32){this.#fail('guard_header_budget',trigger,provenance);return;}
+    if(!present&&!malformed)return null;
+    if(request)request.cookie=true;
+    if(++this.#events>64){this.#fail('guard_event_budget',trigger,provenance);return null;}
+    if(lines.length>32||this.#lines+lines.length>32){this.#fail('guard_header_budget',trigger,provenance);return null;}
     this.#lines+=lines.length;
-    const kinds=lines.map(line=>lineKind(line,scope));
+    const kinds=lines.map(line=>lineKind(line));
     if(kinds.includes('candidate'))this.#note('cookie_candidate',trigger,provenance);
     if(malformed||!lines.length)this.#fail(malformedReason,trigger,provenance);
+    const other=[];
     for(const kind of kinds){
       if(kind==='candidate')this.#candidate=Math.min(64,this.#candidate+1);
       else if(kind==='ambiguous')this.#fail('guard_header_classification',trigger,provenance);
-      else if(kind==='unbound'||provenance!=='scoped')this.#fail('guard_request_unbound',trigger,provenance);
+      else other.push(kind);
+    }
+    return other;
+  }
+  #apply(other, request, trigger, provenance = request?.provenance ?? 'absent') {
+    if(!other)return;
+    for(const line of other){
+      const scope=request?.scope;
+      if(!scope||request.provenance!=='scoped')this.#fail('guard_request_unbound',trigger,provenance);
+      else if(line.domain!==null&&!(scope.host===line.domain||scope.host==='api.x.com'&&line.domain==='x.com')||!QA_COOKIE_PATHS.includes(line.path??scope.path))this.#fail('guard_header_classification',trigger,provenance);
       else if(request.bad)this.#fail('guard_response_correlation',trigger,provenance);
       else this.#other=Math.min(64,this.#other+1);
     }
-    if(request)request.cookie=true;
+  }
+  #reserve(trigger, provenance) {
+    // Hops and queued ExtraInfo projections share the lifetime record budget.
+    // Reusing a request ID never replenishes it, including across the seed.
+    if(this.#records>=128){this.#fail('guard_request_budget',trigger,provenance);return false;}
+    this.#records++;return true;
+  }
+  #chainFailure(chain, trigger, provenance) {
+    if(chain?.redirected||chain?.hops.some(r=>r.cookie||r.root))this.#fail('guard_response_correlation',trigger,provenance);
+  }
+  #complete(chain) {
+    const relevant=chain.redirected||chain.hops.some(r=>r.cookie||r.root);
+    if(!relevant)return;
+    const last=chain.hops.at(-1);
+    for(const r of chain.hops){
+      if(r.bad||chain.bad||chain.redirected&&(chain.cache||chain.failed||r.cache||r.provenance!=='scoped'||!r.resource||r.response&&r===last&&(r.status<200||r.status>=300&&r.status<400))){
+        this.#fail('guard_response_correlation','finish',r.provenance);return;
+      }
+      if(!r.response||r.root&&this.#commit!==r.loaderId){this.#fail('guard_completion_missing','finish',r.provenance);return;}
+    }
+    const required=chain.hops.filter(r=>r.needsExtra===true);
+    if(required.length!==chain.extras.length){
+      this.#fail(chain.extras.length>required.length?'guard_response_correlation':'guard_completion_missing','finish',last.provenance);return;
+    }
+    // CDP permits ExtraInfo before or after the normal response, but does not
+    // promise a cross-hop order. Admit only a unique status-consistent pairing
+    // after every hop has closed; repeated status slots remain ambiguous.
+    const matched=new Set();
+    for(const extra of chain.extras){
+      const choices=required.filter(r=>r.status===extra.status);
+      if(chain.redirected&&(!extra.headersShape||!extra.blockedShape)){
+        this.#fail('guard_metadata_shape','finish',last.provenance);return;
+      }
+      if(extra.bad||choices.length!==1||matched.has(choices[0])){
+        this.#fail('guard_response_correlation','finish',last.provenance);return;
+      }
+      matched.add(choices[0]);
+    }
+    for(const r of chain.hops)this.#apply(r.other,r,r===last?'response':'redirect');
+    for(const extra of chain.extras)this.#apply(extra.other,required.find(r=>r.status===extra.status),'extra');
   }
   observe(raw) {
     if(this.#closed)return true;
@@ -144,41 +208,70 @@ export class ManualStartupCookieGuard {
       const frame=data(p,'frame'),loader=data(frame,'loaderId');
       if(this.#commit!==null||!ref(loader)||loader===this.#oldLoader||data(frame,'url')!=='https://x.com/home'||data(frame,'parentId')!==undefined)this.#fail('guard_response_correlation','document','root_scope');
       else this.#commit=loader;
-      const root=this.#requests.get(this.#rootId);
+      const root=this.#root;
       if(root&&root.loaderId!==loader){root.bad=true;this.#fail('guard_response_correlation','document','root_scope');}
     }
     const id=data(p,'requestId');
     if(method==='Network.requestWillBeSent'){
-      const redirect=data(p,'redirectResponse'),previous=this.#requests.get(id);
-      if(redirect!==undefined)this.#attempt(data(redirect,'headers'),undefined,{scope:previous?.scope,provenance:'redirect',bad:true},'redirect');
+      const redirect=data(p,'redirectResponse'),chain=this.#requests.get(id),previous=chain?.hops.at(-1);
+      const other=redirect!==undefined?this.#attempt(data(redirect,'headers'),undefined,previous,'redirect','redirect'):null;
       if(!ref(id)){this.#fail('guard_metadata_shape','request');return true;}
-      if(this.#requests.size>=128&&!this.#requests.has(id)){this.#fail('guard_request_budget','request');return true;}
+      if(!this.#reserve('request',redirect!==undefined?'redirect':chain?'reused':'unknown'))return true;
       const scope=setter(data(data(p,'request'),'url')),loader=data(p,'loaderId');
-      const provenance=this.#requests.has(id)?'reused':redirect!==undefined?'redirect':!scope?'origin_scope':data(p,'frameId')!==this.#frame?'frame_scope':!ref(loader)?'loader_missing':'scoped';
-      const r={scope,provenance,loaderId:loader,response:false,extra:false,bad:false,cookie:false,status:null,extraStatus:null,needsExtra:null,root:false};
-      this.#requests.set(id,r);
-      // A declared redirect still rejects ID reuse; distinguish its presence
-      // without accepting a hop or replacing an earlier header rejection.
-      if(provenance==='reused')this.#fail('guard_request_unbound','request',redirect!==undefined?'redirect':'reused');
+      const provenance=!scope?'origin_scope':data(p,'frameId')!==this.#frame?'frame_scope':!ref(loader)?'loader_missing':'scoped';
+      const r={scope,provenance,loaderId:ref(loader)?loader:null,response:false,bad:false,cookie:false,status:null,needsExtra:null,root:false,cache:false,other:null,
+        resource:resourceTypes.has(data(p,'type'))&&data(data(p,'request'),'method')==='GET'&&!settingsScope(scope)};
+      const current=chain??{hops:[],extras:[],redirected:false,bad:false,cache:false,failed:false,completed:false};
+      if(chain&&redirect===undefined){r.provenance='reused';current.bad=true;this.#fail('guard_request_unbound','request','reused');}
+      if(redirect!==undefined){
+        current.redirected=true;
+        if(!previous){r.provenance='redirect';current.bad=true;this.#apply(other,{provenance:'redirect'},'redirect');this.#fail('guard_request_unbound','request','redirect');}
+        else{
+          const status=data(redirect,'status'),extra=data(p,'redirectHasExtraInfo');
+          const valid=object(redirect)&&!previous.response&&!current.completed&&!current.failed&&!current.cache&&previous.resource&&r.resource&&
+            previous.provenance==='scoped'&&provenance==='scoped'&&previous.loaderId===loader&&data(redirect,'url')===previous.scope?.url&&redirectStatuses.has(status)&&typeof extra==='boolean'&&object(data(redirect,'headers'))&&!unsafeCache(redirect);
+          if(!valid){previous.bad=true;current.bad=true;this.#apply(other,{provenance:'redirect'},'redirect');this.#fail('guard_request_unbound','request','redirect');}
+          else{previous.response=true;previous.status=status;previous.needsExtra=extra;previous.other=other;}
+        }
+      }
+      current.hops.push(r);this.#requests.set(id,current);
       if(this.#armed&&data(p,'type')==='Document'&&data(p,'frameId')===this.#frame){
-        const valid=this.#rootId===null&&provenance==='scoped'&&data(data(p,'request'),'method')==='GET'&&scope.url==='https://x.com/home'&&loader!==this.#oldLoader&&(!this.#commit||this.#commit===loader);
+        const valid=this.#rootId===null&&!chain&&redirect===undefined&&provenance==='scoped'&&data(data(p,'request'),'method')==='GET'&&scope.url==='https://x.com/home'&&loader!==this.#oldLoader&&(!this.#commit||this.#commit===loader);
         if(!valid){r.provenance='root_scope';this.#fail('guard_request_unbound','request','root_scope');}
-        else{r.root=true;this.#rootId=id;}
+        else{r.root=true;this.#rootId=id;this.#root=r;}
       }
     }
     if(method==='Network.responseReceived'||method==='Network.responseReceivedExtraInfo'){
-      const r=this.#requests.get(id),response=data(p,'response');
+      const chain=this.#requests.get(id),r=chain?.hops.at(-1),response=data(p,'response');
+      // Parse attempts before correlation failures so candidates/unknown syntax
+      // are observed even when no hop can ever receive this metadata.
+      const other=this.#attempt(method==='Network.responseReceived'?data(response,'headers'):data(p,'headers'),method==='Network.responseReceivedExtraInfo'?data(p,'blockedCookies'):undefined,r,method==='Network.responseReceived'?'response':'extra');
       if(method==='Network.responseReceived'&&r){
         const status=data(response,'status'),extra=data(p,'hasExtraInfo');
-        r.bad ||= r.response||data(p,'loaderId')!==r.loaderId||data(p,'frameId')!==this.#frame||data(response,'url')!==r.scope?.url||!Number.isInteger(status)||status<100||status>599||r.root&&status!==200||typeof extra!=='boolean';
-        r.response=true;r.status=status;r.needsExtra=extra;
-        if(r.extra&&(extra!==true||r.extraStatus!==status))r.bad=true;
+        r.bad ||= r.response||data(p,'loaderId')!==r.loaderId||data(p,'frameId')!==this.#frame||data(response,'url')!==r.scope?.url||!statusValid(status)||r.root&&status!==200||typeof extra!=='boolean';
+        r.cache ||= unsafeCache(response);
+        if(chain.redirected&&!object(data(response,'headers'))){r.bad=true;this.#fail('guard_metadata_shape','response',r.provenance);}
+        r.response=true;r.status=statusValid(status)?status:null;r.needsExtra=typeof extra==='boolean'?extra:null;
+        // A single hop can be checked immediately; a redirect chain waits for
+        // all declarations, because a late ExtraInfo may belong to any hop.
+        if(!chain.redirected&&chain.extras.length&&(chain.extras.length!==1||extra!==true||chain.extras[0].status!==status||chain.extras[0].bad))r.bad=true;
+        if(chain.redirected)r.other=other;else this.#apply(other,r,'response');
       }else if(method==='Network.responseReceivedExtraInfo'&&r){
-        const status=data(p,'statusCode');r.bad ||= r.extra||!Number.isInteger(status)||status<100||status>599;
-        r.extra=true;r.extraStatus=status;if(r.response&&(r.needsExtra!==true||status!==r.status))r.bad=true;
+        const status=data(p,'statusCode');
+        if(this.#reserve('extra',r.provenance))chain.extras.push({status:statusValid(status)?status:null,bad:!statusValid(status),other,headersShape:object(data(p,'headers')),blockedShape:blockedShape(data(p,'blockedCookies'))});
+        if(!chain.redirected&&(chain.extras.length>1||!statusValid(status)||r.response&&(r.needsExtra!==true||status!==r.status)))r.bad=true;
+        if(r.provenance!=='scoped')this.#apply(other,r,'extra');
+      }else this.#apply(other,r,method==='Network.responseReceived'?'response':'extra');
+      if(r?.bad)this.#chainFailure(chain,method==='Network.responseReceived'?'response':'extra',r.provenance);
+    }
+    if(['Network.requestServedFromCache','Network.loadingFinished','Network.loadingFailed'].includes(method)){
+      const chain=this.#requests.get(id);
+      if(chain){
+        if(method==='Network.requestServedFromCache')chain.cache=true;
+        else if(method==='Network.loadingFailed')chain.failed=true;
+        else{if(chain.completed||chain.redirected&&!chain.hops.at(-1).response)chain.bad=true;chain.completed=true;}
+        if(chain.redirected&&(chain.cache||chain.failed||chain.bad))this.#chainFailure(chain,'response',chain.hops.at(-1).provenance);
       }
-      this.#attempt(method==='Network.responseReceived'?data(response,'headers'):data(p,'headers'),method==='Network.responseReceivedExtraInfo'?data(p,'blockedCookies'):undefined,r,method==='Network.responseReceived'?'response':'extra');
-      if(r?.bad&&r.cookie)this.#fail('guard_response_correlation',method==='Network.responseReceived'?'response':'extra',r.provenance);
     }
     return this.#candidate>0||this.#ambiguous>0;
   }
@@ -186,8 +279,9 @@ export class ManualStartupCookieGuard {
     if(this.#closed)throw new Error('manual_cookie_guard_replayed');
     this.#closed=true;
     if(!this.#baseline)this.#fail('guard_request_unbound','baseline');
-    for(const r of this.#requests.values())if((r.cookie||r.root)&&(!r.response||r.bad||r.root&&this.#commit!==r.loaderId||r.needsExtra===true&&!r.extra))this.#fail(r.bad?'guard_response_correlation':'guard_completion_missing','finish',r.provenance);
+    for(const chain of this.#requests.values())this.#complete(chain);
     this.#requests.clear();
+    this.#root=null;
     return Object.freeze({schema:'aku.x.manual-startup-cookie-guard.v1',diagnostic:this.category(),candidateAttempts:this.#candidate,otherAttempts:this.#other,ambiguousAttempts:this.#ambiguous});
   }
 }

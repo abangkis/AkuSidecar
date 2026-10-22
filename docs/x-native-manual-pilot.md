@@ -387,6 +387,98 @@ claim a successful identity/login observation. All 34 prepared source hashes
 match; native execution skipped before lease/profile access. Evidence:
 `runtime/qa/auth-session-sidecar/x-manual-retained-b145fe477dac4d919eeaea8c74e90181.prepare.log.txt`.
 
+### Per-hop resource redirect correlation (2026-10-23)
+
+The last separately authorized run of source `c4d12c8` rejected startup after
+8.69 seconds. Its primary reader detail was `bound_finish/observed_cookie_write`,
+with `first=guard_request_unbound`, `trigger=request` and
+`provenance=redirect`. Admission did not open. The diagnostic proves that the
+guard saw a redirect declaration; it does not identify its URL, status, cookie
+contents or whether that chain would satisfy the correlation rules below.
+Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-b145fe477dac4d919eeaea8c74e90181.run.log.txt`.
+
+The preceding discriminator intentionally rejected all same-ID redirects.
+The offline correction keeps the security checks and replaces that
+single-record request model with bounded per-hop provenance for supported
+resource redirects. This does not make a redirected resource an account or
+login source.
+
+The [CDP Network contract](https://raw.githubusercontent.com/ChromeDevTools/devtools-protocol/master/pdl/domains/Network.pdl)
+distinguishes a network request ID from its individual HTTP requests.
+`redirectResponse` and `redirectHasExtraInfo` describe the preceding hop;
+`hasExtraInfo` describes the final response. ExtraInfo may precede or follow its
+response. The [DevTools frontend implementation](https://raw.githubusercontent.com/ChromeDevTools/devtools-frontend/main/front_end/core/sdk/NetworkManager.ts)
+also retains separate redirect-hop and ExtraInfo state. Its ordered-array
+strategy is implementation evidence, not permission to guess an ambiguous
+security correlation.
+
+The implementation preserves these boundaries:
+
+- Retain the predecessor instead of overwriting it when an owned request ID
+  carries a valid redirect declaration. Every supported hop must match its
+  observed session, frame, loader, URL, status and required ExtraInfo metadata.
+- Assign pending ExtraInfo only when the hop is uniquely established. Missing,
+  duplicate, contradictory or ambiguous evidence remains rejected. A later
+  response cannot repair an earlier rejection or an unobserved predecessor.
+- Inspect candidate, unknown and malformed cookie evidence immediately. An
+  `auth_token` or `ct0` attempt in any hop, including blocked evidence, still
+  revokes startup. Only existing allowlisted non-session cookie attempts on a
+  fully correlated supported resource chain can be classified as known-other.
+- Preserve the post-seed observation epoch and first cause. A late post-seed
+  candidate on an older request still rejects; deferred correlation must not
+  reinterpret a pre-seed header as a newly observed post-seed attempt.
+- Count retained hops and pending evidence within the existing observation
+  bounds. Redirects cannot reset the 128-record lifetime budget or bypass the
+  header, line or event limits.
+- Root-document and account-settings redirects remain rejected. Identity,
+  protected-login evidence, challenge, timing, owner, cleanup, receipt and
+  admission checks are unchanged.
+
+The deliberately narrow envelope covers observed `GET` subresources with explicit
+supported resource types, supported HTTPS X/API scope, the same owned frame and
+loader, and redirect statuses 301, 302, 303, 307 or 308. Only uniquely matching
+required ExtraInfo status slots can complete. Repeated-status slots reject
+rather than relying on event order. ExtraInfo for the preceding hop can arrive
+after the next request, and final-hop ExtraInfo can precede or follow its
+response. Before the first redirect declaration, the existing single-hop
+duplicate/contradiction checks remain; this does not qualify every possible
+future-hop predeclaration ordering. Cached/service-worker redirects, incomplete
+headers, completed/failed-chain reuse and inconsistent terminal metadata remain
+outside the supported envelope.
+
+Only bounded parsed classifications and necessary correlation metadata may
+remain in memory. Raw header/cookie values are not retained for deferred
+matching and never enter diagnostic reports. The private diagnostic schema and
+its existing closed categories remain unchanged.
+
+This work authorizes offline implementation and regressions only. It grants no
+new retained-profile access, native browser run, transfer, Store operation or
+user-runtime activation. Native acceptance remains unproven.
+
+Canonical offline preparation `dbae413881e44d21afcff86a32425da7` passed 144 Node
+tests, four standalone Go tests with 21 diagnostic bridge subcases, four build-tag
+gates and Windows compilation. Sixteen focused redirect tests cover hop matching,
+required header metadata, candidate precedence, scope, ordering, cache/lifecycle
+contradictions, seed epochs, bounded retention and sanitized reports. Production
+reader dispatcher and collector decoder/transport paths accept qualified resource
+chains and deny missing evidence or candidate attempts before a private startup
+receipt can be published. These use invented events and accounts only; no native
+X acceptance or durable authority is claimed.
+
+All 35 prepared source fingerprints match the validated inputs. The execution
+plan remains unapproved, and the native entry skipped before lease/profile
+access with every execution gate disabled. No browser, X request, transfer,
+Store or user-runtime operation ran. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-dbae413881e44d21afcff86a32425da7.prepare.log.txt`.
+
+The preceding offline preparation `c612b2bb8df74839a4a534017e618dc2` failed one
+diagnostic assertion: a missing final response was categorized as correlation
+failure rather than missing completion. Both outcomes rejected startup. The
+comparison now checks terminal status only when a response actually exists;
+the final accepted preparation above used the frozen corrected inputs. The
+earlier log is retained as failed offline evidence, not native execution.
+
 ## Implementation and execution boundary
 
 The minimum dev-only native adapter accepts private typed receipts through trusted
