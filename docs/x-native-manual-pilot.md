@@ -2,6 +2,10 @@
 
 Decision: 2026-10-21. Contract: `aku.x.dev-pilot.manual-startup.v2`.
 
+The current manual-V2 cookie observation boundary is the
+[session-local revision](#session-local-cookie-provenance-and-root-only-identity).
+It supersedes the root-only cookie scope below; account evidence remains root-only.
+
 The user explicitly selected a manual pilot of at most 60 seconds with strict
 initial account/login verification, instead of renewing identity every five
 seconds. This supersedes snapshot V1 renewal as the MVP gate only. V1's synthetic
@@ -268,7 +272,7 @@ The network-provenance revision separates two decisions:
 
 | Decision | Required evidence |
 | --- | --- |
-| Response-cookie safety classification | Bounded request provenance from the owned session/root frame and supported HTTPS X/API scope, plus consistent response/required ExtraInfo |
+| Response-cookie safety classification | Bounded request provenance from the exact owned session, a valid request-local frame/loader and supported HTTPS X/API scope, plus consistent response/required ExtraInfo; see the current session-local revision |
 | Account/login startup receipt | The existing exact fresh account, new document/default context, owner pins, challenge, joint timing and cleanup checks |
 
 HTTP request provenance does not depend on the availability of a JavaScript
@@ -1287,3 +1291,50 @@ The native entry skipped before lease/profile access with all four execution
 gates disabled. No browser, retained profile, X request, transfer, Store or user
 runtime ran. Evidence:
 `runtime/qa/auth-session-sidecar/x-manual-retained-fce1ad89700b4b09b584fdb2ecccdb01.prepare.log.txt`.
+
+## Session-local cookie provenance and root-only identity
+
+This approved manual-V2 policy revision separates cookie classification from
+account proof. It does not change ordinary QA, enable a runtime or authorize a
+native transfer. The root frame pin remains immutable for account evidence.
+
+A known noncandidate cookie attempt may be classified on a previously observed
+request in the exact owned CDP session, with a supported HTTPS X/API setter and
+valid nonempty private frame and loader references. The response must match that
+request's frame, loader, URL, status and ExtraInfo declarations. A nonroot loader
+need not equal the identity root's loader. Redirects retain the existing resource,
+method, status, cache, completion and unique ExtraInfo restrictions, and must
+preserve the request frame and loader across hops. The append-only diagnostic
+condition `frame_mismatch` identifies a redirect changing frames. Private frame
+references remain in the bounded request ledger only, never in reports or RPC.
+Without an exact session pin, the guard cannot grant this nonroot exception.
+
+Candidate `auth_token`/`ct0` attempts still reject immediately before provenance
+acceptance, including blocked attempts, deletions and mixed headers. Missing or
+malformed frame/loader evidence, unsupported origins, unseen/reused requests,
+response contradictions, incomplete/ambiguous ExtraInfo, unknown headers and
+budget exhaustion retain their rejection rules and immutable first diagnostics.
+
+For trusted manual-V2 account selection only, a well-formed settings request
+positively identified as nonroot is excluded from identity candidate selection
+after cookie observation. It cannot increment the root settings candidate count
+or trigger a body read. Missing/malformed frame metadata, root requests before
+identity or with a stale loader, and reuse of an already selected request ID
+remain rejected. Selected response frame/loader and ExtraInfo contradictions
+remain rejected. Filtering the whole network stream is forbidden: excluded
+identity traffic still reaches cookie classification. Shared ordinary QA capture
+behavior is unchanged.
+
+Root navigation/document/default-context, bootstrap current-self, protected root
+settings response, owner pins, challenge, initial timing and cleanup are still
+required for a startup receipt. Noncandidate cookie classification grants no
+identity authority. This is session-local startup observation, not proof of
+frame ancestry, all-target/worker coverage or continuous monitoring. Frame
+inventories, OOPIF/worker attachment, renewal and rotation qualification remain
+deferred under the existing absolute 60-second pilot and its acknowledged
+post-checkpoint limitations.
+
+Validation for this revision is offline and synthetic only. The last native
+`request_frame=different` trace does not identify frame ancestry, rule out a
+stale root pin or prove that this revision completes native startup. No native
+run, retained profile, login, transfer, Store or user runtime is accessed.

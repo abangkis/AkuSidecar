@@ -172,7 +172,7 @@ test('network provenance preserves rejected scope and redirects without context-
     if(fault==='foreign-session')s.emit('Network.requestWillBeSent',{requestId:'asset',frameId:frame,loaderId:next,request:{method:'GET',url:'https://x.com/asset'}},'foreign');
     else s.assetRequest(fault==='frame'?{frameId:'child'}:fault==='foreign-url'?{request:{method:'GET',url:'https://foreign.invalid/asset'}}:fault==='redirect'?{redirectResponse:{headers:{}}}:{});
     if(fault==='reuse')s.assetRequest();s.context();assert.equal(s.assetResponse({'Set-Cookie':'lang=en; Path=/'}),true);s.assetExtra();
-    assert.equal(s.g.rejection(),'guard_request_unbound',fault);assert.equal(s.g.finish().diagnostic,'ambiguous');
+    assert.equal(s.g.rejection(),fault==='frame'?'guard_response_correlation':'guard_request_unbound',fault);assert.equal(s.g.finish().diagnostic,'ambiguous');
   }
 });
 

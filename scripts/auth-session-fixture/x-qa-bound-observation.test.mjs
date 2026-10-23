@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
-import { QABoundObservation, QA_BOUND_BOOTSTRAP_EXPRESSION, projectBoundBootstrap } from './x-qa-bound-observation.mjs';
+import { QABoundObservation, QA_BOUND_BOOTSTRAP_EXPRESSION, createManualV2BoundObservation, projectBoundBootstrap } from './x-qa-bound-observation.mjs';
 import { QA_AB_URL } from './x-qa-direct-ab.mjs';
 
 const scope = { owner: 1, profileId: 'PRIVATE_PROFILE', sessionId: 'private-session', targetId: 'private-target' };
@@ -11,13 +11,16 @@ function page(id = '12345') {
     session: { user_id: id }, entities: { users: { entities: { [id]: { id_str: id } } } },
   } };
 }
-function setup(pointOptions, readDelay) {
+function setup(pointOptions, readDelay, manual = false, observeCookieWrites = () => {}) {
   let now = 0, bodyReads = 0, b;
-  b = new QABoundObservation(scope, 'frame', async id => {
+  const readBody = async id => {
     bodyReads++; assert.equal(b.capture.consumeRead(id), true);
     if (readDelay) now += readDelay;
     return { schema: 'aku.x.qa-direct-body.v1', category: 'settings_match', settingsMatch: true };
-  }, () => now, undefined, pointOptions);
+  };
+  b = manual
+    ? createManualV2BoundObservation(scope, 'frame', readBody, () => now, observeCookieWrites, pointOptions)
+    : new QABoundObservation(scope, 'frame', readBody, () => now, observeCookieWrites, pointOptions);
   const emit = (method, params, binding = scope) => b.observe({ method, params, sessionId: scope.sessionId }, binding);
   const document = () => {
     emit('Page.frameNavigated', { frame: { id: 'frame', loaderId: 'loader', url: 'https://x.com/home' } });
@@ -25,13 +28,13 @@ function setup(pointOptions, readDelay) {
   };
   const identity = (id = '12345') => projectBoundBootstrap({ projection: inspectBootstrapCurrentSelf(page(id)), accountId: id },
     (value, projection) => b.acceptIdentity(value, projection));
-  const request = (patch = {}) => emit('Network.requestWillBeSent', { requestId: 'request', frameId: 'frame', loaderId: 'loader',
+  const request = (patch = {}, requestId = 'request') => emit('Network.requestWillBeSent', { requestId, frameId: 'frame', loaderId: 'loader',
     request: { method: 'GET', url: QA_AB_URL }, ...patch });
-  const response = (patch = {}, finishedPatch = {}) => {
-    emit('Network.responseReceived', { requestId: 'request', frameId: 'frame', loaderId: 'loader', hasExtraInfo: true, response: {
+  const response = (patch = {}, finishedPatch = {}, requestId = 'request') => {
+    emit('Network.responseReceived', { requestId, frameId: 'frame', loaderId: 'loader', hasExtraInfo: true, response: {
       url: QA_AB_URL, status: 200, mimeType: 'application/json', fromDiskCache: false, fromServiceWorker: false, fromPrefetchCache: false }, ...patch });
-    if (patch.hasExtraInfo !== false) emit('Network.responseReceivedExtraInfo', { requestId: 'request', statusCode: 200, headers: {} });
-    emit('Network.loadingFinished', { requestId: 'request', encodedDataLength: 512, ...finishedPatch });
+    if (patch.hasExtraInfo !== false) emit('Network.responseReceivedExtraInfo', { requestId, statusCode: 200, headers: {} });
+    emit('Network.loadingFinished', { requestId, encodedDataLength: 512, ...finishedPatch });
   };
   return { b, emit, document, identity, request, response, time: v => { now = v; }, reads: () => bodyReads };
 }
@@ -188,4 +191,125 @@ test('old requests, OPTIONS, missing self, duplicate requests, cache and non-200
   }
   const s = setup(); s.document(); s.identity(); s.request({ request: { method: 'OPTIONS', url: QA_AB_URL } }); s.response();
   assert.equal((await s.b.finish(true)).binding, 'unknown'); assert.equal(s.reads(), 0);
+});
+
+function nonRootSettings(s, requestId = 'child-request', frameId = 'child-frame', loaderId = 'child-loader') {
+  s.emit('Network.requestWillBeSent', { requestId, frameId, loaderId, request: { method: 'GET', url: QA_AB_URL } });
+}
+function nonRootSettingsResponse(s, requestId = 'child-request', frameId = 'child-frame', loaderId = 'child-loader', patch = {}) {
+  s.emit('Network.responseReceived', { requestId, frameId, loaderId, hasExtraInfo: false, response: {
+    url: QA_AB_URL, status: 200, headers: {}, ...patch,
+  } });
+  s.emit('Network.loadingFinished', { requestId, encodedDataLength: 128 });
+}
+
+test('Manual V2 excludes a well-formed nonroot settings request before or after root identity selection', async () => {
+  for (const order of ['before_identity', 'after_identity', 'after_root_selection']) {
+    let receipts = 0;
+    const s = setup({ deferCookieMutation: false, onPrivateResult: () => {}, onPrivateStartup: () => { receipts++; } }, undefined, true);
+    s.document();
+    if (order === 'before_identity') nonRootSettings(s);
+    s.identity();
+    if (order === 'after_identity') nonRootSettings(s);
+    nonRootSettingsResponse(s);
+    assert.equal(s.b.capture.chosen, null);
+    assert.equal(s.b.capture.matching, 0);
+    s.request({}, 'root-request');
+    assert.equal(s.b.capture.chosen, 'root-request');
+    assert.equal(s.b.capture.matching, 1);
+    if (order === 'after_root_selection') {
+      nonRootSettings(s, 'later-child-request');
+      nonRootSettingsResponse(s, 'later-child-request');
+      assert.equal(s.b.capture.chosen, 'root-request');
+      assert.equal(s.b.capture.matching, 1);
+    }
+    s.response({}, {}, 'root-request');
+    const report = await s.b.finish(true);
+    assert.equal(report.diagnostic, 'bound');
+    assert.equal(receipts, 1);
+    assert.equal(s.reads(), 1);
+  }
+});
+
+test('Manual V2 cannot issue a receipt from nonroot settings evidence or a nonroot execution context', async () => {
+  let receipts = 0;
+  const onlyNonRoot = setup({ deferCookieMutation: false, onPrivateResult: () => {}, onPrivateStartup: () => { receipts++; } }, undefined, true);
+  onlyNonRoot.document(); onlyNonRoot.identity(); nonRootSettings(onlyNonRoot); nonRootSettingsResponse(onlyNonRoot);
+  const noSource = await onlyNonRoot.b.finish(true);
+  assert.equal(noSource.diagnostic, 'source_unavailable');
+  assert.equal(onlyNonRoot.b.capture.matching, 0);
+  assert.equal(receipts, 0);
+
+  const childContext = setup({ deferCookieMutation: false, onPrivateResult: () => {}, onPrivateStartup: () => { receipts++; } }, undefined, true);
+  childContext.emit('Page.frameNavigated', { frame: { id: 'frame', loaderId: 'loader', url: 'https://x.com/home' } });
+  childContext.emit('Runtime.executionContextCreated', { context: { id: 8, origin: 'https://x.com', auxData: { isDefault: true, frameId: 'child-frame' } } });
+  childContext.identity(); nonRootSettings(childContext);
+  const noRootIdentity = await childContext.b.finish(true);
+  assert.equal(noRootIdentity.diagnostic, 'scope_lost');
+  assert.equal(receipts, 0);
+});
+
+test('Manual V2 keeps selected request ID reuse and root response-frame conflicts fail-closed', async () => {
+  for (const conflict of ['chosen_id', 'ignored_id', 'response_frame']) {
+    let receipts = 0;
+    const s = setup({ deferCookieMutation: false, onPrivateResult: () => {}, onPrivateStartup: () => { receipts++; } }, undefined, true);
+    s.document(); s.identity();
+    if (conflict === 'ignored_id') nonRootSettings(s, 'same-id');
+    if (conflict !== 'ignored_id') s.request({}, 'same-id');
+    if (conflict === 'chosen_id') nonRootSettings(s, 'same-id');
+    if (conflict === 'ignored_id') s.request({}, 'same-id');
+    if (conflict === 'response_frame') s.response({ frameId: 'child-frame' }, {}, 'same-id');
+    else s.response({}, {}, 'same-id');
+    const report = await s.b.finish(true);
+    assert.equal(report.diagnostic, conflict === 'ignored_id' ? 'observed_cookie_write' : 'scope_lost', conflict);
+    assert.equal(receipts, 0);
+  }
+});
+
+test('Manual V2 leaves malformed request tuples, stale root loaders, and pre-identity root requests closed', async () => {
+  for (const fault of ['missing_frame', 'malformed_frame', 'missing_loader', 'malformed_request_id', 'root_loader', 'before_identity']) {
+    let receipts = 0;
+    const s = setup({ deferCookieMutation: false, onPrivateResult: () => {}, onPrivateStartup: () => { receipts++; } }, undefined, true);
+    s.document();
+    if (fault !== 'before_identity') s.identity();
+    const patch = fault === 'missing_frame' ? { frameId: undefined } :
+      fault === 'malformed_frame' ? { frameId: 7 } :
+        fault === 'missing_loader' ? { frameId: 'child-frame', loaderId: undefined } :
+          fault === 'malformed_request_id' ? { frameId: 'child-frame', loaderId: 'child-loader' } :
+        fault === 'root_loader' ? { loaderId: 'stale-loader' } : {};
+    s.request(patch, fault === 'malformed_request_id' ? 7 : 'fault-request');
+    s.response({}, {}, fault === 'malformed_request_id' ? 7 : 'fault-request');
+    const report = await s.b.finish(true);
+    assert.equal(report.diagnostic, 'scope_lost', fault);
+    assert.equal(receipts, 0);
+  }
+});
+
+test('Manual V2 nonroot exclusion still observes cookie events, blocked candidates, and unknown headers', async () => {
+  for (const evidence of ['blocked_candidate', 'unknown_header']) {
+    const observed = [];
+    const s = setup({ deferCookieMutation: false, onPrivateResult: () => {}, onPrivateStartup: () => assert.fail('cookie evidence cannot produce a receipt') },
+      undefined, true, raw => observed.push(raw.method));
+    s.document(); s.identity(); nonRootSettings(s);
+    if (evidence === 'blocked_candidate') {
+      s.emit('Network.responseReceivedExtraInfo', { requestId: 'child-request', statusCode: 200, headers: {},
+        blockedCookies: [{ cookieLine: 'auth_token=PRIVATE_BLOCKED_VALUE; Path=/' }] });
+    } else {
+      s.emit('Network.responseReceived', { requestId: 'child-request', frameId: 'child-frame', loaderId: 'child-loader',
+        hasExtraInfo: false, response: { url: QA_AB_URL, status: 200, headers: { 'Set-Cookie': 'unknown_private=value; Path=/' } } });
+    }
+    const report = await s.b.finish(true);
+    assert.equal(report.diagnostic, 'observed_cookie_write');
+    assert.equal(report.manualCookieGuard[evidence === 'blocked_candidate' ? 'candidateAttempts' : 'ambiguousAttempts'], 1);
+    assert.ok(observed.includes('Network.requestWillBeSent'));
+    assert.ok(observed.includes(evidence === 'blocked_candidate' ? 'Network.responseReceivedExtraInfo' : 'Network.responseReceived'));
+    assert.equal(JSON.stringify(report).includes('PRIVATE_BLOCKED_VALUE'), false);
+  }
+});
+
+test('ordinary QA retains nonroot settings request rejection and direct-capture selection', async () => {
+  const s = setup(); s.document(); nonRootSettings(s); s.identity();
+  assert.equal(s.b.capture.chosen, 'child-request');
+  assert.equal(s.b.capture.matching, 1);
+  assert.equal((await s.b.finish(true)).diagnostic, 'scope_lost');
 });

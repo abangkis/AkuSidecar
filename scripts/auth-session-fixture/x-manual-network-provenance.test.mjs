@@ -193,9 +193,9 @@ async function driverScenario(scenario, continuous=false, injectedCookie='lang=e
   current.shortFeasibility={sessionId:'collector-session',transport:{send:async(method,params,session,project)=>project(method==='Page.getFrameTree'?{frameTree:{frame:{id:'collector-frame'}}}:{}),subscribe:()=>()=>{}}};
   const emit=(method,params,sessionId='s')=>harness.dispatch({method,params,sessionId});
   const request=(id,url='https://x.com/asset',loader='new',type='Image',patch={})=>emit('Network.requestWillBeSent',{requestId:id,frameId:'f',loaderId:loader,type,request:{method:'GET',url},...patch});
-  const response=(id,url='https://x.com/asset',loader='new',cookie=injectedCookie,sessionId='s')=>{
+  const response=(id,url='https://x.com/asset',loader='new',cookie=injectedCookie,sessionId='s',frameId='f')=>{
    emit('Network.responseReceivedExtraInfo',{requestId:id,statusCode:200,headers:cookie?{'Set-Cookie':cookie}:{},blockedCookies:[]},sessionId);
-   emit('Network.responseReceived',{requestId:id,frameId:'f',loaderId:loader,hasExtraInfo:true,response:{url,status:200,headers:{}}},sessionId);
+   emit('Network.responseReceived',{requestId:id,frameId,loaderId:loader,hasExtraInfo:true,response:{url,status:200,headers:{}}},sessionId);
   };
   const pause=(ordinary=false)=>{
    phase=ordinary?'normal':'instrumentation';
@@ -226,8 +226,13 @@ async function driverScenario(scenario, continuous=false, injectedCookie='lang=e
       const params={requestId:'asset',loaderId:'new',type:'Image',request:{method:'GET',url:'https://x.com/asset'}};
       if(scenario==='request-frame-empty')params.frameId='';
       if(scenario==='request-frame-number')params.frameId=42;
-      if(scenario==='request-frame-different')params.frameId='PRIVATE_CHILD_FRAME';
-      emit('Network.requestWillBeSent',params);response('asset');
+      if(['request-frame-different','request-frame-response-mismatch'].includes(scenario))params.frameId='PRIVATE_CHILD_FRAME';
+      emit('Network.requestWillBeSent',params);response('asset',undefined,undefined,undefined,undefined,scenario==='request-frame-different'?'PRIVATE_CHILD_FRAME':'f');
+    }
+    if(scenario==='nonroot-settings'){
+      const url='https://api.x.com/1.1/account/settings.json';
+      request('nonroot-settings',url,'nonroot-loader','XHR',{frameId:'nonroot'});
+      response('nonroot-settings',url,'nonroot-loader','lang=en; Path=/','s','nonroot');
     }
     if(scenario==='resource-redirect'){request('redirect');request('redirect','https://x.com/asset2','new','Image',{redirectResponse:{url:'https://x.com/asset',status:302,headers:{'Set-Cookie':'lang=en; Path=/'}}});}
     if(scenario.startsWith('qualified-redirect')){
@@ -257,18 +262,23 @@ async function driverScenario(scenario, continuous=false, injectedCookie='lang=e
   return {scenario,evaluations,receipts,diagnostic:observation.diagnostic,first,trace,commands,observation};
 }
 
-for(const scenario of ['clean','precommit-resource','postcommit-resource','observed-before-seed','foreign-session-response','qualified-redirect-late','qualified-redirect-early'])test(`actual driver retains bounded network provenance: ${scenario}`,async()=>{
+for(const scenario of ['clean','precommit-resource','postcommit-resource','observed-before-seed','foreign-session-response','qualified-redirect-late','qualified-redirect-early','request-frame-different','nonroot-settings'])test(`actual driver retains bounded network provenance: ${scenario}`,async()=>{
   const r=await driverScenario(scenario,true);assert.equal(r.diagnostic,'bound');assert.equal(r.receipts,1);assert.equal(r.evaluations,2);
   assert.equal(r.commands.filter(v=>v==='Network.enable').length,1);
   assert.ok(r.commands.indexOf('Network.disable')>r.commands.indexOf('receipt'));
 });
-for(const [kind,state]of [['absent','absent'],['empty','malformed'],['number','malformed'],['different','different']])test(`actual reader dispatcher retains first request frame status through binder and latch: ${kind}`,async()=>{
+for(const [kind,state]of [['absent','absent'],['empty','malformed'],['number','malformed']])test(`actual reader dispatcher retains first request frame status through binder and latch: ${kind}`,async()=>{
   const r=await driverScenario('request-frame-'+kind,true);
   assert.equal(r.receipts,0);assert.equal(r.evaluations,0);
   assert.equal(r.trace.firstCause,'guard_request_unbound');assert.equal(r.trace.guardTrigger,'extra');
   assert.equal(r.trace.guardProvenance,'frame_scope');assert.equal(r.trace.guardRequestFrame,state);
   assert.equal(r.trace.guardEpoch,'document_committed');assert.equal(r.trace.terminal,'scope_lost');
   assert.equal(JSON.stringify(r.trace).includes('PRIVATE_CHILD_FRAME'),false);
+});
+test('actual reader dispatcher rejects a nonroot response bound to the wrong frame without changing the first snapshot',async()=>{
+  const r=await driverScenario('request-frame-response-mismatch',true);
+  assert.equal(r.receipts,0);assert.equal(r.evaluations,0);
+  assert.equal(r.trace.firstCause,'guard_response_correlation');assert.equal(r.trace.guardProvenance,'scoped');assert.equal(r.trace.guardRequestFrame,'different');
 });
 test('actual reader dispatcher rejects a pending redirect chain before publishing and candidates before identity reads',async()=>{
   const missing=await driverScenario('qualified-redirect-missing',true);assert.equal(missing.receipts,0);assert.equal(missing.evaluations,2);
@@ -311,6 +321,12 @@ async function collectorRedirectScenario(mode){
     if(method==='Page.getFrameTree')result={frameTree:{frame:{id:'cf',loaderId:'old',url:'https://x.com/home'}}};
     if(method==='Page.reload'){
       request('root','https://x.com/home','Document');response('root','https://x.com/home');
+      if(mode==='nonroot'){
+        const url='https://api.x.com/1.1/account/settings.json';
+        request('nonroot-settings',url,'XHR',{frameId:'nonroot',loaderId:'nonroot-loader'});
+        extra('nonroot-settings',200,{'Set-Cookie':'lang=en; Path=/'});
+        emit('Network.responseReceived',{requestId:'nonroot-settings',frameId:'nonroot',loaderId:'nonroot-loader',hasExtraInfo:true,response:{url,status:200,headers:{}}});
+      }
       request('asset');
       if(mode==='early')extra('asset',302,{'Set-Cookie':'lang=en; Path=/'});
       request('asset','https://x.com/asset2','Image',{redirectHasExtraInfo:true,redirectResponse:{url:'https://x.com/asset',status:302,headers:{}}});
@@ -337,7 +353,7 @@ async function collectorRedirectScenario(mode){
     return{observation:result.checkpoint.observation,evaluations,receipts,commands,received,observed,maxCalls,first:current.manualCookieDiagnostics.current()};
   }finally{ManualStartupCookieGuard.prototype.observe=original;}
 }
-for(const mode of ['early','late','reordered','missing','candidate'])test(`actual collector transport preserves hop provenance through final receipt gate: ${mode}`,async()=>{
+for(const mode of ['early','late','reordered','missing','candidate','nonroot'])test(`actual collector transport preserves hop provenance through final receipt gate: ${mode}`,async()=>{
   const r=await collectorRedirectScenario(mode);assert.equal(r.received,r.observed);assert.equal(r.maxCalls,1);
   assert.equal(r.commands.filter(m=>m==='Network.enable').length,1);
   if(['missing','candidate'].includes(mode)){
@@ -345,7 +361,7 @@ for(const mode of ['early','late','reordered','missing','candidate'])test(`actua
     assert.equal(r.first.role,'collector');assert.equal(r.first.trace.firstCause,mode==='candidate'?'cookie_candidate':'guard_completion_missing');
     assert.equal(r.observation.manualCookieGuard.diagnostic,mode==='candidate'?'candidate_observed':'ambiguous');
   }else{
-    assert.equal(r.observation.diagnostic,'bound');assert.equal(r.receipts,1);assert.equal(r.evaluations,2);assert.equal(r.observation.manualCookieGuard.otherAttempts,2);
+    assert.equal(r.observation.diagnostic,'bound');assert.equal(r.receipts,1);assert.equal(r.evaluations,2);assert.equal(r.observation.manualCookieGuard.otherAttempts,mode==='nonroot'?3:2);
     assert.ok(r.commands.indexOf('Network.disable')>r.commands.indexOf('receipt'));assert.equal(r.observation.continuity,'unknown');assert.equal(r.observation.canAuthorize,false);
   }
 });
@@ -377,7 +393,7 @@ test('pre-seed headers do not poison the epoch; structural coverage loss cannot 
 });
 test('post-seed missing predecessor and seen rejected scope remain distinct, including blocked candidates',()=>{
   const absent=passive();absent.g.beginPostSeed();absent.response('lang=en; Path=/');assert.deepEqual(absent.g.trace(),{guardTrigger:'response',guardProvenance:'absent',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'unknown'});
-  const foreign=passive();foreign.request('r',{frameId:'child'});foreign.g.beginPostSeed();foreign.response('lang=en; Path=/');assert.deepEqual(foreign.g.trace(),{guardTrigger:'response',guardProvenance:'frame_scope',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'different'});
+  const foreign=passive();foreign.request('r',{frameId:'child'});foreign.g.beginPostSeed();foreign.response('lang=en; Path=/');assert.deepEqual(foreign.g.trace(),{guardTrigger:'response',guardProvenance:'scoped',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'different'});assert.equal(foreign.g.rejection(),'guard_response_correlation');
   for(const scope of ['absent','scoped','foreign']){
     const s=passive();if(scope!=='absent')s.request('r',scope==='foreign'?{request:{method:'GET',url:'https://foreign.invalid/asset'}}:{});s.g.beginPostSeed();
     s.emit('Network.responseReceivedExtraInfo',{requestId:'r',statusCode:200,headers:{},blockedCookies:[{cookieLine:'ct0=; Max-Age=0; Path=/'}]});

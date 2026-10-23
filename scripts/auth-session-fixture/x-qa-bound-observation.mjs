@@ -9,6 +9,7 @@ import { closedStartupTrace, rememberBoundStartup, STARTUP_GUARD_CAUSES } from '
 const own = (v, k) => Object.getOwnPropertyDescriptor(v, k)?.value;
 const stableId = v => typeof v === 'string' && /^[1-9][0-9]{0,19}$/.test(v);
 const safe = v => typeof v === 'string' && v.length > 0 && v.length <= 4096;
+const requestRef = v => typeof v === 'string' && v.length > 0 && v.length <= 512;
 const error = () => new Error('qa_bound_observation_invalid');
 const manualV2CookiePolicy = Symbol();
 // Selected by trusted Manual V2 owner code only, never by a JSON option.
@@ -22,6 +23,27 @@ export function identityProjectionMatches(p) {
     [p.entityChecks.normalizedUsers, p.entityChecks.rootUsers].includes('match') &&
     [p.entityChecks.normalizedUsers, p.entityChecks.rootUsers].every(v => ['match', 'absent'].includes(v)) &&
     Object.values(p.authFields).every(v => ['absent', 'true'].includes(v));
+}
+
+// Manual V2 can ignore a request as identity evidence only when its valid
+// CDP request tuple positively identifies a separate frame. Ordinary QA keeps
+// the existing fail-closed selection path.
+function nonRootSettingsRequest(params, rootFrame) {
+  try {
+    const value = (object, key) => {
+      const descriptor = Object.getOwnPropertyDescriptor(object, key);
+      return descriptor && Object.hasOwn(descriptor, 'value') ? descriptor.value : undefined;
+    };
+    const requestId = value(params, 'requestId');
+    const frameId = value(params, 'frameId');
+    const loaderId = value(params, 'loaderId');
+    const request = value(params, 'request');
+    if (!requestRef(requestId) || !requestRef(frameId) || frameId === rootFrame || !requestRef(loaderId) ||
+        !request || typeof request !== 'object' || Array.isArray(request) ||
+        Object.hasOwn(params, 'redirectResponse') || value(request, 'method') !== 'GET' ||
+        qaSourceRoute(value(request, 'url')) !== 'api_v1') return null;
+    return Object.freeze({ requestId, frameId, loaderId });
+  } catch { return null; }
 }
 
 // This fixed extra return field is consumed only by private CDP dispatch. The
@@ -179,7 +201,14 @@ export class QABoundObservation {
       if (this.#identityAt === null) this.#startupCookieWriteObserved = true;
       else this.invalidate('observed_cookie_write');
     }
-    if (raw.method === 'Network.requestWillBeSent' && p.request?.method === 'GET' && qaSourceRoute(p.request.url) === 'api_v1' &&
+    let bypassCandidate = false;
+    if (raw.method === 'Network.requestWillBeSent' && this.#manualCookieGuard) {
+      const candidate = nonRootSettingsRequest(p, this.#frame);
+      // The current candidate ID remains on the ordinary capture path so its
+      // duplicate-ID rejection runs before any nonroot exclusion.
+      if (candidate && candidate.requestId !== this.capture.chosen) bypassCandidate = true;
+    }
+    if (!bypassCandidate && raw.method === 'Network.requestWillBeSent' && p.request?.method === 'GET' && qaSourceRoute(p.request.url) === 'api_v1' &&
         (!this.#loader || !this.#context || this.#identityAt === null || p.loaderId !== this.#loader || p.frameId !== this.#frame)) this.invalidate('scope_lost','settings_order');
     if (raw.method === 'Network.responseReceived' && p.requestId === this.capture.chosen &&
         (p.loaderId !== this.#loader || p.frameId !== this.#frame)) this.invalidate('scope_lost','response_frame');
@@ -191,7 +220,7 @@ export class QABoundObservation {
       if (this.#extraStatus !== null || !Number.isInteger(p.statusCode)) this.invalidate('scope_lost','extra_status');
       else this.#extraStatus = p.statusCode;
     }
-    this.capture.observe(raw.method, p);
+    if (!bypassCandidate) this.capture.observe(raw.method, p);
     // Diagnose observed contradictions at event time; rejection still uses the
     // existing finish checks, so this note does not alter capture acceptance.
     if (p.requestId === this.capture.chosen && this.#extraStatus !== null) {

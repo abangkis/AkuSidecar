@@ -37,11 +37,12 @@ function frameParams(kind,onRead=()=>{}){
     oversized:'PRIVATE_FRAME_VALUE'.repeat(40),different:'PRIVATE_CHILD_FRAME',matching:'frame'}[kind];
   return params;
 }
-for(const [kind,state]of frameCases)test(`request frame diagnostic is descriptor-only and preserves known-other decision: ${kind}`,()=>{
+for(const [kind,state]of frameCases)test(`request frame metadata separates valid session-local provenance from invalid references: ${kind}`,()=>{
   const s=fixture();let reads=0;
   s.emit('Network.requestWillBeSent',frameParams(kind,()=>reads++));
-  assert.equal(s.extra(200,other),kind!=='matching');
-  if(kind==='matching'){s.response(0,{extra:true});accepted(s,1);assert.equal(s.g.trace().guardRequestFrame,'unknown');}
+  const valid=['matching','different'].includes(kind);
+  assert.equal(s.extra(200,other),!valid);
+  if(valid){s.response(0,{extra:true,frameId:kind==='different'?'PRIVATE_CHILD_FRAME':'frame'});accepted(s,1);assert.equal(s.g.trace().guardRequestFrame,'unknown');}
   else{
     assert.equal(s.g.rejection(),'guard_request_unbound');
     assert.equal(s.g.trace().guardProvenance,'frame_scope');assert.equal(s.g.trace().guardRequestFrame,state);
@@ -82,7 +83,7 @@ test('frame diagnostics cannot change candidate, blocked, mixed or malformed-hea
 });
 
 test('redirect frame diagnostic follows the failed predicate and header attempts keep their predecessor snapshot',()=>{
-  for(const [kind,state]of frameCases.filter(([kind])=>kind!=='matching')){
+  for(const [kind,state]of frameCases.filter(([kind])=>!['matching','different'].includes(kind))){
     const previous=fixture();previous.emit('Network.requestWillBeSent',frameParams(kind));previous.redirect();
     assert.equal(previous.g.trace().guardCondition,'previous_frame');assert.equal(previous.g.trace().guardRequestFrame,state);rejected(previous,'guard_request_unbound');
     const current=fixture();current.request();const params=frameParams(kind);
@@ -97,7 +98,8 @@ test('redirect frame diagnostic follows the failed predicate and header attempts
 test('root frame pin, old-loader requests and cookie-free unsupported traffic keep their original behavior',()=>{
   const s=fixture();s.g.armReload('old');
   s.emit('Page.frameNavigated',{frame:{id:'PRIVATE_CHILD_FRAME',loaderId:'other',url:'https://x.com/home'}});
-  s.request(0,{frameId:'PRIVATE_CHILD_FRAME'});s.extra(200,other);assert.equal(s.g.trace().guardRequestFrame,'different');rejected(s,'guard_request_unbound');
+  s.request(0,{frameId:'PRIVATE_CHILD_FRAME'});s.extra(200,other);s.response(0,{extra:true,frameId:'PRIVATE_CHILD_FRAME'});
+  assert.throws(()=>s.g.claim('PRIVATE_CHILD_FRAME','session'));assert.doesNotThrow(()=>s.g.claim('frame','session'));accepted(s,1);
   const old=fixture();old.g.armReload('old');old.request(0,{loaderId:'old'});old.response(0,{loaderId:'old',headers:other});accepted(old,1);
   for(const [kind]of frameCases){const clean=fixture();clean.emit('Network.requestWillBeSent',frameParams(kind));accepted(clean,0);}
 });
@@ -105,6 +107,38 @@ test('root frame pin, old-loader requests and cookie-free unsupported traffic ke
 test('declared resource redirects classify each exact hop without replacing the predecessor',()=>{
   const s=fixture();s.request();assert.equal(s.redirect(1,{headers:other}),false);assert.equal(s.g.category(),'not_observed');s.response(1,{headers:other});assert.equal(s.g.category(),'not_observed');accepted(s,2);
   const clean=fixture();clean.request();clean.redirect();clean.response();accepted(clean,0);
+});
+
+test('nonroot resource chains bind to their own frame and loader without acquiring root authority',()=>{
+  for(const frameId of ['PRIVATE_NONROOT_A','PRIVATE_NONROOT_B']){
+    const s=fixture();s.request(0,{frameId,loaderId:'nonroot-loader'});
+    s.redirect(1,{frameId,loaderId:'nonroot-loader',headers:other,extra:true});s.extra(302);
+    s.response(1,{frameId,loaderId:'nonroot-loader',headers:other});accepted(s,2);
+  }
+  for(const fault of ['redirect-frame','redirect-loader','response-frame','response-loader','missing-response','missing-extra','mismatched-extra','duplicate-extra']){
+    const s=fixture();s.request(0,{frameId:'nonroot',loaderId:'nonroot-loader'});
+    s.redirect(1,{frameId:fault==='redirect-frame'?'another':'nonroot',loaderId:fault==='redirect-loader'?'another':'nonroot-loader',extra:true,headers:other});
+    if(fault!=='missing-extra')s.extra(fault==='mismatched-extra'?307:302);
+    if(fault==='duplicate-extra')s.extra(302);
+    if(fault!=='missing-response')s.response(1,{frameId:fault==='response-frame'?'frame':'nonroot',loaderId:fault==='response-loader'?'loader':'nonroot-loader'});
+    rejected(s);if(fault==='redirect-frame')assert.equal(s.g.trace().guardCondition,'frame_mismatch');
+  }
+});
+
+test('nonroot correlation requires the exact observed session and a valid loader',()=>{
+  for(const fault of ['foreign-session','missing-loader','malformed-loader','missing-predecessor']){
+    const s=fixture();
+    if(fault!=='missing-predecessor'){
+      const p={requestId:'chain',frameId:'nonroot',loaderId:fault==='missing-loader'?undefined:fault==='malformed-loader'?42:'nonroot-loader',request:{method:'GET',url:urls[0]}};
+      s.emit('Network.requestWillBeSent',p,fault==='foreign-session'?'foreign':'session');
+    }
+    s.extra(200,other);rejected(s,'guard_request_unbound');
+  }
+  const unbound=new ManualStartupCookieGuard('frame');
+  unbound.observe({method:'Network.requestWillBeSent',params:{requestId:'r',frameId:'nonroot',loaderId:'loader',request:{url:urls[0]}}});
+  unbound.observe({method:'Network.responseReceivedExtraInfo',params:{requestId:'r',statusCode:200,headers:other}});
+  assert.equal(unbound.rejection(),'guard_request_unbound');unbound.finish();
+  const ignored=fixture();ignored.emit('Network.responseReceivedExtraInfo',{requestId:'r',headers:{'Set-Cookie':'ct0=PRIVATE_VALUE; Path=/'}},'foreign');accepted(ignored,0);
 });
 
 test('ExtraInfo before redirect closure, after the next request, and around final response can resolve uniquely',()=>{
@@ -316,16 +350,16 @@ test('a later candidate cannot replace the first structural rejection or revive 
 
 // Every case changes one term of the existing redirect envelope. These are
 // invented accountless events; passing them does not qualify native X traffic.
-for(const condition of ['predecessor_missing','redirect_shape','previous_response','chain_completed','chain_failed','chain_cache','previous_resource','current_resource','previous_origin','previous_frame','previous_loader','current_origin','current_frame','current_loader','loader_mismatch','redirect_url','redirect_status','extra_flag','headers_shape','response_cache']){
+for(const condition of ['predecessor_missing','redirect_shape','previous_response','chain_completed','chain_failed','chain_cache','previous_resource','current_resource','previous_origin','previous_frame','previous_loader','current_origin','current_frame','current_loader','loader_mismatch','redirect_url','redirect_status','extra_flag','headers_shape','response_cache','frame_mismatch']){
   test(`first failed redirect condition is ${condition} without changing rejection`,()=>{
     const s=fixture();
-    const old=condition==='previous_resource'?{type:'Document'}:condition==='previous_origin'?{request:{method:'GET',url:'https://PRIVATE.invalid/old'}}:condition==='previous_frame'?{frameId:'PRIVATE_FRAME'}:condition==='previous_loader'?{loaderId:''}:{};
+    const old=condition==='previous_resource'?{type:'Document'}:condition==='previous_origin'?{request:{method:'GET',url:'https://PRIVATE.invalid/old'}}:condition==='previous_frame'?{frameId:''}:condition==='previous_loader'?{loaderId:''}:{};
     if(condition!=='predecessor_missing')s.request(0,old);
     if(condition==='previous_response')s.response(0);
     if(condition==='chain_completed')s.emit('Network.loadingFinished',{requestId:'chain'});
     if(condition==='chain_failed')s.emit('Network.loadingFailed',{requestId:'chain'});
     if(condition==='chain_cache')s.emit('Network.requestServedFromCache',{requestId:'chain'});
-    const patch=condition==='redirect_shape'?{redirectResponse:null}:condition==='current_resource'?{request:{method:'POST',url:urls[1]}}:condition==='current_origin'?{request:{method:'GET',url:'https://PRIVATE.invalid/new'}}:condition==='current_frame'?{frameId:'PRIVATE_FRAME'}:condition==='current_loader'?{loaderId:''}:condition==='loader_mismatch'?{loaderId:'PRIVATE_LOADER'}:condition==='redirect_url'?{redirectResponse:{url:urls[2],status:302,headers:{}}}:condition==='redirect_status'?{status:304}:condition==='extra_flag'?{redirectHasExtraInfo:undefined}:condition==='headers_shape'?{redirectResponse:{url:urls[0],status:302}}:condition==='response_cache'?{redirectResponse:{url:urls[0],status:302,headers:{},fromServiceWorker:true}}:{};
+    const patch=condition==='redirect_shape'?{redirectResponse:null}:condition==='current_resource'?{request:{method:'POST',url:urls[1]}}:condition==='current_origin'?{request:{method:'GET',url:'https://PRIVATE.invalid/new'}}:condition==='current_frame'?{frameId:''}:condition==='current_loader'?{loaderId:''}:condition==='frame_mismatch'?{frameId:'PRIVATE_FRAME'}:condition==='loader_mismatch'?{loaderId:'PRIVATE_LOADER'}:condition==='redirect_url'?{redirectResponse:{url:urls[2],status:302,headers:{}}}:condition==='redirect_status'?{status:304}:condition==='extra_flag'?{redirectHasExtraInfo:undefined}:condition==='headers_shape'?{redirectResponse:{url:urls[0],status:302}}:condition==='response_cache'?{redirectResponse:{url:urls[0],status:302,headers:{},fromServiceWorker:true}}:{};
     assert.equal(s.redirect(1,patch),true);
     assert.equal(s.g.rejection(),'guard_request_unbound');
     const trace=s.g.trace();assert.equal(trace.guardCondition,condition);assert.equal(trace.guardEpoch,'post_seed');

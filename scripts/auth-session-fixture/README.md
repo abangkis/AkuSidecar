@@ -137,6 +137,15 @@ Ordinary QA and deferred-mutation receipt rules stay unchanged. This is startup
 coverage only, with full account/login verification still required in both roles.
 Offline tests do not authorize a new retained-QA transfer.
 
+The current [session-local cookie revision](../../docs/x-native-manual-pilot.md#session-local-cookie-provenance-and-root-only-identity)
+allows supported known-other headers from a valid nonroot request only within
+the exact owned CDP session, with request-local frame/loader and complete response
+correlation. Redirects must preserve those pins. Account evidence remains root-only;
+well-formed nonroot settings traffic is excluded from identity selection after
+cookie observation, so it cannot supply identity or hide candidate-cookie attempts.
+This does not claim frame ancestry, all-browser/worker coverage or monitoring
+beyond startup. Ordinary QA and the 60-second manual pilot limit are unchanged.
+
 The historical [provisional root-navigation correction](../../docs/x-native-manual-pilot.md#provisional-root-navigation-correlation-2026-10-22)
 lets one exact root `/home` navigation wait for matching commit/default-context
 evidence during the trusted reload. Only parsed known non-candidate headers may

@@ -9,7 +9,7 @@ const data = (v, k) => {
   return d ? Object.hasOwn(d, 'value') ? d.value : invalid : undefined;
 };
 const ref = v => typeof v === 'string' && v.length > 0 && v.length <= 512;
-// Diagnostic only. Never replace the guard's existing frame equality checks.
+// Diagnostic only. Acceptance uses private request-local frame correlation.
 function requestFrameProjection(params, root) {
   const d = Object.getOwnPropertyDescriptor(params, 'frameId');
   if (!d) return 'absent';
@@ -257,9 +257,13 @@ export class ManualStartupCookieGuard {
       if(!ref(id)){this.#fail('guard_metadata_shape','request');return true;}
       const frameStatus=requestFrameProjection(p,this.#frame);
       if(!this.#reserve('request',redirect!==undefined?'redirect':chain?'reused':'unknown',frameStatus))return true;
-      const scope=setter(data(data(p,'request'),'url')),loader=data(p,'loaderId');
-      const provenance=!scope?'origin_scope':data(p,'frameId')!==this.#frame?'frame_scope':!ref(loader)?'loader_missing':'scoped';
-      const r={scope,provenance,frameStatus,loaderId:ref(loader)?loader:null,response:false,bad:false,cookie:false,status:null,needsExtra:null,root:false,cache:false,cacheProjection:null,other:null,
+      const scope=setter(data(data(p,'request'),'url')),loader=data(p,'loaderId'),frame=data(p,'frameId');
+      // Cookie provenance is local to the owned CDP session. A valid nonroot
+      // request cannot supply account evidence, but its own response can be
+      // correlated without inventing a relationship to the identity root.
+      const frameScoped=ref(frame)&&(frame===this.#frame||ref(this.#session));
+      const provenance=!scope?'origin_scope':!frameScoped?'frame_scope':!ref(loader)?'loader_missing':'scoped';
+      const r={scope,provenance,frameStatus,frameId:ref(frame)?frame:null,loaderId:ref(loader)?loader:null,response:false,bad:false,cookie:false,status:null,needsExtra:null,root:false,cache:false,cacheProjection:null,other:null,
         resource:resourceTypes.has(data(p,'type'))&&data(data(p,'request'),'method')==='GET'&&!settingsScope(scope)};
       const current=chain??{hops:[],extras:[],redirected:false,bad:false,cache:false,failed:false,completed:false};
       if(chain&&redirect===undefined){r.provenance='reused';current.bad=true;this.#fail('guard_request_unbound','request','reused','unknown',null,frameStatus);}
@@ -269,15 +273,14 @@ export class ManualStartupCookieGuard {
         else{
           const status=data(redirect,'status'),extra=data(p,'redirectHasExtraInfo');
           const valid=object(redirect)&&!previous.response&&!current.completed&&!current.failed&&!current.cache&&previous.resource&&r.resource&&
-            previous.provenance==='scoped'&&provenance==='scoped'&&previous.loaderId===loader&&data(redirect,'url')===previous.scope?.url&&redirectStatuses.has(status)&&typeof extra==='boolean'&&object(data(redirect,'headers'))&&!unsafeCache(redirect);
+            previous.provenance==='scoped'&&provenance==='scoped'&&previous.frameId===frame&&previous.loaderId===loader&&data(redirect,'url')===previous.scope?.url&&redirectStatuses.has(status)&&typeof extra==='boolean'&&object(data(redirect,'headers'))&&!unsafeCache(redirect);
           if(!valid){
-            // Diagnostic only: preserve the acceptance predicate and event order
-            // above. Report its first failed term using closed categories only.
+            // Report the first failed term using closed categories only.
             const condition=!object(redirect)?'redirect_shape':previous.response?'previous_response':current.completed?'chain_completed':current.failed?'chain_failed':current.cache?'chain_cache':
               !previous.resource?'previous_resource':!r.resource?'current_resource':
               previous.provenance==='origin_scope'?'previous_origin':previous.provenance==='frame_scope'?'previous_frame':previous.provenance!=='scoped'?'previous_loader':
               provenance==='origin_scope'?'current_origin':provenance==='frame_scope'?'current_frame':provenance!=='scoped'?'current_loader':
-              previous.loaderId!==loader?'loader_mismatch':data(redirect,'url')!==previous.scope?.url?'redirect_url':!redirectStatuses.has(status)?'redirect_status':
+              previous.frameId!==frame?'frame_mismatch':previous.loaderId!==loader?'loader_mismatch':data(redirect,'url')!==previous.scope?.url?'redirect_url':!redirectStatuses.has(status)?'redirect_status':
               typeof extra!=='boolean'?'extra_flag':!object(data(redirect,'headers'))?'headers_shape':'response_cache';
             const cache=condition==='response_cache'?cacheProjection(redirect):null;
             // The predicate identifies which request frame failed. Header
@@ -302,7 +305,7 @@ export class ManualStartupCookieGuard {
       const other=this.#attempt(method==='Network.responseReceived'?data(response,'headers'):data(p,'headers'),method==='Network.responseReceivedExtraInfo'?data(p,'blockedCookies'):undefined,r,method==='Network.responseReceived'?'response':'extra');
       if(method==='Network.responseReceived'&&r){
         const status=data(response,'status'),extra=data(p,'hasExtraInfo');
-        r.bad ||= r.response||data(p,'loaderId')!==r.loaderId||data(p,'frameId')!==this.#frame||data(response,'url')!==r.scope?.url||!statusValid(status)||r.root&&status!==200||typeof extra!=='boolean';
+        r.bad ||= r.response||data(p,'loaderId')!==r.loaderId||data(p,'frameId')!==r.frameId||data(response,'url')!==r.scope?.url||!statusValid(status)||r.root&&status!==200||typeof extra!=='boolean';
         if(!r.cache&&unsafeCache(response)){r.cache=true;r.cacheProjection=cacheProjection(response);}
         if(chain.redirected&&!object(data(response,'headers'))){r.bad=true;this.#fail('guard_metadata_shape','response',r.provenance,'unknown',null,r.frameStatus);}
         r.response=true;r.status=statusValid(status)?status:null;r.needsExtra=typeof extra==='boolean'?extra:null;
