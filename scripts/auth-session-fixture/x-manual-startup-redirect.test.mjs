@@ -71,13 +71,13 @@ test('matching request with missing or different response frame remains response
   }
 });
 
-test('frame diagnostics cannot change candidate, blocked, mixed or malformed-header precedence',()=>{
-  for(const [kind,state]of frameCases)for(const source of ['candidate','blocked','mixed','unknown','malformed']){
+test('frame diagnostics cannot change candidate, blocked, mixed or ambiguous-header precedence',()=>{
+  for(const [kind,state]of frameCases)for(const source of ['candidate','blocked','mixed','ambiguous','malformed']){
     const s=fixture();s.emit('Network.requestWillBeSent',frameParams(kind));
     const candidate='ct0=PRIVATE_VALUE; Path=/';
-    s.extra(200,source==='blocked'?{}:{'Set-Cookie':source==='candidate'?candidate:source==='mixed'?`lang=x; Path=/\n${candidate}`:source==='unknown'?'unknown_private=x; Path=/':['lang=x']},
+    s.extra(200,source==='blocked'?{}:{'Set-Cookie':source==='candidate'?candidate:source==='mixed'?`lang=x; Path=/\n${candidate}`:source==='ambiguous'?'lang=x, ct0=y':['lang=x']},
       source==='blocked'?{blockedCookies:[{cookieLine:candidate}]}:{});
-    assert.equal(s.g.rejection(),['candidate','blocked','mixed'].includes(source)?'cookie_candidate':source==='unknown'?'guard_header_classification':'guard_metadata_shape');
+    assert.equal(s.g.rejection(),['candidate','blocked','mixed'].includes(source)?'cookie_candidate':source==='ambiguous'?'guard_header_classification':'guard_metadata_shape');
     assert.equal(s.g.trace().guardRequestFrame,state);s.g.finish();
   }
 });
@@ -167,9 +167,10 @@ test('false declarations reserve no ExtraInfo slot, including a later hop event 
   const mixed=fixture();mixed.request();mixed.extra(301,other);mixed.redirect(1,{status:301,extra:true});mixed.redirect(2,{status:302,extra:false});mixed.extra(200,other);mixed.response(2,{extra:true});accepted(mixed,2);
 });
 
-test('pending ExtraInfo retains only scope constraints and binds to its own hop',()=>{
-  const good=fixture();good.request();good.redirect(1,{extra:false});good.extra(200,{'Set-Cookie':'lang=PRIVATE_VALUE; Domain=api.x.com; Path=/'});good.response(1,{extra:true});accepted(good,1);
-  const wrong=fixture();wrong.request();wrong.extra(302,{'Set-Cookie':'lang=PRIVATE_VALUE; Domain=api.x.com; Path=/'});wrong.redirect(1,{extra:true});wrong.response();rejected(wrong,'guard_header_classification');
+test('pending ExtraInfo retains only a noncandidate marker and binds to its own hop',()=>{
+  const line='PRIVATE_NAME=PRIVATE_VALUE; Domain=foreign.invalid; Path=/PRIVATE_PATH; Priority=High; Partitioned; SameSite=odd; Max-Age=unbounded';
+  const good=fixture();good.request();good.redirect(1,{extra:false});good.extra(200,{'Set-Cookie':line});good.response(1,{extra:true});accepted(good,1);
+  const wrong=fixture();wrong.request();wrong.extra(301,{'Set-Cookie':line});wrong.redirect(1,{extra:true});wrong.response();rejected(wrong,'guard_response_correlation');
 });
 
 test('same-status hop slots, duplicate extras, mismatches, unexpected and missing extras remain closed',()=>{
@@ -204,10 +205,20 @@ test('all candidate attempts revoke immediately in declared headers and early or
   }
 });
 
-test('unknown or malformed pending headers reject before final correlation',()=>{
-  for(const headers of [{'Set-Cookie':'unknown_private=PRIVATE_VALUE; Path=/'},{'Set-Cookie':'lang=x; Path=/; Priority=High'},{'Set-Cookie':['lang=x']}]){
-    const s=fixture();s.request();assert.equal(s.extra(302,headers),true);const first=s.g.rejection();s.redirect(1,{extra:true});s.response();rejected(s,first);
+test('unfamiliar pending names and attributes pass only with exact hop correlation',()=>{
+  for(const line of ['unknown_private=PRIVATE_VALUE; Path=/','lang=x; Path=/; Priority=High; Partitioned']){
+    const s=fixture();s.request();s.redirect(1,{extra:true});
+    assert.equal(s.extra(302,{'Set-Cookie':line}),false);
+    s.response(1,{extra:false});accepted(s,1);
   }
+  const ambiguous=fixture();ambiguous.request();
+  assert.equal(ambiguous.extra(302,{'Set-Cookie':'lang=x, ct0=y'}),true);
+  const first=ambiguous.g.rejection();assert.equal(first,'guard_header_classification');
+  ambiguous.redirect(1,{extra:true});ambiguous.response();rejected(ambiguous,first);
+  const malformed=fixture();malformed.request();
+  assert.equal(malformed.extra(302,{'Set-Cookie':['lang=x']}),true);
+  const malformedFirst=malformed.g.rejection();assert.equal(malformedFirst,'guard_metadata_shape');
+  malformed.redirect(1,{extra:true});malformed.response();rejected(malformed,malformedFirst);
 });
 
 test('missing or accessor-owned required header evidence and blockedCookies shape cannot establish a complete hop',()=>{
@@ -319,10 +330,10 @@ test('a prior candidate or metadata failure is never relabeled by a later cache 
   assert.equal(candidate.g.rejection(),'cookie_candidate');
   assert.deepEqual(candidate.g.trace(),{guardTrigger:'redirect',guardProvenance:'redirect',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'matching',guardHeaderReason:'unknown'});
 
-  const shape=fixture();shape.request();shape.extra(302,{'Set-Cookie':'unknown_private=PRIVATE_VALUE; Path=/'});
+  const shape=fixture();shape.request();shape.extra(302,{'Set-Cookie':'lang=x, ct0=y'});
   shape.redirect(1,{redirectResponse:{url:urls[0],status:302,headers:{},fromPrefetchCache:true}});
   assert.equal(shape.g.rejection(),'guard_header_classification');
-  assert.deepEqual(shape.g.trace(),{guardTrigger:'extra',guardProvenance:'scoped',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'matching',guardHeaderReason:'name_unknown'});
+  assert.deepEqual(shape.g.trace(),{guardTrigger:'extra',guardProvenance:'scoped',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'matching',guardHeaderReason:'syntax'});
 });
 
 test('pre-seed projections stay outside the attempt epoch while late prior-hop candidates revoke post-seed',()=>{
@@ -425,8 +436,8 @@ test('first guard epoch is immutable across seed, reload, commit and finish',()=
   }
 });
 
-test('earlier candidate or header rejection keeps its own epoch and is not relabeled as a redirect predicate',()=>{
-  for(const headers of [{'Set-Cookie':'ct0=PRIVATE_VALUE; Path=/'},{'Set-Cookie':'unknown_private=PRIVATE_VALUE; Path=/'}]){
+test('earlier candidate or ambiguous header rejection keeps its epoch and is not relabeled as a redirect predicate',()=>{
+  for(const headers of [{'Set-Cookie':'ct0=PRIVATE_VALUE; Path=/'},{'Set-Cookie':'lang=x, ct0=y'}]){
     const s=fixture();s.request();s.redirect(1,{headers,request:{method:'POST',url:urls[1]}});
     assert.equal(s.g.trace().guardCondition,'unknown');assert.equal(s.g.trace().guardEpoch,'post_seed');
     assert.equal(s.g.rejection(),headers['Set-Cookie'].startsWith('ct0')?'cookie_candidate':'guard_header_classification');

@@ -41,18 +41,9 @@ function guard() {
 }
 
 const rejectedHeaders=[
-  ['name_unknown','PRIVATE_NAME=PRIVATE_VALUE; Path=/'],
-  ['syntax','lang'],['syntax','bad name=PRIVATE_VALUE'],['syntax','lang=PRIVATE VALUE'],
-  ['attribute_unsupported','lang=PRIVATE_VALUE; Priority=High'],
-  ['attribute_unsupported','lang=PRIVATE_VALUE; Partitioned'],
-  ['attribute_invalid','lang=PRIVATE_VALUE; Path=/; Path=/'],
-  ['attribute_invalid','lang=PRIVATE_VALUE; Secure=true'],
-  ['attribute_invalid','lang=PRIVATE_VALUE; SameSite=PRIVATE_ATTRIBUTE'],
-  ['attribute_invalid','lang=PRIVATE_VALUE; Max-Age=PRIVATE_ATTRIBUTE'],
-  ['attribute_invalid','lang=PRIVATE_VALUE; Expires=PRIVATE_ATTRIBUTE'],
-  ['attribute_invalid','lang=PRIVATE_VALUE; Domain=PRIVATE_ATTRIBUTE/'],
-  ['scope_domain','lang=PRIVATE_VALUE; Domain=foreign.invalid; Path=/'],
-  ['scope_path','lang=PRIVATE_VALUE; Path=/PRIVATE_PATH'],
+  ['syntax','lang'],['syntax','bad name=PRIVATE_VALUE'],['syntax','lang =PRIVATE_VALUE'],
+  ['syntax','lang=PRIVATE_VALUE,OTHER'],['syntax','lang=x, ct0=PRIVATE_TOKEN'],
+  ['syntax','lang=x; Priority=Low, auth_token=PRIVATE_TOKEN'],
   ['capacity','lang='+ 'x'.repeat(4097)],
   ['capacity','lang=PRIVATE_VALUE;'+Array(33).fill('Secure').join(';')],
 ];
@@ -85,15 +76,16 @@ test('metadata shape and capacity reasons never invoke header or blocked-cookie 
   assert.equal(reads,0);
 });
 
-test('request-local domain and default-path failures carry scope reasons through normal and deferred responses',()=>{
-  for(const source of ['response','extra'])for(const reason of ['scope_domain','scope_path']){
-    const s=guard(),url=reason==='scope_path'?'https://x.com/PRIVATE_PATH/asset':'https://x.com/asset';
+test('unfamiliar names, domains, paths and attributes remain other through normal and deferred responses',()=>{
+  for(const source of ['response','extra']){
+    const s=guard(),url='https://x.com/PRIVATE_PATH/asset';
     s.request('r',{request:{url}});
-    const headers={'Set-Cookie':reason==='scope_domain'?'lang=PRIVATE_VALUE; Domain=api.x.com; Path=/':'lang=PRIVATE_VALUE'};
+    const headers={'Set-Cookie':'PRIVATE_NAME=PRIVATE_VALUE; Domain=foreign.invalid; Path=/PRIVATE_PATH; Priority=High; Partitioned; SameSite=PRIVATE_ATTRIBUTE; Max-Age=odd; Expires=unusual'};
     if(source==='extra')s.emit('Network.responseReceivedExtraInfo',{requestId:'r',statusCode:200,headers});
     s.emit('Network.responseReceived',{requestId:'r',frameId:'frame',loaderId:'loader',hasExtraInfo:source==='extra',response:{url,status:200,headers:source==='response'?headers:{}}});
-    assert.equal(s.g.finish().diagnostic,'ambiguous');assert.equal(s.g.rejection(),'guard_header_classification');
-    assert.equal(s.g.trace().guardHeaderReason,reason);assert.equal(JSON.stringify(s.g.trace()).includes('PRIVATE'),false);
+    const summary=s.g.finish();assert.equal(summary.diagnostic,'other_only');assert.equal(summary.otherAttempts,1);
+    assert.equal(s.g.rejection(),'unknown');assert.equal(s.g.trace().guardHeaderReason,'unknown');
+    assert.equal(JSON.stringify({summary,trace:s.g.trace()}).includes('PRIVATE'),false);
   }
 });
 
@@ -120,22 +112,39 @@ test('header reason survives the real binder and failure latch without authorizi
 });
 
 test('Manual V2 clearly classified other cookies are diagnostic only before and after identity', async () => {
-  for (const before of [true, false]) {
+  const lines=[
+    'lang=en; Path=/; Secure; SameSite=Lax',
+    'PRIVATE_NAME=PRIVATE_VALUE; Domain=foreign.invalid; Path=/private; Priority=High; Partitioned; Expires=Thu, 01 Jan 1970 00:00:00 GMT',
+    'lang=x; auth_token=attribute-only; ct0=attribute-only; note=auth_token and ct0',
+    'lang=PRIVATE VALUE; Path=/; Path=/; Secure=true; SameSite=invalid; Max-Age=odd; Expires=not-a-date',
+  ];
+  for (const before of [true, false]) for(const line of lines) {
     const s = sample(); s.document(); if (!before) s.identity();
-    s.request(); s.response('other', { 'Set-Cookie': 'lang=en; Path=/; Secure; SameSite=Lax' });
+    s.request(); s.response('other', { 'Set-Cookie': line });
     const r = await finish(s);
     assert.equal(r.diagnostic, 'bound'); assert.equal(s.published(), 1);
     assert.equal(r.manualCookieGuard.diagnostic, 'other_only');
     assert.equal(r.manualCookieGuard.otherAttempts, 1);
-    for (const privateValue of ['lang', 'en;', 'https://x.com', 'private-profile']) assert.equal(JSON.stringify(r.manualCookieGuard).includes(privateValue), false);
+    for (const privateValue of ['lang', 'en;', 'https://x.com', 'private-profile','PRIVATE_NAME','PRIVATE_VALUE','foreign.invalid','auth_token','ct0']) assert.equal(JSON.stringify(r.manualCookieGuard).includes(privateValue), false);
   }
+});
+
+test('other-cookie effective default paths do not use the former QA path allowlist', async () => {
+  const s=sample();s.document();
+  s.request('other',{request:{method:'GET',url:'https://x.com/private/asset'}});
+  s.response('other',{'Set-Cookie':'PRIVATE_NAME=PRIVATE_VALUE'},
+    {response:{url:'https://x.com/private/asset',status:200,headers:{'Set-Cookie':'PRIVATE_NAME=PRIVATE_VALUE'}}});
+  const r=await finish(s);
+  assert.equal(r.diagnostic,'bound');assert.equal(r.manualCookieGuard.diagnostic,'other_only');assert.equal(r.manualCookieGuard.otherAttempts,1);
+  assert.equal(JSON.stringify(r).includes('PRIVATE_NAME'),false);assert.equal(JSON.stringify(r).includes('PRIVATE_VALUE'),false);
 });
 
 test('Manual V2 candidate attempts revoke before identity, after identity, mixed and blocked', async () => {
   for (const before of [true, false]) for (const name of ['auth_token', 'ct0']) for (const blocked of [false, true]) {
     const s = sample(); s.document(); if (!before) s.identity(); s.request();
-    if (blocked) s.extra('other', {}, { blockedCookies: [{ cookieLine: `${name}=PRIVATE; Path=/`, blockedReasons: ['arbitrary-private-reason'] }] });
-    else s.response('other', { 'Set-Cookie': `lang=en; Path=/\n${name}=PRIVATE; Domain=wrong.invalid` });
+    const candidate = `${name}=PRIVATE; Domain=wrong.invalid; Path=/private; Priority=High; Partitioned; SameSite=odd; Max-Age=not-a-number; Expires=not-a-date`;
+    if (blocked) s.extra('other', {}, { blockedCookies: [{ cookieLine: candidate, blockedReasons: ['arbitrary-private-reason'] }] });
+    else s.response('other', { 'Set-Cookie': `lang=en; Path=/\n${candidate}` });
     assert.equal(s.binder.identityReady(), false); assert.throws(() => s.binder.startupPins(7));
     const r = await finish(s);
     assert.equal(r.diagnostic, 'observed_cookie_write'); assert.equal(s.published(), 0);
@@ -172,14 +181,11 @@ test('an other-cookie diagnostic never bypasses login, cleanup, freshness or own
   }
 });
 
-test('unknown names, malformed headers/attributes and ambiguous declared scope reject without raw output', async () => {
+test('malformed or ambiguous names and folded cookie pairs reject without raw output', async () => {
   const headers = [
-    { 'Set-Cookie': 'unknown_private=x; Path=/' }, { 'Set-Cookie': 'LANG=en; Path=/' },
-    { 'Set-Cookie': 'lang=a, ct0=b; Path=/' }, { 'Set-Cookie': 'lang=x; Path=/; Path=/' },
-    { 'Set-Cookie': 'lang=x; Domain=api.x.com; Path=/' }, { 'Set-Cookie': 'lang=x; Path=/unqualified' },
-    { 'Set-Cookie': 'lang=x; UnknownPrivate=x; Path=/' }, { 'Set-Cookie': 'lang=x; Partitioned; Path=/' },
-    { 'Set-Cookie': 'lang=x; Secure=true; Path=/' }, { 'Set-Cookie': 'lang=x; Expires=unknown; Path=/' },
-    { 'Set-Cookie': 'lang=x; Max-Age=unknown; Path=/' }, { 'Set-Cookie': 'lang=x; SameSite=unknown; Path=/' },
+    { 'Set-Cookie': 'lang' }, { 'Set-Cookie': 'bad name=x' },
+    { 'Set-Cookie': 'lang=x, ct0=b' }, { 'Set-Cookie': 'lang=x, auth_token=y' },
+    { 'Set-Cookie': 'lang=x; Priority=Low, ct0=y' },
     { 'Set-Cookie': ['lang=x'] }, { 'Set-Cookie': '' }, { 'Set-Cookie': 'lang=x\rct0=y' },
     { 'Set-Cookie': 'lang=x; Path=/', 'set-cookie': 'lang=y; Path=/' },
     { 'Set-Cookie': 'lang=' + 'x'.repeat(16385) },

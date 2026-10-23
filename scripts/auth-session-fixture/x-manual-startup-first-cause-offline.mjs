@@ -44,12 +44,13 @@ export function offlineFirstCausePair({faultRole='reader',fault='cookie'}={}){
     }
     if(['guard-priority','guard-unbound','guard-response','guard-metadata','guard-completion','context-priority'].includes(kind)){
       if(kind!=='guard-unbound')s.emit('Network.requestWillBeSent',{requestId:'asset',frameId:s.pins.frameId,loaderId:s.pins.documentId,type:'Image',request:{method:'GET',url:'https://x.com/asset'}});
-      const header=kind==='guard-metadata'?['lang=en']:kind==='guard-priority'||kind==='context-priority'?'lang=en; Path=/; Priority=High':'lang=en; Path=/';
+      // Priority fixtures exercise first-cause ordering through genuine folded-pair ambiguity.
+      const header=kind==='guard-metadata'?['lang=en']:kind==='guard-priority'||kind==='context-priority'?'lang=x; Priority=Low, auth_token=y':'lang=en; Path=/';
       s.emit('Network.responseReceived',{requestId:'asset',frameId:kind==='guard-response'?'foreign-frame':s.pins.frameId,loaderId:s.pins.documentId,hasExtraInfo:kind==='guard-completion',response:{url:'https://x.com/asset',status:200,headers:{'Set-Cookie':header}}});
     }
     if(['cookie','ambiguous','context-first','cookie-context','cleanup'].includes(kind)){
       s.emit('Network.requestWillBeSent',{requestId:'asset',frameId:s.pins.frameId,loaderId:s.pins.documentId,request:{method:'GET',url:'https://x.com/asset'}});
-      s.emit('Network.responseReceived',{requestId:'asset',frameId:s.pins.frameId,loaderId:s.pins.documentId,hasExtraInfo:false,response:{url:'https://x.com/asset',status:200,headers:{'Set-Cookie':kind==='ambiguous'?'unknown_private=x; Path=/':'ct0=PRIVATE; Path=/'}}});
+      s.emit('Network.responseReceived',{requestId:'asset',frameId:s.pins.frameId,loaderId:s.pins.documentId,hasExtraInfo:false,response:{url:'https://x.com/asset',status:200,headers:{'Set-Cookie':kind==='ambiguous'?'lang=x; Priority=Low, auth_token=y':'ct0=PRIVATE; Path=/'}}});
     }
     if(kind==='cookie-context')s.emit('Runtime.executionContextDestroyed',{executionContextId:Number(s.pins.contextId)});
     if(kind==='settings-order')s.settings(false,false);

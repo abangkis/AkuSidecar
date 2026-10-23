@@ -19,17 +19,19 @@ function guardFixture(){
     commit:(value=next)=>{loader=value;return emit('Page.frameNavigated',{frame:{id:frame,loaderId:value,url:home}});},
     context:()=>{context=1;return emit('Runtime.executionContextCreated',{context:{id:1,origin:'https://x.com',auxData:{isDefault:true,frameId:frame}}});}};
 }
-test('one armed root document may classify known-other headers before commit or before default context',()=>{
-  for(const order of ['before-commit','before-context','after-context'])for(const extraFirst of [true,false]){
+test('one armed root document accepts bounded noncandidate names and attributes before commit or context',()=>{
+  const lines=['lang=en; Path=/','unknown_private=PRIVATE_VALUE; Domain=foreign.invalid; Path=/PRIVATE_PATH; Priority=High; Partitioned; Expires=unusual',
+    'lang=x; auth_token=attribute-text; ct0=attribute-text'];
+  for(const line of lines)for(const order of ['before-commit','before-context','after-context'])for(const extraFirst of [true,false]){
     const s=guardFixture();s.arm();
     if(order!=='before-commit')s.commit();if(order==='after-context')s.context();
     assert.equal(s.request(),false);
-    if(extraFirst)assert.equal(s.extra({'Set-Cookie':'lang=en; Path=/'}),false);
-    assert.equal(s.response(extraFirst?{}:{'Set-Cookie':'lang=en; Path=/'}),false);
+    if(extraFirst)assert.equal(s.extra({'Set-Cookie':line}),false);
+    assert.equal(s.response(extraFirst?{}:{'Set-Cookie':line}),false);
     if(!extraFirst)assert.equal(s.extra(),false);
     if(order==='before-commit')s.commit();if(order!=='after-context')s.context();
     const r=s.g.finish();assert.equal(r.diagnostic,'other_only');assert.equal(r.otherAttempts,1);
-    for(const raw of [home,'lang','en;',frame,next])assert.equal(JSON.stringify(r).includes(raw),false);
+    for(const raw of [home,'lang','en','unknown_private','PRIVATE_VALUE','foreign.invalid','PRIVATE_PATH','Priority','Partitioned','auth_token','ct0',frame,next])assert.equal(JSON.stringify(r).includes(raw),false);
   }
 });
 test('candidate attempts revoke immediately at every provisional phase, including blocked/delete attempts',()=>{
@@ -39,8 +41,8 @@ test('candidate attempts revoke immediately at every provisional phase, includin
     assert.equal(rejected,true);assert.equal(s.g.finish().diagnostic,'candidate_observed');
   }
 });
-test('ambiguous syntax, unknown names and declared scopes never wait for provisional binding',()=>{
-  for(const line of ['unknown_private=x; Path=/','lang=x, ct0=y; Path=/','lang=x; Domain=foreign.invalid; Path=/','lang=x; Path=/unknown','lang=x; Path=/; Path=/']){
+test('comma-folded cookie pairs never wait for provisional binding',()=>{
+  for(const line of ['lang=x, ct0=y; Path=/','lang=x; Priority=Low, auth_token=y']){
     const s=guardFixture();s.arm();s.request();assert.equal(s.extra({'Set-Cookie':line}),true);assert.equal(s.g.finish().diagnostic,'ambiguous');
   }
 });
@@ -176,9 +178,10 @@ test('network provenance preserves rejected scope and redirects without context-
   }
 });
 
-test('guard first rejection distinguishes unbound, classification, correlation, shape and unchanged budgets',()=>{
+test('guard first rejection distinguishes unbound, ambiguous syntax, correlation, shape and unchanged budgets',()=>{
   const unbound=resourceFixture();unbound.ready();unbound.assetResponse({'Set-Cookie':'lang=en; Path=/'});assert.equal(unbound.g.rejection(),'guard_request_unbound');
-  const priority=resourceFixture();priority.ready();priority.assetRequest();priority.assetResponse({'Set-Cookie':'lang=en; Path=/; Priority=High'});assert.equal(priority.g.rejection(),'guard_header_classification');
+  const unusual=resourceFixture();unusual.ready();unusual.assetRequest();unusual.assetResponse({'Set-Cookie':'unknown_private=x; Path=/; Priority=High; Partitioned'});unusual.assetExtra();assert.equal(unusual.g.rejection(),'unknown');assert.equal(unusual.g.finish().diagnostic,'other_only');
+  const folded=resourceFixture();folded.ready();folded.assetRequest();folded.assetResponse({'Set-Cookie':'lang=x; Priority=Low, auth_token=y'});assert.equal(folded.g.rejection(),'guard_header_classification');assert.equal(folded.g.trace().guardHeaderReason,'syntax');
   const wrong=resourceFixture();wrong.ready();wrong.assetRequest();wrong.assetResponse({'Set-Cookie':'lang=en; Path=/'},{frameId:'other'});assert.equal(wrong.g.rejection(),'guard_response_correlation');
   const shape=resourceFixture();shape.ready();shape.assetRequest();shape.assetResponse({'Set-Cookie':['lang=x']});assert.equal(shape.g.rejection(),'guard_metadata_shape');
   const budget=resourceFixture();budget.ready();for(let i=0;i<1280;i++)budget.emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:frame,loaderId:next,type:'Image',request:{method:'GET',url:'https://foreign.invalid/asset'}});
@@ -196,7 +199,7 @@ for(const role of ['reader','collector'])test(`${role} actual handoff accepts co
     const r=await handoffFixture({role,resourceMode});assert.equal(r.early.stopReason,'captured');assert.equal(r.observation.diagnostic,'bound');assert.equal(r.observation.manualCookieGuard.diagnostic,'other_only');assert.equal(r.receipts,1);
   }
   const none=await handoffFixture({role,resourceMode:'response-after-context',cookie:null});assert.equal(none.observation.diagnostic,'bound');assert.equal(none.observation.manualCookieGuard.diagnostic,'not_observed');
-  for(const [cookie,cause]of [['ct0=; Path=/; Max-Age=0','cookie_candidate'],['lang=en; Path=/; Priority=High','guard_header_classification']]){
+  for(const [cookie,cause]of [['ct0=; Path=/; Max-Age=0','cookie_candidate'],['lang=x, ct0=y','guard_header_classification']]){
     const r=await handoffFixture({role,resourceMode:'response-after-context',cookie});assert.equal(r.receipts,0);assert.equal(r.evaluations,0);
     assert.throws(()=>requireBoundStartup(r.observation,role,r.diagnostics),error=>{assert.equal(startupDiagnostic(error).trace.firstCause,cause);return true;});
   }
@@ -205,7 +208,10 @@ for(const role of ['reader','collector'])test(`${role} actual handoff accepts co
 });
 test('actual handoff no-header control passes, candidates and observed scope/context loss never publish',async()=>{
   const none=await handoffFixture({cookie:null});assert.equal(none.observation.diagnostic,'bound');assert.equal(none.observation.manualCookieGuard.diagnostic,'not_observed');
-  for(const options of [{cookie:'ct0=PRIVATE; Path=/'},{cookie:'unknown_private=x; Path=/'},{fault:'context'},{fault:'owner'}]){
+  const other=await handoffFixture({cookie:'unknown_private=PRIVATE_VALUE; Domain=foreign.invalid; Path=/private; Priority=High; Partitioned'});
+  assert.equal(other.observation.diagnostic,'bound');assert.equal(other.observation.manualCookieGuard.diagnostic,'other_only');assert.equal(other.receipts,1);
+  assert.equal(JSON.stringify(other.observation).includes('unknown_private'),false);assert.equal(JSON.stringify(other.observation).includes('PRIVATE_VALUE'),false);
+  for(const options of [{cookie:'ct0=PRIVATE; Path=/'},{fault:'context'},{fault:'owner'}]){
     const r=await handoffFixture(options);assert.notEqual(r.observation.diagnostic,'bound');assert.equal(r.receipts,0);
     if(options.cookie)assert.equal(r.evaluations,0);
     assert.throws(()=>requireBoundStartup(r.observation,'reader',r.diagnostics),error=>{assert.ok(startupDiagnostic(error));return true;});

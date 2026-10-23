@@ -76,12 +76,12 @@ for(const [mode,reason,trigger,provenance]of [
   ['undeclared','guard_request_unbound','request','reused'],
   ['malformed','guard_request_unbound','request','redirect'],
   ['candidate','cookie_candidate','redirect','redirect'],
-  ['unknown','guard_header_classification','redirect','redirect'],
+  ['unknown','guard_request_unbound','redirect','redirect'],
   ['other','guard_request_unbound','redirect','redirect'],
 ])test(`actual collector transport delivers once and keeps repeat rejection closed: ${mode}`,async()=>{
   const r=await collectorRepeatScenario(mode),expected={reason,guardTrigger:trigger,guardProvenance:provenance,
-    guardCondition:['declared','other'].includes(mode)?'extra_flag':mode==='malformed'?'redirect_shape':'unknown',
-    guardEpoch:mode==='single'?'unknown':'reload_armed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:mode==='single'?'unknown':'matching',guardHeaderReason:mode==='unknown'?'name_unknown':'unknown'};
+    guardCondition:['declared','unknown','other'].includes(mode)?'extra_flag':mode==='malformed'?'redirect_shape':'unknown',
+    guardEpoch:mode==='single'?'unknown':'reload_armed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:mode==='single'?'unknown':'matching',guardHeaderReason:'unknown'};
   assert.ok(r.binder);assert.equal(r.received,mode==='single'?3:4);assert.equal(r.observed,r.received);assert.equal(r.maxCalls,1);
   assert.equal(r.commands.filter(m=>m==='Network.enable').length,1);
   assert.deepEqual(r.atDispatch,expected);assert.deepEqual(r.afterLate,expected);
@@ -371,10 +371,18 @@ for(const [scenario,provenance,trigger]of [['before-observer-late-response','abs
   assert.equal(r.trace.early,'evaluation_failed');assert.equal(r.trace.handoff,'accepted');assert.equal(r.trace.extra,'complete');
 });
 test('actual driver candidate attempts from observed old-loader requests remain immediate and immutable',async()=>{
-  for(const line of ['auth_token=; Path=/','ct0=x; Max-Age=0; Path=/','unknown_private=x; Path=/']){
+  for(const line of ['auth_token=; Priority=High; Domain=foreign.invalid; Path=/private','ct0=x; Max-Age=0; Path=/']){
     const r=await driverScenario('observed-before-seed',true,line);assert.equal(r.receipts,0);assert.equal(r.evaluations,0);
-    assert.equal(r.trace.firstCause,line.startsWith('unknown')?'guard_header_classification':'cookie_candidate');assert.equal(r.trace.guardProvenance,'scoped');assert.equal(r.trace.guardTrigger,'extra');
+    assert.equal(r.trace.firstCause,'cookie_candidate');assert.equal(r.trace.guardProvenance,'scoped');assert.equal(r.trace.guardTrigger,'extra');
   }
+});
+test('actual reader driver accepts unfamiliar noncandidate headers without exposing their names or values',async()=>{
+  const line='unknown_private=PRIVATE_VALUE; Domain=foreign.invalid; Path=/private; Priority=High; Partitioned; Expires=unusual';
+  const r=await driverScenario('observed-before-seed',true,line);
+  assert.equal(r.diagnostic,'bound');assert.equal(r.receipts,1);assert.equal(r.evaluations,2);
+  assert.equal(r.observation.manualCookieGuard.diagnostic,'other_only');assert.equal(r.observation.manualCookieGuard.otherAttempts,1);
+  assert.equal(r.observation.continuity,'unknown');assert.equal(r.observation.canAuthorize,false);
+  assert.equal(JSON.stringify(r.observation).includes('unknown_private'),false);assert.equal(JSON.stringify(r.observation).includes('PRIVATE_VALUE'),false);
 });
 
 function passive(){

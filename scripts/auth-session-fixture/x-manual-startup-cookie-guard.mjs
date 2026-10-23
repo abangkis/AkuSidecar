@@ -1,6 +1,5 @@
 // Trusted Manual V2 startup only. Header attempts are not cookie-jar proof.
-// Values, URLs, unknown names and attribute values never enter the summary.
-import { QA_COOKIE_NAMES, QA_COOKIE_PATHS } from './x-qa-cookie-writes.mjs';
+// Cookie names, values, URLs and attribute values never enter the summary.
 
 const object = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const invalid = Symbol();
@@ -19,6 +18,7 @@ function requestFrameProjection(params, root) {
 }
 const candidate = new Set(['auth_token', 'ct0']);
 const token = /^[!#$%&'*+.^_`|~0-9a-z-]+$/i;
+const otherCookie = Object.freeze({});
 function setter(url) {
   if (typeof url !== 'string' || url.length > 4096) return null;
   try {
@@ -28,8 +28,8 @@ function setter(url) {
     return { host: u.hostname, path, url };
   } catch { return null; }
 }
-// Retain only scope constraints for a pending ExtraInfo line, never its value
-// or unknown name. Candidate and malformed evidence is decided immediately.
+// Retain only a marker for a pending noncandidate line, never its name or value.
+// Candidate and ambiguous name evidence is decided immediately.
 function lineKind(line) {
   if (typeof line !== 'string' || !line) return 'syntax';
   if (line.length > 4096) return 'capacity';
@@ -39,30 +39,13 @@ function lineKind(line) {
   const first = parts.shift().trim(), i = first.indexOf('='), name = first.slice(0, i);
   // Candidate attempts revoke even when attributes or declared scope are bad.
   if (i > 0 && candidate.has(name)) return 'candidate';
-  if (i < 1 || name.length > 64 || !token.test(name)) return 'syntax';
-  if (!QA_COOKIE_NAMES.includes(name)) return 'name_unknown';
-  let value = first.slice(i + 1);
-  if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
-  if (!/^[\x21\x23-\x2b\x2d-\x3a\x3c-\x5b\x5d-\x7e]*$/.test(value)) return 'syntax';
-  const seen = new Set(); let path = null, domain = null;
-  for (const part of parts) {
-    const text = part.trim(), equal = text.indexOf('='), key = (equal < 0 ? text : text.slice(0, equal)).trim().toLowerCase();
-    const v = equal < 0 ? null : text.slice(equal + 1).trim();
-    if (!token.test(key) || seen.has(key)) return 'attribute_invalid';
-    seen.add(key);
-    if (['secure', 'httponly'].includes(key)) { if (v !== null) return 'attribute_invalid'; }
-    else if (key === 'domain') {
-      if (typeof v !== 'string' || !/^\.?[a-z0-9-]+(?:\.[a-z0-9-]+)*$/i.test(v)) return 'attribute_invalid';
-      domain = v.toLowerCase().replace(/^\./, '');
-      if (!['x.com', 'api.x.com'].includes(domain)) return 'scope_domain';
-    } else if (key === 'path') { path = v; }
-    else if (key === 'samesite') { if (typeof v !== 'string' || !['lax', 'strict', 'none'].includes(v.toLowerCase())) return 'attribute_invalid'; }
-    else if (key === 'max-age') { if (typeof v !== 'string' || !/^-?[0-9]{1,12}$/.test(v)) return 'attribute_invalid'; }
-    else if (key === 'expires') {
-      if (typeof v !== 'string' || !/^[A-Za-z]{3}, [0-9]{2} [A-Za-z]{3} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT$/.test(v) || !Number.isFinite(Date.parse(v))) return 'attribute_invalid';
-    } else return 'attribute_unsupported'; // Includes unqualified partitioned/unknown attributes.
-  }
-  return path !== null && !QA_COOKIE_PATHS.includes(path) ? 'scope_path' : { path, domain };
+  // The name must be an unambiguous token before anything is classified as
+  // noncandidate. A comma in the pair is folded-header ambiguity; commas in
+  // attributes are allowed unless they introduce another cookie-pair shape
+  // (Expires dates contain an ordinary comma but no following name=value).
+  if (i < 1 || name.length > 64 || !token.test(name) || first.slice(i + 1).includes(',')) return 'syntax';
+  if (parts.some(part => /,\s*[!#$%&'*+.^_`|~0-9a-z-]+\s*=/i.test(part))) return 'syntax';
+  return otherCookie;
 }
 
 const redirectStatuses = new Set([301, 302, 303, 307, 308]);
@@ -193,12 +176,10 @@ export class ManualStartupCookieGuard {
   }
   #apply(other, request, trigger, provenance = request?.provenance ?? 'absent', condition = 'unknown', cache = null) {
     if(!other)return;
-    for(const line of other){
+    for(let i=0;i<other.length;i++){
       const scope=request?.scope;
       const frame=request?.frameStatus??'unknown';
       if(!scope||request.provenance!=='scoped')this.#fail('guard_request_unbound',trigger,provenance,condition,cache,frame);
-      else if(line.domain!==null&&!(scope.host===line.domain||scope.host==='api.x.com'&&line.domain==='x.com'))this.#fail('guard_header_classification',trigger,provenance,condition,cache,frame,'scope_domain');
-      else if(!QA_COOKIE_PATHS.includes(line.path??scope.path))this.#fail('guard_header_classification',trigger,provenance,condition,cache,frame,'scope_path');
       else if(request.bad)this.#fail('guard_response_correlation',trigger,provenance,condition,cache,frame);
       else this.#other=Math.min(64,this.#other+1);
     }

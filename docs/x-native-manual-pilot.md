@@ -5,6 +5,9 @@ Decision: 2026-10-21. Contract: `aku.x.dev-pilot.manual-startup.v2`.
 The current manual-V2 cookie observation boundary is the
 [session-local revision](#session-local-cookie-provenance-and-root-only-identity).
 It supersedes the root-only cookie scope below; account evidence remains root-only.
+The current classification policy is the
+[minimum noncandidate revision](#minimum-noncandidate-classification-2026-10-23),
+which supersedes the earlier name/path/attribute restrictions for other cookies.
 
 The user explicitly selected a manual pilot of at most 60 seconds with strict
 initial account/login verification, instead of renewing identity every five
@@ -59,6 +62,11 @@ continuity, complete writer/worker coverage, refresh/rotation and instantaneous
 revocation detection remain unknown or unqualified. Full renewal is deferred.
 
 ## Conservative startup cookie guard V2 (2026-10-22)
+
+Historical classification policy: the
+[minimum noncandidate revision](#minimum-noncandidate-classification-2026-10-23)
+supersedes the other-cookie rules in this section. Candidate rejection and
+request/correlation checks remain in effect.
 
 This is an explicit manual V2 policy change. It does not reinterpret the
 historical snapshot V1 allowance for unclassified cookie headers, relax the
@@ -1444,3 +1452,79 @@ corrected and the complete standalone diagnostic selection passed. Logs are
 `runtime/qa/auth-session-sidecar/header-reason-standalone-final.go.log.txt`.
 No Chrome, retained QA profile, native transfer, login, Store or user runtime was
 accessed. Temporary standalone build roots were removed after validation.
+
+## Minimum noncandidate classification (2026-10-23)
+
+The user approved implementing the preceding minimum-policy recommendation after
+publication of the diagnostic increment as `da18849`. This revision changes only
+the trusted manual-V2 startup classifier and its offline regression fixtures.
+It does not enable main dev, authorize a native run or transfer, modify the
+ordinary QA classifier, change Store policy, or touch a retained/main profile.
+
+| Observed bounded header | Current manual startup action |
+| --- | --- |
+| An identifiable `auth_token` or `ct0` attempt | Reject, including blocked, deletion/expiry, mixed-line and arbitrary-attribute cases |
+| An unambiguous other cookie name, correlated to the supported owned X request | Classify as `other`; name-list membership, cookie domain/path and complete attribute/value validation are not admission requirements |
+| Malformed or ambiguous cookie-line/name separation that can hide a candidate | Reject with the closed syntax diagnostic |
+| Invalid metadata or exhausted header/request/event bounds | Reject with the existing closed cause/category |
+| Missing/foreign/contradictory request, response or required ExtraInfo correlation | Reject under the existing provenance/correlation rules |
+
+The classifier distinguishes candidate names from other names. It does not
+reimplement Chrome's cookie acceptance rules. An unfamiliar noncandidate name,
+an unusual or duplicated attribute, `Priority`, `Partitioned`, a different
+declared/effective path, or a different declared domain alone does not invalidate
+startup. Cookie attributes do not expand the permitted request setter: traffic
+must still belong to the exact owned CDP session and supported HTTPS X/API origin,
+with the same bounded request/response and required ExtraInfo completion. A
+noncandidate classification provides no account, login or continuity evidence.
+
+The unchanged structural caps still take precedence when the input cannot be
+classified within bounds: 1,280 lifetime ledger records per role, 128 header
+fields, 16 KiB per header value, 4,096 characters per cookie line, 32 line parts,
+32 total cookie lines and 64 header-bearing events. Candidate detection must not
+be bypassed by mixing a candidate with another cookie or a malformed line.
+Ambiguous combined-cookie representations remain rejected rather than silently
+treated as an unknown attribute or a harmless value.
+
+Minimal name parsing still requires a bounded token name followed by `=`. It
+rejects control characters, a comma in the initial cookie pair, or a comma
+followed by another token-name/`=` pair later in the line. Ordinary expiry-date
+commas alone do not imply an additional cookie. Semicolon-separated attribute
+text mentioning a candidate name is not itself a second cookie pair. The
+classifier neither validates the remaining value/attribute grammar nor records
+that text. Candidate names are recognized before this noncandidate ambiguity
+check; exceeding the unchanged outer size/shape bounds still rejects first.
+
+No raw line, cookie value, unfamiliar name, attribute contents or URL is added to
+pending state or diagnostics. The closed V7 diagnostic catalog is append-only:
+older name/attribute/domain/path categories remain valid for historical decoding,
+without forcing the new classifier to emit those obsolete rejection reasons.
+First-cause immutability, candidate priority, public summaries and private wire
+arity are unchanged.
+
+Both roles still require fresh account/login proof from their pinned main
+document, exact enrollment/receipt/owner binding and initial joint timing. Only
+`auth_token` and `ct0` are eligible for the separately authorized seed manifest;
+this revision permits no additional transfer or scope widening. Default-off
+gates, the absolute 60-second manual deadline, invalidation and cleanup remain
+unchanged. Changes to other cookies may affect X behavior; this pilot explicitly
+does not establish unchanged session lineage or post-checkpoint identity.
+
+Offline validation passed 249 Node tests, four standalone Go top-level tests
+including 21 startup diagnostic subcases, four build-tag gates and Windows
+standalone compilation. Positive regressions cover unfamiliar names, arbitrary
+attributes/domain/path, duplicate attributes, space-containing values and an
+unlisted effective default path. Negative regressions retain mixed/blocked and
+deletion candidates, folded-cookie ambiguity, metadata/capacity limits and exact
+request/response/ExtraInfo correlation. Both real reader/collector driver stubs,
+main-document identity selection, privacy projections, first-cause propagation
+and ordinary strict/deferred QA behavior remain covered. One initially failing
+test fixture omitted its declared required ExtraInfo; the fixture was corrected
+without weakening completion checks, and the complete selection then passed.
+
+Evidence: `runtime/qa/auth-session-sidecar/manual-other-minimum-20261023-02.node.log.txt`
+and `runtime/qa/auth-session-sidecar/manual-other-minimum-20261023.go.log.txt`.
+No browser, retained QA profile, X request, native transfer, main login, Store or
+user runtime was accessed. The standalone build root was removed after validation.
+Native startup under this policy remains untested; offline acceptance does not
+establish that the preceding X failure is resolved or that MVP is enabled.

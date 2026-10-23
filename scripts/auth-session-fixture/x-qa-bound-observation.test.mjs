@@ -285,7 +285,7 @@ test('Manual V2 leaves malformed request tuples, stale root loaders, and pre-ide
   }
 });
 
-test('Manual V2 nonroot exclusion still observes cookie events, blocked candidates, and unknown headers', async () => {
+test('Manual V2 nonroot exclusion still observes cookie events and keeps noncandidate evidence nonauthoritative', async () => {
   for (const evidence of ['blocked_candidate', 'unknown_header']) {
     const observed = [];
     const s = setup({ deferCookieMutation: false, onPrivateResult: () => {}, onPrivateStartup: () => assert.fail('cookie evidence cannot produce a receipt') },
@@ -299,10 +299,17 @@ test('Manual V2 nonroot exclusion still observes cookie events, blocked candidat
         hasExtraInfo: false, response: { url: QA_AB_URL, status: 200, headers: { 'Set-Cookie': 'unknown_private=value; Path=/' } } });
     }
     const report = await s.b.finish(true);
-    assert.equal(report.diagnostic, 'observed_cookie_write');
-    assert.equal(report.manualCookieGuard[evidence === 'blocked_candidate' ? 'candidateAttempts' : 'ambiguousAttempts'], 1);
+    assert.equal(report.diagnostic, evidence === 'blocked_candidate' ? 'observed_cookie_write' : 'source_unavailable');
+    if (evidence === 'blocked_candidate') {
+      assert.equal(report.manualCookieGuard.diagnostic, 'candidate_observed');
+      assert.equal(report.manualCookieGuard.candidateAttempts, 1);
+    } else {
+      assert.equal(report.manualCookieGuard.diagnostic, 'other_only');
+      assert.equal(report.manualCookieGuard.otherAttempts, 1);
+    }
     assert.ok(observed.includes('Network.requestWillBeSent'));
     assert.ok(observed.includes(evidence === 'blocked_candidate' ? 'Network.responseReceivedExtraInfo' : 'Network.responseReceived'));
+    assert.equal(JSON.stringify(report).includes('unknown_private'), false);
     assert.equal(JSON.stringify(report).includes('PRIVATE_BLOCKED_VALUE'), false);
   }
 });

@@ -130,15 +130,17 @@ required by this policy; observed invalidations still stop use. Account/session
 changes after the checkpoint can remain undetected until observation or expiry.
 This supersedes V1 renewal as the MVP gate without changing V1 fixture behavior.
 
-The manual path uses the [conservative V2 startup cookie guard](../../docs/x-native-manual-pilot.md#conservative-startup-cookie-guard-v2-2026-10-22):
-post-seed `auth_token`/`ct0` attempts reject even before identity; clearly
-classified other cookies are diagnostic-only; ambiguous observations reject.
+The manual path uses the [conservative V2 startup cookie guard](../../docs/x-native-manual-pilot.md#conservative-startup-cookie-guard-v2-2026-10-22)
+with the approved [minimum noncandidate revision](../../docs/x-native-manual-pilot.md#minimum-noncandidate-classification-2026-10-23):
+post-seed `auth_token`/`ct0` attempts reject even before identity; unambiguous
+other names are diagnostic-only without the former name/path/attribute allowlists;
+ambiguous line/name separation, metadata, capacity and correlation failures reject.
 Ordinary QA and deferred-mutation receipt rules stay unchanged. This is startup
 coverage only, with full account/login verification still required in both roles.
 Offline tests do not authorize a new retained-QA transfer.
 
 The current [session-local cookie revision](../../docs/x-native-manual-pilot.md#session-local-cookie-provenance-and-root-only-identity)
-allows supported known-other headers from a valid nonroot request only within
+allows supported other-cookie headers from a valid nonroot request only within
 the exact owned CDP session, with request-local frame/loader and complete response
 correlation. Redirects must preserve those pins. Account evidence remains root-only;
 well-formed nonroot settings traffic is excluded from identity selection after
@@ -155,10 +157,11 @@ append `guardHeaderReason` / Go `header_reason`: `unknown`, `name_unknown`,
 `scope_path`, `metadata_shape` or `capacity`. They retain the first reason and
 never contain cookie/token values, raw headers, unknown names or arbitrary text.
 The bounded V7 wire preserves legacy V2-V6 decoding with an unknown appended
-category. Public cookie summaries and all classifier decisions remain unchanged.
-The linked minimum-policy review proposes simplifying noncandidate cookie rules
-for a later authorized change; that proposal is not activated here. Offline
-diagnostic tests neither access the retained QA profile nor authorize a transfer.
+category. Public cookie summaries and first-cause immutability remain unchanged.
+The minimum noncandidate revision now implements the linked policy recommendation
+for manual startup only. Older name/attribute/domain/path reasons remain in the
+closed catalog for historical decoding. Offline tests neither access the retained
+QA profile nor authorize a transfer.
 
 The historical [provisional root-navigation correction](../../docs/x-native-manual-pilot.md#provisional-root-navigation-correlation-2026-10-22)
 lets one exact root `/home` navigation wait for matching commit/default-context
