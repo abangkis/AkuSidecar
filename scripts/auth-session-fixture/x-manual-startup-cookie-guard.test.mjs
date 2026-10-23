@@ -175,7 +175,7 @@ test('redirect response and blocked-cookie attempts cannot bypass candidate or a
 test('bounded request/header/line metadata and accessor rejection stay fail closed', () => {
   for (const kind of ['requests', 'headers', 'lines', 'events', 'getter']) {
     const s = guard(); s.request();
-    if (kind === 'requests') for (let i = 0; i < 129; i++) s.request('r' + i);
+    if (kind === 'requests') for (let i = 0; i < 1281; i++) s.request('r' + i);
     else {
       let headers = { 'Set-Cookie': 'lang=x; Path=/' };
       if (kind === 'headers') headers = Object.fromEntries(Array.from({ length: 129 }, (_, i) => ['h' + i, 'v']));

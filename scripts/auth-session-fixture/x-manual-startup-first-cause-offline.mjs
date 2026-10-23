@@ -40,7 +40,7 @@ export function offlineFirstCausePair({faultRole='reader',fault='cookie'}={}){
     }
     if(kind==='guard-budget'){
       s.emit('Network.requestWillBeSent',{requestId:'root',frameId:s.pins.frameId,loaderId:s.pins.documentId,type:'Document',request:{method:'GET',url:'https://x.com/home'}});
-      for(let i=0;i<128;i++)s.emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:s.pins.frameId,loaderId:s.pins.documentId,type:'Image',request:{method:'GET',url:'https://foreign.invalid/asset'}});
+      for(let i=0;i<1280;i++)s.emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:s.pins.frameId,loaderId:s.pins.documentId,type:'Image',request:{method:'GET',url:'https://foreign.invalid/asset'}});
     }
     if(['guard-priority','guard-unbound','guard-response','guard-metadata','guard-completion','context-priority'].includes(kind)){
       if(kind!=='guard-unbound')s.emit('Network.requestWillBeSent',{requestId:'asset',frameId:s.pins.frameId,loaderId:s.pins.documentId,type:'Image',request:{method:'GET',url:'https://x.com/asset'}});

@@ -335,12 +335,51 @@ test('pre-seed projections stay outside the attempt epoch while late prior-hop c
 });
 
 test('same-ID hop chains and pending metadata consume the lifetime record budget',()=>{
-  const s=fixture();s.request();for(let i=1;i<128;i++)s.redirect(1,{redirectResponse:{url:urls[1],status:302,headers:{}}});
+  const s=fixture();s.request();for(let i=1;i<1280;i++)s.redirect(1,{redirectResponse:{url:urls[1],status:302,headers:{}}});
   assert.equal(s.g.rejection(),'guard_request_unbound'); // First closure deliberately disagrees with predecessor.
   const capped=fixture();capped.request();
-  for(let i=1;i<128;i++)capped.request(1,{redirectHasExtraInfo:false,redirectResponse:{url:i===1?urls[0]:urls[1],status:302,headers:{}}});
+  for(let i=1;i<1280;i++)capped.request(1,{redirectHasExtraInfo:false,redirectResponse:{url:i===1?urls[0]:urls[1],status:302,headers:{}}});
   assert.equal(capped.g.rejection(),'unknown');capped.redirect(1,{redirectResponse:{url:urls[1],status:302,headers:{}}});assert.equal(capped.g.rejection(),'guard_request_budget');rejected(capped,'guard_request_budget');
-  const pending=fixture();pending.request();for(let i=0;i<128;i++)pending.extra(302);assert.equal(pending.g.rejection(),'guard_request_budget');
+  const pending=fixture();pending.request();for(let i=0;i<1280;i++)pending.extra(302);assert.equal(pending.g.rejection(),'guard_request_budget');
+});
+
+test('1280 request records are available across the seed boundary; record 1281 rejects without resetting the first failure',()=>{
+  const s=fixture({beforeSeed:true});
+  const request=i=>s.request(0,{requestId:'record-'+i});
+  for(let i=0;i<640;i++)request(i);
+  assert.equal(s.g.rejection(),'unknown');s.g.beginPostSeed();
+  for(let i=640;i<1280;i++)request(i);
+  assert.equal(s.g.rejection(),'unknown');request(1280);
+  assert.equal(s.g.rejection(),'guard_request_budget');
+  const first=s.g.trace();assert.equal(first.guardEpoch,'post_seed');assert.equal(first.guardTrigger,'request');
+  s.extra(200,{'Set-Cookie':'ct0=PRIVATE_VALUE; Path=/'});s.g.finish();
+  assert.deepEqual(s.g.trace(),first);assert.equal(s.g.category(),'candidate_observed');
+});
+
+test('requests and queued ExtraInfo share the exact 1280-record capacity',()=>{
+  const s=fixture();
+  for(let i=0;i<640;i++)s.request(0,{requestId:'record-'+i});
+  for(let i=0;i<640;i++)s.emit('Network.responseReceivedExtraInfo',{requestId:'record-'+i,statusCode:200,headers:{},blockedCookies:[]});
+  assert.equal(s.g.rejection(),'unknown');
+  s.emit('Network.responseReceivedExtraInfo',{requestId:'record-0',statusCode:200,headers:{},blockedCookies:[]});
+  assert.equal(s.g.rejection(),'guard_request_budget');assert.equal(s.g.trace().guardTrigger,'extra');
+  rejected(s,'guard_request_budget');
+});
+
+test('candidate attempts beyond the former 128-record ceiling still revoke immediately',()=>{
+  for(const name of ['auth_token','ct0']){
+    const s=fixture();for(let i=0;i<200;i++)s.request(0,{requestId:'record-'+i});
+    s.request();assert.equal(s.extra(200,{'Set-Cookie':`${name}=PRIVATE_VALUE; Path=/`}),true);
+    assert.equal(s.g.rejection(),'cookie_candidate');assert.equal(s.g.finish().diagnostic,'candidate_observed');
+  }
+});
+
+test('reader and collector guard instances each retain their own 1280-record capacity',()=>{
+  const reader=fixture(),collector=fixture();
+  for(let i=0;i<1280;i++)reader.request(0,{requestId:'reader-'+i});
+  for(let i=0;i<200;i++)collector.request(0,{requestId:'collector-'+i});
+  reader.request();assert.equal(reader.g.rejection(),'guard_request_budget');
+  collector.request();collector.response(0,{headers:other});accepted(collector,1);rejected(reader,'guard_request_budget');
 });
 
 test('a later candidate cannot replace the first structural rejection or revive an abandoned chain',()=>{

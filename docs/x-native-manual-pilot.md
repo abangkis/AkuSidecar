@@ -293,7 +293,7 @@ structural coverage failures rather than manufacturing completeness. A response
 from an older request that attempts a candidate write after baseline still
 rejects. A request never observed before observer startup is not reconstructed
 or silently accepted from its later response.
-The 128-record limit now spans this continuous observation lifetime; longer
+The 1,280-record limit spans this continuous observation lifetime; longer
 traffic can exhaust it earlier. Such exhaustion remains an explicit closed
 `guard_request_budget` failure, not an implicit reset or silent eviction.
 
@@ -598,7 +598,7 @@ The implementation preserves these boundaries:
   candidate on an older request still rejects; deferred correlation must not
   reinterpret a pre-seed header as a newly observed post-seed attempt.
 - Count retained hops and pending evidence within the existing observation
-  bounds. Redirects cannot reset the 128-record lifetime budget or bypass the
+  bounds. Redirects cannot reset the 1,280-record lifetime budget or bypass the
   header, line or event limits.
 - Root-document and account-settings redirects remain rejected. Identity,
   protected-login evidence, challenge, timing, owner, cleanup, receipt and
@@ -1338,3 +1338,15 @@ Validation for this revision is offline and synthetic only. The last native
 `request_frame=different` trace does not identify frame ancestry, rule out a
 stale root pin or prove that this revision completes native startup. No native
 run, retained profile, login, transfer, Store or user runtime is accessed.
+
+The manual startup request ledger has a 1,280-record lifetime capacity per role,
+increased from 128 by explicit user approval. Request hops and queued ExtraInfo
+still share that capacity across preparation, seed and startup; record 1,280 is
+allowed and reservation 1,281 rejects with `guard_request_budget`. No reset,
+eviction, traffic filtering or change to cookie/account correlation is added.
+The 128-header-field bound, 32-line bound, 64-header-event bound, startup timing
+and absolute 60-second attempt limit are unchanged. This is a bounded capacity
+increase, not a measured RAM/CPU qualification or proof of native MVP readiness.
+Offline boundary, mixed-record, seed-continuity, role-isolation, candidate and
+first-cause bridge regressions cover the new threshold. Another native transfer
+still requires separate one-shot authorization.

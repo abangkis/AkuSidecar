@@ -9,6 +9,7 @@ const data = (v, k) => {
   return d ? Object.hasOwn(d, 'value') ? d.value : invalid : undefined;
 };
 const ref = v => typeof v === 'string' && v.length > 0 && v.length <= 512;
+const MAX_REQUEST_RECORDS = 1280;
 // Diagnostic only. Acceptance uses private request-local frame correlation.
 function requestFrameProjection(params, root) {
   const d = Object.getOwnPropertyDescriptor(params, 'frameId');
@@ -199,7 +200,7 @@ export class ManualStartupCookieGuard {
   #reserve(trigger, provenance, frame = 'unknown') {
     // Hops and queued ExtraInfo projections share the lifetime record budget.
     // Reusing a request ID never replenishes it, including across the seed.
-    if(this.#records>=128){this.#fail('guard_request_budget',trigger,provenance,'unknown',null,frame);return false;}
+    if(this.#records>=MAX_REQUEST_RECORDS){this.#fail('guard_request_budget',trigger,provenance,'unknown',null,frame);return false;}
     this.#records++;return true;
   }
   #chainFailure(chain, trigger, provenance) {

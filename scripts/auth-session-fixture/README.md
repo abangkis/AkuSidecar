@@ -145,6 +145,9 @@ well-formed nonroot settings traffic is excluded from identity selection after
 cookie observation, so it cannot supply identity or hide candidate-cookie attempts.
 This does not claim frame ancestry, all-browser/worker coverage or monitoring
 beyond startup. Ordinary QA and the 60-second manual pilot limit are unchanged.
+The manual startup ledger allows 1,280 combined request-hop/ExtraInfo records
+per role across preparation, seed and startup; the next reservation rejects.
+Header/line/event limits and account/cookie verification remain unchanged.
 
 The historical [provisional root-navigation correction](../../docs/x-native-manual-pilot.md#provisional-root-navigation-correlation-2026-10-22)
 lets one exact root `/home` navigation wait for matching commit/default-context
