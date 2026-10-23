@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {ManualStartupCookieGuard} from './x-manual-startup-cookie-guard.mjs';
 import {createRetainedManualSetup,manualSeedFailure,manualSeedDiagnostic,manualSeedDiagnosticCode} from './x-manual-retained-setup.mjs';
 import vm from 'node:vm';
+import {createXManualOwnerPort} from './x-native-manual-owner-port.mjs';
 import {pathToFileURL} from 'node:url';
 import {resolve} from 'node:path';
 import {createManualV2BoundObservation,projectBoundBootstrap} from './x-qa-bound-observation.mjs';
@@ -15,7 +16,9 @@ const seedSource=code.slice(code.indexOf('export async function seedRetainedManu
 const provenanceSource=code.slice(code.indexOf('const manualProvenance='),code.indexOf('const manualEnrollment=')).replace('const manualProvenance=','return ');
 const allowProvenance=new Function('active','method','params','sessionId','purpose','qualificationMode','driverMode','MAX_TOTAL_NETWORK_BUFFER_BYTES','MAX_RESOURCE_NETWORK_BUFFER_BYTES',provenanceSource);
 code=code.replace(/from '(\.\/[^']+)'/g,(_,p)=>`from '${new URL(p,pathToFileURL(path)).href}'`);
-code+=`\nexport function offlineHarness(current,transport){active=current;send=transport;return {dispatch:dispatchCDP,start:()=>startManualCookieObservation(current),run:(options,factory)=>boundCheckpoint(current,false,options,undefined,()=>{},undefined,factory),collector:factory=>collectorShortCheckpoint(current,undefined,()=>{},()=>{},undefined,factory)};}\n`;
+code+=`\nconst realSend=send;export async function offlineControlGate(enabled=true,malformed=false){const current={owner:1,sessionId:'s',targetId:'t',manualStartupSelected:true,bound:{running:true}};active=current;driverMode='retained_source_qualification';registerFreshStartupSession(current,'s','reader');const writes=[];cdpWrite=message=>{writes.push(message);dispatchCDP({id:message.id,sessionId:message.sessionId,result:malformed?{unexpected:true}:{}});};const previous=process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED;process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED=enabled?'1':'0';try{const controls=startupRootControls(current,realSend,'reader');await controls.apply();await controls.restore();return writes.map(v=>[v.method,v.params]);}finally{if(previous===undefined)delete process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED;else process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED=previous;}}
+export const offlineUnsettled=mustRetireStartupOwner;export const offlineRetire=retireManualReader;
+export function offlineHarness(current,transport){registerFreshStartupSession(current,current.sessionId,'reader');if(current.shortFeasibility?.sessionId)registerFreshStartupSession(current.shortFeasibility,current.shortFeasibility.sessionId,'collector');active=current;send=transport;return {dispatch:dispatchCDP,start:()=>startManualCookieObservation(current),run:(options,factory)=>boundCheckpoint(current,false,options,undefined,()=>{},undefined,factory),collector:factory=>collectorShortCheckpoint(current,undefined,()=>{},()=>{},undefined,factory)};}\n`;
 const driver=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
 // Expose only the production transport's event dispatcher in memory. No launch,
 // profile validation, native send or process creation is invoked by these tests.
@@ -175,7 +178,7 @@ async function driverScenario(scenario, continuous=false, injectedCookie='lang=e
   const current={owner:1,pid:1,profileId:'p',sessionId:'s',targetId:'t',manualStartupSelected:true,gate:{networkEnabled:false,setLoginVisible(){}}};
   const context=vm.createContext({location:{origin:'https://x.com',pathname:'/home'}});
   const scripts=['globalThis.__INITIAL_STATE__={session:{user_id:"123456"},entities:{users:{entities:{"123456":{id_str:"123456"}}}}}','void 0','delete globalThis.__INITIAL_STATE__','void 0'];
-  let harness; const commands=[];
+  let harness; const commands=[],controlCommands=[];
   current.shortFeasibility={sessionId:'collector-session',transport:{send:async(method,params,session,project)=>project(method==='Page.getFrameTree'?{frameTree:{frame:{id:'collector-frame'}}}:{}),subscribe:()=>()=>{}}};
   const emit=(method,params,sessionId='s')=>harness.dispatch({method,params,sessionId});
   const request=(id,url='https://x.com/asset',loader='new',type='Image',patch={})=>emit('Network.requestWillBeSent',{requestId:id,frameId:'f',loaderId:loader,type,request:{method:'GET',url},...patch});
@@ -196,8 +199,8 @@ async function driverScenario(scenario, continuous=false, injectedCookie='lang=e
    emit('Network.loadingFinished',{requestId:'settings',encodedDataLength:32});
   };
   harness=driver.offlineHarness(current,async(method,params,sessionId,purpose)=>{
-   commands.push(method);
-   if(method==='Page.getFrameTree')return{frameId:'f',loaderId:'old'};
+   commands.push(method);if(purpose==='manual_root_control'){controlCommands.push([method,params,sessionId]);const stage=(params.cacheDisabled??params.bypass)?'apply':'restore';if(scenario===`control-${stage}-${method.endsWith('ServiceWorker')?'worker':'cache'}`)throw Error('synthetic timeout');}
+   if(method==='Page.getFrameTree'){if(scenario==='control-before-apply'&&commands.filter(v=>v===method).length>1)throw Error('synthetic frame failure');return{frameId:'f',loaderId:'old'};}
    if(method==='Network.enable'&&scenario==='after-enable-old-loader')request('pending',undefined,'old');
    if(method==='Page.reload'){
     request('root','https://x.com/home','new','Document');response('root','https://x.com/home','new',null);
@@ -253,9 +256,9 @@ async function driverScenario(scenario, continuous=false, injectedCookie='lang=e
   });
   if(scenario==='before-observer-late-response')request('pending',undefined,'old');
   if(continuous){await harness.start();if(scenario==='observed-before-seed')request('pending',undefined,'old');current.manualCookieGuard.beginPostSeed();current.shortFeasibility.manualCookieGuard.beginPostSeed();}
-  const observation=await harness.run({deferCookieMutation:false,onPrivateResult(){},onPrivateStartup(){receipts++;commands.push('receipt');}},(...args)=>createManualV2BoundObservation(...args,(reason,trace)=>{first={reason,...trace};},current.manualCookieGuard));
+  let observation;try{observation=await harness.run({deferCookieMutation:false,onPrivateResult(){},onPrivateStartup(){receipts++;commands.push('receipt');}},(...args)=>createManualV2BoundObservation(...args,(reason,trace)=>{first={reason,...trace};},current.manualCookieGuard));}catch(error){if(scenario.startsWith('control-'))return {error:startupDiagnostic(error),commands,controlCommands,receipts,current,unsettled:driver.offlineUnsettled(current)};throw error;}
   let trace=null;try{requireBoundStartup(observation,'reader',startupFailureLatch());}catch(e){trace=startupDiagnostic(e)?.trace;}
-  return {scenario,evaluations,receipts,diagnostic:observation.diagnostic,first,trace,commands,observation};
+  return {scenario,evaluations,receipts,diagnostic:observation.diagnostic,first,trace,commands,controlCommands,observation};
 }
 
 for(const scenario of ['clean','precommit-resource','postcommit-resource','observed-before-seed','foreign-session-response','qualified-redirect-late','qualified-redirect-early','request-frame-different','nonroot-settings','foreign-origin','request-frame-absent','ordinary-empty-loader','ordinary-post-ping','protected-source'])test(`actual driver retains bounded network provenance: ${scenario}`,async()=>{
@@ -290,7 +293,7 @@ test('actual reader keeps unselected response mismatch and missing redirect comp
 
 async function collectorRedirectScenario(mode){
   const transport=collectorModule.createQAFeasibilityCollector({FrameDecoder:driver.CDPFrameDecoder}),decoder=new driver.CDPFrameDecoder();
-  const commands=[],context=vm.createContext({location:{origin:'https://x.com',pathname:'/home'}});
+  const commands=[],controlCommands=[],context=vm.createContext({location:{origin:'https://x.com',pathname:'/home'}});
   const scripts=['globalThis.__INITIAL_STATE__={session:{user_id:"123456"},entities:{users:{entities:{"123456":{id_str:"123456"}}}}}','void 0','delete globalThis.__INITIAL_STATE__','void 0'];
   let guard,binder,normal=null,instrumentation=true,index=0,phase='instrumentation',evaluations=0,receipts=0,settings=false,received=0,observed=0,maxCalls=0;
   const counts=new WeakMap(),original=ManualStartupCookieGuard.prototype.observe;
@@ -318,7 +321,7 @@ async function collectorRedirectScenario(mode){
   };
   const current={owner:1,sessionId:'reader',manualStartupSelected:true,shortFeasibility:{sessionId:'cs',targetId:'ct',navigated:true}};
   current.shortFeasibility.transport={subscribe:transport.subscribe,ownership:()=>({pid:2,profileId:'collector',alive:true}),send:async(method,params,session,project)=>{
-    commands.push(method);let result={};
+    commands.push(method);let result={};if(method==='Network.setBypassServiceWorker'||method==='Network.setCacheDisabled'){const stage=(params.cacheDisabled??params.bypass)?'apply':'restore',kind=method.endsWith('ServiceWorker')?'worker':'cache';const isControl=kind==='worker'||stage==='restore'||commands.filter(v=>v==='Network.setCacheDisabled').length>1;if(isControl){controlCommands.push([method,params,session]);if(mode==='control-'+stage+'-'+kind)throw Error('synthetic timeout');}}
     if(method==='Page.getFrameTree')result={frameTree:{frame:{id:'cf',loaderId:'old',url:'https://x.com/home'}}};
     if(method==='Page.reload'){
       request('root','https://x.com/home','Document');response('root','https://x.com/home');
@@ -357,8 +360,8 @@ async function collectorRedirectScenario(mode){
     await h.start();guard=current.shortFeasibility.manualCookieGuard;
     current.manualCookieGuard.beginPostSeed();guard.beginPostSeed();
     const result=await h.collector((...args)=>{args[5]={...args[5],onPrivateStartup:()=>{receipts++;commands.push('receipt');}};binder=createManualV2BoundObservation(...args,()=>{},guard);return binder;});
-    return{observation:result.checkpoint.observation,evaluations,receipts,commands,received,observed,maxCalls,first:current.manualCookieDiagnostics.current()};
-  }finally{ManualStartupCookieGuard.prototype.observe=original;}
+    return{observation:result.checkpoint.observation,evaluations,receipts,commands,controlCommands,received,observed,maxCalls,first:current.manualCookieDiagnostics.current()};
+  }catch(error){if(mode.startsWith('control-'))return{error:startupDiagnostic(error),receipts,controlCommands,unsettled:driver.offlineUnsettled(current.shortFeasibility)};throw error;}finally{ManualStartupCookieGuard.prototype.observe=original;}
 }
 for(const mode of ['early','late','reordered','missing','candidate','nonroot','protected','protected-candidate'])test(`actual collector transport preserves hop provenance through final receipt gate: ${mode}`,async()=>{
   const r=await collectorRedirectScenario(mode);assert.equal(r.received,r.observed);assert.equal(r.maxCalls,1);
@@ -402,7 +405,7 @@ test('pre-seed headers do not poison the epoch; structural coverage loss cannot 
   for(const line of ['ct0=x; Path=/','unknown_private=x; Path=/']){
     const s=passive();s.request();s.response(line);assert.equal(s.g.rejection(),'unknown');s.g.beginPostSeed();assert.equal(s.g.finish().diagnostic,'not_observed');
   }
-  const capped=passive();for(let i=0;i<16385;i++)capped.request('r'+i);capped.g.beginPostSeed();assert.equal(capped.g.rejection(),'guard_request_budget');assert.equal(capped.g.finish().diagnostic,'ambiguous');
+  const capped=passive();for(let i=0;i<16385;i++)capped.request('r'+i);capped.g.beginPostSeed();assert.equal(capped.g.rejection(),'guard_request_budget');assert.equal(capped.g.finish().ambiguousAttempts,0);assert.equal(capped.g.failureDomain(),'coverage');
   const malformed=passive();malformed.emit('Network.requestWillBeSent',null);malformed.g.beginPostSeed();assert.equal(malformed.g.rejection(),'guard_metadata_shape');
 });
 test('post-seed missing predecessor and seen rejected scope remain distinct, including blocked candidates',()=>{
@@ -455,3 +458,19 @@ test('actual seed acknowledgment dispatch starts both baselines before same-batc
     }
   }finally{names.forEach((key,i)=>{if(previous[i]===undefined)delete process.env[key];else process.env[key]=previous[i];});}
 });
+
+test('actual reader driver fences success on both control restorations',async()=>{
+ const clean=await driverScenario('clean',true);assert.deepEqual(clean.controlCommands.map(v=>v.slice(0,2)),[['Network.setCacheDisabled',{cacheDisabled:true}],['Network.setBypassServiceWorker',{bypass:true}],['Network.setBypassServiceWorker',{bypass:false}],['Network.setCacheDisabled',{cacheDisabled:false}]]);
+ for(const fault of ['apply-cache','apply-worker','restore-worker','restore-cache']){const r=await driverScenario('control-'+fault,true);assert.equal(r.error.trace.firstCause,'root_control');assert.equal(r.error.trace.guardCondition,fault.startsWith('apply')?'root_control_apply':'root_control_restore');assert.equal(r.unsettled,true);if(fault.startsWith('apply'))assert.equal(r.receipts,0);}
+});
+
+async function abortPreserving(current,exited=true){let closes=0;const actor={prepare(){},acquire(){},abort:async()=>{},cancel:async()=>{}};const port=createXManualOwnerPort({enabled:true,owner:1,createOwners:()=>({reader:actor,collector:actor}),snapshot:async()=>({}),retire:async(role,preserve)=>driver.offlineRetire(current,preserve,async()=>{closes++;return{exited};})});const action=port.execute({id:1,op:'manual_abort',owner:1,role:'reader',handle:null,preserveReader:true});if(exited)assert.deepEqual(await action,{closed:true});else await assert.rejects(action);return closes;}
+test('actual owner port preserveReader cannot keep unsettled preseed, apply or restore controls',async()=>{
+ for(const fault of ['before-apply','apply-cache','apply-worker','restore-worker','restore-cache']){const r=await driverScenario('control-'+fault,true);assert.equal(r.unsettled,true);assert.equal(await abortPreserving(r.current),1);assert.equal(await abortPreserving(r.current,false),1);}
+});
+test('actual collector driver requires both control restores and rejects apply or restore uncertainty',async()=>{
+ const clean=await collectorRedirectScenario('late');assert.deepEqual(clean.controlCommands.map(v=>v.slice(0,2)),[['Network.setCacheDisabled',{cacheDisabled:true}],['Network.setBypassServiceWorker',{bypass:true}],['Network.setBypassServiceWorker',{bypass:false}],['Network.setCacheDisabled',{cacheDisabled:false}]]);
+ for(const fault of ['apply-cache','apply-worker','restore-worker','restore-cache']){const r=await collectorRedirectScenario('control-'+fault);assert.equal(r.error.trace.firstCause,'root_control');assert.equal(r.unsettled,true);if(fault.startsWith('apply'))assert.equal(r.receipts,0);}
+});
+
+test('production reader command gate permits the owned recipe only when enabled and validates empty ACKs',async()=>{assert.equal((await driver.offlineControlGate()).length,4);await assert.rejects(driver.offlineControlGate(false));await assert.rejects(driver.offlineControlGate(true,true));});

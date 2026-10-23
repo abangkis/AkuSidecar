@@ -42,6 +42,7 @@ const SESSION_METHODS = new Set([
   'Network.enable',
   'Network.disable',
   'Network.setCacheDisabled',
+  'Network.setBypassServiceWorker',
   'Network.getResponseBody',
   'Network.setCookies',
 ]);
@@ -220,9 +221,10 @@ function commandParams(method, params, sessionId, allowedExpressions, cookieSeed
       ? { maxTotalBufferSize: 1_000_000, maxResourceBufferSize: 100_000, maxPostDataSize: 0 }
       : null;
   }
+  if(method==='Network.setBypassServiceWorker'){const row=readDataRecord(empty,['bypass'],['bypass']);return row&&typeof row.bypass==='boolean'?{bypass:row.bypass}:null;}
   if (method === 'Network.setCacheDisabled') {
     const row = readDataRecord(empty, ['cacheDisabled'], ['cacheDisabled']);
-    return row && row.cacheDisabled === true ? { cacheDisabled: true } : null;
+    return row && typeof row.cacheDisabled === 'boolean' ? { cacheDisabled: row.cacheDisabled } : null;
   }
   if (method === 'Network.getResponseBody') {
     const row = readDataRecord(empty, ['requestId'], ['requestId']);

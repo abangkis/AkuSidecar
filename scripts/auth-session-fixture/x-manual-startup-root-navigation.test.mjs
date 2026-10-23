@@ -52,7 +52,7 @@ test('root network provenance requires commit, response and required ExtraInfo i
     if(missing!=='response')s.response({'Set-Cookie':'lang=en; Path=/'});
     if(missing!=='extra')s.extra(missing==='response'?{'Set-Cookie':'lang=en; Path=/'}:{});
     if(missing!=='commit')s.commit();if(missing!=='context')s.context();
-    assert.equal(s.g.finish().diagnostic,'ambiguous',missing);
+    assert.equal(s.g.finish().ambiguousAttempts,0,missing);assert.notEqual(s.g.rejection(),'unknown');
   }
 });
 test('old, pre-arm, reused, redirected, child, foreign and contradictory root metadata is never adopted',()=>{
@@ -64,16 +64,16 @@ test('old, pre-arm, reused, redirected, child, foreign and contradictory root me
     if(fault==='duplicate')s.request({type:'XHR'});if(fault==='second-root')s.request({requestId:'second'});
     s.response({'Set-Cookie':'lang=en; Path=/'},fault==='response-url'?{response:{url:'https://x.com/other',status:200,headers:{'Set-Cookie':'lang=en; Path=/'}}}:fault==='response-frame'?{frameId:'child'}:fault==='status'?{response:{url:home,status:302,headers:{'Set-Cookie':'lang=en; Path=/'}}}:fault==='extra-false'?{hasExtraInfo:false}:{});
     s.extra({},fault==='extra-status'?{statusCode:201}:{});if(fault==='duplicate-extra')s.extra();s.commit(fault==='loader-drift'?'different-loader':next);s.context();
-    assert.equal(s.g.finish().diagnostic,'ambiguous',fault);
+    assert.equal(s.g.finish().ambiguousAttempts,0,fault);assert.notEqual(s.g.rejection(),'unknown',fault);
   }
 });
 test('arming is single use and requires a predecessor; earlier observed documents remain network provenance',()=>{
-  const repeated=guardFixture();repeated.arm();assert.throws(()=>repeated.arm());assert.equal(repeated.g.finish().diagnostic,'ambiguous');
+  const repeated=guardFixture();repeated.arm();assert.throws(()=>repeated.arm());assert.equal(repeated.g.finish().ambiguousAttempts,0);assert.equal(repeated.g.failureDomain(),'root_structure');
   const missing=guardFixture();assert.throws(()=>missing.g.armReload(''));
   const adopted=guardFixture();adopted.commit();assert.doesNotThrow(()=>adopted.arm());
   const noParams=guardFixture();noParams.arm();
   assert.equal(noParams.emit('Debugger.resumed'),false);assert.equal(noParams.emit('Runtime.executionContextsCleared'),false);
-  assert.equal(noParams.g.finish().diagnostic,'ambiguous');
+  assert.equal(noParams.g.finish().ambiguousAttempts,0);assert.equal(noParams.g.rejection(),'guard_completion_missing');
 });
 
 async function handoffFixture({role='reader',order='before-commit',cookie='lang=en; Path=/',fault,resourceMode,rootResponsePatch={}}={}){
@@ -315,10 +315,10 @@ test('root completion and ExtraInfo failures retain only already-observed cache 
   for(const mode of ['commit','finish','loading']){const s=guardFixture();s.arm();s.request();s.response({}, {response:{url:home,status:200,headers:{},fromDiskCache:false}});
     if(mode==='commit')s.commit('wrong');if(mode==='loading')s.emit('Network.loadingFailed',{requestId:'root'});s.g.finish();assert.equal(s.g.trace().guardDiskCache,'false');assert.equal(s.g.trace().guardServiceWorker,'absent');}
 });
-test('root arm preconditions have closed predicates without changing their legacy failure domain',()=>{
+test('root arm preconditions have closed predicates in the structural failure domain',()=>{
   for(const [kind,condition]of [['closed','root_arm_closed'],['repeated','root_arm_repeated'],['before-seed','root_arm_before_seed'],['loader','root_arm_loader'],['session','root_arm_session']]){
     const g=new ManualStartupCookieGuard(frame,kind==='session'?undefined:session,{beforeSeed:kind==='before-seed'});
     if(kind==='closed')g.finish();if(kind==='repeated')g.armReload(oldLoader);
-    assert.throws(()=>g.armReload(kind==='loader'?'':oldLoader));assert.equal(g.trace().guardCondition,condition);assert.equal(g.failureReason(),'observed_cookie_write');
+    assert.throws(()=>g.armReload(kind==='loader'?'':oldLoader));assert.equal(g.trace().guardCondition,condition);assert.equal(g.failureReason(),'scope_lost');assert.equal(g.failureDomain(),'root_structure');
   }
 });

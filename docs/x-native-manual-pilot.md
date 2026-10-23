@@ -1734,3 +1734,42 @@ readiness. The ledger does not override this existing policy. The intermediate
 the disposable root was removed, the retained manifest was clean, and its
 exclusive lock was released. No retry occurred. Evidence:
 `runtime/qa/auth-session-sidecar/x-manual-retained-fad333f8489b49d296a40f97aeee1b8a.run.log.txt`.
+
+### Startup responsibility and producer/consumer alignment
+
+The current implementation contract separates header safety, root structure,
+bound account/login observations, source policy, browser effects, and permit
+issuance. The cookie component must not decide whether a root source is fresh,
+and a root rejection must not increment cookie attempt counters. A startup
+orchestrator may fan out events and preserve the first cause, but it must keep
+those domains distinct.
+
+One immutable root-source policy supplies both the ledger verdict and the
+required driver recipe. Strict source eligibility remains intact; the recipe
+adds scoped startup service-worker bypass to the existing cache control instead
+of accepting every service-worker response. Controls belong to fresh owned QA
+startup sessions, including the original reader and collector sessions, never
+the later lifecycle-observer session or an arbitrary borrowed user target.
+
+Successful startup requires acknowledged control restoration before the driver
+returns and before an external receipt can authorize the pair. Apply, timeout,
+cancellation, or uncertain restoration must remain closed; owned resources are
+retired when restoration cannot be established. There is no implicit retry,
+login, reseed, or alternate source.
+
+The account projections, exact context/document binding, settings validation,
+two-role account comparison, and ten/five/two/sixty-second boundaries retain their
+existing owners. Default-off gating, the Store boundary, and user runtime remain
+unchanged. See [the responsibility contract](x-identity-freshness-cache-design.md)
+for interfaces and the acceptance matrix. Historical 269-test parity evidence
+applies to the preceding ledger change; it is not evidence for this refactor.
+
+Canonical offline preparation `28265789e76c4982bfa9b42f459d2678` completed with
+277 Node tests, four tag gates, Windows compilation, and Go/diagnostic/RPC checks.
+All 47 prepared source hashes matched. Tests exercise the actual reader/collector
+recipe and owner-port preservation/retirement path with synthetic transports,
+including pre-enrollment cache effects, each control failure, and rejection of a
+receipt after internal publication when restoration fails. Closed failure domains
+are visible in the actual Go-formatted diagnostic path. No native test or session
+transfer was run; the new recipe still requires native qualification. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-28265789e76c4982bfa9b42f459d2678.prepare.log.txt`.

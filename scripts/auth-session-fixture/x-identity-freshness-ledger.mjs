@@ -1,5 +1,6 @@
+import {rootSourceVerdict,ROOT_SOURCE_POLICY} from './x-manual-root-source-policy.mjs';
 // Private, owner-local authority. No IO, timers, serialized identity, or recovery.
-import {ManualStartupCookieGuard} from './x-manual-startup-cookie-guard.mjs';
+import {ManualStartupObservation} from './x-manual-startup-cookie-guard.mjs';
 
 export const IDENTITY_FRESHNESS_POLICY=Object.freeze({version:'manual-v2.691875d',identitySettingsMS:5000,observationMS:10000,jointMS:2000,pilotMS:60000});
 const invalid=()=>new Error('identity_freshness_invalid');
@@ -28,7 +29,7 @@ export class IdentityFreshnessLedger {
   constructor(binding,now,guard){
     const b=record(binding,['owner','profileId','sessionId','targetId','frameId','role']);
     if(!Number.isSafeInteger(b.owner)||b.owner<=0||!['profileId','sessionId','targetId','frameId'].every(k=>ref(b[k]))||!['reader','collector','unknown'].includes(b.role)||!finite(now)||now<0)throw invalid();
-    if(!(guard instanceof ManualStartupCookieGuard))throw invalid();
+    if(!(guard instanceof ManualStartupObservation))throw invalid();
     guard.bindFreshnessGeneration(this.#generation,b.frameId,b.sessionId);
     this.#binding=Object.freeze(b);this.#start=this.#last=now;
   }
@@ -68,7 +69,7 @@ export class IdentityFreshnessLedger {
   }
   observeRoot(revision,generation,guard,now){
     this.#begin(revision,generation,now);
-    if(!(guard instanceof ManualStartupCookieGuard))this.#reject('root_source');
+    if(!(guard instanceof ManualStartupObservation))this.#reject('root_source');
     const r=guard.freshnessEvidence(this.#binding.frameId,this.#binding.sessionId,this.#generation);
     if(!r||r.armed&&r.documentId!==this.#document?.documentId)this.#reject('root_binding');
     this.#root=r;this.#rootReceiptAt=now;this.#advance(now);
@@ -87,12 +88,14 @@ export class IdentityFreshnessLedger {
     const sampleAge=clock&&this.#sampleAt!==null?now-this.#sampleAt:'unknown';
     const identityCaptureAge=clock&&this.#identityAt!==null?now-this.#identityAt:'unknown';
     const fresh=clock&&this.#identityAt!==null&&this.#settingsAt!==null&&Math.abs(this.#settingsAt-this.#identityAt)<=IDENTITY_FRESHNESS_POLICY.identitySettingsMS&&now-Math.min(this.#identityAt,this.#settingsAt)<=IDENTITY_FRESHNESS_POLICY.identitySettingsMS;
-    const rootPolicyVerdict=this.#root===null?'unknown':this.#root.accepted?'accepted_under_policy':'rejected';
-    const state=this.#failure||!clock?'invalidated':now-this.#start>IDENTITY_FRESHNESS_POLICY.observationMS?'expired':!this.#document||!this.#identity||this.#settingsAt===null||this.#root===null?'unknown':!this.#root.accepted||!this.#login?'excluded':!fresh?'stale':'ready';
-    const missingProof=Object.freeze([!this.#document&&'document',!this.#identity&&'identity',this.#settingsAt===null&&'settings',this.#root===null&&'root_verdict',this.#root&&!this.#root.accepted&&'root_policy',this.#settingsAt!==null&&!this.#login&&'settings_proof',this.#settingsAt!==null&&!fresh&&'age','server_freshness'].filter(Boolean));
-    return Object.freeze({policyVersion:IDENTITY_FRESHNESS_POLICY.version,revision:this.#revision,state,invalidationReason:this.#failure??'unknown',bindingState:!this.#document?'provisional':this.#root?.armed&&this.#root.accepted?'root_bound':'document_bound',rootPolicyVerdict,readyUnderPolicy:state==='ready',sourceFreshnessProven:'unknown',sampleAge,identityCaptureAge,withinIdentitySettingsWindow:fresh,cacheControl:this.#control,rootCache:this.#root?.cache??null,rootObservedAt:this.#root?.observedAt??'unknown',rootReceiptAt:this.#rootReceiptAt??'unknown',missingProof});
+    const rootDecision=this.#root===null?null:rootSourceVerdict(this.#root);
+    const rootAccepted=rootDecision?.status==='accepted_under_policy';
+    const rootPolicyVerdict=this.#root===null?'unknown':rootAccepted?'accepted_under_policy':rootDecision.status==='pending'?'pending':'rejected';
+    const state=this.#failure||!clock?'invalidated':now-this.#start>IDENTITY_FRESHNESS_POLICY.observationMS?'expired':!this.#document||!this.#identity||this.#settingsAt===null||this.#root===null?'unknown':!rootAccepted||!this.#login?'excluded':!fresh?'stale':'ready';
+    const missingProof=Object.freeze([!this.#document&&'document',!this.#identity&&'identity',this.#settingsAt===null&&'settings',this.#root===null&&'root_verdict',this.#root&&!rootAccepted&&'root_policy',this.#settingsAt!==null&&!this.#login&&'settings_proof',this.#settingsAt!==null&&!fresh&&'age','server_freshness'].filter(Boolean));
+    return Object.freeze({policyVersion:IDENTITY_FRESHNESS_POLICY.version,rootPolicyVersion:ROOT_SOURCE_POLICY.version,revision:this.#revision,state,invalidationReason:this.#failure??'unknown',bindingState:!this.#document?'provisional':this.#root?.armed&&rootAccepted?'root_bound':'document_bound',rootPolicyVerdict,readyUnderPolicy:state==='ready',sourceFreshnessProven:'unknown',sampleAge,identityCaptureAge,withinIdentitySettingsWindow:fresh,cacheControl:this.#control,rootCache:this.#root?.cache??null,rootObservedAt:this.#root?.observedAt??'unknown',rootReceiptAt:this.#rootReceiptAt??'unknown',missingProof});
   }
-  readRootPolicyVerdict(now){const s=this.read(now);return Object.freeze({policyVersion:s.policyVersion,verdict:s.rootPolicyVerdict,sourceFreshnessProven:s.sourceFreshnessProven});}
+  readRootPolicyVerdict(now){const s=this.read(now);return Object.freeze({policyVersion:s.rootPolicyVersion,verdict:s.rootPolicyVerdict,sourceFreshnessProven:s.sourceFreshnessProven});}
   publish(value,now,readNow){
     if(this.#published||!this.read(now).readyUnderPolicy||typeof readNow!=='function')throw invalid();
     const d=this.#document,b=this.#binding;

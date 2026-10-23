@@ -379,7 +379,7 @@ test('bounded request/header/line metadata and accessor rejection stay fail clos
       if (kind === 'getter') headers = Object.defineProperty({}, 'Set-Cookie', { get() { assert.fail('getter invoked'); } });
       for (let i = 0; i < (kind === 'events' ? 65 : 1); i++) s.emit('Network.responseReceivedExtraInfo', { requestId: 'r', statusCode: 200, headers });
     }
-    const r = s.g.finish(); assert.equal(r.diagnostic, kind === 'events' ? 'other_only' : 'ambiguous'); assert.ok(r.ambiguousAttempts <= 64);
+    const r = s.g.finish(); assert.equal(r.diagnostic, kind === 'events' ? 'other_only' : kind === 'requests' ? 'not_observed' : 'ambiguous'); assert.ok(r.ambiguousAttempts <= 64);
     assert.throws(() => s.g.finish());
   }
 });

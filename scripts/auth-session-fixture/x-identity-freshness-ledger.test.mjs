@@ -84,7 +84,7 @@ test('production owner consumes genuine ledger publications for both roles witho
 });
 test('cache-control receipts retain actual times without refreshing the evidence snapshot',()=>{
  const s=fixture();s.ready();s.call('observeCacheControl',{state:'acknowledged',requestedAt:0,acknowledgedAt:1},4);
- const view=s.ledger.read(5);assert.equal(view.sampleAge,2);assert.equal(view.identityCaptureAge,3);assert.deepEqual(view.cacheControl,{state:'acknowledged',requestedAt:0,acknowledgedAt:1});assert.ok(view.missingProof.includes('server_freshness'));assert.equal(s.ledger.readRootPolicyVerdict(5).sourceFreshnessProven,'unknown');
+ const view=s.ledger.read(5);assert.equal(view.sampleAge,2);assert.equal(view.identityCaptureAge,3);assert.deepEqual(view.cacheControl,{state:'acknowledged',requestedAt:0,acknowledgedAt:1});assert.ok(view.missingProof.includes('server_freshness'));assert.equal(s.ledger.readRootPolicyVerdict(5).sourceFreshnessProven,'unknown');assert.equal(s.ledger.readRootPolicyVerdict(5).policyVersion,'manual-root-source.v1');
  const r=fixture();r.call('observeCacheControl','unavailable',0);assert.equal(r.ledger.read(0).cacheControl.state,'unavailable');
  assert.throws(()=>new IdentityFreshnessLedger(binding,-1,new ManualStartupCookieGuard('frame',binding.sessionId)));
 });

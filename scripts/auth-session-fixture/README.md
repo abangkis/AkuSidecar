@@ -3264,3 +3264,13 @@ See [identity freshness and cache design](../../docs/x-identity-freshness-cache-
 for the implemented component contract. Manual V2 freshness and production private
 publication now use the in-memory ledger; ordinary/deferred QA and the existing
 cache/freshness acceptance policy are unchanged.
+
+The startup responsibility refactor moves root structure and source policy out of
+header safety. The named startup observation is an event orchestrator; its legacy
+cookie-guard export is a compatibility alias. Header counters describe only header
+attempts. The ledger evaluates root facts under the same immutable source policy
+that supplies the native driver's cache/service-worker control recipe. Browser
+controls are limited to registered fresh owned startup sessions, with restoration
+required before external startup success. Root/source failures, cookie safety,
+control restoration, and final cleanup remain separately diagnosable. This does
+not enable native QA, session transfer, Store access, or user-runtime operations.

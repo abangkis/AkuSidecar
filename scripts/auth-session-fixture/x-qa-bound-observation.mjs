@@ -3,7 +3,7 @@ import { performance } from 'node:perf_hooks';
 import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, validateBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
 import { QADirectCapture } from './x-qa-direct-ab.mjs';
 import { qaSourceRoute } from './x-qa-source-qualification.mjs';
-import { ManualStartupCookieGuard } from './x-manual-startup-cookie-guard.mjs';
+import { ManualStartupObservation } from './x-manual-startup-cookie-guard.mjs';
 import { IdentityFreshnessLedger } from './x-identity-freshness-ledger.mjs';
 import { closedStartupTrace, rememberBoundStartup, STARTUP_GUARD_CAUSES } from './x-manual-startup-diagnostic.mjs';
 
@@ -86,11 +86,11 @@ export class QABoundObservation {
         Object.hasOwn(pointOptions, 'onPrivateStartup') && typeof pointOptions.onPrivateStartup !== 'function' ||
         typeof pointOptions.deferCookieMutation !== 'boolean' || typeof pointOptions.onPrivateResult !== 'function' ||
         cookiePolicy !== undefined && cookiePolicy !== manualV2CookiePolicy || cookiePolicy === manualV2CookiePolicy && (pointOptions.deferCookieMutation || typeof onManualFailure !== 'function') ||
-        cookiePolicy === undefined && (onManualFailure !== undefined || provenance !== undefined) || provenance !== undefined && !(provenance instanceof ManualStartupCookieGuard)) throw error();
+        cookiePolicy === undefined && (onManualFailure !== undefined || provenance !== undefined) || provenance !== undefined && !(provenance instanceof ManualStartupObservation)) throw error();
     this.#scope = Object.freeze({ ...scope }); this.#frame = frameId; this.#now = now;
     this.#observeCookieWrites = observeCookieWrites;
     this.#pointOptions = Object.freeze({ ...pointOptions });
-    this.#manualCookieGuard = cookiePolicy === manualV2CookiePolicy ? provenance?.claim(frameId,scope.sessionId) ?? new ManualStartupCookieGuard(frameId,scope.sessionId,{now}) : null;
+    this.#manualCookieGuard = cookiePolicy === manualV2CookiePolicy ? provenance?.claim(frameId,scope.sessionId) ?? new ManualStartupObservation(frameId,scope.sessionId,{now}) : null;
     this.#externalCookieGuard = provenance !== undefined;
     this.#onManualFailure = onManualFailure;
     this.#start = this.#last = now();
@@ -271,7 +271,7 @@ export class QABoundObservation {
     const settingsRequestId = this.capture.chosen;
     const source = await this.capture.finish();
     const cookieGuard = this.#manualCookieGuard?.finish();
-    if (cookieGuard && (cookieGuard.candidateAttempts || cookieGuard.ambiguousAttempts)) this.invalidate(this.#manualCookieGuard.failureReason(),this.#manualCookieGuard.rejection());
+    if (cookieGuard && this.#manualCookieGuard.rejection()!=='unknown') this.invalidate(this.#manualCookieGuard.failureReason(),this.#manualCookieGuard.rejection());
     const t = this.#tick();
     this.#closed = true;
     const identity = this.#id !== null && identityProjectionMatches(this.#projection);
@@ -313,6 +313,6 @@ export class QABoundObservation {
       ...(cookieGuard ? { manualCookieGuard: cookieGuard } : {}),
       enrollment: 'not_verified', continuity: 'unknown', canAuthorize: false, sessionTransferred: false });
     return this.#manualCookieGuard ? rememberBoundStartup(report,{firstCause:this.#firstCause,terminal:diagnostic,
-      early:this.#early,handoff:this.#handoff,cookie:STARTUP_GUARD_CAUSES.includes(this.#manualCookieGuard.rejection())?this.#manualCookieGuard.rejection():cookieGuard.diagnostic,extra:this.#extraSummary(),...this.#manualCookieGuard.trace()}) : report;
+      early:this.#early,handoff:this.#handoff,cookie:['header','coverage'].includes(this.#manualCookieGuard.failureDomain())&&STARTUP_GUARD_CAUSES.includes(this.#manualCookieGuard.rejection())?this.#manualCookieGuard.rejection():cookieGuard.diagnostic,extra:this.#extraSummary(),...this.#manualCookieGuard.trace()}) : report;
   }
 }

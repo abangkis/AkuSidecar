@@ -129,7 +129,7 @@ type nativePilotInitialTrace struct{ firstCause, terminal, early, handoff, cooki
 
 // Append-only V2 catalogs with the V3/V4/V5/V6/V7 guard fields; order matches STARTUP_TRACE in Node.
 var nativePilotTraceCatalogs = [][]string{
-	{"unknown", "cookie_candidate", "cookie_ambiguous", "context_lost", "target_lost", "navigation", "owner_scope", "event_cap", "identity_order", "identity_mismatch", "settings_order", "response_frame", "extra_shape", "extra_status", "extra_missing", "extra_unexpected", "generic_early", "stale_observation", "cleanup_failed", "guard_request_unbound", "guard_request_budget", "guard_header_classification", "guard_response_correlation", "guard_metadata_shape", "guard_completion_missing", "guard_header_budget", "guard_event_budget"},
+	{"unknown", "cookie_candidate", "cookie_ambiguous", "context_lost", "target_lost", "navigation", "owner_scope", "event_cap", "identity_order", "identity_mismatch", "settings_order", "response_frame", "extra_shape", "extra_status", "extra_missing", "extra_unexpected", "generic_early", "stale_observation", "cleanup_failed", "guard_request_unbound", "guard_request_budget", "guard_header_classification", "guard_response_correlation", "guard_metadata_shape", "guard_completion_missing", "guard_header_budget", "guard_event_budget", "root_control"},
 	{"unknown", "unavailable", "rejected", "identity_unavailable", "source_unavailable", "stale_observation", "cleanup_unverified", "scope_lost", "observed_cookie_write", "deadline", "canceled", "replay", "sample_missing", "sample_duplicate", "invalid_shape", "scope_mismatch", "time_invalid", "bound"},
 	{"unknown", "captured", "deadline", "script_limit", "wrong_page", "unexpected_pause", "evaluation_failed", "setup_failed"},
 	{"unknown", "accepted", "rejected"},
@@ -137,7 +137,7 @@ var nativePilotTraceCatalogs = [][]string{
 	{"unknown", "not_selected", "not_required", "required_pending", "complete", "missing", "status_mismatch", "unexpected", "invalid"},
 	{"unknown", "baseline", "arm", "metadata", "request", "document", "response", "extra", "redirect", "finish"},
 	{"unknown", "absent", "scoped", "origin_scope", "frame_scope", "loader_missing", "redirect", "reused", "root_scope"},
-	{"unknown", "predecessor_missing", "redirect_shape", "previous_response", "chain_completed", "chain_failed", "chain_cache", "previous_resource", "current_resource", "previous_origin", "previous_frame", "previous_loader", "current_origin", "current_frame", "current_loader", "loader_mismatch", "redirect_url", "redirect_status", "extra_flag", "headers_shape", "response_cache", "frame_mismatch", "request_shape", "request_url", "protected_source", "resource_type", "request_method", "session_missing", "frame_malformed", "loader_malformed", "ordinary", "request_absent", "root_arm_closed", "root_arm_repeated", "root_arm_before_seed", "root_arm_loader", "root_arm_session", "root_commit_duplicate", "root_commit_loader_invalid", "root_commit_old_loader", "root_commit_url", "root_commit_parent", "root_commit_loader_mismatch", "root_request_duplicate", "root_request_redirect", "root_request_history", "root_request_method", "root_request_url", "root_request_loader_invalid", "root_request_old_loader", "root_request_commit_mismatch", "root_request_reused", "root_response_duplicate", "root_response_loader", "root_response_url", "root_response_status", "root_response_extra_flag", "root_response_disk_cache", "root_response_service_worker", "root_response_prefetch_cache", "root_extra_duplicate", "root_extra_status", "root_loading_failed", "root_served_from_cache", "root_extra_unexpected", "root_missing", "root_response_missing", "root_commit_missing", "root_extra_missing", "root_response_frame_absent", "root_response_frame_malformed", "root_response_frame_different"},
+	{"unknown", "predecessor_missing", "redirect_shape", "previous_response", "chain_completed", "chain_failed", "chain_cache", "previous_resource", "current_resource", "previous_origin", "previous_frame", "previous_loader", "current_origin", "current_frame", "current_loader", "loader_mismatch", "redirect_url", "redirect_status", "extra_flag", "headers_shape", "response_cache", "frame_mismatch", "request_shape", "request_url", "protected_source", "resource_type", "request_method", "session_missing", "frame_malformed", "loader_malformed", "ordinary", "request_absent", "root_arm_closed", "root_arm_repeated", "root_arm_before_seed", "root_arm_loader", "root_arm_session", "root_commit_duplicate", "root_commit_loader_invalid", "root_commit_old_loader", "root_commit_url", "root_commit_parent", "root_commit_loader_mismatch", "root_request_duplicate", "root_request_redirect", "root_request_history", "root_request_method", "root_request_url", "root_request_loader_invalid", "root_request_old_loader", "root_request_commit_mismatch", "root_request_reused", "root_response_duplicate", "root_response_loader", "root_response_url", "root_response_status", "root_response_extra_flag", "root_response_disk_cache", "root_response_service_worker", "root_response_prefetch_cache", "root_extra_duplicate", "root_extra_status", "root_loading_failed", "root_served_from_cache", "root_extra_unexpected", "root_missing", "root_response_missing", "root_commit_missing", "root_extra_missing", "root_response_frame_absent", "root_response_frame_malformed", "root_response_frame_different", "root_control_apply", "root_control_restore"},
 	{"unknown", "before_seed", "post_seed", "reload_armed", "document_committed"},
 	{"unknown", "absent", "false", "true", "malformed"},
 	{"unknown", "absent", "false", "true", "malformed"},
@@ -167,7 +167,32 @@ func (v nativePilotInitialTrace) closed() nativePilotInitialTrace {
 }
 func (v nativePilotInitialTrace) String() string {
 	v = v.closed()
-	return fmt.Sprintf("first=%s terminal=%s early=%s handoff=%s cookie=%s extra=%s trigger=%s provenance=%s condition=%s epoch=%s disk_cache=%s service_worker=%s prefetch_cache=%s request_frame=%s header_reason=%s", v.firstCause, v.terminal, v.early, v.handoff, v.cookie, v.extra, v.guardTrigger, v.guardProvenance, v.guardCondition, v.guardEpoch, v.guardDiskCache, v.guardServiceWorker, v.guardPrefetchCache, v.guardRequestFrame, v.guardHeaderReason)
+	result := fmt.Sprintf("first=%s terminal=%s early=%s handoff=%s cookie=%s extra=%s trigger=%s provenance=%s condition=%s epoch=%s disk_cache=%s service_worker=%s prefetch_cache=%s request_frame=%s header_reason=%s", v.firstCause, v.terminal, v.early, v.handoff, v.cookie, v.extra, v.guardTrigger, v.guardProvenance, v.guardCondition, v.guardEpoch, v.guardDiskCache, v.guardServiceWorker, v.guardPrefetchCache, v.guardRequestFrame, v.guardHeaderReason)
+	if strings.HasPrefix(v.guardCondition, "root_control_") {
+		return result + " domain=control"
+	}
+	switch v.guardCondition {
+	case "root_response_disk_cache", "root_response_service_worker", "root_response_prefetch_cache", "root_served_from_cache":
+		return result + " domain=root_policy"
+	}
+	if strings.HasPrefix(v.guardCondition, "root_") {
+		return result + " domain=root_structure"
+	}
+	switch v.firstCause {
+	case "cookie_candidate", "cookie_ambiguous", "guard_header_classification":
+		return result + " domain=header"
+	case "guard_request_budget", "guard_header_budget", "guard_event_budget", "guard_metadata_shape":
+		return result + " domain=coverage"
+	case "context_lost", "target_lost", "navigation", "owner_scope", "event_cap":
+		return result + " domain=lifecycle"
+	case "identity_order", "identity_mismatch", "stale_observation":
+		return result + " domain=identity"
+	case "settings_order", "response_frame", "extra_shape", "extra_status", "extra_missing", "extra_unexpected":
+		return result + " domain=settings"
+	case "cleanup_failed":
+		return result + " domain=cleanup"
+	}
+	return result + " domain=unknown"
 }
 func (v nativePilotInitialTrace) GoString() string { return v.String() }
 

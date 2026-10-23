@@ -427,7 +427,7 @@ func TestXManualPilotRetainedQA(t *testing.T) {
 
 func TestXManualPilotRetainedSeedDiagnostics(t *testing.T) {
 	seedCacheCode := "manual_seed_v2_9_3_0_v6_0_8_7_0_19_0_0_0_0_0_8_6_20_1_3_2_1_4"
-	seedCacheWant := "phase=seed_write reason=rejected write=not_attempted initial=(role=reader phase=bound_finish reason=observed_cookie_write kind=primary first=guard_request_unbound terminal=unknown early=unknown handoff=unknown cookie=unknown extra=unknown trigger=redirect provenance=redirect condition=response_cache epoch=before_seed disk_cache=true service_worker=false prefetch_cache=absent request_frame=matching header_reason=unknown)"
+	seedCacheWant := "phase=seed_write reason=rejected write=not_attempted initial=(role=reader phase=bound_finish reason=observed_cookie_write kind=primary first=guard_request_unbound terminal=unknown early=unknown handoff=unknown cookie=unknown extra=unknown trigger=redirect provenance=redirect condition=response_cache epoch=before_seed disk_cache=true service_worker=false prefetch_cache=absent request_frame=matching header_reason=unknown domain=unknown)"
 	for _, sample := range []struct {
 		err  error
 		want string
@@ -507,7 +507,7 @@ for await(const line of createInterface({input:process.stdin})){const q=JSON.par
 	case <-ctx.Done():
 		t.Fatal("offline diagnostic handshake timeout")
 	}
-	for _, want := range []string{"phase=seed_write reason=rejected write=not_attempted initial=(role=reader phase=bound_finish reason=observed_cookie_write kind=primary first=guard_header_classification terminal=unknown early=unknown handoff=unknown cookie=unknown extra=unknown trigger=response provenance=scoped condition=unknown epoch=before_seed disk_cache=unknown service_worker=unknown prefetch_cache=unknown request_frame=unknown header_reason=attribute_unsupported)", "phase=preconditions reason=replay write=not_attempted"} {
+	for _, want := range []string{"phase=seed_write reason=rejected write=not_attempted initial=(role=reader phase=bound_finish reason=observed_cookie_write kind=primary first=guard_header_classification terminal=unknown early=unknown handoff=unknown cookie=unknown extra=unknown trigger=response provenance=scoped condition=unknown epoch=before_seed disk_cache=unknown service_worker=unknown prefetch_cache=unknown request_frame=unknown header_reason=attribute_unsupported domain=header)", "phase=preconditions reason=replay write=not_attempted"} {
 		err = b.rpc(ctx, "manual_seed_bootstrap", map[string]any{"owner": 1}, nil)
 		if xManualRetainedSeedRPCDiagnostic(err) != want {
 			t.Fatal("Node-to-Go closed seed diagnostic lost")
@@ -641,13 +641,16 @@ return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!c
 				case "trace-budget", "trace-budget-candidate":
 					wantFirst, wantCookie = "guard_request_budget", "guard_request_budget"
 				case "trace-unbound", "trace-redirect", "trace-reused", "trace-redirect-peer-first":
-					wantFirst, wantCookie, wantReason = "guard_request_unbound", "guard_request_unbound", "scope_lost"
+					wantFirst, wantCookie, wantReason = "guard_request_unbound", "other_only", "scope_lost"
+					if role != "trace-unbound" {
+						wantCookie = "not_observed"
+					}
 				case "trace-response":
-					wantFirst, wantCookie, wantReason = "guard_response_correlation", "guard_response_correlation", "scope_lost"
+					wantFirst, wantCookie, wantReason = "guard_response_correlation", "other_only", "scope_lost"
 				case "trace-metadata":
 					wantFirst, wantCookie = "guard_metadata_shape", "guard_metadata_shape"
 				case "trace-completion":
-					wantFirst, wantCookie, wantReason = "generic_early", "guard_completion_missing", "scope_lost"
+					wantFirst, wantCookie, wantReason = "generic_early", "other_only", "scope_lost"
 				case "trace-context-priority":
 					wantFirst, wantCookie, wantReason = "context_lost", "guard_header_classification", "scope_lost"
 				}
@@ -695,11 +698,12 @@ func TestXManualPilotRetainedTraceCodes(t *testing.T) {
 	if !filepath.IsAbs(project) || !filepath.IsAbs(node) {
 		t.Skip("accountless trace parity requires helper")
 	}
-	const script = `import{pathToFileURL}from'node:url';const m=await import(pathToFileURL(process.argv[1]));const catalogs=[m.STARTUP_ROLES,m.STARTUP_PHASES,m.STARTUP_REASONS,['primary','peer'],...Object.values(m.STARTUP_TRACE)],codes=[];for(const[key,values]of Object.entries(m.STARTUP_TRACE))for(const value of values)codes.push(m.startupRPCCode(m.startupFailure('collector','inspect_before','observed_cookie_write',true,undefined,{[key]:value})));const combined=Object.fromEntries(Object.entries(m.STARTUP_TRACE).map(([key,values])=>[key,values[0]]));combined.firstCause='guard_request_unbound';combined.guardTrigger='redirect';combined.guardProvenance='redirect';combined.guardCondition='response_cache';combined.guardEpoch='before_seed';combined.guardDiskCache='true';combined.guardServiceWorker='false';combined.guardPrefetchCache='absent';combined.guardRequestFrame='matching';const combinedCode=m.startupRPCCode(m.startupFailure('reader','bound_finish','observed_cookie_write',false,undefined,combined));const headerReasonCode=m.startupRPCCode(m.startupFailure('reader','bound_finish','observed_cookie_write',false,undefined,{firstCause:'guard_header_classification',guardHeaderReason:'attribute_unsupported'}));const maximum=Object.fromEntries(Object.entries(m.STARTUP_TRACE).map(([key,values])=>[key,values.at(-1)]));const maximumCode=m.startupRPCCode(m.startupFailure('reader','bound_finish','observed_cookie_write',false,undefined,maximum));const {ManualStartupCookieGuard:G}=await import(new URL('./x-manual-startup-cookie-guard.mjs',pathToFileURL(process.argv[1])));const rootCodes=['reader','collector'].map(role=>{const g=new G('private-frame','private-session'),l=m.startupFailureLatch();g.armReload('old');g.observe({sessionId:'private-session',method:'Network.requestWillBeSent',params:{requestId:'private-request',frameId:'private-frame',loaderId:'new',type:'Document',request:{method:'GET',url:'https://x.com/home'}}});g.observe({sessionId:'private-session',method:'Network.responseReceived',params:{requestId:'private-request',frameId:'private-frame',loaderId:'new',hasExtraInfo:false,response:{url:'https://x.com/home',status:200,headers:{},fromDiskCache:true,fromServiceWorker:false}}});const error=m.startupFailure(role,'bound_finish',g.failureReason(),false,undefined,{firstCause:g.rejection(),...g.trace()});l.record(error,role,'bound_finish');return m.startupRPCCode(error);});console.log(JSON.stringify({catalogs,codes,combinedCode,headerReasonCode,maximumCode,rootCodes}));`
+	const script = `import{pathToFileURL}from'node:url';const m=await import(pathToFileURL(process.argv[1]));const catalogs=[m.STARTUP_ROLES,m.STARTUP_PHASES,m.STARTUP_REASONS,['primary','peer'],...Object.values(m.STARTUP_TRACE)],codes=[];for(const[key,values]of Object.entries(m.STARTUP_TRACE))for(const value of values)codes.push(m.startupRPCCode(m.startupFailure('collector','inspect_before','observed_cookie_write',true,undefined,{[key]:value})));const combined=Object.fromEntries(Object.entries(m.STARTUP_TRACE).map(([key,values])=>[key,values[0]]));combined.firstCause='guard_request_unbound';combined.guardTrigger='redirect';combined.guardProvenance='redirect';combined.guardCondition='response_cache';combined.guardEpoch='before_seed';combined.guardDiskCache='true';combined.guardServiceWorker='false';combined.guardPrefetchCache='absent';combined.guardRequestFrame='matching';const combinedCode=m.startupRPCCode(m.startupFailure('reader','bound_finish','observed_cookie_write',false,undefined,combined));const headerReasonCode=m.startupRPCCode(m.startupFailure('reader','bound_finish','observed_cookie_write',false,undefined,{firstCause:'guard_header_classification',guardHeaderReason:'attribute_unsupported'}));const maximum=Object.fromEntries(Object.entries(m.STARTUP_TRACE).map(([key,values])=>[key,values.at(-1)]));const maximumCode=m.startupRPCCode(m.startupFailure('reader','bound_finish','observed_cookie_write',false,undefined,maximum));const {ManualStartupCookieGuard:G}=await import(new URL('./x-manual-startup-cookie-guard.mjs',pathToFileURL(process.argv[1])));const rootCodes=['reader','collector'].map(role=>{const g=new G('private-frame','private-session'),l=m.startupFailureLatch();g.armReload('old');g.observe({sessionId:'private-session',method:'Network.requestWillBeSent',params:{requestId:'private-request',frameId:'private-frame',loaderId:'new',type:'Document',request:{method:'GET',url:'https://x.com/home'}}});g.observe({sessionId:'private-session',method:'Network.responseReceived',params:{requestId:'private-request',frameId:'private-frame',loaderId:'new',hasExtraInfo:false,response:{url:'https://x.com/home',status:200,headers:{},fromDiskCache:true,fromServiceWorker:false}}});const error=m.startupFailure(role,'bound_finish',g.failureReason(),false,undefined,{firstCause:g.rejection(),...g.trace()});l.record(error,role,'bound_finish');return m.startupRPCCode(error);});const domainCodes=[['root_control','root_control_restore'],['guard_request_budget','unknown'],['cookie_candidate','unknown'],['context_lost','unknown']].map(([firstCause,guardCondition])=>m.startupRPCCode(m.startupFailure('reader','bound_finish','scope_lost',false,undefined,{firstCause,guardCondition})));console.log(JSON.stringify({catalogs,codes,combinedCode,headerReasonCode,maximumCode,rootCodes,domainCodes}));`
 	cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(project, "scripts", "auth-session-fixture", "x-manual-startup-diagnostic.mjs"))
 	cmd.Stderr = io.Discard
 	raw, err := cmd.Output()
-	if err != nil || len(raw) > 16384 {
+	// Aggregate catalog fixture only; each private RPC still has its strict 80-byte bound.
+	if err != nil || len(raw) > 32768 {
 		t.Fatal("closed trace parity unavailable")
 	}
 	defer clear(raw)
@@ -710,6 +714,7 @@ func TestXManualPilotRetainedTraceCodes(t *testing.T) {
 		HeaderReasonCode string
 		MaximumCode      string
 		RootCodes        []string
+		DomainCodes      []string
 	}
 	if json.Unmarshal(raw, &payload) != nil {
 		t.Fatal("closed trace parity malformed")
@@ -782,8 +787,17 @@ func TestXManualPilotRetainedTraceCodes(t *testing.T) {
 	}
 	for _, code := range payload.RootCodes {
 		detail, ok := nativePilotInitialCode(code)
-		if !ok || len(code) > 80 || detail.trace == nil || detail.trace.guardCondition != "root_response_disk_cache" || detail.trace.guardEpoch != "reload_armed" || detail.trace.guardRequestFrame != "matching" || detail.trace.guardDiskCache != "true" || detail.trace.guardServiceWorker != "false" || detail.trace.guardPrefetchCache != "absent" || !strings.Contains(detail.String(), "condition=root_response_disk_cache") || strings.Contains(detail.String(), "private") {
+		if !ok || len(code) > 80 || detail.trace == nil || detail.trace.guardCondition != "root_response_disk_cache" || detail.trace.guardEpoch != "reload_armed" || detail.trace.guardRequestFrame != "matching" || detail.trace.guardDiskCache != "true" || detail.trace.guardServiceWorker != "false" || detail.trace.guardPrefetchCache != "absent" || !strings.Contains(detail.String(), "condition=root_response_disk_cache") || !strings.Contains(detail.String(), "domain=root_policy") || strings.Contains(detail.String(), "private") {
 			t.Fatal("actual root trace did not survive Node-to-Go RPC/log projection")
+		}
+	}
+	for i, domain := range []string{"control", "coverage", "header", "lifecycle"} {
+		if len(payload.DomainCodes) != 4 {
+			t.Fatal("missing domain roundtrip")
+		}
+		detail, ok := nativePilotInitialCode(payload.DomainCodes[i])
+		if !ok || !strings.Contains(detail.String(), "domain="+domain) {
+			t.Fatal("closed failure domain lost across Node/Go wire")
 		}
 	}
 	maximum, ok := nativePilotInitialCode(payload.MaximumCode)

@@ -93,7 +93,7 @@ test('diagnostic history has a finite exact-ID coverage bound and cannot silentl
   const g=new ManualStartupCookieGuard(frame,scope.sessionId),request=i=>g.observe({method:'Network.requestWillBeSent',sessionId:scope.sessionId,
     params:{requestId:'diag-'+i,frameId:frame,loaderId:loader,type:'Image',request:{method:'GET',url}}});
   for(let i=0;i<16384;i++)request(i);assert.equal(g.rejection(),'unknown');request(16384);
-  assert.equal(g.rejection(),'guard_request_budget');assert.equal(g.finish().diagnostic,'ambiguous');
+  assert.equal(g.rejection(),'guard_request_budget');assert.equal(g.finish().ambiguousAttempts,0);assert.equal(g.failureDomain(),'coverage');
 });
 
 test('foreign sessions cannot consume Manual V2 event budget or supply selected source events',async()=>{
@@ -122,5 +122,5 @@ for(const security of ['root','settings','redirect'])test(`diagnostic eviction p
   else emit('Network.responseReceived',{requestId:'protected',frameId:frame,loaderId:loader,hasExtraInfo:true,
     response:{url:security==='root'?'https://x.com/home':sourceURL,status:200,headers:{'Set-Cookie':'PRIVATE_OTHER=PRIVATE_VALUE'}}});
   for(let i=0;i<1800;i++)emit('Network.requestWillBeSent',{requestId:'diag-'+i,frameId:frame,loaderId:loader,type:'Image',request:{method:'GET',url}});
-  const r=g.finish();assert.equal(g.rejection(),security==='root'?'guard_completion_missing':'unknown');assert.equal(r.diagnosticCoverage,'partial');assert.equal(Boolean(r.ambiguousAttempts),security==='root');privateSummary(r);
+  const r=g.finish();assert.equal(g.rejection(),security==='root'?'guard_completion_missing':'unknown');assert.equal(r.diagnosticCoverage,'partial');assert.equal(r.ambiguousAttempts,0);privateSummary(r);
 });

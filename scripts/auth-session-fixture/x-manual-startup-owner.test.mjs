@@ -79,3 +79,7 @@ test('normal-pause owner may retry empty bootstrap only in the same frozen scope
   assert.equal(calls, 1);
   await owner.abort(ready.handle);
 });
+
+test('a valid private sample cannot escape an owner whose restoration fails afterward',async()=>{
+ for(const role of ['reader','collector']){let sampled=false;const owner=createManualStartupOwner({role,run:async sink=>{await runOfflineStartupRecipe({role},{onPrivateStartup:value=>{sampled=true;sink.onPrivateStartup(value);}},{beforeIdentityRead:sink.beforeIdentityRead});throw new Error('manual_root_control_failed');}});const ready=await owner.prepare();await assert.rejects(owner.acquire(ready.handle,request(role,ready.pins)));assert.equal(sampled,true);await owner.abort(ready.handle);}
+});
