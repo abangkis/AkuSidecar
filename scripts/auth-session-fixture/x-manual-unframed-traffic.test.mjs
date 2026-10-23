@@ -66,7 +66,7 @@ for(const kind of ['candidate','deletion','blocked','ambiguous','malformed'])tes
   }
 });
 
-test('missing frame cannot downgrade Home, Document, settings, unknown methods, malformed loader or orphan metadata',async()=>{
+test('unqualified source metadata cannot poison independent account proof',async()=>{
   for(const fault of ['home','document','settings','foreign-settings','method','loader','orphan','malformed-frame','malformed-response-frame']){
     const s=fixture();s.document();
     const url=fault==='home'?'https://x.com/home':fault==='settings'?settings:
@@ -75,7 +75,7 @@ test('missing frame cannot downgrade Home, Document, settings, unknown methods, 
       fault==='loader'?{loaderId:undefined}:fault==='malformed-frame'?{frameId:undefined}:{});
     s.response('ordinary',url,other,false,fault==='malformed-response-frame'?{frameId:42}:{});
     s.identity();s.login();const r=await s.binder.finish(true);
-    assert.notEqual(r.diagnostic,'bound',fault);assert.equal(s.receipts(),0,fault);privateSummary(r.manualCookieGuard);
+    assert.equal(r.diagnostic,'bound',fault);assert.equal(s.receipts(),1,fault);privateSummary(r.manualCookieGuard);
   }
 });
 
@@ -86,7 +86,7 @@ test('unframed diagnostic IDs never become new root/settings or redirect provena
     s.request('ordinary-0',role==='settings'?settings:role==='root'?'https://x.com/home':'https://outside.invalid/next',
       role==='settings'?{type:'XHR',frameId:root}:role==='root'?{type:'Document',frameId:root}:
         {frameId:root,redirectHasExtraInfo:false,redirectResponse:{url:'https://outside.invalid/PRIVATE_ASSET',status:302,headers:{}}});
-    s.identity();s.login();const r=await s.binder.finish(true);assert.notEqual(r.diagnostic,'bound');assert.equal(s.receipts(),0);
+    assert.equal(s.binder.capture.chosen,null);s.identity();s.login();const r=await s.binder.finish(true);assert.equal(r.diagnostic,'bound');assert.equal(s.receipts(),1);
   }
 });
 
@@ -100,7 +100,7 @@ test('partial unframed diagnostics cannot repair failed identity, login, context
   }
 });
 
-test('unframed diagnostics retain contradiction checks while optional completion remains partial',async()=>{
+test('unselected metadata contradictions and completion remain nonauthorizing diagnostics',async()=>{
   let reads=0;
   for(const fault of ['url','loader','status','missing-extra','duplicate-extra','missing-response','frame-getter']){
     const s=fixture();s.document();const url='https://outside.invalid/PRIVATE_ASSET';s.request('ordinary',url);
@@ -113,9 +113,7 @@ test('unframed diagnostics retain contradiction checks while optional completion
     }
     if(fault!=='missing-extra'&&fault!=='frame-getter')s.extra('ordinary',fault==='missing-response'?other:{},fault==='status'?{statusCode:201}:{});
     if(fault==='duplicate-extra')s.extra('ordinary');s.identity();s.login();const r=await s.binder.finish(true);
-    if(['missing-extra','missing-response'].includes(fault)){
-      assert.equal(r.diagnostic,'bound',fault);assert.equal(s.receipts(),1,fault);assert.equal(r.manualCookieGuard.diagnosticCoverage,'partial');
-    }else{assert.notEqual(r.diagnostic,'bound',fault);assert.equal(s.receipts(),0,fault);}
+    assert.equal(r.diagnostic,'bound',fault);assert.equal(s.receipts(),1,fault);assert.equal(r.manualCookieGuard.diagnosticCoverage,'partial');
   }
   assert.equal(reads,0);
 });
@@ -124,7 +122,7 @@ test('without an owned-session binding a missing frame remains unavailable',()=>
   const g=new ManualStartupCookieGuard(root);
   g.observe({method:'Network.requestWillBeSent',params:{requestId:'ordinary',type:'Image',loaderId:loader,request:{method:'GET',url:'https://x.com/asset'}}});
   g.observe({method:'Network.responseReceivedExtraInfo',params:{requestId:'ordinary',statusCode:200,headers:other}});
-  assert.equal(g.rejection(),'guard_request_unbound');g.finish();
+  assert.equal(g.rejection(),'unknown');assert.throws(()=>g.claim(root,scope.sessionId));g.finish();
 });
 
 test('selected account settings keep mandatory root frame binding even without cookie headers',async()=>{
@@ -136,7 +134,7 @@ test('selected account settings keep mandatory root frame binding even without c
       response:{url:settings,status:200,headers:{},mimeType:'application/json',fromDiskCache:false,fromServiceWorker:false,fromPrefetchCache:false}});
     s.emit('Network.loadingFinished',{requestId:'settings',encodedDataLength:32});
     const r=await s.binder.finish(true);assert.notEqual(r.diagnostic,'bound');assert.equal(s.receipts(),0);
-    assert.equal(r.manualCookieGuard.diagnostic,'other_only');assert.equal(r.manualCookieGuard.diagnosticMissingFrameRequests,1);
+    assert.equal(r.manualCookieGuard.diagnostic,'other_only');assert.equal(r.manualCookieGuard.diagnosticMissingFrameRequests,fault==='request'?2:1);
   }
 });
 
@@ -195,7 +193,7 @@ test('new ordinary metadata combinations never suppress session-cookie or ambigu
     }
 });
 
-test('excluded request predicates survive the real failure latch as closed conditions only',async()=>{
+test('excluded request metadata has no cookie-safety authority',async()=>{
   const faults=[
     ['request_shape',{request:null}],['request_url',{request:{method:'GET',url:'http://outside.invalid/PRIVATE'}}],
     ['request_url',{request:{method:'GET',url:'https://PRIVATE:PRIVATE@outside.invalid/asset'}}],
@@ -207,25 +205,26 @@ test('excluded request predicates survive the real failure latch as closed condi
   ];
   for(const [condition,patch]of faults){
     const s=fixture();s.document();s.request('ordinary','https://outside.invalid/asset',patch);s.extra('ordinary',other);
-    s.identity();s.login();const report=await s.binder.finish(true);let detail;
-    assert.throws(()=>requireBoundStartup(report,'collector',startupFailureLatch()),error=>{detail=startupDiagnostic(error);return true;});
-    assert.equal(detail.trace.firstCause,'guard_request_unbound');assert.equal(detail.trace.guardCondition,condition);
-    assert.ok(STARTUP_TRACE.guardCondition.includes(condition));assert.equal(s.receipts(),0);
-    privateSummary(detail);assert.equal(JSON.stringify(detail).includes('PRIVATE'),false);
+    assert.equal(s.binder.capture.chosen,null);
+    s.identity();s.login();const report=await s.binder.finish(true);
+    requireBoundStartup(report,'collector',startupFailureLatch());
+    assert.equal(report.diagnostic,'bound');assert.equal(s.receipts(),1);
+    privateSummary(report.manualCookieGuard);
+
   }
   const noSession=new ManualStartupCookieGuard(root);
   noSession.observe({method:'Network.requestWillBeSent',params:{requestId:'ordinary',type:'Ping',loaderId:'',request:{method:'POST',url:'https://outside.invalid/asset'}}});
   noSession.observe({method:'Network.responseReceivedExtraInfo',params:{requestId:'ordinary',statusCode:200,headers:other}});
-  assert.equal(noSession.trace().guardCondition,'session_missing');noSession.finish();
+  assert.equal(noSession.rejection(),'unknown');assert.throws(()=>noSession.claim(root,scope.sessionId));noSession.finish();
 });
 
-test('optional loader accessors are rejected without execution and first condition remains immutable',()=>{
+test('optional loader accessors never execute or suppress a later candidate',()=>{
   let reads=0;
   const g=new ManualStartupCookieGuard(root,scope.sessionId),emit=(method,params)=>g.observe({method,params,sessionId:scope.sessionId});
   const p={requestId:'ordinary',type:'Ping',request:{method:'POST',url:'https://outside.invalid/asset'}};
   Object.defineProperty(p,'loaderId',{get(){reads++;throw new Error('PRIVATE_GETTER');}});
   emit('Network.requestWillBeSent',p);emit('Network.responseReceivedExtraInfo',{requestId:'ordinary',statusCode:200,headers:other});
-  assert.equal(g.trace().guardCondition,'loader_malformed');const first=g.trace();
+  assert.equal(g.rejection(),'unknown');
   emit('Network.responseReceivedExtraInfo',{requestId:'ordinary',statusCode:200,headers:{'Set-Cookie':'ct0=PRIVATE_TOKEN'}});
-  g.finish();assert.equal(reads,0);assert.deepEqual(g.trace(),first);assert.equal(g.rejection(),'guard_request_unbound');
+  g.finish();assert.equal(reads,0);assert.equal(g.rejection(),'cookie_candidate');
 });

@@ -43,7 +43,7 @@ test('real context loss remains first even when a later candidate and generic fa
   const {d}=await run('context-first','reader');assert.equal(d.trace.firstCause,'context_lost');assert.equal(d.reason,'scope_lost');assert.equal(d.trace.cookie,'candidate_observed');
 });
 test('settings order, ExtraInfo completeness and early outcomes remain separate closed fields',async()=>{
-  for(const [fault,first,extra,early]of [['settings-order','settings_order','not_required','evaluation_failed'],['extra-missing','generic_early','missing','evaluation_failed'],['extra-status','extra_status','status_mismatch','evaluation_failed'],['early-deadline','generic_early','not_selected','deadline'],['early-rejected','generic_early','not_selected','captured']]){
+  for(const [fault,first,extra,early]of [['settings-order','generic_early','not_selected','evaluation_failed'],['extra-missing','generic_early','missing','evaluation_failed'],['extra-status','extra_status','status_mismatch','evaluation_failed'],['early-deadline','generic_early','not_selected','deadline'],['early-rejected','generic_early','not_selected','captured']]){
     const {d}=await run(fault,'collector');assert.equal(d.trace.firstCause,first,fault);assert.equal(d.trace.extra,extra,fault);assert.equal(d.trace.early,early,fault);
   }
 });
@@ -134,7 +134,6 @@ test('specific invalidation sites remain distinct and a generic early first caus
     ['owner_scope',s=>s.emit('Page.loadEventFired',{}, {...s.scope,owner:2})],
     ['event_cap',s=>{for(let i=0;i<4097;i++)s.emit('Page.loadEventFired',{});}],
     ['identity_order',s=>s.identity()],
-    ['settings_order',s=>s.request()],
     ['response_frame',s=>{s.identity();s.request();s.response({frameId:'child'});}],
     ['extra_shape',s=>{s.identity();s.request();s.response({hasExtraInfo:undefined});}],
     ['extra_status',s=>{s.identity();s.request();s.response();s.emit('Network.responseReceivedExtraInfo',{requestId:'settings',headers:{},statusCode:201});}],

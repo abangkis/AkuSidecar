@@ -25,25 +25,15 @@ export function identityProjectionMatches(p) {
     Object.values(p.authFields).every(v => ['absent', 'true'].includes(v));
 }
 
-// Manual V2 can ignore a request as identity evidence only when its valid
-// CDP request tuple positively identifies a separate frame. Ordinary QA keeps
-// the existing fail-closed selection path.
-function nonRootSettingsRequest(params, rootFrame) {
-  try {
-    const value = (object, key) => {
-      const descriptor = Object.getOwnPropertyDescriptor(object, key);
-      return descriptor && Object.hasOwn(descriptor, 'value') ? descriptor.value : undefined;
-    };
-    const requestId = value(params, 'requestId');
-    const frameId = value(params, 'frameId');
-    const loaderId = value(params, 'loaderId');
-    const request = value(params, 'request');
-    if (!requestRef(requestId) || !requestRef(frameId) || frameId === rootFrame || !requestRef(loaderId) ||
-        !request || typeof request !== 'object' || Array.isArray(request) ||
-        Object.hasOwn(params, 'redirectResponse') || value(request, 'method') !== 'GET' ||
-        qaSourceRoute(value(request, 'url')) !== 'api_v1') return null;
-    return Object.freeze({ requestId, frameId, loaderId });
-  } catch { return null; }
+// Manual V2 selects account evidence only from a complete pinned tuple.
+// Ineligible traffic remains header-observed but cannot create or repair proof.
+function manualSettingsEligible(params, frame, loader, ready, guard) {
+  const request=own(params,'request');
+  return ready && requestRef(own(params,'requestId')) &&
+    guard.canSelectRequest(own(params,'requestId')) &&
+    own(params,'frameId')===frame && own(params,'loaderId')===loader &&
+    !Object.hasOwn(params,'redirectResponse') && request && typeof request==='object' && !Array.isArray(request) &&
+    own(request,'method')==='GET' && qaSourceRoute(own(request,'url'))==='api_v1';
 }
 
 // This fixed extra return field is consumed only by private CDP dispatch. The
@@ -137,7 +127,7 @@ export class QABoundObservation {
       this.invalidate('scope_lost','navigation'); throw error();
     }
     try { this.#manualCookieGuard.armReload(oldLoader); }
-    catch { this.invalidate('observed_cookie_write',this.#manualCookieGuard.rejection()); throw error(); }
+    catch { this.invalidate(this.#manualCookieGuard.failureReason(),this.#manualCookieGuard.rejection()); throw error(); }
   }
   acceptIdentity(id, projection) {
     const t = this.#tick();
@@ -156,6 +146,7 @@ export class QABoundObservation {
   startupPins(contextId) {
     this.#tick();
     this.checkCookieGuard();
+
     if (this.#closed || this.#failure || this.#id !== null || !this.#loader ||
         !this.#context || contextId !== this.#context) throw error();
     return Object.freeze({ ownerId: String(this.#scope.owner), profileId: this.#scope.profileId,
@@ -163,7 +154,7 @@ export class QABoundObservation {
       frameId: this.#frame, documentId: this.#loader });
   }
   checkCookieGuard() {
-    if(this.#manualCookieGuard?.rejection() !== undefined && this.#manualCookieGuard.rejection() !== 'unknown')this.invalidate('observed_cookie_write',this.#manualCookieGuard.rejection());
+    if(this.#manualCookieGuard?.rejection() !== undefined && this.#manualCookieGuard.rejection() !== 'unknown')this.invalidate(this.#manualCookieGuard.failureReason(),this.#manualCookieGuard.rejection());
   }
   observe(raw, scope) {
     if (this.#closed) return;
@@ -173,12 +164,9 @@ export class QABoundObservation {
     // Manual V2's guard inspects every owned-session network header separately.
     // Generic network diagnostics cannot consume the identity/lifecycle/source
     // event budget. Ordinary and deferred QA retain their original total cap.
+    if (!this.#manualCookieGuard && ++this.#events > 4096) { this.invalidate('scope_lost','event_cap'); return; }
     const ownedTargetEvent = raw.method === 'Target.detachedFromTarget' && p.sessionId === this.#scope.sessionId ||
       raw.method === 'Target.targetDestroyed' && p.targetId === this.#scope.targetId;
-    const securityEvent = !this.#manualCookieGuard || ownedTargetEvent || raw.sessionId === this.#scope.sessionId &&
-      (!raw.method?.startsWith('Network.') || p.requestId === this.capture.chosen ||
-        raw.method === 'Network.requestWillBeSent' && qaSourceRoute(p.request?.url) === 'api_v1');
-    if (securityEvent && ++this.#events > 4096) { this.invalidate('scope_lost','event_cap'); return; }
     if (raw.method === 'Target.detachedFromTarget' && p.sessionId === this.#scope.sessionId ||
         raw.method === 'Target.targetDestroyed' && p.targetId === this.#scope.targetId) this.invalidate('scope_lost','target_lost');
     if (raw.sessionId !== this.#scope.sessionId) return;
@@ -197,6 +185,12 @@ export class QABoundObservation {
     }
     if(!this.#externalCookieGuard)this.#manualCookieGuard?.observe(raw);
     this.checkCookieGuard();
+    const securityEvent = this.#manualCookieGuard && (ownedTargetEvent || raw.sessionId === this.#scope.sessionId &&
+      (!raw.method?.startsWith('Network.') || requestRef(this.capture.chosen) && p.requestId === this.capture.chosen ||
+        raw.method === 'Network.requestWillBeSent' && manualSettingsEligible(p,this.#frame,this.#loader,
+          this.#loader!==null&&this.#context!==null&&this.#identityAt!==null,this.#manualCookieGuard)));
+    if (securityEvent && ++this.#events > 4096) { this.invalidate('scope_lost','event_cap'); return; }
+
     if (!raw.method?.startsWith('Network.')) return;
     this.#observeCookieWrites(raw, this.#identityAt === null ? 'before_identity' : 'after_identity', this.#loader);
     if (!this.#loader) return; // Do not adopt old-document requests.
@@ -209,38 +203,40 @@ export class QABoundObservation {
       if (this.#identityAt === null) this.#startupCookieWriteObserved = true;
       else this.invalidate('observed_cookie_write');
     }
-    let bypassCandidate = false;
+    let bypassCandidate = Boolean(this.#manualCookieGuard) && raw.method !== 'Network.requestWillBeSent' &&
+      !(requestRef(this.capture.chosen) && p.requestId === this.capture.chosen);
     if (raw.method === 'Network.requestWillBeSent' && this.#manualCookieGuard) {
-      const candidate = nonRootSettingsRequest(p, this.#frame);
-      // The current candidate ID remains on the ordinary capture path so its
-      // duplicate-ID rejection runs before any nonroot exclusion.
-      if (candidate && candidate.requestId !== this.capture.chosen) bypassCandidate = true;
+      // Once selected, every event on the exact ID stays strict. Other
+      // requests cannot compete until their independent tuple qualifies.
+      bypassCandidate = !(requestRef(this.capture.chosen) && p.requestId === this.capture.chosen) &&
+        !manualSettingsEligible(p,this.#frame,this.#loader,
+          this.#loader!==null&&this.#context!==null&&this.#identityAt!==null,this.#manualCookieGuard);
     }
     if (!bypassCandidate && raw.method === 'Network.requestWillBeSent' && p.request?.method === 'GET' && qaSourceRoute(p.request.url) === 'api_v1' &&
         (!this.#loader || !this.#context || this.#identityAt === null || p.loaderId !== this.#loader || p.frameId !== this.#frame)) this.invalidate('scope_lost','settings_order');
-    if (raw.method === 'Network.responseReceived' && p.requestId === this.capture.chosen &&
+    if (raw.method === 'Network.responseReceived' && requestRef(this.capture.chosen) && p.requestId === this.capture.chosen &&
         (p.loaderId !== this.#loader || p.frameId !== this.#frame)) this.invalidate('scope_lost','response_frame');
-    if (raw.method === 'Network.responseReceived' && p.requestId === this.capture.chosen) {
+    if (raw.method === 'Network.responseReceived' && requestRef(this.capture.chosen) && p.requestId === this.capture.chosen) {
       if (typeof p.hasExtraInfo !== 'boolean') this.invalidate('scope_lost','extra_shape');
       else this.#needsExtra = p.hasExtraInfo;
     }
-    if (raw.method === 'Network.responseReceivedExtraInfo' && p.requestId === this.capture.chosen) {
+    if (raw.method === 'Network.responseReceivedExtraInfo' && requestRef(this.capture.chosen) && p.requestId === this.capture.chosen) {
       if (this.#extraStatus !== null || !Number.isInteger(p.statusCode)) this.invalidate('scope_lost','extra_status');
       else this.#extraStatus = p.statusCode;
     }
     if (!bypassCandidate) this.capture.observe(raw.method, p);
     // Diagnose observed contradictions at event time; rejection still uses the
     // existing finish checks, so this note does not alter capture acceptance.
-    if (p.requestId === this.capture.chosen && this.#extraStatus !== null) {
+    if (requestRef(this.capture.chosen) && p.requestId === this.capture.chosen && this.#extraStatus !== null) {
       if (this.#needsExtra === false) this.#noteCause('scope_lost','extra_unexpected');
       else if (this.#needsExtra === true && this.capture.status !== null && this.#extraStatus !== this.capture.status) this.#noteCause('scope_lost','extra_status');
     }
-    if (raw.method === 'Network.requestWillBeSent' && p.requestId === this.capture.chosen && this.#requestAt === null) {
+    if (raw.method === 'Network.requestWillBeSent' && requestRef(this.capture.chosen) && p.requestId === this.capture.chosen && this.#requestAt === null) {
       this.#requestAt = this.#tick();
       if (Number.isFinite(p.timestamp) && Number.isFinite(p.wallTime) && p.timestamp > 0 && p.wallTime > 0 &&
           Math.abs(Date.now() - p.wallTime * 1000) <= 5000) this.#networkRequest = { timestamp: p.timestamp, wallTime: p.wallTime };
     }
-    if (raw.method === 'Network.loadingFinished' && p.requestId === this.capture.chosen) {
+    if (raw.method === 'Network.loadingFinished' && requestRef(this.capture.chosen) && p.requestId === this.capture.chosen) {
       this.#sourceAt = this.#tick();
       const n = this.#networkRequest;
       if (n && Number.isFinite(p.timestamp) && p.timestamp > n.timestamp && p.timestamp - n.timestamp <= 5) {
@@ -264,7 +260,7 @@ export class QABoundObservation {
     const settingsRequestId = this.capture.chosen;
     const source = await this.capture.finish();
     const cookieGuard = this.#manualCookieGuard?.finish();
-    if (cookieGuard && (cookieGuard.candidateAttempts || cookieGuard.ambiguousAttempts)) this.invalidate('observed_cookie_write',this.#manualCookieGuard.rejection());
+    if (cookieGuard && (cookieGuard.candidateAttempts || cookieGuard.ambiguousAttempts)) this.invalidate(this.#manualCookieGuard.failureReason(),this.#manualCookieGuard.rejection());
     const t = this.#tick();
     this.#closed = true;
     const identity = this.#id !== null && identityProjectionMatches(this.#projection);

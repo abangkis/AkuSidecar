@@ -1453,7 +1453,11 @@ corrected and the complete standalone diagnostic selection passed. Logs are
 No Chrome, retained QA profile, native transfer, login, Store or user runtime was
 accessed. Temporary standalone build roots were removed after validation.
 
-## Minimum noncandidate classification (2026-10-23)
+## Historical minimum noncandidate classification (2026-10-23)
+
+The request-correlation rules in this intermediate implementation are historical.
+The current policy is specified in "Manual V2 header/evidence noninterference"
+below. Historical results remain evidence for their exact source revisions only.
 
 The user approved implementing the preceding minimum-policy recommendation after
 publication of the diagnostic increment as `da18849`. This revision changes only
@@ -1461,7 +1465,7 @@ the trusted manual-V2 startup classifier and its offline regression fixtures.
 It does not enable main dev, authorize a native run or transfer, modify the
 ordinary QA classifier, change Store policy, or touch a retained/main profile.
 
-| Observed bounded header | Current manual startup action |
+| Observed bounded header | Historical manual startup action |
 | --- | --- |
 | An identifiable `auth_token` or `ct0` attempt | Reject, including blocked, deletion/expiry, mixed-line and arbitrary-attribute cases |
 | An unambiguous other cookie name, correlated to the supported owned X request | Classify as `other`; name-list membership, cookie domain/path and complete attribute/value validation are not admission requirements |
@@ -1552,7 +1556,7 @@ predicate (or absent predecessor) through the existing private V7 wire.
 Catalog entries are append-only in Node and Go; no URL, cookie value, token,
 account identifier or raw request metadata is added to reports.
 
-Current offline acceptance passed 295 Node tests, four Go top-level tests
+At revision `284d5e4`, offline acceptance passed 295 Node tests, four Go top-level tests
 including 21 startup diagnostic subcases, all four build-tag gates and Windows
 standalone compilation. The real retained QA entry was skipped before profile
 or lease access. Evidence:
@@ -1604,3 +1608,91 @@ No browser, retained QA profile, X request, native transfer, main login, Store o
 user runtime was accessed. The standalone build root was removed after validation.
 Native startup under this policy remains untested; offline acceptance does not
 establish that the preceding X failure is resolved or that MVP is enabled.
+
+## Manual V2 header/evidence noninterference (2026-10-23)
+
+This section supersedes the generic request-correlation policies above. The
+native run at `284d5e4` stopped on an ordinary-cookie header associated with
+`protected_source`, without a request frame. It did not prove a candidate-cookie
+mutation. Earlier origin/frame predicate exceptions had left account-source
+eligibility coupled to the fate of ordinary headers. The current mechanism
+removes that dependency rather than adding another protected-source exception.
+
+```mermaid
+flowchart TD
+    H[Owned-session response headers] --> P[Bounded header inspection]
+    P -->|auth_token / ct0 or ambiguous| X[Invalidate startup]
+    P -->|unambiguous other name| D[Bounded diagnostics only]
+    R[Owned-session request] --> E[Independent source eligibility]
+    E -->|ineligible| N[No account evidence; retain no-adoption history]
+    E -->|fresh pinned tuple| S[Select exact account request]
+    S --> V[Strict response, body, freshness and cleanup checks]
+    V -->|valid plus identity| B[Private startup receipt]
+    V -->|missing or contradictory proof| X
+```
+
+**Header safety.** Every observed header from the exact owned CDP session is
+inspected before diagnostic or request-eligibility decisions. Candidate writes,
+deletions, blocked attempts, mixed/folded ambiguity, malformed header shapes and
+per-message inspection exhaustion remain fatal. An unambiguous other name
+contributes only a bounded observed-line counter. Its request origin, type,
+method, frame, loader, redirect, orphan/reuse status or completion cannot turn
+that ordinary header into a session-mutation failure. Unknown request metadata
+does not waive header inspection. Foreign sessions cannot supply account proof.
+
+**Account evidence.** A candidate settings GET must independently match the
+allowed route, live owner/session, pinned main frame/document loader, ready
+default context and fresh identity. Its ID must represent a first eligible
+request observed by the guard. Requests before readiness or with missing/foreign
+metadata remain non-evidence; their IDs cannot later be adopted as fresh proof.
+Once selected, all events on the exact ID retain strict duplicate, frame,
+loader, status, cache, required ExtraInfo and body checks. Missing identity or
+login, stale evidence and cleanup failure still prevent a private receipt.
+The explicitly armed main-document navigation separately retains its root
+request/response/commit checks; an armed observation missing its root request
+fails completion. Ignoring an unselected settings candidate never ignores
+a contradiction in an already selected account request or pinned root document.
+
+**Bounded state.** A 256-entry diagnostic cache supplies explanatory frame
+metadata only. Its eviction does not affect candidate/ambiguity inspection or
+evidence eligibility. A separate 16,384-entry exact-ID history per role survives
+diagnostic eviction and the seed boundary. An ID first seen in an orphan event,
+redirect or prior request is ineligible for new account adoption; history
+exhaustion remains fatal coverage loss. The former generic 1,280 request-hop/
+ExtraInfo correlation model is retired. Selected evidence and the one pinned
+root have explicit checks instead of requiring all browser requests to satisfy
+that account-correlation model. Header diagnostic totals saturate independently;
+per-message header inspection, transport framing, ownership, lifecycle and
+absolute deadlines remain bounded and authoritative.
+
+`otherAttempts` counts observed noncandidate lines and may include the same
+line represented in both response and ExtraInfo. It is not a count of unique
+cookie writes, proof of correlated response scope or session continuity.
+Public diagnostics exclude cookie names/values, URLs and account identifiers.
+Any observed cookie-header attempt marks `diagnosticCoverage: partial`, since header safety
+inspection does not claim complete request correlation or full session coverage.
+The top-level reason distinguishes pinned root-proof failure (`scope_lost`)
+from header safety/inspection coverage rejection (`observed_cookie_write`).
+The latter is a legacy rejection label, not proof of an accepted cookie write.
+First-cause identity and existing private wire fields are preserved. Legacy
+`ambiguousAttempts` and guard-category names still include structural root-proof
+ambiguity; they must not be presented as a count of actual session mutations.
+Closed diagnostic catalog entries remain decodable for historical failures;
+obsolete generic provenance predicates need not be emitted by the new guard.
+
+This is an explicit manual-pilot policy revision. Ordinary strict/deferred QA,
+Store policy, default-off gates, the maximum 60-second manual attempt, approved
+two-cookie seed manifest, owner lifetime and cleanup contract are unchanged.
+This work is offline only; it does not authorize a native transfer or establish
+that the integrated X pilot has passed.
+
+Offline acceptance passed 247 Node tests and four Go top-level tests including
+21 startup diagnostic subcases, all four build-tag gates, source-pinned Windows
+compilation, default-off entry rejection and Node/Windows-RPC/Go parity. The
+proof/noninterference matrices replace obsolete generic redirect-predicate
+expectations; they include protected sources without frames, candidate and
+ambiguous headers, ignored-ID adoption before/after eviction, selected-source
+failures, sticky typed reasons and 5,000 unqualified settings requests alongside
+independent valid proof. The real retained QA entry was skipped before lease or
+profile access; owned offline preparation roots were removed. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-56c1baa125934c43a967e0063367963c.prepare.log.txt`.

@@ -66,17 +66,17 @@ for(const adoption of ['settings','root','redirect'])test(`discarded diagnostic 
   s.request('PRIVATE_DIAGNOSTIC_0',adoption==='settings'?{type:'XHR',request:{method:'GET',url:settingsURL}}:
     adoption==='root'?{type:'Document',request:{method:'GET',url:'https://x.com/home'}}:
       {redirectHasExtraInfo:false,redirectResponse:{url,status:302,headers:{}}});
-  s.settings();const r=await s.binder.finish(true);assert.equal(s.receipts(),0);assert.notEqual(r.diagnostic,'bound');
-  assert.ok(r.manualCookieGuard.ambiguousAttempts);privateSummary(r.manualCookieGuard);
+  assert.equal(s.binder.capture.chosen,null);s.settings();const r=await s.binder.finish(true);assert.equal(s.receipts(),1);assert.equal(r.diagnostic,'bound');
+  assert.equal(r.manualCookieGuard.ambiguousAttempts,0);privateSummary(r.manualCookieGuard);
 });
 
-test('known discarded ordinary headers remain partial and unknown orphan ordinary headers remain closed',async()=>{
+test('discarded and orphan ordinary headers remain partial and nonauthorizing',async()=>{
   const s=fixture();s.document();s.flood(300);s.response('PRIVATE_DIAGNOSTIC_0',{'Set-Cookie':'PRIVATE_OTHER=PRIVATE_VALUE'});
   s.identity();s.settings();const r=await s.binder.finish(true);assert.equal(r.diagnostic,'bound');assert.equal(s.receipts(),1);
-  assert.equal(r.manualCookieGuard.diagnosticCoverage,'partial');assert.equal(r.manualCookieGuard.otherAttempts,0);
-  assert.equal(r.manualCookieGuard.diagnosticRecordsDropped,44); // Late headers are not extra record evictions.
+  assert.equal(r.manualCookieGuard.diagnosticCoverage,'partial');assert.equal(r.manualCookieGuard.otherAttempts,1);
+  assert.equal(r.manualCookieGuard.diagnosticRecordsDropped,45); // Late headers are not extra record evictions.
   const orphan=fixture();orphan.document();orphan.flood(300);orphan.response('NEVER_OBSERVED',{'Set-Cookie':'PRIVATE_OTHER=PRIVATE_VALUE'});
-  orphan.identity();orphan.settings();const rejected=await orphan.binder.finish(true);assert.equal(orphan.receipts(),0);assert.notEqual(rejected.diagnostic,'bound');
+  orphan.identity();orphan.settings();const rejected=await orphan.binder.finish(true);assert.equal(orphan.receipts(),1);assert.equal(rejected.diagnostic,'bound');
 });
 
 test('diagnostic eviction cannot replace first guard cause or epoch with a later candidate or exhaustion',()=>{
@@ -110,7 +110,7 @@ test('Manual V2 identity/lifecycle budget and default QA total event budget stil
   }
 });
 
-for(const security of ['root','settings','redirect'])test(`diagnostic eviction never discards pending ${security} completion`,()=>{
+for(const security of ['root','settings','redirect'])test(`diagnostic eviction preserves the distinct completion authority of ${security}`,()=>{
   const g=new ManualStartupCookieGuard(frame,scope.sessionId),emit=(method,params)=>g.observe({method,params,sessionId:scope.sessionId});
   if(security==='root')g.armReload('old');
   const sourceURL=security==='settings'?settingsURL:'https://x.com/PRIVATE_ASSET';
@@ -122,5 +122,5 @@ for(const security of ['root','settings','redirect'])test(`diagnostic eviction n
   else emit('Network.responseReceived',{requestId:'protected',frameId:frame,loaderId:loader,hasExtraInfo:true,
     response:{url:security==='root'?'https://x.com/home':sourceURL,status:200,headers:{'Set-Cookie':'PRIVATE_OTHER=PRIVATE_VALUE'}}});
   for(let i=0;i<1800;i++)emit('Network.requestWillBeSent',{requestId:'diag-'+i,frameId:frame,loaderId:loader,type:'Image',request:{method:'GET',url}});
-  const r=g.finish();assert.equal(g.rejection(),'guard_completion_missing');assert.equal(r.diagnosticCoverage,'partial');assert.ok(r.ambiguousAttempts);privateSummary(r);
+  const r=g.finish();assert.equal(g.rejection(),security==='root'?'guard_completion_missing':'unknown');assert.equal(r.diagnosticCoverage,'partial');assert.equal(Boolean(r.ambiguousAttempts),security==='root');privateSummary(r);
 });

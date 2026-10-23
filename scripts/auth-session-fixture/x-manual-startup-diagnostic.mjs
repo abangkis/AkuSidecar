@@ -79,7 +79,7 @@ export function requireBoundStartup(observation,role,diagnostics){
   const diagnostic=observation!==null&&typeof observation==='object'?Object.getOwnPropertyDescriptor(observation,'diagnostic')?.value:undefined;
   if(diagnostic==='bound')return;
   const trace=observation!==null&&typeof observation==='object'?boundTraces.get(observation):null;
-  const reason=['cookie_candidate','cookie_ambiguous',...STARTUP_GUARD_CAUSES].includes(trace?.firstCause)?'observed_cookie_write':STARTUP_REASONS.includes(diagnostic)?diagnostic:'unavailable';
+  const reason=trace?.guardProvenance==='root_scope'&&STARTUP_GUARD_CAUSES.includes(trace?.firstCause)?'scope_lost':['cookie_candidate','cookie_ambiguous',...STARTUP_GUARD_CAUSES].includes(trace?.firstCause)?'observed_cookie_write':STARTUP_REASONS.includes(diagnostic)?diagnostic:'unavailable';
   const phase=reason==='identity_unavailable'?'identity':reason==='source_unavailable'?'settings':reason==='cleanup_unverified'?'cleanup':'bound_finish';
   throw diagnostics.record(startupFailure(role,phase,reason,false,undefined,trace),role,phase,reason);
 }

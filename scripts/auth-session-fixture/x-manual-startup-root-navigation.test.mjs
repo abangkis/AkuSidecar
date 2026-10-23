@@ -58,7 +58,7 @@ test('root network provenance requires commit, response and required ExtraInfo i
 test('old, pre-arm, reused, redirected, child, foreign and contradictory root metadata is never adopted',()=>{
   for(const fault of ['old-loader','pre-arm','extra-before-request','duplicate','redirect','child','url','foreign-session','second-root','response-url','response-frame','status','extra-status','duplicate-extra','extra-false','loader-drift']){
     const s=guardFixture();if(fault==='pre-arm')s.request();s.arm();
-    if(fault==='extra-before-request')assert.equal(s.extra({'Set-Cookie':'lang=en; Path=/'}),true);
+    if(fault==='extra-before-request')assert.equal(s.extra({'Set-Cookie':'lang=en; Path=/'}),false);
     const patch=fault==='old-loader'?{loaderId:oldLoader}:fault==='redirect'?{redirectResponse:{headers:{'Set-Cookie':'lang=en; Path=/'}}}:fault==='child'?{frameId:'child'}:fault==='url'?{request:{method:'GET',url:'https://x.com/home?private=1'}}:{};
     if(fault==='foreign-session')s.emit('Network.requestWillBeSent',rootRequest(), 'foreign-session');else s.request(patch);
     if(fault==='duplicate')s.request({type:'XHR'});if(fault==='second-root')s.request({requestId:'second'});
@@ -73,7 +73,7 @@ test('arming is single use and requires a predecessor; earlier observed document
   const adopted=guardFixture();adopted.commit();assert.doesNotThrow(()=>adopted.arm());
   const noParams=guardFixture();noParams.arm();
   assert.equal(noParams.emit('Debugger.resumed'),false);assert.equal(noParams.emit('Runtime.executionContextsCleared'),false);
-  assert.equal(noParams.g.finish().diagnostic,'not_observed');
+  assert.equal(noParams.g.finish().diagnostic,'ambiguous');
 });
 
 async function handoffFixture({role='reader',order='before-commit',cookie='lang=en; Path=/',fault,resourceMode}={}){
@@ -116,9 +116,8 @@ async function handoffFixture({role='reader',order='before-commit',cookie='lang=
       binder.armManualReload(oldLoader);
       if(resourceMode){
         root(null);commit();
-        // Unsupported methods deliberately exhaust security provenance capacity;
-        // ordinary POST resources use diagnostic capacity instead.
-        if(fault==='resource-budget')for(let i=0;i<1280;i++)emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:frame,loaderId:next,type:'Image',request:{method:'TRACE',url:'https://foreign.invalid/asset'}});
+        // Exact history exhaustion remains common coverage loss regardless of method.
+        if(fault==='resource-budget')for(let i=0;i<16384;i++)emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:frame,loaderId:next,type:'Image',request:{method:'TRACE',url:'https://foreign.invalid/asset'}});
         if(resourceMode!=='after-context')assetRequest();if(resourceMode==='response-before-context')assetResponse();created();
         if(resourceMode==='after-context')assetRequest();if(resourceMode!=='response-before-context')assetResponse();
       }else{if(order==='before-commit')root();commit();if(order==='before-context')root();created();if(order==='after-context')root();}
@@ -163,7 +162,7 @@ test('same-document provisional GET resource may finish before or after its matc
     if(!contextFirst)s.context();assert.equal(s.g.finish().diagnostic,'other_only');assert.equal(s.g.rejection(),'unknown');
   }
 });
-test('ordinary missing response or ExtraInfo is partial while protected completion still rejects',()=>{
+test('ordinary and unselected child document completion cannot poison a valid pinned root',()=>{
   for(const missing of ['response','extra']){
     const s=resourceFixture();s.ready();s.assetRequest();if(missing!=='response')s.assetResponse({'Set-Cookie':'lang=en; Path=/'});
     if(missing!=='extra')s.assetExtra(missing==='response'?{'Set-Cookie':'lang=en; Path=/'}:{});if(missing!=='context')s.context();
@@ -171,27 +170,27 @@ test('ordinary missing response or ExtraInfo is partial while protected completi
     const strict=resourceFixture();strict.ready();strict.assetRequest({type:'Document',frameId:'child'});
     if(missing!=='response')strict.assetResponse({'Set-Cookie':'lang=en; Path=/'},{frameId:'child'});
     if(missing!=='extra')strict.assetExtra({'Set-Cookie':'lang=en; Path=/'});
-    assert.equal(strict.g.finish().diagnostic,'ambiguous');assert.equal(strict.g.rejection(),'guard_completion_missing');
+    assert.equal(strict.g.finish().diagnostic,'other_only');assert.equal(strict.g.rejection(),'unknown');
   }
 });
-test('network provenance preserves rejected scope and redirects without context-based admission islands',()=>{
+test('unselected source scope and redirect metadata cannot poison a valid pinned root',()=>{
   for(const fault of ['frame','foreign-session','foreign-url','reuse','redirect']){
     const s=resourceFixture();s.ready();
     if(fault==='foreign-session')s.emit('Network.requestWillBeSent',{requestId:'asset',frameId:frame,loaderId:next,request:{method:'GET',url:'https://x.com/asset'}},'foreign');
     else s.assetRequest(fault==='frame'?{frameId:'child'}:fault==='foreign-url'?{request:{method:'GET',url:'https://foreign.invalid/asset'}}:fault==='redirect'?{redirectResponse:{headers:{}}}:{});
-    if(fault==='reuse')s.assetRequest();s.context();assert.equal(s.assetResponse({'Set-Cookie':'lang=en; Path=/'}),true);s.assetExtra();
-    // A known outside request is observable; its mismatched X response remains rejected.
-    assert.equal(s.g.rejection(),['frame','foreign-url'].includes(fault)?'guard_response_correlation':'guard_request_unbound',fault);assert.equal(s.g.finish().diagnostic,'ambiguous');
+    if(fault==='reuse')s.assetRequest();s.context();assert.equal(s.assetResponse({'Set-Cookie':'lang=en; Path=/'}),false);s.assetExtra();
+    // Unselected response metadata supplies no authority and cannot poison the pinned root.
+    assert.equal(s.g.rejection(),'unknown',fault);assert.equal(s.g.finish().diagnostic,'other_only');
   }
 });
 
-test('guard first rejection distinguishes unbound, ambiguous syntax, correlation, shape and security budgets',()=>{
-  const unbound=resourceFixture();unbound.ready();unbound.assetResponse({'Set-Cookie':'lang=en; Path=/'});assert.equal(unbound.g.rejection(),'guard_request_unbound');
+test('header syntax and shape plus exact-ID exhaustion remain distinct from diagnostic provenance',()=>{
+  const unbound=resourceFixture();unbound.ready();unbound.assetResponse({'Set-Cookie':'lang=en; Path=/'});assert.equal(unbound.g.rejection(),'unknown');
   const unusual=resourceFixture();unusual.ready();unusual.assetRequest();unusual.assetResponse({'Set-Cookie':'unknown_private=x; Path=/; Priority=High; Partitioned'});unusual.assetExtra();assert.equal(unusual.g.rejection(),'unknown');assert.equal(unusual.g.finish().diagnostic,'other_only');
   const folded=resourceFixture();folded.ready();folded.assetRequest();folded.assetResponse({'Set-Cookie':'lang=x; Priority=Low, auth_token=y'});assert.equal(folded.g.rejection(),'guard_header_classification');assert.equal(folded.g.trace().guardHeaderReason,'syntax');
-  const wrong=resourceFixture();wrong.ready();wrong.assetRequest();wrong.assetResponse({'Set-Cookie':'lang=en; Path=/'},{frameId:'other'});assert.equal(wrong.g.rejection(),'guard_response_correlation');
+  const wrong=resourceFixture();wrong.ready();wrong.assetRequest();wrong.assetResponse({'Set-Cookie':'lang=en; Path=/'},{frameId:'other'});assert.equal(wrong.g.rejection(),'unknown');
   const shape=resourceFixture();shape.ready();shape.assetRequest();shape.assetResponse({'Set-Cookie':['lang=x']});assert.equal(shape.g.rejection(),'guard_metadata_shape');
-  const budget=resourceFixture();budget.ready();for(let i=0;i<1280;i++)budget.emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:frame,loaderId:next,type:'Image',request:{method:'TRACE',url:'https://foreign.invalid/asset'}});
+  const budget=resourceFixture();budget.ready();for(let i=0;i<16384;i++)budget.emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:frame,loaderId:next,type:'Image',request:{method:'TRACE',url:'https://foreign.invalid/asset'}});
   assert.equal(budget.g.rejection(),'guard_request_budget');const report=budget.g.finish();assert.equal(report.candidateAttempts,0);assert.equal(report.otherAttempts,0);
   for(const mode of ['header','event']){
     const s=resourceFixture();s.ready();s.assetRequest();
@@ -201,7 +200,7 @@ test('guard first rejection distinguishes unbound, ambiguous syntax, correlation
     assert.equal(s.g.rejection(),mode==='header'?'guard_header_budget':'cookie_candidate');
   }
 });
-for(const role of ['reader','collector'])test(`${role} actual handoff accepts committed resource-before-context ordering only after full resolution`,async()=>{
+for(const role of ['reader','collector'])test(`${role} actual handoff preserves resource-before-context noninterference and header safety`,async()=>{
   for(const resourceMode of ['response-after-context','response-before-context','after-context']){
     const r=await handoffFixture({role,resourceMode});assert.equal(r.early.stopReason,'captured');assert.equal(r.observation.diagnostic,'bound');assert.equal(r.observation.manualCookieGuard.diagnostic,'other_only');assert.equal(r.receipts,1);
   }

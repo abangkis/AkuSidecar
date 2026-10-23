@@ -2033,8 +2033,8 @@ async function startManualCookieObservation(current) {
   const s=current.shortFeasibility;
   if(current.manualCookieGuard||s.manualCookieGuard)throw probeError('manual_setup_unavailable');
   const diagnostics=current.manualCookieDiagnostics=startupFailureLatch();
-  const make=(frameId,sessionId,role)=>new ManualStartupCookieGuard(frameId,sessionId,{beforeSeed:true,onRejection:(reason,trace)=>{
-    diagnostics.record(startupFailure(role,'bound_finish','observed_cookie_write',false,undefined,{firstCause:reason,...trace}),role,'bound_finish','observed_cookie_write');
+  const make=(frameId,sessionId,role)=>new ManualStartupCookieGuard(frameId,sessionId,{beforeSeed:true,onRejection:(reason,trace,failureReason)=>{
+    diagnostics.record(startupFailure(role,'bound_finish',failureReason,false,undefined,{firstCause:reason,...trace}),role,'bound_finish',failureReason);
   }});
   const reader=await send('Page.getFrameTree',{},current.sessionId,'manual_provenance');
   current.manualCookieGuard=make(reader.frameId,current.sessionId,'reader');
@@ -2070,7 +2070,7 @@ export async function seedRetainedManualPilot(message){
       if(!guard)throw manualSeedFailure('preconditions','rejected');
       const reason=guard.rejection();
       if(reason!=='unknown')throw current.manualCookieDiagnostics.record(
-        startupFailure(role,'bound_finish','observed_cookie_write',false,undefined,{firstCause:reason,...guard.trace()}),role,'bound_finish','observed_cookie_write');
+        startupFailure(role,'bound_finish',guard.failureReason(),false,undefined,{firstCause:reason,...guard.trace()}),role,'bound_finish',guard.failureReason());
     }
   };
   current.manualSetup=createRetainedManualSetup({enabled:true,transferAllowed:true,

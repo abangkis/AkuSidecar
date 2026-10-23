@@ -641,9 +641,9 @@ return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!c
 				case "trace-budget", "trace-budget-candidate":
 					wantFirst, wantCookie = "guard_request_budget", "guard_request_budget"
 				case "trace-unbound", "trace-redirect", "trace-reused", "trace-redirect-peer-first":
-					wantFirst, wantCookie = "guard_request_unbound", "guard_request_unbound"
+					wantFirst, wantCookie, wantReason = "guard_request_unbound", "guard_request_unbound", "scope_lost"
 				case "trace-response":
-					wantFirst, wantCookie = "guard_response_correlation", "guard_response_correlation"
+					wantFirst, wantCookie, wantReason = "guard_response_correlation", "guard_response_correlation", "scope_lost"
 				case "trace-metadata":
 					wantFirst, wantCookie = "guard_metadata_shape", "guard_metadata_shape"
 				case "trace-completion":
@@ -659,16 +659,12 @@ return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!c
 				switch role {
 				case "trace-budget", "trace-budget-candidate":
 					wantTrigger, wantProvenance = "request", "unknown"
-				case "trace-unbound":
-					wantProvenance = "absent"
-					wantCondition = "request_absent"
-				case "trace-redirect", "trace-redirect-peer-first":
-					wantTrigger, wantProvenance = "request", "redirect"
-					wantCondition = "extra_flag"
-				case "trace-reused":
-					wantTrigger, wantProvenance = "request", "reused"
+				case "trace-unbound", "trace-redirect", "trace-redirect-peer-first", "trace-reused":
+					wantTrigger, wantProvenance, wantEpoch = "request", "root_scope", "document_committed"
+				case "trace-response":
+					wantProvenance, wantEpoch = "root_scope", "document_committed"
 				case "trace-completion":
-					wantTrigger = "finish"
+					wantTrigger, wantProvenance, wantEpoch = "finish", "root_scope", "document_committed"
 				}
 				if detail.trace.guardTrigger != wantTrigger || detail.trace.guardProvenance != wantProvenance || detail.trace.guardCondition != wantCondition || detail.trace.guardEpoch != wantEpoch || !strings.Contains(detail.String(), "trigger="+wantTrigger+" provenance="+wantProvenance+" condition="+wantCondition+" epoch="+wantEpoch) {
 					t.Fatalf("immutable guard discriminator lost across Node/Windows RPC/Go formatter: %s", detail)

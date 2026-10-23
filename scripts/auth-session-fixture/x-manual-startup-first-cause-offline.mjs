@@ -34,21 +34,21 @@ export function offlineFirstCausePair({faultRole='reader',fault='cookie'}={}){
     if(kind==='context-first')s.emit('Runtime.executionContextDestroyed',{executionContextId:Number(s.pins.contextId)});
     if(kind==='context-priority')s.emit('Runtime.executionContextDestroyed',{executionContextId:Number(s.pins.contextId)});
     if(kind==='guard-redirect'||kind==='guard-reused'){
-      const request={requestId:'repeat',frameId:s.pins.frameId,loaderId:s.pins.documentId,type:'Image',request:{method:'GET',url:'https://x.com/asset'}};
+      const request={requestId:'repeat',frameId:s.pins.frameId,loaderId:s.pins.documentId,type:'Document',request:{method:'GET',url:'https://x.com/home'}};
       s.emit('Network.requestWillBeSent',request);
-      s.emit('Network.requestWillBeSent',{...request,...(kind==='guard-redirect'?{redirectResponse:{url:'https://x.com/asset',status:302,headers:{}}}:{})});
+      s.emit('Network.requestWillBeSent',{...request,...(kind==='guard-redirect'?{redirectResponse:{url:'https://x.com/home',status:302,headers:{}}}:{})});
     }
     if(kind==='guard-budget'){
       s.emit('Network.requestWillBeSent',{requestId:'root',frameId:s.pins.frameId,loaderId:s.pins.documentId,type:'Document',request:{method:'GET',url:'https://x.com/home'}});
-      // Documents remain security-required; recognized ordinary methods use
-      // independent, explicitly partial diagnostic buffering.
-      for(let i=0;i<1280;i++)s.emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:s.pins.frameId,loaderId:s.pins.documentId,type:'Document',request:{method:'GET',url:'https://foreign.invalid/asset'}});
+      // The finite exact-ID history spans all observed source roles.
+      for(let i=0;i<16384;i++)s.emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:s.pins.frameId,loaderId:s.pins.documentId,type:'Document',request:{method:'GET',url:'https://foreign.invalid/asset'}});
     }
     if(['guard-priority','guard-unbound','guard-response','guard-metadata','guard-completion','context-priority'].includes(kind)){
-      if(kind!=='guard-unbound')s.emit('Network.requestWillBeSent',{requestId:'asset',frameId:s.pins.frameId,loaderId:s.pins.documentId,type:kind==='guard-completion'?'Document':'Image',request:{method:'GET',url:'https://x.com/asset'}});
-      // Priority fixtures exercise first-cause ordering through genuine folded-pair ambiguity.
+      const pinned=['guard-unbound','guard-response','guard-completion'].includes(kind);
+      const url=pinned?'https://x.com/home':'https://x.com/asset';
+      s.emit('Network.requestWillBeSent',{requestId:'asset',frameId:s.pins.frameId,loaderId:s.pins.documentId,type:pinned?'Document':'Image',request:{method:kind==='guard-unbound'?'POST':'GET',url}});
       const header=kind==='guard-metadata'?['lang=en']:kind==='guard-priority'||kind==='context-priority'?'lang=x; Priority=Low, auth_token=y':'lang=en; Path=/';
-      s.emit('Network.responseReceived',{requestId:'asset',frameId:kind==='guard-response'?'foreign-frame':s.pins.frameId,loaderId:s.pins.documentId,hasExtraInfo:kind==='guard-completion',response:{url:'https://x.com/asset',status:200,headers:{'Set-Cookie':header}}});
+      s.emit('Network.responseReceived',{requestId:'asset',frameId:kind==='guard-response'?'foreign-frame':s.pins.frameId,loaderId:s.pins.documentId,hasExtraInfo:kind==='guard-completion',response:{url,status:200,headers:{'Set-Cookie':header}}});
     }
     if(['cookie','ambiguous','context-first','cookie-context','cleanup'].includes(kind)){
       s.emit('Network.requestWillBeSent',{requestId:'asset',frameId:s.pins.frameId,loaderId:s.pins.documentId,request:{method:'GET',url:'https://x.com/asset'}});
@@ -73,6 +73,7 @@ export function offlineFirstCausePair({faultRole='reader',fault='cookie'}={}){
       emit('Network.loadingFinished',{requestId:'settings',encodedDataLength:32});
     };
     states[role]={binder,pins,emit,settings};
+    if(role===faultRole&&['guard-unbound','guard-response','guard-completion','guard-redirect','guard-reused'].includes(fault))binder.armManualReload('offline-old');
     emit('Page.frameNavigated',{frame:{id:pins.frameId,loaderId:pins.documentId,url:'https://x.com/home'}});
     emit('Runtime.executionContextCreated',{context:{id:Number(pins.contextId),origin:'https://x.com',auxData:{isDefault:true,frameId:pins.frameId}}});
     await sink.beforeIdentityRead(binder.startupPins(Number(pins.contextId)));

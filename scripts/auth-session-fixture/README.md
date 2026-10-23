@@ -1,57 +1,59 @@
 # Local one-login concurrency fixture
 
-## Manual V2 ordinary traffic classification and partial correlation (2026-10-23)
+## Manual V2 header safety and account evidence separation (2026-10-23)
 
-A previously observed, unique owned-session ordinary resource enters the
-diagnostic queue before optional frame/loader correlation is considered. It
-needs a bounded valid HTTPS nonprotected URL, a recognized resource type and
-one of GET, HEAD, POST, OPTIONS, PUT, PATCH or DELETE. The resource list includes
-Ping, Preflight, EventSource and Prefetch. An absent frame and an absent/empty
-loader are unavailable diagnostic metadata; present malformed fields remain
-rejected. Home, Documents, protected settings paths, unknown methods/types,
-orphan metadata and redirects do not gain this capability. No root frame,
-loader or relationship to account/login evidence is inferred.
+The current Manual V2 policy makes two independent decisions. Every observed
+header on the exact owned CDP session is inspected for `auth_token`/`ct0`,
+blocked/deletion attempts, ambiguous names and malformed header representations.
+An unambiguous other cookie name only increments a bounded diagnostic counter.
+Its URL, request type/method, frame, loader, redirect history, completion and
+eligibility as an account source do not turn it into a session mutation.
 
-The private tuple keeps unavailable references unknown. Later references are
-diagnostic only and cannot adopt the tuple into root/settings evidence.
-Missing ordinary response or required ExtraInfo completion marks partial
-diagnostics instead of rejecting account startup. Concrete URL/status/loader/
-frame contradictions, malformed fields and duplicate ExtraInfo still reject.
-Root/settings/redirect completion remains mandatory. Diagnostic eviction cannot
-change admission merely because optional ordinary completion was absent.
-The public summary marks `diagnosticCoverage: partial` and includes the bounded
-`diagnosticMissingFrameRequests` count; missing frame metadata is not counted
-as dropped records. Candidate/blocked/deletion attempts and malformed/ambiguous
-headers still reject before diagnostic routing, including after eviction.
-Existing no-adoption markers and security/diagnostic capacities remain active.
+Account proof is selected separately. Only a fresh GET on the allowed settings
+route, with the pinned owner/session, main frame, document loader, ready context
+and identity, can become a candidate. Unselected traffic cannot provide or repair
+proof. Once selected, its exact request ID, response/frame/loader/status/cache,
+required ExtraInfo, body, freshness and cleanup remain strict. The explicitly
+armed main-document navigation also retains independent root-response and
+commit checks. Header classification never supplies account authority.
+When root observation is explicitly armed, missing the root request also fails
+completion; a Page event alone cannot replace the required network observation.
 
-`x-manual-unframed-traffic.test.mjs` covers the classification and its authority
-boundaries. The accountless real reader dispatcher also exercises POST/Ping and
-empty loaders without rebinding account evidence. Closed `guardCondition`
-categories distinguish excluded URL, protected source, type, method, session,
-malformed frame/loader and missing predecessor conditions without raw metadata.
-Default strict/deferred policies, Store and native activation are unchanged.
-The preceding native trace was reproduced offline by both empty-loader and
-POST/Ping requests. Neither reproduction identifies the actual native request;
-this revision has not repeated retained QA execution or session transfer.
+Ineligible Home, Document or settings traffic may carry ordinary cookies without
+globally invalidating an independent account observation. This does not allow
+such traffic to stand in for the pinned root navigation or selected settings
+request. Previously orphaned/reused IDs and redirects remain ineligible for later
+adoption as a new account request; candidate/ambiguous headers still reject on
+all of them. Missing or inconsistent diagnostic metadata is nonauthoritative.
+Default strict/deferred QA, Store, the 60-second deadline and activation gates
+are unchanged. The preceding native `protected_source` trace motivates this
+revision but does not identify the native URL or request type. No new native
+acceptance or session transfer is implied by offline tests.
 
 ## Manual V2 diagnostic capacity isolation (2026-10-23)
 
-Ordinary eligible resources now use a 256-entry diagnostic correlation
-queue, separate from the 1,280 lifetime security-record budget for root,
-settings, redirects and unsupported/malformed requests. The diagnostic queue
-may evict tuples; an exact-ID registry prevents discarded IDs from being
-adopted later as new evidence, root requests or redirects. That registry holds
-at most 16,384 diagnostic IDs per role; exhausting it is security coverage loss
-and still rejects. This is bounded diagnostic isolation, not unlimited traffic.
+The guard keeps at most 256 diagnostic request contexts and 16,384 exact-ID
+history entries per role. Diagnostic eviction cannot change header safety or
+permit ID adoption. An orphan response or a repeated/redirected request ID
+cannot subsequently be selected as a fresh account request. Exhausting exact
+history remains fatal coverage loss. The former generic 1,280 request/ExtraInfo
+correlation budget is retired; pinned root checks and selected-account checks
+are explicit instead of imposing that correlation model on all browser traffic.
 
 Every observed owned-session header remains inspected for `auth_token`/`ct0`
 attempts and ambiguous/malformed syntax, including after tuple eviction or
 diagnostic header-counter saturation. Known discarded ordinary-cookie metadata
 can only mark diagnostic loss; it cannot restore correlation or provide proof.
-Unknown orphan headers remain fail-closed. The summary exposes partial
-diagnostics and value-free dropped-record/header counters. Root/settings and
-promoted redirect records retain mandatory response/ExtraInfo checks.
+Unambiguous ordinary orphan headers are diagnostic only; malformed/ambiguous
+or candidate headers remain fail-closed. The summary exposes partial diagnostics
+and value-free dropped-record/header counters. `otherAttempts` counts observed
+noncandidate lines, not unique cookie writes or correlated network responses.
+An observed cookie-header attempt marks `diagnosticCoverage: partial`: inspection does
+not claim complete request correlation, regardless of diagnostic cache retention.
+Pinned root-proof failures report `scope_lost`; header safety or inspection
+coverage failures retain `observed_cookie_write`. That legacy label includes
+unavailable inspection and is not proof that a cookie changed. Structural guard
+counters and historical cause names are retained for compatibility.
 
 Manual V2's identity/lifecycle/selected-settings event budget is also separate
 from ordinary network traffic and foreign-session events. Strict/default and
@@ -62,7 +64,17 @@ capacity, candidate-after-eviction, no-adoption, first-cause and authority
 regressions plus default-off Windows compilation. This command does not run
 Chrome, acquire a profile or transfer a session. Native acceptance is separate.
 
+Current offline acceptance passed 247 Node tests, four Go top-level tests
+including 21 diagnostic subcases, all four tag gates and standalone Windows
+compilation. Obsolete generic provenance-rejection cases were replaced by
+header/evidence noninterference and no-adoption matrices. The real retained QA
+entry was skipped before lease/profile access. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-56c1baa125934c43a967e0063367963c.prepare.log.txt`.
+
 ## Manual V2 ordinary cookies outside the setter allowlist (2026-10-23)
+
+Historical intermediate policy: its request-correlation restrictions below are
+superseded by the header/evidence separation at the start of this README.
 
 An unambiguous cookie other than `auth_token`/`ct0` on a known outside request
 can contribute only to the existing `other_only` diagnostic. The private request

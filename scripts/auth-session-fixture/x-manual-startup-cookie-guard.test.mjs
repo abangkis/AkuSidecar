@@ -190,21 +190,21 @@ test('outside ambiguous, malformed and accessor headers remain closed without ec
   assert.equal(reads, 0);
 });
 
-test('outside ordinary markers cannot repair missing, mismatched or unowned provenance', async () => {
+test('outside ordinary markers do not interfere with independent proof across missing or mismatched metadata', async () => {
   for (const options of [{orphan: true}, {requestPatch: {frameId: undefined}}, {requestPatch: {loaderId: undefined}},
     {responsePatch: {frameId: 'different'}}, {responsePatch: {loaderId: 'different'}},
     {responsePatch: {response: {url: 'https://other.invalid/asset', status: 200, headers: {'Set-Cookie': 'lang=en'}}}},
     {source: 'extra-before', extraPatch: {statusCode: 201}}]) {
     const s = sample(); s.document(); outsideCookie(s, options);
     const r = await finish(s);
-    assert.equal(r.diagnostic, 'observed_cookie_write'); assert.equal(s.published(), 0);
+    assert.equal(r.diagnostic, 'bound'); assert.equal(s.published(), 1);
   }
   for (const url of ['not-a-url', 'http://static.invalid/asset', 'https://x.com/asset#fragment',
     'https://static.invalid/asset#fragment', 'https://user:PRIVATE@static.invalid/asset', 'https://static.invalid:444/asset']) {
     const s = sample(); s.document();
     outsideCookie(s, {requestPatch: {request: {method: 'GET', url}},
       responsePatch: {response: {url, status: 200, headers: {'Set-Cookie': 'lang=en'}}}});
-    assert.equal((await finish(s)).diagnostic, 'observed_cookie_write'); assert.equal(s.published(), 0);
+    assert.equal((await finish(s)).diagnostic, 'bound'); assert.equal(s.published(), 1);
   }
 });
 
@@ -233,7 +233,7 @@ test('outside diagnostics cannot supply or repair identity/login, lifecycle, fre
   }
 });
 
-test('outside ordinary traffic retains replay, redirect and declared response/ExtraInfo checks', async () => {
+test('outside ordinary traffic does not turn replay, redirect or completion metadata into mutation evidence', async () => {
   for (const fault of ['missing-response', 'missing-extra', 'duplicate-extra', 'undeclared-extra', 'reused', 'redirect']) {
     const s = sample(); s.document();
     s.request('outside', {request: {method: 'GET', url: outsideURL}});
@@ -245,8 +245,8 @@ test('outside ordinary traffic retains replay, redirect and declared response/Ex
     if (fault !== 'missing-extra') s.extra('outside', fault === 'missing-response' ? {'Set-Cookie': 'lang=en'} : {}, {});
     if (fault === 'duplicate-extra') s.extra('outside', {}, {});
     const r = await finish(s);
-    assert.equal(r.diagnostic, 'observed_cookie_write', fault); assert.equal(s.published(), 0, fault);
-    assert.equal(r.manualCookieGuard.diagnostic, 'ambiguous');
+    assert.equal(r.diagnostic, 'bound', fault); assert.equal(s.published(), 1, fault);
+    assert.equal(r.manualCookieGuard.diagnostic, 'other_only');
   }
 });
 
@@ -323,11 +323,11 @@ test('identity readiness remains independent of header provenance and rejected r
     if (fault === 'reused-id') s.request();
     s.response('other', { 'Set-Cookie': 'lang=en; Path=/' });
     const r = await s.binder.finish(true);
-    assert.equal(r.diagnostic, ['loader','context'].includes(fault) ? 'identity_unavailable' : 'observed_cookie_write'); assert.equal(s.published(), 0);
+    assert.equal(r.diagnostic, 'identity_unavailable'); assert.equal(s.published(), 0);
   }
 });
 
-test('ExtraInfo before response requires a known request and final exact response, never late rebinding', async () => {
+test('ExtraInfo before response classifies ordinary headers without granting response authority', async () => {
   const good = sample(); good.document(); good.request(); good.extra('other', { 'Set-Cookie': 'lang=en; Path=/' });
   good.response('other', {}, { hasExtraInfo: true });
   assert.equal((await finish(good)).diagnostic, 'bound');
@@ -341,17 +341,17 @@ test('ExtraInfo before response requires a known request and final exact respons
     if (fault === 'duplicate-extra') s.extra();
     if (!['missing-response', 'response-url', 'response-frame'].includes(fault)) s.response('other', {}, { hasExtraInfo: fault !== 'extra-false' });
     const r = await finish(s);
-    assert.equal(r.diagnostic, 'observed_cookie_write', fault); assert.equal(s.published(), 0);
+    assert.equal(r.diagnostic, 'bound', fault); assert.equal(s.published(), 1);
   }
 });
 
-test('response cookie waits for declared ExtraInfo and later metadata contradictions stay rejected', async () => {
+test('ordinary response cookies remain diagnostics across incomplete or contradictory metadata', async () => {
   for (const fault of ['missing-extra', 'duplicate-response', 'late-status', 'extra-after-false']) {
     const s = sample(); s.document(); s.request();
     s.response('other', { 'Set-Cookie': 'lang=en; Path=/' }, { hasExtraInfo: fault !== 'extra-after-false' });
     if (fault === 'duplicate-response') s.response('other', {}, { hasExtraInfo: true });
     if (fault !== 'missing-extra') s.extra('other', {}, fault === 'late-status' ? { statusCode: 201 } : {});
-    assert.equal((await finish(s)).diagnostic, 'observed_cookie_write');
+    assert.equal((await finish(s)).diagnostic, 'bound');
   }
 });
 
@@ -359,8 +359,8 @@ test('redirect response and blocked-cookie attempts cannot bypass candidate or a
   for (const name of ['auth_token', 'ct0', 'lang']) {
     const s = sample(); s.document();
     s.request('redirect', { redirectResponse: { headers: { 'Set-Cookie': `${name}=PRIVATE; Path=/` } } });
-    const r = await finish(s); assert.equal(r.diagnostic, 'observed_cookie_write');
-    assert.equal(r.manualCookieGuard.diagnostic, name === 'lang' ? 'ambiguous' : 'candidate_observed');
+    const r = await finish(s); assert.equal(r.diagnostic, name === 'lang' ? 'bound' : 'observed_cookie_write');
+    assert.equal(r.manualCookieGuard.diagnostic, name === 'lang' ? 'other_only' : 'candidate_observed');
   }
   for (const blocked of [[{}], {}, new Array(33).fill({ cookieLine: 'lang=x' })]) {
     const s = sample(); s.document(); s.request(); s.extra('other', {}, { blockedCookies: blocked });
@@ -371,7 +371,7 @@ test('redirect response and blocked-cookie attempts cannot bypass candidate or a
 test('bounded request/header/line metadata and accessor rejection stay fail closed', () => {
   for (const kind of ['requests', 'headers', 'lines', 'events', 'getter']) {
     const s = guard(); s.request();
-    if (kind === 'requests') for (let i = 0; i < 1281; i++) s.request('r' + i);
+    if (kind === 'requests') for (let i = 0; i < 16384; i++) s.request('r' + i);
     else {
       let headers = { 'Set-Cookie': 'lang=x; Path=/' };
       if (kind === 'headers') headers = Object.fromEntries(Array.from({ length: 129 }, (_, i) => ['h' + i, 'v']));
@@ -379,7 +379,7 @@ test('bounded request/header/line metadata and accessor rejection stay fail clos
       if (kind === 'getter') headers = Object.defineProperty({}, 'Set-Cookie', { get() { assert.fail('getter invoked'); } });
       for (let i = 0; i < (kind === 'events' ? 65 : 1); i++) s.emit('Network.responseReceivedExtraInfo', { requestId: 'r', statusCode: 200, headers });
     }
-    const r = s.g.finish(); assert.equal(r.diagnostic, 'ambiguous'); assert.ok(r.ambiguousAttempts <= 64);
+    const r = s.g.finish(); assert.equal(r.diagnostic, kind === 'events' ? 'other_only' : 'ambiguous'); assert.ok(r.ambiguousAttempts <= 64);
     assert.throws(() => s.g.finish());
   }
 });

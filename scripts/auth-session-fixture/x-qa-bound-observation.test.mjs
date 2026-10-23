@@ -261,7 +261,7 @@ test('Manual V2 keeps selected request ID reuse and root response-frame conflict
     if (conflict === 'response_frame') s.response({ frameId: 'child-frame' }, {}, 'same-id');
     else s.response({}, {}, 'same-id');
     const report = await s.b.finish(true);
-    assert.equal(report.diagnostic, conflict === 'ignored_id' ? 'observed_cookie_write' : 'scope_lost', conflict);
+    assert.equal(report.diagnostic, conflict === 'ignored_id' ? 'source_unavailable' : 'scope_lost', conflict);
     assert.equal(receipts, 0);
   }
 });
@@ -280,7 +280,7 @@ test('Manual V2 leaves malformed request tuples, stale root loaders, and pre-ide
     s.request(patch, fault === 'malformed_request_id' ? 7 : 'fault-request');
     s.response({}, {}, fault === 'malformed_request_id' ? 7 : 'fault-request');
     const report = await s.b.finish(true);
-    assert.equal(report.diagnostic, 'scope_lost', fault);
+    assert.equal(report.diagnostic, fault==='before_identity'?'identity_unavailable':'source_unavailable', fault);
     assert.equal(receipts, 0);
   }
 });
