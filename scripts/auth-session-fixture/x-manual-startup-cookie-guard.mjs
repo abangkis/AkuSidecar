@@ -13,6 +13,11 @@ const MAX_DIAGNOSTIC_RECORDS = 256;
 // bounded markers is coverage loss, not a successful truncated observation.
 const MAX_DIAGNOSTIC_IDS = 16384;
 const increment = value => Math.min(Number.MAX_SAFE_INTEGER, value + 1);
+// Closed projections never invoke accessors or retain browser-owned values.
+const cacheProjection = response => Object.fromEntries([
+  ['guardDiskCache','fromDiskCache'],['guardServiceWorker','fromServiceWorker'],['guardPrefetchCache','fromPrefetchCache']
+].map(([key,field])=>{const value=data(response,field);return [key,value===undefined?'absent':value===true?'true':value===false?'false':'malformed'];}));
+const firstCondition = checks => checks.find(([failed])=>failed)?.[1];
 // Diagnostic only. Acceptance uses private request-local frame correlation.
 function requestFrameProjection(params, root) {
   const d = Object.getOwnPropertyDescriptor(params, 'frameId');
@@ -73,7 +78,7 @@ export class ManualStartupCookieGuard {
   }
   armReload(oldLoader) {
     if (this.#closed || this.#armed || !this.#baseline || !ref(oldLoader) || !ref(this.#session)) {
-      this.#fail('guard_request_unbound','arm'); throw new Error('manual_cookie_guard_invalid');
+      this.#fail('guard_request_unbound','arm','unknown',firstCondition([[this.#closed,'root_arm_closed'],[this.#armed,'root_arm_repeated'],[!this.#baseline,'root_arm_before_seed'],[!ref(oldLoader),'root_arm_loader'],[!ref(this.#session),'root_arm_session']])); throw new Error('manual_cookie_guard_invalid');
     }
     this.#armed = true; this.#oldLoader = oldLoader;
   }
@@ -161,8 +166,8 @@ export class ManualStartupCookieGuard {
     this.#history.set(id,request&&!redirect?'first_request':'ineligible');
     return request&&!redirect;
   }
-  #rootFailure(reason, trigger) {
-    this.#fail(reason,trigger,'root_scope','unknown',null,this.#root?.frameStatus??'matching');
+  #rootFailure(reason, trigger, condition, response = null, frame = this.#root?.frameStatus??'unknown') {
+    this.#fail(reason,trigger,'root_scope',condition,response===null?this.#root?.cache??null:cacheProjection(response),frame);
   }
   observe(raw) {
     if(this.#closed)return true;
@@ -187,9 +192,10 @@ export class ManualStartupCookieGuard {
     if(method==='Network.responseReceivedExtraInfo')this.#attempt(data(p,'headers'),data(p,'blockedCookies'),context,'extra');
     if(method==='Page.frameNavigated'&&this.#armed&&data(data(p,'frame'),'id')===this.#frame){
       const frame=data(p,'frame'),loader=data(frame,'loaderId');
-      if(this.#commit!==null||!ref(loader)||loader===this.#oldLoader||data(frame,'url')!=='https://x.com/home'||data(frame,'parentId')!==undefined)this.#rootFailure('guard_response_correlation','document');
+      const condition=firstCondition([[this.#commit!==null,'root_commit_duplicate'],[!ref(loader),'root_commit_loader_invalid'],[loader===this.#oldLoader,'root_commit_old_loader'],[data(frame,'url')!=='https://x.com/home','root_commit_url'],[data(frame,'parentId')!==undefined,'root_commit_parent']]);
+      if(condition)this.#rootFailure('guard_response_correlation','document',condition);
       else this.#commit=loader;
-      if(this.#root&&this.#root.loaderId!==loader)this.#rootFailure('guard_response_correlation','document');
+      if(this.#root&&this.#root.loaderId!==loader)this.#rootFailure('guard_response_correlation','document','root_commit_loader_mismatch');
     }
     if(method==='Network.requestWillBeSent'){
       const redirect=data(p,'redirectResponse')!==undefined;
@@ -214,9 +220,10 @@ export class ManualStartupCookieGuard {
       const pinned=this.#armed&&data(p,'type')==='Document'&&data(p,'frameId')===this.#frame;
       if(pinned){
         const request=data(p,'request'),loader=data(p,'loaderId');
-        if(this.#root||!first||data(request,'method')!=='GET'||data(request,'url')!=='https://x.com/home'||!ref(loader)||loader===this.#oldLoader||this.#commit&&this.#commit!==loader)this.#rootFailure('guard_request_unbound','request');
+        const condition=firstCondition([[!!this.#root,'root_request_duplicate'],[!first,redirect?'root_request_redirect':'root_request_history'],[data(request,'method')!=='GET','root_request_method'],[data(request,'url')!=='https://x.com/home','root_request_url'],[!ref(loader),'root_request_loader_invalid'],[loader===this.#oldLoader,'root_request_old_loader'],[!!this.#commit&&this.#commit!==loader,'root_request_commit_mismatch']]);
+        if(condition)this.#rootFailure('guard_request_unbound','request',condition,null,frameStatus);
         else this.#root={id,loaderId:loader,frameStatus,response:false,extra:null,needsExtra:null};
-      }else if(this.#root&&this.#root.id===id)this.#rootFailure('guard_request_unbound','request');
+      }else if(this.#root&&this.#root.id===id)this.#rootFailure('guard_request_unbound','request','root_request_reused');
     }else if(method.startsWith('Network.')&&id!==undefined){
       const known=this.#history.has(id);
       this.#remember(id,false,false);
@@ -226,15 +233,21 @@ export class ManualStartupCookieGuard {
     if(root&&id===root.id){
       if(method==='Network.responseReceived'){
         const response=data(p,'response'),extra=data(p,'hasExtraInfo');
-        if(root.response||data(p,'frameId')!==this.#frame||data(p,'loaderId')!==root.loaderId||data(response,'url')!=='https://x.com/home'||data(response,'status')!==200||typeof extra!=='boolean'||['fromDiskCache','fromServiceWorker','fromPrefetchCache'].some(k=>data(response,k)!==undefined&&data(response,k)!==false))this.#rootFailure('guard_response_correlation','response');
+        // Retain only closed cache projections for subsequent root failures.
+        // The sticky first trace is never enriched from a later response.
+        root.cache??=cacheProjection(response);
+        const frame=requestFrameProjection(p,this.#frame);
+        const condition=firstCondition([[root.response,'root_response_duplicate'],[data(p,'frameId')!==this.#frame,`root_response_frame_${frame}`],[data(p,'loaderId')!==root.loaderId,'root_response_loader'],[data(response,'url')!=='https://x.com/home','root_response_url'],[data(response,'status')!==200,'root_response_status'],[typeof extra!=='boolean','root_response_extra_flag'],...['fromDiskCache','fromServiceWorker','fromPrefetchCache'].map((k,i)=>[data(response,k)!==undefined&&data(response,k)!==false,['root_response_disk_cache','root_response_service_worker','root_response_prefetch_cache'][i]])]);
+        if(condition)this.#rootFailure('guard_response_correlation','response',condition,response);
         root.response=true;root.needsExtra=extra;
       }
       if(method==='Network.responseReceivedExtraInfo'){
-        if(root.extra!==null||data(p,'statusCode')!==200)this.#rootFailure('guard_response_correlation','extra');
+        const condition=firstCondition([[root.extra!==null,'root_extra_duplicate'],[data(p,'statusCode')!==200,'root_extra_status']]);
+        if(condition)this.#rootFailure('guard_response_correlation','extra',condition);
         root.extra=data(p,'statusCode');
       }
-      if(method==='Network.loadingFailed'||method==='Network.requestServedFromCache')this.#rootFailure('guard_response_correlation','response');
-      if(root.response&&root.extra!==null&&root.needsExtra!==true)this.#rootFailure('guard_response_correlation','extra');
+      if(method==='Network.loadingFailed'||method==='Network.requestServedFromCache')this.#rootFailure('guard_response_correlation','response',method==='Network.loadingFailed'?'root_loading_failed':'root_served_from_cache');
+      if(root.response&&root.extra!==null&&root.needsExtra!==true)this.#rootFailure('guard_response_correlation','extra','root_extra_unexpected');
     }
     return this.#candidate>0||this.#ambiguous>0;
   }
@@ -243,8 +256,8 @@ export class ManualStartupCookieGuard {
     this.#closed=true;
     if(!this.#baseline)this.#fail('guard_request_unbound','baseline');
     const root=this.#root;
-    if(this.#armed&&!root)this.#rootFailure('guard_completion_missing','finish');
-    if(root&&(!root.response||this.#commit!==root.loaderId||root.needsExtra===true&&root.extra===null))this.#rootFailure('guard_completion_missing','finish');
+    if(this.#armed&&!root)this.#rootFailure('guard_completion_missing','finish','root_missing');
+    if(root){const condition=firstCondition([[!root.response,'root_response_missing'],[this.#commit!==root.loaderId,'root_commit_missing'],[root.needsExtra===true&&root.extra===null,'root_extra_missing']]);if(condition)this.#rootFailure('guard_completion_missing','finish',condition);}
     // Correlation of ordinary headers is deliberately not claimed. An absence
     // of cookie candidates is bounded observed-header evidence only.
     this.#history.clear();this.#diagnosticRequests.clear();this.#root=null;

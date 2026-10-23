@@ -661,10 +661,16 @@ return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!c
 					wantTrigger, wantProvenance = "request", "unknown"
 				case "trace-unbound", "trace-redirect", "trace-redirect-peer-first", "trace-reused":
 					wantTrigger, wantProvenance, wantEpoch = "request", "root_scope", "document_committed"
+					wantCondition = "root_request_duplicate"
+					if role == "trace-unbound" {
+						wantCondition = "root_request_method"
+					}
 				case "trace-response":
 					wantProvenance, wantEpoch = "root_scope", "document_committed"
+					wantCondition = "root_response_frame_different"
 				case "trace-completion":
 					wantTrigger, wantProvenance, wantEpoch = "finish", "root_scope", "document_committed"
+					wantCondition = "root_extra_missing"
 				}
 				if detail.trace.guardTrigger != wantTrigger || detail.trace.guardProvenance != wantProvenance || detail.trace.guardCondition != wantCondition || detail.trace.guardEpoch != wantEpoch || !strings.Contains(detail.String(), "trigger="+wantTrigger+" provenance="+wantProvenance+" condition="+wantCondition+" epoch="+wantEpoch) {
 					t.Fatalf("immutable guard discriminator lost across Node/Windows RPC/Go formatter: %s", detail)
@@ -689,7 +695,7 @@ func TestXManualPilotRetainedTraceCodes(t *testing.T) {
 	if !filepath.IsAbs(project) || !filepath.IsAbs(node) {
 		t.Skip("accountless trace parity requires helper")
 	}
-	const script = `import{pathToFileURL}from'node:url';const m=await import(pathToFileURL(process.argv[1]));const catalogs=[m.STARTUP_ROLES,m.STARTUP_PHASES,m.STARTUP_REASONS,['primary','peer'],...Object.values(m.STARTUP_TRACE)],codes=[];for(const[key,values]of Object.entries(m.STARTUP_TRACE))for(const value of values)codes.push(m.startupRPCCode(m.startupFailure('collector','inspect_before','observed_cookie_write',true,undefined,{[key]:value})));const combined=Object.fromEntries(Object.entries(m.STARTUP_TRACE).map(([key,values])=>[key,values[0]]));combined.firstCause='guard_request_unbound';combined.guardTrigger='redirect';combined.guardProvenance='redirect';combined.guardCondition='response_cache';combined.guardEpoch='before_seed';combined.guardDiskCache='true';combined.guardServiceWorker='false';combined.guardPrefetchCache='absent';combined.guardRequestFrame='matching';const combinedCode=m.startupRPCCode(m.startupFailure('reader','bound_finish','observed_cookie_write',false,undefined,combined));const headerReasonCode=m.startupRPCCode(m.startupFailure('reader','bound_finish','observed_cookie_write',false,undefined,{firstCause:'guard_header_classification',guardHeaderReason:'attribute_unsupported'}));const maximum=Object.fromEntries(Object.entries(m.STARTUP_TRACE).map(([key,values])=>[key,values.at(-1)]));const maximumCode=m.startupRPCCode(m.startupFailure('reader','bound_finish','observed_cookie_write',false,undefined,maximum));console.log(JSON.stringify({catalogs,codes,combinedCode,headerReasonCode,maximumCode}));`
+	const script = `import{pathToFileURL}from'node:url';const m=await import(pathToFileURL(process.argv[1]));const catalogs=[m.STARTUP_ROLES,m.STARTUP_PHASES,m.STARTUP_REASONS,['primary','peer'],...Object.values(m.STARTUP_TRACE)],codes=[];for(const[key,values]of Object.entries(m.STARTUP_TRACE))for(const value of values)codes.push(m.startupRPCCode(m.startupFailure('collector','inspect_before','observed_cookie_write',true,undefined,{[key]:value})));const combined=Object.fromEntries(Object.entries(m.STARTUP_TRACE).map(([key,values])=>[key,values[0]]));combined.firstCause='guard_request_unbound';combined.guardTrigger='redirect';combined.guardProvenance='redirect';combined.guardCondition='response_cache';combined.guardEpoch='before_seed';combined.guardDiskCache='true';combined.guardServiceWorker='false';combined.guardPrefetchCache='absent';combined.guardRequestFrame='matching';const combinedCode=m.startupRPCCode(m.startupFailure('reader','bound_finish','observed_cookie_write',false,undefined,combined));const headerReasonCode=m.startupRPCCode(m.startupFailure('reader','bound_finish','observed_cookie_write',false,undefined,{firstCause:'guard_header_classification',guardHeaderReason:'attribute_unsupported'}));const maximum=Object.fromEntries(Object.entries(m.STARTUP_TRACE).map(([key,values])=>[key,values.at(-1)]));const maximumCode=m.startupRPCCode(m.startupFailure('reader','bound_finish','observed_cookie_write',false,undefined,maximum));const {ManualStartupCookieGuard:G}=await import(new URL('./x-manual-startup-cookie-guard.mjs',pathToFileURL(process.argv[1])));const rootCodes=['reader','collector'].map(role=>{const g=new G('private-frame','private-session'),l=m.startupFailureLatch();g.armReload('old');g.observe({sessionId:'private-session',method:'Network.requestWillBeSent',params:{requestId:'private-request',frameId:'private-frame',loaderId:'new',type:'Document',request:{method:'GET',url:'https://x.com/home'}}});g.observe({sessionId:'private-session',method:'Network.responseReceived',params:{requestId:'private-request',frameId:'private-frame',loaderId:'new',hasExtraInfo:false,response:{url:'https://x.com/home',status:200,headers:{},fromDiskCache:true,fromServiceWorker:false}}});const error=m.startupFailure(role,'bound_finish',g.failureReason(),false,undefined,{firstCause:g.rejection(),...g.trace()});l.record(error,role,'bound_finish');return m.startupRPCCode(error);});console.log(JSON.stringify({catalogs,codes,combinedCode,headerReasonCode,maximumCode,rootCodes}));`
 	cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(project, "scripts", "auth-session-fixture", "x-manual-startup-diagnostic.mjs"))
 	cmd.Stderr = io.Discard
 	raw, err := cmd.Output()
@@ -703,6 +709,7 @@ func TestXManualPilotRetainedTraceCodes(t *testing.T) {
 		CombinedCode     string
 		HeaderReasonCode string
 		MaximumCode      string
+		RootCodes        []string
 	}
 	if json.Unmarshal(raw, &payload) != nil {
 		t.Fatal("closed trace parity malformed")
@@ -769,6 +776,15 @@ func TestXManualPilotRetainedTraceCodes(t *testing.T) {
 	headerReason, ok := nativePilotInitialCode(payload.HeaderReasonCode)
 	if !ok || len(payload.HeaderReasonCode) > 80 || headerReason.trace == nil || headerReason.trace.firstCause != "guard_header_classification" || headerReason.trace.guardHeaderReason != "attribute_unsupported" || !strings.Contains(headerReason.String(), "header_reason=attribute_unsupported") {
 		t.Fatal("Node-branded startup failure did not carry its known header reason through RPC to Go")
+	}
+	if len(payload.RootCodes) != 2 {
+		t.Fatal("missing root trace roundtrips")
+	}
+	for _, code := range payload.RootCodes {
+		detail, ok := nativePilotInitialCode(code)
+		if !ok || len(code) > 80 || detail.trace == nil || detail.trace.guardCondition != "root_response_disk_cache" || detail.trace.guardEpoch != "reload_armed" || detail.trace.guardRequestFrame != "matching" || detail.trace.guardDiskCache != "true" || detail.trace.guardServiceWorker != "false" || detail.trace.guardPrefetchCache != "absent" || !strings.Contains(detail.String(), "condition=root_response_disk_cache") || strings.Contains(detail.String(), "private") {
+			t.Fatal("actual root trace did not survive Node-to-Go RPC/log projection")
+		}
 	}
 	maximum, ok := nativePilotInitialCode(payload.MaximumCode)
 	if !ok || len(payload.MaximumCode) > 80 || maximum.trace == nil || maximum.trace.guardHeaderReason != "capacity" {

@@ -76,7 +76,7 @@ test('arming is single use and requires a predecessor; earlier observed document
   assert.equal(noParams.g.finish().diagnostic,'ambiguous');
 });
 
-async function handoffFixture({role='reader',order='before-commit',cookie='lang=en; Path=/',fault,resourceMode}={}){
+async function handoffFixture({role='reader',order='before-commit',cookie='lang=en; Path=/',fault,resourceMode,rootResponsePatch={}}={}){
   const scope={owner:role==='reader'?1:2,profileId:'private-profile-'+role,sessionId:session,targetId:'private-target-'+role},diagnostics=startupFailureLatch();
   let binder,capture,index=0,phase='instrumentation',normal=null,instrumentation=true,evaluations=0,receipts=0,settings=false;
   const context=vm.createContext({location:{origin:'https://x.com',pathname:'/home'}});
@@ -84,7 +84,7 @@ async function handoffFixture({role='reader',order='before-commit',cookie='lang=
   const emit=(method,params,binding=scope)=>binder.observe({method,params,sessionId:session},binding);
   const commit=()=>{emit('Page.frameNavigated',{frame:{id:frame,loaderId:next,url:home}});capture.observe({type:'frame_navigated',frameId:frame,isHome:true});};
   const created=()=>{emit('Runtime.executionContextCreated',{context:{id:1,origin:'https://x.com',auxData:{isDefault:true,frameId:frame}}});capture.observe({type:'context_created',frameId:frame,contextId:1,isDefault:true});};
-  const root=(line=cookie)=>{emit('Network.requestWillBeSent',rootRequest());emit('Network.responseReceivedExtraInfo',rootExtra(line?{'Set-Cookie':line}:{}));emit('Network.responseReceived',rootResponse());};
+  const root=(line=cookie)=>{emit('Network.requestWillBeSent',rootRequest());emit('Network.responseReceivedExtraInfo',rootExtra(line?{'Set-Cookie':line}:{}));emit('Network.responseReceived',rootResponse({},rootResponsePatch));};
   const assetRequest=()=>emit('Network.requestWillBeSent',{requestId:'asset',frameId:frame,loaderId:next,type:'Image',request:{method:'GET',url:'https://x.com/asset'}});
   const assetResponse=()=>{
     emit('Network.responseReceived',{requestId:'asset',frameId:frame,loaderId:next,hasExtraInfo:true,response:{url:'https://x.com/asset',status:200,headers:cookie?{'Set-Cookie':cookie}:{}}});
@@ -221,5 +221,104 @@ test('actual handoff no-header control passes, candidates and observed scope/con
     const r=await handoffFixture(options);assert.notEqual(r.observation.diagnostic,'bound');assert.equal(r.receipts,0);
     if(options.cookie)assert.equal(r.evaluations,0);
     assert.throws(()=>requireBoundStartup(r.observation,'reader',r.diagnostics),error=>{assert.ok(startupDiagnostic(error));return true;});
+  }
+});
+
+// This matrix is also the input to the read-only 691875d differential check.
+export const rootDiagnosticCases = [
+  {name:'control'},
+  ...['fromDiskCache','fromServiceWorker','fromPrefetchCache'].flatMap((key,index)=>
+    [undefined,false,true,0,'private-value',null].map(value=>({name:`cache-${key}-${String(value)}`,response:{[key]:value},condition:value===undefined||value===false?undefined:['root_response_disk_cache','root_response_service_worker','root_response_prefetch_cache'][index]}))),
+  ...['fromDiskCache','fromServiceWorker','fromPrefetchCache'].map((key,index)=>({name:`cache-accessor-${key}`,cacheAccessor:key,condition:['root_response_disk_cache','root_response_service_worker','root_response_prefetch_cache'][index]})),
+  {name:'response-duplicate',repeatResponse:true,condition:'root_response_duplicate'},
+  ...[['absent',undefined],['malformed',7],['different','other']].map(([label,value])=>({name:`response-frame-${label}`,responseParams:value===undefined?{frameId:undefined}:{frameId:value},condition:`root_response_frame_${value===undefined?'malformed':label}`})),
+  {name:'response-frame-omitted',omitResponseFrame:true,condition:'root_response_frame_absent'},
+  {name:'response-loader',responseParams:{loaderId:'other'},condition:'root_response_loader'},
+  {name:'response-url',response:{url:'https://private.invalid/secret'},condition:'root_response_url'},
+  {name:'response-status',response:{status:304},condition:'root_response_status'},
+  {name:'response-extra-flag',responseParams:{hasExtraInfo:undefined},condition:'root_response_extra_flag'},
+  {name:'request-method',request:{request:{method:'POST',url:home}},condition:'root_request_method'},
+  {name:'request-url',request:{request:{method:'GET',url:'https://private.invalid/secret'}},condition:'root_request_url'},
+  {name:'request-loader-invalid',request:{loaderId:undefined},condition:'root_request_loader_invalid'},
+  {name:'request-loader-old',request:{loaderId:oldLoader},condition:'root_request_old_loader'},
+  {name:'request-redirect',request:{redirectResponse:{headers:{}}},condition:'root_request_redirect'},
+  {name:'request-history',priorResponse:true,condition:'root_request_history'},
+  {name:'request-duplicate',repeatRequest:true,condition:'root_request_duplicate'},
+  {name:'request-reuse',reuseRequest:true,condition:'root_request_reused'},
+  {name:'commit-before-request-mismatch',preCommit:true,condition:'root_request_commit_mismatch'},
+  {name:'commit-duplicate',repeatCommit:true,condition:'root_commit_duplicate'},
+  {name:'commit-loader-invalid',commit:{loaderId:undefined},condition:'root_commit_loader_invalid'},
+  {name:'commit-old-loader',commit:{loaderId:oldLoader},condition:'root_commit_old_loader'},
+  {name:'commit-url',commit:{url:'https://private.invalid/secret'},condition:'root_commit_url'},
+  {name:'commit-parent',commit:{parentId:'private-parent'},condition:'root_commit_parent'},
+  {name:'commit-loader-mismatch',commit:{loaderId:'other'},condition:'root_commit_loader_mismatch'},
+  {name:'extra-status',extra:{statusCode:201},condition:'root_extra_status'},
+  {name:'extra-duplicate',repeatExtra:true,condition:'root_extra_duplicate'},
+  {name:'extra-unexpected',responseParams:{hasExtraInfo:false},condition:'root_extra_unexpected'},
+  {name:'loading-failed',event:'Network.loadingFailed',condition:'root_loading_failed'},
+  {name:'served-cache',event:'Network.requestServedFromCache',condition:'root_served_from_cache'},
+  {name:'missing-root',missingRoot:true,condition:'root_missing'},
+  {name:'missing-response',missingResponse:true,condition:'root_response_missing'},
+  {name:'missing-commit',missingCommit:true,condition:'root_commit_missing'},
+  {name:'missing-extra',missingExtra:true,condition:'root_extra_missing'},
+  {name:'extra-before-response',extraFirst:true},
+  {name:'duplicate-completion-remains-accepted',duplicateCompletion:true},
+];
+export function runRootDiagnosticCase(Guard,c){
+  const g=new Guard(frame,session);const emit=(method,params)=>g.observe({method,params,sessionId:session});
+  g.armReload(oldLoader);
+  const commit=()=>emit('Page.frameNavigated',{frame:{id:frame,loaderId:next,url:home,...c.commit}});
+  if(c.preCommit)emit('Page.frameNavigated',{frame:{id:frame,loaderId:'other',url:home}});
+  if(c.priorResponse)emit('Network.responseReceived',rootResponse());
+  if(!c.missingRoot){emit('Network.requestWillBeSent',rootRequest(c.request));if(c.repeatRequest)emit('Network.requestWillBeSent',rootRequest());if(c.reuseRequest)emit('Network.requestWillBeSent',rootRequest({type:'XHR'}));}
+  const extra=()=>emit('Network.responseReceivedExtraInfo',rootExtra({},c.extra));
+  if(c.extraFirst)extra();
+  const response=rootResponse({},c.responseParams);Object.assign(response.response,c.response);if(c.omitResponseFrame)delete response.frameId;
+  if(c.cacheAccessor)Object.defineProperty(response.response,c.cacheAccessor,{get(){throw Error('getter must never execute');}});
+  if(!c.missingResponse){emit('Network.responseReceived',response);if(c.repeatResponse)emit('Network.responseReceived',response);}
+  if(!c.extraFirst&&!c.missingExtra)extra();if(c.repeatExtra)extra();
+  if(c.event)emit(c.event,{requestId:'root'});
+  if(c.duplicateCompletion){emit('Network.loadingFinished',{requestId:'root'});emit('Network.loadingFinished',{requestId:'root'});}
+  if(!c.missingCommit){commit();if(c.repeatCommit)commit();}
+  const report=g.finish();return {report,rejection:g.rejection(),trace:g.trace(),reason:g.failureReason()};
+}
+test('root first-predicate matrix preserves the fixed acceptance envelope and safe projections',()=>{
+  for(const c of rootDiagnosticCases){const r=runRootDiagnosticCase(ManualStartupCookieGuard,c);assert.equal(r.rejection==='unknown',!c.condition,c.name);assert.equal(r.trace.guardCondition,c.condition??'unknown',c.name);assert.ok(!JSON.stringify(r.trace).includes('private'),c.name);}
+});
+test('root response accessor projections never execute getters and keep the first cache snapshot',()=>{
+  let reads=0;const response={};Object.defineProperty(response,'fromDiskCache',{enumerable:true,get(){reads++;throw Error('PRIVATE');}});
+  // Assigning accessor-bearing fixture objects would invoke getters, so emit directly.
+  const s=guardFixture();s.arm();s.request();
+  const r=rootResponse();Object.defineProperty(r.response,'fromDiskCache',Object.getOwnPropertyDescriptor(response,'fromDiskCache'));
+  s.emit('Network.responseReceived',r);const first=s.g.trace();
+  s.response({}, {frameId:'other'});s.commit();s.extra();s.g.finish();
+  assert.equal(reads,0);assert.equal(first.guardCondition,'root_response_disk_cache');assert.equal(first.guardDiskCache,'malformed');assert.equal(first.guardServiceWorker,'absent');assert.deepEqual(s.g.trace(),first);
+});
+for(const role of ['reader','collector'])test(`${role} actual handoff preserves precise root response diagnostics through failure latch`,async()=>{
+  for(const [patch,condition] of [[{frameId:'other'},'root_response_frame_different'],[{response:{url:home,status:200,headers:{},fromDiskCache:true,fromServiceWorker:false}},'root_response_disk_cache']]){
+    const r=await handoffFixture({role,rootResponsePatch:patch});
+    assert.throws(()=>requireBoundStartup(r.observation,role,r.diagnostics),error=>{
+      const d=startupDiagnostic(error);assert.equal(d.reason,'scope_lost');assert.equal(d.trace.guardCondition,condition);assert.equal(d.trace.guardRequestFrame,'matching');assert.equal(d.trace.guardEpoch,'reload_armed');
+      if(condition==='root_response_disk_cache'){assert.equal(d.trace.guardDiskCache,'true');assert.equal(d.trace.guardServiceWorker,'false');assert.equal(d.trace.guardPrefetchCache,'absent');}return true;
+    });
+  }
+});
+
+test('root completion and ExtraInfo failures retain only already-observed cache state',()=>{
+  for(const before of [true,false]){
+    const s=guardFixture();s.arm();s.request();
+    if(!before)s.response({}, {response:{url:home,status:200,headers:{},fromDiskCache:false,fromServiceWorker:false,fromPrefetchCache:false}});
+    s.extra({}, {statusCode:201});const first=s.g.trace();
+    if(before)s.response({}, {response:{url:home,status:200,headers:{},fromDiskCache:false}});
+    s.commit();s.g.finish();assert.equal(first.guardCondition,'root_extra_status');assert.equal(first.guardDiskCache,before?'unknown':'false');assert.deepEqual(s.g.trace(),first);
+  }
+  for(const mode of ['commit','finish','loading']){const s=guardFixture();s.arm();s.request();s.response({}, {response:{url:home,status:200,headers:{},fromDiskCache:false}});
+    if(mode==='commit')s.commit('wrong');if(mode==='loading')s.emit('Network.loadingFailed',{requestId:'root'});s.g.finish();assert.equal(s.g.trace().guardDiskCache,'false');assert.equal(s.g.trace().guardServiceWorker,'absent');}
+});
+test('root arm preconditions have closed predicates without changing their legacy failure domain',()=>{
+  for(const [kind,condition]of [['closed','root_arm_closed'],['repeated','root_arm_repeated'],['before-seed','root_arm_before_seed'],['loader','root_arm_loader'],['session','root_arm_session']]){
+    const g=new ManualStartupCookieGuard(frame,kind==='session'?undefined:session,{beforeSeed:kind==='before-seed'});
+    if(kind==='closed')g.finish();if(kind==='repeated')g.armReload(oldLoader);
+    assert.throws(()=>g.armReload(kind==='loader'?'':oldLoader));assert.equal(g.trace().guardCondition,condition);assert.equal(g.failureReason(),'observed_cookie_write');
   }
 });

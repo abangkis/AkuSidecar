@@ -1696,3 +1696,22 @@ failures, sticky typed reasons and 5,000 unqualified settings requests alongside
 independent valid proof. The real retained QA entry was skipped before lease or
 profile access; owned offline preparation roots were removed. Evidence:
 `runtime/qa/auth-session-sidecar/x-manual-retained-56c1baa125934c43a967e0063367963c.prepare.log.txt`.
+
+### Root predicate diagnostics and freshness design
+
+The root guard now reports a closed first-failed predicate across arm, request,
+response, commit, ExtraInfo, cache/loading events, and completion. Response failures
+project all three cache flags; later root failures use only the already-observed
+closed cache snapshot. A first failure is never enriched by later metadata.
+`guardRequestFrame` remains request-time metadata; `root_response_frame_*`
+conditions identify a distinct response-frame failure. V7 field count, bounded
+numeric encoding, and legacy V2–V7 decoding are unchanged; catalogs are append-only.
+No acceptance rule is changed from `691875d`, including absent/undefined cache
+attributes and ordinary-header noninterference.
+
+[Identity freshness and cache design](x-identity-freshness-cache-design.md) proposes
+an owner-local immutable ledger and explicit versioned policy. It is design only:
+no service, cache policy, freshness refresh, reload, recovery, or new network
+operation is activated. The earlier root cache strengthening and its relationship
+to identity freshness remain an explicit policy question. Historical traces with
+unknown root predicates cannot be reconstructed from the new diagnostics.

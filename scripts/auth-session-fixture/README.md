@@ -3255,3 +3255,11 @@ cleanup were checked. Eleven protected file hashes were unchanged, and all
 task profile roots were cleaned. Logs:
 `runtime/qa/auth-session-sidecar/x-chrome-verifier-validation.txt` and
 `runtime/qa/auth-session-sidecar/x-chrome-verifier-oversize-stability.txt`.
+
+Root diagnostics preserve the `691875d` acceptance envelope while identifying the
+first failed root predicate and already-observed cache state through the existing
+V7 private wire. The root-navigation regression matrix covers acceptance, closed
+projections, descriptor safety, and actual reader/collector handoff failures.
+See [identity freshness and cache design](../../docs/x-identity-freshness-cache-design.md)
+for the proposed component contract. That component is design only and is not wired
+into the manual pilot; no new cache or freshness acceptance policy is enabled.
