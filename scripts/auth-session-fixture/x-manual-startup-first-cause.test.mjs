@@ -66,7 +66,7 @@ test('event-time first cause survives peer-first delivery without importing peer
 test('trace wire uses closed append-only canonical indices and never invokes spoofed getters',()=>{
   let reads=0;
   const unsafe=Object.defineProperty({terminal:'PRIVATE',extra:'x'.repeat(20000)},'firstCause',{get(){reads++;throw new Error('PRIVATE');}});
-  assert.deepEqual(closedStartupTrace(unsafe),{firstCause:'unknown',terminal:'unknown',early:'unknown',handoff:'unknown',cookie:'unknown',extra:'unknown',guardTrigger:'unknown',guardProvenance:'unknown',guardCondition:'unknown',guardEpoch:'unknown',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'unknown'});
+  assert.deepEqual(closedStartupTrace(unsafe),{firstCause:'unknown',terminal:'unknown',early:'unknown',handoff:'unknown',cookie:'unknown',extra:'unknown',guardTrigger:'unknown',guardProvenance:'unknown',guardCondition:'unknown',guardEpoch:'unknown',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'unknown',guardHeaderReason:'unknown'});
   const codes=[];
   const guarded=Object.defineProperties({}, {
     guardCondition:{get(){reads++;throw new Error('PRIVATE');}},
@@ -75,12 +75,15 @@ test('trace wire uses closed append-only canonical indices and never invokes spo
     guardServiceWorker:{get(){reads++;throw new Error('PRIVATE');}},
     guardPrefetchCache:{get(){reads++;throw new Error('PRIVATE');}},
     guardRequestFrame:{get(){reads++;throw new Error('PRIVATE');}},
+    guardHeaderReason:{get(){reads++;throw new Error('PRIVATE');}},
   });
-  assert.deepEqual([closedStartupTrace(guarded).guardCondition,closedStartupTrace(guarded).guardEpoch,closedStartupTrace(guarded).guardDiskCache,closedStartupTrace(guarded).guardServiceWorker,closedStartupTrace(guarded).guardPrefetchCache,closedStartupTrace(guarded).guardRequestFrame],['unknown','unknown','unknown','unknown','unknown','unknown']);
-  for(const [key,values]of Object.entries(STARTUP_TRACE))for(const value of values){const code=startupRPCCode(startupFailure('collector','inspect_before','observed_cookie_write',true,undefined,{[key]:value}));assert.match(code,/^manual_initial_v6_(?:0|[1-9][0-9]*)(?:_(?:0|[1-9][0-9]*)){17}$/);assert.ok(code.length<=80);codes.push(code);}
+  assert.deepEqual([closedStartupTrace(guarded).guardCondition,closedStartupTrace(guarded).guardEpoch,closedStartupTrace(guarded).guardDiskCache,closedStartupTrace(guarded).guardServiceWorker,closedStartupTrace(guarded).guardPrefetchCache,closedStartupTrace(guarded).guardRequestFrame,closedStartupTrace(guarded).guardHeaderReason],['unknown','unknown','unknown','unknown','unknown','unknown','unknown']);
+  assert.equal(Object.keys(STARTUP_TRACE).at(-1),'guardHeaderReason');
+  assert.deepEqual(STARTUP_TRACE.guardHeaderReason,['unknown','name_unknown','syntax','attribute_unsupported','attribute_invalid','scope_domain','scope_path','metadata_shape','capacity']);
+  for(const [key,values]of Object.entries(STARTUP_TRACE))for(const value of values){const code=startupRPCCode(startupFailure('collector','inspect_before','observed_cookie_write',true,undefined,{[key]:value}));assert.match(code,/^manual_initial_v7_(?:0|[1-9][0-9]*)(?:_(?:0|[1-9][0-9]*)){18}$/);assert.ok(code.length<=80);codes.push(code);}
   const maximum=Object.fromEntries(Object.entries(STARTUP_TRACE).map(([key,values])=>[key,values.at(-1)]));
   const maximumCode=startupRPCCode(startupFailure('collector','inspect_before','observed_cookie_write',true,undefined,maximum));
-  assert.match(maximumCode,/^manual_initial_v6_(?:0|[1-9][0-9]*)(?:_(?:0|[1-9][0-9]*)){17}$/);assert.ok(maximumCode.length<=80);
+  assert.match(maximumCode,/^manual_initial_v7_(?:0|[1-9][0-9]*)(?:_(?:0|[1-9][0-9]*)){18}$/);assert.ok(maximumCode.length<=80);
   const report=Object.defineProperty({},'diagnostic',{get(){reads++;return 'bound';}});
   assert.throws(()=>requireBoundStartup(report,'reader',startupFailureLatch()));assert.equal(reads,0);
   assert.equal(startupRPCCode({trace:unsafe}),'manual_initial_unknown_acquire_rpc_unavailable_primary');assert.ok(codes.length>40);
@@ -95,6 +98,14 @@ test('later cache or request-frame observations cannot enrich a first failure tr
   assert.equal(trace.guardRequestFrame,'unknown');
   assert.deepEqual([startupDiagnostic(first).trace.guardDiskCache,trace.guardDiskCache],['unknown','unknown']);
   assert.ok(Object.isFrozen(trace));
+});
+test('a later header rejection reason never enriches an unknown reason on the first failure',()=>{
+  const latch=startupFailureLatch();
+  const first=latch.record(startupFailure('reader','bound_finish','scope_lost',false,undefined,{firstCause:'guard_header_classification',guardHeaderReason:'unknown'}),'reader','bound_finish');
+  const later=latch.record(startupFailure('reader','bound_finish','scope_lost',false,undefined,{firstCause:'guard_header_classification',guardHeaderReason:'attribute_unsupported'}),'reader','bound_finish');
+  assert.equal(startupDiagnostic(first).trace.guardHeaderReason,'unknown');
+  assert.equal(startupDiagnostic(later).trace.guardHeaderReason,'unknown');
+  assert.ok(Object.isFrozen(startupDiagnostic(later).trace));
 });
 
 function directSample(readBody,document=true) {

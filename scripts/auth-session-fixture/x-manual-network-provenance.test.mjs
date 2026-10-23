@@ -81,7 +81,7 @@ for(const [mode,reason,trigger,provenance]of [
 ])test(`actual collector transport delivers once and keeps repeat rejection closed: ${mode}`,async()=>{
   const r=await collectorRepeatScenario(mode),expected={reason,guardTrigger:trigger,guardProvenance:provenance,
     guardCondition:['declared','other'].includes(mode)?'extra_flag':mode==='malformed'?'redirect_shape':'unknown',
-    guardEpoch:mode==='single'?'unknown':'reload_armed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:mode==='single'?'unknown':'matching'};
+    guardEpoch:mode==='single'?'unknown':'reload_armed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:mode==='single'?'unknown':'matching',guardHeaderReason:mode==='unknown'?'name_unknown':'unknown'};
   assert.ok(r.binder);assert.equal(r.received,mode==='single'?3:4);assert.equal(r.observed,r.received);assert.equal(r.maxCalls,1);
   assert.equal(r.commands.filter(m=>m==='Network.enable').length,1);
   assert.deepEqual(r.atDispatch,expected);assert.deepEqual(r.afterLate,expected);
@@ -392,8 +392,8 @@ test('pre-seed headers do not poison the epoch; structural coverage loss cannot 
   const malformed=passive();malformed.emit('Network.requestWillBeSent',{});malformed.g.beginPostSeed();assert.equal(malformed.g.rejection(),'guard_metadata_shape');
 });
 test('post-seed missing predecessor and seen rejected scope remain distinct, including blocked candidates',()=>{
-  const absent=passive();absent.g.beginPostSeed();absent.response('lang=en; Path=/');assert.deepEqual(absent.g.trace(),{guardTrigger:'response',guardProvenance:'absent',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'unknown'});
-  const foreign=passive();foreign.request('r',{frameId:'child'});foreign.g.beginPostSeed();foreign.response('lang=en; Path=/');assert.deepEqual(foreign.g.trace(),{guardTrigger:'response',guardProvenance:'scoped',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'different'});assert.equal(foreign.g.rejection(),'guard_response_correlation');
+  const absent=passive();absent.g.beginPostSeed();absent.response('lang=en; Path=/');assert.deepEqual(absent.g.trace(),{guardTrigger:'response',guardProvenance:'absent',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'unknown',guardHeaderReason:'unknown'});
+  const foreign=passive();foreign.request('r',{frameId:'child'});foreign.g.beginPostSeed();foreign.response('lang=en; Path=/');assert.deepEqual(foreign.g.trace(),{guardTrigger:'response',guardProvenance:'scoped',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'different',guardHeaderReason:'unknown'});assert.equal(foreign.g.rejection(),'guard_response_correlation');
   for(const scope of ['absent','scoped','foreign']){
     const s=passive();if(scope!=='absent')s.request('r',scope==='foreign'?{request:{method:'GET',url:'https://foreign.invalid/asset'}}:{});s.g.beginPostSeed();
     s.emit('Network.responseReceivedExtraInfo',{requestId:'r',statusCode:200,headers:{},blockedCookies:[{cookieLine:'ct0=; Max-Age=0; Path=/'}]});

@@ -1350,3 +1350,97 @@ increase, not a measured RAM/CPU qualification or proof of native MVP readiness.
 Offline boundary, mixed-record, seed-continuity, role-isolation, candidate and
 first-cause bridge regressions cover the new threshold. Another native transfer
 still requires separate one-shot authorization.
+
+## Header rejection diagnostics and minimum-policy review (2026-10-23)
+
+This increment changes diagnostics only. It preserves the current classifier,
+candidate precedence, first-cause latch, provenance checks, observation bounds,
+startup admission and default-off gates. It authorizes no native run or transfer.
+
+The private trace appends `guardHeaderReason`, rendered by Go as `header_reason`:
+
+| Closed category | Meaning under the current classifier |
+| --- | --- |
+| `unknown` | The first failure has no header-specific category, or used an older wire version |
+| `name_unknown` | A syntactically valid cookie name is outside the fixed QA name list |
+| `syntax` | The cookie pair/name/value or line syntax is unsupported or malformed |
+| `attribute_unsupported` | An attribute is outside the current supported set, including `Priority` or `Partitioned` |
+| `attribute_invalid` | A supported attribute is malformed, duplicated or has an unsupported value |
+| `scope_domain` | The declared domain is outside the supported X scope or does not match the request setter |
+| `scope_path` | The explicit or effective default path is outside the fixed QA path list |
+| `metadata_shape` | The header/blocked-cookie container or value has an invalid shape |
+| `capacity` | A header size, attribute, line, field or header-event bound was exceeded |
+
+These are classifier outcomes, not proof that Chrome accepted a write or that
+the response was malicious. Multiple failures retain existing evaluation order;
+the trace reports the first reason, not an inventory of all rejected lines.
+Request-ledger exhaustion remains `guard_request_budget` with no header-specific
+reason. Candidate `auth_token`/`ct0` attempts retain `cookie_candidate`, including
+blocked/deletion/mixed-header cases, rather than becoming attribute rejections.
+Existing structural/size bounds may reject before candidate classification.
+
+The new `manual_initial_v7_` wire has 19 canonical numeric indices, remains within
+the existing 80-character bound and also travels through the private seed error
+envelope. Go retains exact legacy V2-V6 arities and defaults the appended category
+to `unknown`. Unknown/out-of-range/noncanonical indices reject. The failure latch
+never replaces or enriches this field after its first observation, even when that
+first value is `unknown`. Public cookie-summary schemas remain unchanged.
+Only fixed categories cross this boundary; raw headers, values, unknown names,
+attribute contents, account IDs, URLs and arbitrary errors are not recorded.
+
+### Review conclusion: proposed minimum for the manual pilot
+
+This is an offline recommendation for a separate policy change, not the policy
+implemented by this diagnostic increment. It follows the approved scope: only
+two session cookies may be seeded, initial account/login evidence is strict in
+both roles, and post-checkpoint continuity/rotation is an acknowledged limitation
+of a manual attempt lasting at most 60 seconds.
+
+The minimum startup guard must still:
+
+- Reject every identifiable post-seed `auth_token`/`ct0` attempt in the observed
+  stream, regardless of value, expiry/deletion, attributes, scope or blocked state.
+  A candidate anywhere in a mixed header must not be hidden by another line.
+- Reject malformed or ambiguous line/name separation that prevents determining
+  whether either candidate was attempted. Keep bounded plain-data metadata,
+  line/header/event/request limits and exact owned-session/request/response and
+  required ExtraInfo correlation. No dropping records or adopting foreign traffic.
+- Keep account/login evidence in the pinned main document, fresh and matched in
+  both roles, plus one-use enrollment/receipt binding, ownership, startup timing,
+  default-off opt-in, the absolute 60-second deadline and verified cleanup.
+  Noncandidate classification never supplies account or session authority.
+
+The fixed name list for other cookies, seven-path allowlist and complete
+attribute/value grammar for other cookies are extra compatibility restrictions.
+They are not required merely to recognize attempts to write the two seeded
+cookies. The recommended bounded simplification is to classify a line as
+`other` once its name is unambiguous and differs from both candidates, within the
+same trusted X request/correlation boundary. Do not retain that name or value.
+For such lines, an unfamiliar name, a different path, `Priority`, `Partitioned`,
+or an expiry/attribute form alone should not revoke the pilot. Do not attempt to
+reimplement the browser's full cookie acceptance rules. Ambiguity that can hide a
+candidate, input overflow and provenance/correlation failures must still reject.
+
+This simplification would explicitly stop treating changes to every other cookie
+as grounds for rejection. It would not prove that those cookies are irrelevant to
+X authentication or that the session remains unchanged. Fresh initial checks and
+the already acknowledged post-checkpoint limitation remain necessary. Keep the
+transfer manifest for `auth_token`/`ct0` unchanged; the proposed broader `other`
+classification is not permission to transfer additional cookies or broaden their
+scope. Ordinary QA and Store policy are outside this proposed change.
+
+The preceding native run's `guard_header_classification` has no category field.
+It cannot establish which of these restrictions fired. This offline review does
+not claim that simplifying the classifier will make native MVP startup pass.
+
+Offline validation passed 255 Node tests, four standalone Go top-level tests
+including 21 startup diagnostic subcases, four build-tag gates and Windows
+standalone compilation. Coverage includes each rejection category, candidate
+precedence, immutable first causes, accessor/privacy rejection, deferred scope
+checks, V7 Node-to-Go/seed propagation and strict legacy decoding. The first Go
+run exposed two outdated seed-format expectations; those test expectations were
+corrected and the complete standalone diagnostic selection passed. Logs are
+`runtime/qa/auth-session-sidecar/header-reason-full.node.log.txt` and
+`runtime/qa/auth-session-sidecar/header-reason-standalone-final.go.log.txt`.
+No Chrome, retained QA profile, native transfer, login, Store or user runtime was
+accessed. Temporary standalone build roots were removed after validation.

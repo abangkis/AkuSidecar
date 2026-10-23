@@ -40,6 +40,85 @@ function guard() {
     request: (id = 'r', patch = {}) => g.observe({ method: 'Network.requestWillBeSent', params: { requestId: id, loaderId: 'loader', frameId: 'frame', request: { url: 'https://x.com/asset' }, ...patch } }, 'loader', 7) };
 }
 
+const rejectedHeaders=[
+  ['name_unknown','PRIVATE_NAME=PRIVATE_VALUE; Path=/'],
+  ['syntax','lang'],['syntax','bad name=PRIVATE_VALUE'],['syntax','lang=PRIVATE VALUE'],
+  ['attribute_unsupported','lang=PRIVATE_VALUE; Priority=High'],
+  ['attribute_unsupported','lang=PRIVATE_VALUE; Partitioned'],
+  ['attribute_invalid','lang=PRIVATE_VALUE; Path=/; Path=/'],
+  ['attribute_invalid','lang=PRIVATE_VALUE; Secure=true'],
+  ['attribute_invalid','lang=PRIVATE_VALUE; SameSite=PRIVATE_ATTRIBUTE'],
+  ['attribute_invalid','lang=PRIVATE_VALUE; Max-Age=PRIVATE_ATTRIBUTE'],
+  ['attribute_invalid','lang=PRIVATE_VALUE; Expires=PRIVATE_ATTRIBUTE'],
+  ['attribute_invalid','lang=PRIVATE_VALUE; Domain=PRIVATE_ATTRIBUTE/'],
+  ['scope_domain','lang=PRIVATE_VALUE; Domain=foreign.invalid; Path=/'],
+  ['scope_path','lang=PRIVATE_VALUE; Path=/PRIVATE_PATH'],
+  ['capacity','lang='+ 'x'.repeat(4097)],
+  ['capacity','lang=PRIVATE_VALUE;'+Array(33).fill('Secure').join(';')],
+];
+for(const [index,[reason,line]]of rejectedHeaders.entries())test(`closed header reason ${reason} preserves rejection and privacy: ${index}`,()=>{
+  const s=guard();s.request();s.emit('Network.responseReceivedExtraInfo',{requestId:'r',statusCode:200,headers:{'Set-Cookie':line}});
+  assert.equal(s.g.rejection(),'guard_header_classification');assert.equal(s.g.trace().guardHeaderReason,reason);
+  const first=s.g.trace();s.emit('Network.responseReceivedExtraInfo',{requestId:'r',statusCode:200,headers:{'Set-Cookie':'ct0=PRIVATE_TOKEN; Path=/'}});
+  const summary=s.g.finish();assert.deepEqual(s.g.trace(),first);assert.equal(summary.diagnostic,'candidate_observed');
+  assert.equal(Object.hasOwn(summary,'guardHeaderReason'),false);
+  for(const raw of ['PRIVATE_NAME','PRIVATE_VALUE','PRIVATE_ATTRIBUTE','PRIVATE_PATH','PRIVATE_TOKEN','foreign.invalid'])assert.equal(JSON.stringify({trace:first,summary}).includes(raw),false);
+});
+
+test('metadata shape and capacity reasons never invoke header or blocked-cookie accessors',()=>{
+  let reads=0;
+  const accessor=Object.defineProperty({},'Set-Cookie',{get(){reads++;throw Error('PRIVATE_HEADER_GETTER');}});
+  const blocked=Object.defineProperty({},'cookieLine',{get(){reads++;throw Error('PRIVATE_BLOCKED_GETTER');}});
+  for(const [headers,blockedCookies,reason,firstCause]of [
+    [{'Set-Cookie':['PRIVATE_VALUE']},undefined,'metadata_shape','guard_metadata_shape'],
+    [accessor,undefined,'metadata_shape','guard_metadata_shape'],
+    [{'Set-Cookie':'lang=x','set-cookie':'lang=y'},undefined,'metadata_shape','guard_metadata_shape'],
+    [{},[blocked],'metadata_shape','guard_metadata_shape'],
+    [Object.fromEntries(Array.from({length:129},(_,i)=>['h'+i,'PRIVATE_VALUE'])),undefined,'capacity','guard_header_budget'],
+    [{'Set-Cookie':'lang='+ 'x'.repeat(16385)},undefined,'capacity','guard_header_budget'],
+    [{'Set-Cookie':Array(33).fill('lang=x').join('\n')},undefined,'capacity','guard_header_budget'],
+    [{},Array(33).fill({cookieLine:'lang=x'}),'capacity','guard_header_budget'],
+  ]){
+    const s=guard();s.request();s.emit('Network.responseReceivedExtraInfo',{requestId:'r',statusCode:200,headers,blockedCookies});
+    assert.equal(s.g.rejection(),firstCause);assert.equal(s.g.trace().guardHeaderReason,reason);s.g.finish();
+  }
+  assert.equal(reads,0);
+});
+
+test('request-local domain and default-path failures carry scope reasons through normal and deferred responses',()=>{
+  for(const source of ['response','extra'])for(const reason of ['scope_domain','scope_path']){
+    const s=guard(),url=reason==='scope_path'?'https://x.com/PRIVATE_PATH/asset':'https://x.com/asset';
+    s.request('r',{request:{url}});
+    const headers={'Set-Cookie':reason==='scope_domain'?'lang=PRIVATE_VALUE; Domain=api.x.com; Path=/':'lang=PRIVATE_VALUE'};
+    if(source==='extra')s.emit('Network.responseReceivedExtraInfo',{requestId:'r',statusCode:200,headers});
+    s.emit('Network.responseReceived',{requestId:'r',frameId:'frame',loaderId:'loader',hasExtraInfo:source==='extra',response:{url,status:200,headers:source==='response'?headers:{}}});
+    assert.equal(s.g.finish().diagnostic,'ambiguous');assert.equal(s.g.rejection(),'guard_header_classification');
+    assert.equal(s.g.trace().guardHeaderReason,reason);assert.equal(JSON.stringify(s.g.trace()).includes('PRIVATE'),false);
+  }
+});
+
+test('candidate precedence and earlier structural failures cannot acquire a later header reason',()=>{
+  for(const [reason,line]of rejectedHeaders){
+    const s=guard();s.request();s.emit('Network.responseReceivedExtraInfo',{requestId:'r',statusCode:200,headers:{'Set-Cookie':line+'\nct0=PRIVATE_TOKEN; Path=/'}});
+    assert.equal(s.g.rejection(),'cookie_candidate',reason);assert.equal(s.g.trace().guardHeaderReason,'unknown');s.g.finish();
+  }
+  const mixed=guard();mixed.request();mixed.emit('Network.responseReceivedExtraInfo',{requestId:'r',statusCode:200,headers:{'Set-Cookie':[]},blockedCookies:[{cookieLine:'auth_token=PRIVATE_TOKEN; Path=/'}]});
+  assert.equal(mixed.g.rejection(),'cookie_candidate');assert.equal(mixed.g.trace().guardHeaderReason,'unknown');mixed.g.finish();
+  const prior=guard();prior.request();prior.request();const first=prior.g.trace();
+  prior.emit('Network.responseReceivedExtraInfo',{requestId:'r',statusCode:200,headers:{'Set-Cookie':'PRIVATE_NAME=PRIVATE_VALUE'}});
+  prior.g.finish();assert.deepEqual(prior.g.trace(),first);assert.equal(first.guardHeaderReason,'unknown');
+});
+
+test('header reason survives the real binder and failure latch without authorizing or exposing raw data',async()=>{
+  for(const [reason,line]of rejectedHeaders.slice(0,14)){
+    const s=sample();s.document();s.request();s.response('other',{'Set-Cookie':line});
+    const report=await finish(s),latch=startupFailureLatch();let detail;
+    assert.throws(()=>requireBoundStartup(report,'reader',latch),error=>{detail=startupDiagnostic(error);return true;});
+    assert.equal(detail.trace.firstCause,'guard_header_classification');assert.equal(detail.trace.guardHeaderReason,reason);
+    assert.equal(s.published(),0);assert.equal(JSON.stringify(detail).includes('PRIVATE'),false);
+  }
+});
+
 test('Manual V2 clearly classified other cookies are diagnostic only before and after identity', async () => {
   for (const before of [true, false]) {
     const s = sample(); s.document(); if (!before) s.identity();

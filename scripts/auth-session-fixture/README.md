@@ -149,6 +149,17 @@ The manual startup ledger allows 1,280 combined request-hop/ExtraInfo records
 per role across preparation, seed and startup; the next reservation rejects.
 Header/line/event limits and account/cookie verification remain unchanged.
 
+Private [header rejection diagnostics](../../docs/x-native-manual-pilot.md#header-rejection-diagnostics-and-minimum-policy-review-2026-10-23)
+append `guardHeaderReason` / Go `header_reason`: `unknown`, `name_unknown`,
+`syntax`, `attribute_unsupported`, `attribute_invalid`, `scope_domain`,
+`scope_path`, `metadata_shape` or `capacity`. They retain the first reason and
+never contain cookie/token values, raw headers, unknown names or arbitrary text.
+The bounded V7 wire preserves legacy V2-V6 decoding with an unknown appended
+category. Public cookie summaries and all classifier decisions remain unchanged.
+The linked minimum-policy review proposes simplifying noncandidate cookie rules
+for a later authorized change; that proposal is not activated here. Offline
+diagnostic tests neither access the retained QA profile nor authorize a transfer.
+
 The historical [provisional root-navigation correction](../../docs/x-native-manual-pilot.md#provisional-root-navigation-correlation-2026-10-22)
 lets one exact root `/home` navigation wait for matching commit/default-context
 evidence during the trusted reload. Only parsed known non-candidate headers may
