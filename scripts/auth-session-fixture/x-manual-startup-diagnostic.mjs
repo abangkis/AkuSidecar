@@ -14,7 +14,7 @@ export const STARTUP_TRACE=Object.freeze({
   extra:Object.freeze(['unknown','not_selected','not_required','required_pending','complete','missing','status_mismatch','unexpected','invalid']),
   guardTrigger:Object.freeze(['unknown','baseline','arm','metadata','request','document','response','extra','redirect','finish']),
   guardProvenance:Object.freeze(['unknown','absent','scoped','origin_scope','frame_scope','loader_missing','redirect','reused','root_scope']),
-  guardCondition:Object.freeze(['unknown','predecessor_missing','redirect_shape','previous_response','chain_completed','chain_failed','chain_cache','previous_resource','current_resource','previous_origin','previous_frame','previous_loader','current_origin','current_frame','current_loader','loader_mismatch','redirect_url','redirect_status','extra_flag','headers_shape','response_cache','frame_mismatch']),
+  guardCondition:Object.freeze(['unknown','predecessor_missing','redirect_shape','previous_response','chain_completed','chain_failed','chain_cache','previous_resource','current_resource','previous_origin','previous_frame','previous_loader','current_origin','current_frame','current_loader','loader_mismatch','redirect_url','redirect_status','extra_flag','headers_shape','response_cache','frame_mismatch','request_shape','request_url','protected_source','resource_type','request_method','session_missing','frame_malformed','loader_malformed','ordinary','request_absent']),
   guardEpoch:Object.freeze(['unknown','before_seed','post_seed','reload_armed','document_committed']),
   guardDiskCache:Object.freeze(['unknown','absent','false','true','malformed']),
   guardServiceWorker:Object.freeze(['unknown','absent','false','true','malformed']),

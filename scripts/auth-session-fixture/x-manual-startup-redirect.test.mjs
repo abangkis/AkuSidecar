@@ -60,13 +60,15 @@ test('unseen request remains unknown and a late matching request cannot repair i
   s.request();s.response(0,{extra:true});s.g.finish();assert.deepEqual(s.g.trace(),first);
 });
 
-test('matching request with missing or different response frame remains response correlation, never request frame scope',()=>{
+test('ordinary missing response frame is partial; contradictory or malformed response frames still reject',()=>{
   for(const kind of ['absent','different','accessor']){
     const s=fixture();s.request();let reads=0;
     const params={requestId:'chain',loaderId:'loader',hasExtraInfo:false,response:{url:urls[0],status:200,headers:other}};
     if(kind==='different')params.frameId='PRIVATE_RESPONSE_FRAME';
     if(kind==='accessor')Object.defineProperty(params,'frameId',{get(){reads++;throw Error('PRIVATE_FRAME_GETTER');}});
-    s.emit('Network.responseReceived',params);rejected(s,'guard_response_correlation');
+    s.emit('Network.responseReceived',params);
+    if(kind==='absent'){const result=s.g.finish();assert.equal(s.g.rejection(),'unknown');assert.equal(result.diagnosticCoverage,'partial');continue;}
+    rejected(s,'guard_response_correlation');
     assert.equal(s.g.trace().guardProvenance,'scoped');assert.equal(s.g.trace().guardRequestFrame,'matching');assert.equal(reads,0);
   }
 });

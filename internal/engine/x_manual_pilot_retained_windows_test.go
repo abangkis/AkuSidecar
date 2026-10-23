@@ -661,6 +661,7 @@ return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!c
 					wantTrigger, wantProvenance = "request", "unknown"
 				case "trace-unbound":
 					wantProvenance = "absent"
+					wantCondition = "request_absent"
 				case "trace-redirect", "trace-redirect-peer-first":
 					wantTrigger, wantProvenance = "request", "redirect"
 					wantCondition = "extra_flag"

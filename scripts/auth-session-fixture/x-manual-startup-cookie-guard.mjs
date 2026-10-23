@@ -66,6 +66,8 @@ function lineKind(line) {
 
 const redirectStatuses = new Set([301, 302, 303, 307, 308]);
 const resourceTypes = new Set(['Image', 'Script', 'Stylesheet', 'Font', 'Media', 'XHR', 'Fetch', 'Other', 'Manifest', 'TextTrack']);
+const diagnosticTypes = new Set([...resourceTypes, 'Ping', 'Preflight', 'EventSource', 'Prefetch']);
+const diagnosticMethods = new Set(['GET', 'HEAD', 'POST', 'OPTIONS', 'PUT', 'PATCH', 'DELETE']);
 const statusValid = v => Number.isInteger(v) && v >= 100 && v <= 599;
 const unsafeCache = response => ['fromDiskCache', 'fromServiceWorker', 'fromPrefetchCache'].some(key => {
   const value = data(response, key); return value !== undefined && value !== false;
@@ -93,12 +95,32 @@ function settingsScope(scope) {
   const path = new URL(scope.url).pathname;
   return path === '/1.1/account/settings.json' || path === '/i/api/1.1/account/settings.json';
 }
-function unframedResourceURL(scope, outsideURL) {
+function ordinaryResourceURL(scope, outsideURL) {
   const url=scope?.url??outsideURL;
   if(!url||settingsScope({url}))return null;
   const parsed=new URL(url);
-  // A missing frame never downgrades Home or protected settings to diagnostics.
+  // Neither framed nor unframed diagnostics may downgrade protected sources.
   return parsed.hostname==='x.com'&&parsed.pathname==='/home'?null:url;
+}
+function optionalReference(params, key) {
+  const descriptor=Object.getOwnPropertyDescriptor(params,key);
+  return !descriptor?'absent':!Object.hasOwn(descriptor,'value')?'malformed':
+    descriptor.value===''?'empty':ref(descriptor.value)?'valid':'malformed';
+}
+function ordinaryClassification(params, scope, outsideURL, session, frameStatus) {
+  const request=data(params,'request'),url=data(request,'url');
+  // These closed categories describe eligibility, never the URL or its values.
+  if(!object(request))return 'request_shape';
+  if(typeof url!=='string'||url.length>4096)return 'request_url';
+  if(!scope&&!outsideURL)return 'request_url';
+  if(!ordinaryResourceURL(scope,outsideURL))return 'protected_source';
+  if(data(params,'type')==='Document')return 'protected_source';
+  if(!diagnosticTypes.has(data(params,'type')))return 'resource_type';
+  if(!diagnosticMethods.has(data(request,'method')))return 'request_method';
+  if(!ref(session))return 'session_missing';
+  if(frameStatus==='malformed')return 'frame_malformed';
+  if(optionalReference(params,'loaderId')==='malformed')return 'loader_malformed';
+  return 'ordinary';
 }
 
 // Request provenance is browser metadata. JavaScript context belongs to the
@@ -110,6 +132,7 @@ export class ManualStartupCookieGuard {
   #diagnosticRequests = new Map(); #diagnosticIds = new Set();
   #diagnosticDropped = 0; #diagnosticHeaderDropped = 0; #diagnosticEvents = 0; #diagnosticLines = 0;
   #diagnosticUnframed = 0;
+  #diagnosticPartial = false;
   #rejection = 'unknown'; #trigger = 'unknown'; #provenance = 'unknown';
   #condition = 'unknown'; #epoch = 'unknown';
   #guardDiskCache = 'unknown'; #guardServiceWorker = 'unknown'; #guardPrefetchCache = 'unknown';
@@ -214,11 +237,11 @@ export class ManualStartupCookieGuard {
     for(let i=0;i<other.length;i++){
       const scope=request?.scope;
       const frame=request?.frameStatus??'unknown';
-      if(request?.unframed||request?.outsideURL){
+      if(request?.diagnostic||request?.outsideURL){
         if(request.bad)this.#fail('guard_response_correlation',trigger,provenance,condition,cache,frame);
         else this.#other=Math.min(64,this.#other+1);
       }
-      else if(!scope||request.provenance!=='scoped')this.#fail('guard_request_unbound',trigger,provenance,condition,cache,frame);
+      else if(!scope||request.provenance!=='scoped')this.#fail('guard_request_unbound',trigger,provenance,condition==='unknown'?request?.classification??'request_absent':condition,cache,frame);
       else if(request.bad)this.#fail('guard_response_correlation',trigger,provenance,condition,cache,frame);
       else this.#other=Math.min(64,this.#other+1);
     }
@@ -256,6 +279,14 @@ export class ManualStartupCookieGuard {
     const relevant=chain.redirected||chain.hops.some(r=>r.cookie||r.root);
     if(!relevant)return;
     const last=chain.hops.at(-1);
+    if(chain.diagnostic&&!chain.bad&&!last.bad){
+      // Ordinary metadata never supplies account/login proof. Missing optional
+      // completion must not make admission depend on diagnostic queue eviction.
+      const required=last.needsExtra===true?1:0;
+      if(!last.response||chain.extras.length<required){
+        this.#diagnosticPartial=true;return;
+      }
+    }
     for(const r of chain.hops){
       const cacheFailure=chain.redirected&&!chain.cache&&!chain.failed&&!r.bad&&!chain.bad&&r.cache;
       if(r.bad||chain.bad||chain.redirected&&(chain.cache||chain.failed||r.cache||r.provenance!=='scoped'||!r.resource||r.response&&r===last&&(r.status<200||r.status>=300&&r.status<400))){
@@ -313,17 +344,19 @@ export class ManualStartupCookieGuard {
       // to be correlated. It cannot widen setter eligibility or root evidence.
       const outsideURL=!scope&&ref(this.#session)&&frameScoped&&ref(loader)?outsideRequestURL(data(data(p,'request'),'url')):null;
       const resource=resourceTypes.has(data(p,'type'))&&data(data(p,'request'),'method')==='GET'&&!settingsScope(scope);
-      const diagnosticURL=!chain&&redirect===undefined&&resource&&frameStatus==='absent'&&ref(this.#session)&&ref(loader)?
-        unframedResourceURL(scope,outsideRequestURL(data(data(p,'request'),'url'))):null;
+      const classification=ordinaryClassification(p,scope,outsideRequestURL(data(data(p,'request'),'url')),this.#session,frameStatus);
+      const diagnosticURL=!chain&&redirect===undefined&&classification==='ordinary'?
+        ordinaryResourceURL(scope,outsideRequestURL(data(data(p,'request'),'url'))):null;
       // An absent field is optional diagnostic metadata, never a guessed root.
       // Present malformed frame fields keep the existing fail-closed path.
-      const unframed=diagnosticURL!==null;
+      const unframed=diagnosticURL!==null&&frameStatus==='absent';
       const r={scope,outsideURL,provenance,frameStatus,frameId:ref(frame)?frame:null,loaderId:ref(loader)?loader:null,response:false,bad:false,cookie:false,status:null,needsExtra:null,root:false,cache:false,cacheProjection:null,other:null,
-        resource,unframed,diagnosticURL};
+        resource,unframed,diagnosticURL,classification};
       const discarded=this.#diagnosticIds.has(id)&&!chain;
       if(discarded){this.#fail('guard_request_unbound','request',redirect!==undefined?'redirect':'reused','unknown',null,frameStatus);return true;}
-      const diagnostic=!chain&&redirect===undefined&&r.resource&&(provenance==='scoped'||outsideURL!==null||unframed);
+      const diagnostic=diagnosticURL!==null;
       r.diagnostic=diagnostic;
+      if(diagnostic&&(frameStatus==='absent'||!ref(loader)))this.#diagnosticPartial=true;
       if(chain?.diagnostic&&!this.#promote(id,chain,'request',frameStatus))return true;
       if(!diagnostic&&!this.#reserve('request',redirect!==undefined?'redirect':chain?'reused':'unknown',frameStatus))return true;
       const current=chain??{hops:[],extras:[],redirected:false,bad:false,cache:false,failed:false,completed:false};
@@ -372,8 +405,11 @@ export class ManualStartupCookieGuard {
       if(discarded)return this.#candidate>0||this.#ambiguous>0;
       if(method==='Network.responseReceived'&&r){
         const status=data(response,'status'),extra=data(p,'hasExtraInfo');
-        const frameMismatch=r.unframed?requestFrameProjection(p,this.#frame)==='malformed':data(p,'frameId')!==r.frameId;
-        r.bad ||= r.response||data(p,'loaderId')!==r.loaderId||frameMismatch||data(response,'url')!==(r.scope?.url??r.outsideURL??r.diagnosticURL)||!statusValid(status)||r.root&&status!==200||typeof extra!=='boolean';
+        const responseFrame=requestFrameProjection(p,this.#frame),responseLoader=optionalReference(p,'loaderId');
+        const frameMismatch=r.diagnostic?(responseFrame==='malformed'||!r.unframed&&responseFrame!=='absent'&&data(p,'frameId')!==r.frameId):data(p,'frameId')!==r.frameId;
+        const loaderMismatch=r.diagnostic?(responseLoader==='malformed'||r.loaderId!==null&&responseLoader==='valid'&&data(p,'loaderId')!==r.loaderId):data(p,'loaderId')!==r.loaderId;
+        if(r.diagnostic&&(responseFrame==='absent'||responseLoader!=='valid'))this.#diagnosticPartial=true;
+        r.bad ||= r.response||loaderMismatch||frameMismatch||data(response,'url')!==(r.scope?.url??r.outsideURL??r.diagnosticURL)||!statusValid(status)||r.root&&status!==200||typeof extra!=='boolean';
         if(!r.cache&&unsafeCache(response)){r.cache=true;r.cacheProjection=cacheProjection(response);}
         if(chain.redirected&&!object(data(response,'headers'))){r.bad=true;this.#fail('guard_metadata_shape','response',r.provenance,'unknown',null,r.frameStatus);}
         r.response=true;r.status=statusValid(status)?status:null;r.needsExtra=typeof extra==='boolean'?extra:null;
@@ -386,7 +422,7 @@ export class ManualStartupCookieGuard {
         if(chain.diagnostic&&chain.extras.length&&!this.#promote(id,chain,'extra',r.frameStatus))return true;
         if(chain.diagnostic||this.#reserve('extra',r.provenance,r.frameStatus))chain.extras.push({status:statusValid(status)?status:null,bad:!statusValid(status),other,headersShape:object(data(p,'headers')),blockedShape:blockedShape(data(p,'blockedCookies'))});
         if(!chain.redirected&&(chain.extras.length>1||!statusValid(status)||r.response&&(r.needsExtra!==true||status!==r.status)))r.bad=true;
-        if(r.provenance!=='scoped'&&!r.outsideURL&&!r.unframed)this.#apply(other,r,'extra');
+        if(!r.diagnostic&&r.provenance!=='scoped'&&!r.outsideURL)this.#apply(other,r,'extra');
       }else this.#apply(other,r,method==='Network.responseReceived'?'response':'extra');
       if(r?.bad)this.#chainFailure(chain,method==='Network.responseReceived'?'response':'extra',r.provenance);
     }
@@ -411,7 +447,7 @@ export class ManualStartupCookieGuard {
     this.#diagnosticRequests.clear();this.#diagnosticIds.clear();
     this.#root=null;
     return Object.freeze({schema:'aku.x.manual-startup-cookie-guard.v1',diagnostic:this.category(),candidateAttempts:this.#candidate,otherAttempts:this.#other,ambiguousAttempts:this.#ambiguous,
-      diagnosticCoverage:this.#diagnosticDropped||this.#diagnosticHeaderDropped||this.#diagnosticUnframed?'partial':'complete',diagnosticRecordsDropped:this.#diagnosticDropped,diagnosticHeadersDropped:this.#diagnosticHeaderDropped,
+      diagnosticCoverage:this.#diagnosticDropped||this.#diagnosticHeaderDropped||this.#diagnosticUnframed||this.#diagnosticPartial?'partial':'complete',diagnosticRecordsDropped:this.#diagnosticDropped,diagnosticHeadersDropped:this.#diagnosticHeaderDropped,
       diagnosticMissingFrameRequests:this.#diagnosticUnframed});
   }
 }

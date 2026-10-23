@@ -1,33 +1,43 @@
 # Local one-login concurrency fixture
 
-## Manual V2 ordinary traffic with an absent frame (2026-10-23)
+## Manual V2 ordinary traffic classification and partial correlation (2026-10-23)
 
-A previously observed, owned-session GET resource may enter the diagnostic
-queue when its `frameId` field is absent. It still needs a valid bounded HTTPS
-URL, recognized resource type and loader reference. Home, Documents, protected
-settings paths, unsupported methods, malformed frame fields, orphan metadata
-and redirects do not gain this capability. Frame absence never supplies or
-repairs account/login evidence, and no main-frame ID is inferred.
+A previously observed, unique owned-session ordinary resource enters the
+diagnostic queue before optional frame/loader correlation is considered. It
+needs a bounded valid HTTPS nonprotected URL, a recognized resource type and
+one of GET, HEAD, POST, OPTIONS, PUT, PATCH or DELETE. The resource list includes
+Ping, Preflight, EventSource and Prefetch. An absent frame and an absent/empty
+loader are unavailable diagnostic metadata; present malformed fields remain
+rejected. Home, Documents, protected settings paths, unknown methods/types,
+orphan metadata and redirects do not gain this capability. No root frame,
+loader or relationship to account/login evidence is inferred.
 
-The private tuple keeps the frame unknown. A later response frame, if present,
-must be well-formed but cannot adopt the tuple into root/settings evidence.
-Exact response URL/loader/status and declared ExtraInfo checks are retained.
+The private tuple keeps unavailable references unknown. Later references are
+diagnostic only and cannot adopt the tuple into root/settings evidence.
+Missing ordinary response or required ExtraInfo completion marks partial
+diagnostics instead of rejecting account startup. Concrete URL/status/loader/
+frame contradictions, malformed fields and duplicate ExtraInfo still reject.
+Root/settings/redirect completion remains mandatory. Diagnostic eviction cannot
+change admission merely because optional ordinary completion was absent.
 The public summary marks `diagnosticCoverage: partial` and includes the bounded
 `diagnosticMissingFrameRequests` count; missing frame metadata is not counted
 as dropped records. Candidate/blocked/deletion attempts and malformed/ambiguous
 headers still reject before diagnostic routing, including after eviction.
 Existing no-adoption markers and security/diagnostic capacities remain active.
 
-`x-manual-unframed-traffic.test.mjs` covers the narrow exception and its authority
-boundaries. The accountless real reader dispatcher also exercises an absent
-request frame followed by a normal response without rebinding account evidence.
+`x-manual-unframed-traffic.test.mjs` covers the classification and its authority
+boundaries. The accountless real reader dispatcher also exercises POST/Ping and
+empty loaders without rebinding account evidence. Closed `guardCondition`
+categories distinguish excluded URL, protected source, type, method, session,
+malformed frame/loader and missing predecessor conditions without raw metadata.
 Default strict/deferred policies, Store and native activation are unchanged.
-Only offline acceptance has been performed; the native failing request remains
-unidentified and no retained QA execution or transfer was repeated.
+The preceding native trace was reproduced offline by both empty-loader and
+POST/Ping requests. Neither reproduction identifies the actual native request;
+this revision has not repeated retained QA execution or session transfer.
 
 ## Manual V2 diagnostic capacity isolation (2026-10-23)
 
-Ordinary eligible GET resources now use a 256-entry diagnostic correlation
+Ordinary eligible resources now use a 256-entry diagnostic correlation
 queue, separate from the 1,280 lifetime security-record budget for root,
 settings, redirects and unsupported/malformed requests. The diagnostic queue
 may evict tuples; an exact-ID registry prevents discarded IDs from being

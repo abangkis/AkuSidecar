@@ -222,6 +222,11 @@ async function driverScenario(scenario, continuous=false, injectedCookie='lang=e
     if(['before-observer-late-response','after-enable-old-loader','observed-before-seed'].includes(scenario))response('pending',undefined,'old');
     if(['precommit-resource','postcommit-resource'].includes(scenario))response('asset');
     if(scenario==='foreign-origin'){request('foreign','https://static.invalid/asset');response('foreign','https://static.invalid/asset');}
+    if(scenario.startsWith('ordinary-')){
+      const url='https://static.invalid/asset',ping=scenario==='ordinary-post-ping';
+      emit('Network.requestWillBeSent',{requestId:'ordinary',loaderId:'',type:ping?'Ping':'Image',request:{method:ping?'POST':'GET',url}});
+      response('ordinary',url,'');
+    }
     if(scenario.startsWith('request-frame-')){
       const params={requestId:'asset',loaderId:'new',type:'Image',request:{method:'GET',url:'https://x.com/asset'}};
       if(scenario==='request-frame-empty')params.frameId='';
@@ -262,11 +267,11 @@ async function driverScenario(scenario, continuous=false, injectedCookie='lang=e
   return {scenario,evaluations,receipts,diagnostic:observation.diagnostic,first,trace,commands,observation};
 }
 
-for(const scenario of ['clean','precommit-resource','postcommit-resource','observed-before-seed','foreign-session-response','qualified-redirect-late','qualified-redirect-early','request-frame-different','nonroot-settings','foreign-origin','request-frame-absent'])test(`actual driver retains bounded network provenance: ${scenario}`,async()=>{
+for(const scenario of ['clean','precommit-resource','postcommit-resource','observed-before-seed','foreign-session-response','qualified-redirect-late','qualified-redirect-early','request-frame-different','nonroot-settings','foreign-origin','request-frame-absent','ordinary-empty-loader','ordinary-post-ping'])test(`actual driver retains bounded network provenance: ${scenario}`,async()=>{
   const r=await driverScenario(scenario,true);assert.equal(r.diagnostic,'bound');assert.equal(r.receipts,1);assert.equal(r.evaluations,2);
   assert.equal(r.commands.filter(v=>v==='Network.enable').length,1);
   assert.ok(r.commands.indexOf('Network.disable')>r.commands.indexOf('receipt'));
-  if(scenario==='request-frame-absent'){
+  if(scenario==='request-frame-absent'||scenario.startsWith('ordinary-')){
     assert.equal(r.observation.manualCookieGuard.diagnosticCoverage,'partial');
     assert.equal(r.observation.manualCookieGuard.diagnosticMissingFrameRequests,1);
   }
@@ -278,6 +283,12 @@ for(const [kind,state]of [['empty','malformed'],['number','malformed']])test(`ac
   assert.equal(r.trace.guardProvenance,'frame_scope');assert.equal(r.trace.guardRequestFrame,state);
   assert.equal(r.trace.guardEpoch,'document_committed');assert.equal(r.trace.terminal,'scope_lost');
   assert.equal(JSON.stringify(r.trace).includes('PRIVATE_CHILD_FRAME'),false);
+});
+test('actual reader dispatcher still fences session-cookie attempts on ordinary POST/Ping with empty loader',async()=>{
+  const r=await driverScenario('ordinary-post-ping',true,'ct0=; Max-Age=0');
+  assert.equal(r.receipts,0);assert.equal(r.evaluations,0);
+  assert.equal(r.trace.firstCause,'cookie_candidate');assert.equal(r.trace.guardTrigger,'extra');
+  assert.equal(r.trace.guardRequestFrame,'absent');
 });
 test('actual reader dispatcher rejects a nonroot response bound to the wrong frame without changing the first snapshot',async()=>{
   const r=await driverScenario('request-frame-response-mismatch',true);
@@ -404,7 +415,7 @@ test('pre-seed headers do not poison the epoch; structural coverage loss cannot 
   const malformed=passive();malformed.emit('Network.requestWillBeSent',{});malformed.g.beginPostSeed();assert.equal(malformed.g.rejection(),'guard_metadata_shape');
 });
 test('post-seed missing predecessor and seen rejected scope remain distinct, including blocked candidates',()=>{
-  const absent=passive();absent.g.beginPostSeed();absent.response('lang=en; Path=/');assert.deepEqual(absent.g.trace(),{guardTrigger:'response',guardProvenance:'absent',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'unknown',guardHeaderReason:'unknown'});
+  const absent=passive();absent.g.beginPostSeed();absent.response('lang=en; Path=/');assert.deepEqual(absent.g.trace(),{guardTrigger:'response',guardProvenance:'absent',guardCondition:'request_absent',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'unknown',guardHeaderReason:'unknown'});
   const foreign=passive();foreign.request('r',{frameId:'child'});foreign.g.beginPostSeed();foreign.response('lang=en; Path=/');assert.deepEqual(foreign.g.trace(),{guardTrigger:'response',guardProvenance:'scoped',guardCondition:'unknown',guardEpoch:'post_seed',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'different',guardHeaderReason:'unknown'});assert.equal(foreign.g.rejection(),'guard_response_correlation');
   for(const scope of ['absent','scoped','foreign']){
     const s=passive();if(scope!=='absent')s.request('r',scope==='foreign'?{request:{method:'GET',url:'https://foreign.invalid/asset'}}:{});s.g.beginPostSeed();

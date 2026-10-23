@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {ManualStartupCookieGuard} from './x-manual-startup-cookie-guard.mjs';
 import {createManualV2BoundObservation} from './x-qa-bound-observation.mjs';
 import {inspectBootstrapCurrentSelf} from './x-bootstrap-current-self.mjs';
+import {startupFailureLatch,requireBoundStartup,startupDiagnostic,STARTUP_TRACE} from './x-manual-startup-diagnostic.mjs';
 
 // Accountless metadata only. No Chrome, profile, transport or Store capability.
 const scope={owner:1,profileId:'PRIVATE_PROFILE',sessionId:'PRIVATE_SESSION',targetId:'PRIVATE_TARGET'};
@@ -65,12 +66,12 @@ for(const kind of ['candidate','deletion','blocked','ambiguous','malformed'])tes
   }
 });
 
-test('missing frame cannot downgrade Home, Document, settings, unsupported method, missing loader or orphan metadata',async()=>{
-  for(const fault of ['home','document','settings','foreign-settings','post','loader','orphan','malformed-frame','malformed-response-frame']){
+test('missing frame cannot downgrade Home, Document, settings, unknown methods, malformed loader or orphan metadata',async()=>{
+  for(const fault of ['home','document','settings','foreign-settings','method','loader','orphan','malformed-frame','malformed-response-frame']){
     const s=fixture();s.document();
     const url=fault==='home'?'https://x.com/home':fault==='settings'?settings:
       fault==='foreign-settings'?'https://outside.invalid/1.1/account/settings.json':'https://outside.invalid/PRIVATE_ASSET';
-    if(fault!=='orphan')s.request('ordinary',url,fault==='document'?{type:'Document'}:fault==='post'?{request:{method:'POST',url}}:
+    if(fault!=='orphan')s.request('ordinary',url,fault==='document'?{type:'Document'}:fault==='method'?{request:{method:'UNKNOWN',url}}:
       fault==='loader'?{loaderId:undefined}:fault==='malformed-frame'?{frameId:undefined}:{});
     s.response('ordinary',url,other,false,fault==='malformed-response-frame'?{frameId:42}:{});
     s.identity();s.login();const r=await s.binder.finish(true);
@@ -79,8 +80,9 @@ test('missing frame cannot downgrade Home, Document, settings, unsupported metho
 });
 
 test('unframed diagnostic IDs never become new root/settings or redirect provenance, including after eviction',async()=>{
-  for(const evicted of [false,true])for(const role of ['root','settings','redirect']){
-    const s=fixture();s.document();for(let i=0;i<(evicted?300:1);i++)s.request('ordinary-'+i,'https://outside.invalid/PRIVATE_ASSET');
+  for(const evicted of [false,true])for(const role of ['root','settings','redirect'])for(const ping of [false,true]){
+    const s=fixture();s.document();for(let i=0;i<(evicted?300:1);i++)s.request('ordinary-'+i,'https://outside.invalid/PRIVATE_ASSET',
+      ping?{type:'Ping',loaderId:'',request:{method:'POST',url:'https://outside.invalid/PRIVATE_ASSET'}}:{});
     s.request('ordinary-0',role==='settings'?settings:role==='root'?'https://x.com/home':'https://outside.invalid/next',
       role==='settings'?{type:'XHR',frameId:root}:role==='root'?{type:'Document',frameId:root}:
         {frameId:root,redirectHasExtraInfo:false,redirectResponse:{url:'https://outside.invalid/PRIVATE_ASSET',status:302,headers:{}}});
@@ -90,7 +92,7 @@ test('unframed diagnostic IDs never become new root/settings or redirect provena
 
 test('partial unframed diagnostics cannot repair failed identity, login, context or cleanup',async()=>{
   for(const fault of ['identity','wrong-identity','login','context','cleanup']){
-    const s=fixture();s.document();s.request('ordinary','https://outside.invalid/PRIVATE_ASSET');s.response('ordinary','https://outside.invalid/PRIVATE_ASSET',other);
+    const s=fixture();s.document();s.request('ordinary','https://outside.invalid/PRIVATE_ASSET',{type:'Ping',loaderId:'',request:{method:'POST',url:'https://outside.invalid/PRIVATE_ASSET'}});s.response('ordinary','https://outside.invalid/PRIVATE_ASSET',other);
     if(fault!=='identity')s.identity();if(fault==='wrong-identity')s.binder.acceptIdentity('99999',{});
     s.login(fault==='login'?401:200);if(fault==='context')s.emit('Runtime.executionContextDestroyed',{executionContextId:7});
     const r=await s.binder.finish(fault!=='cleanup');assert.notEqual(r.diagnostic,'bound');assert.equal(s.receipts(),0);
@@ -98,7 +100,7 @@ test('partial unframed diagnostics cannot repair failed identity, login, context
   }
 });
 
-test('unframed diagnostics retain exact response URL/loader/status, declared ExtraInfo and frame-accessor rejection',async()=>{
+test('unframed diagnostics retain contradiction checks while optional completion remains partial',async()=>{
   let reads=0;
   for(const fault of ['url','loader','status','missing-extra','duplicate-extra','missing-response','frame-getter']){
     const s=fixture();s.document();const url='https://outside.invalid/PRIVATE_ASSET';s.request('ordinary',url);
@@ -111,7 +113,9 @@ test('unframed diagnostics retain exact response URL/loader/status, declared Ext
     }
     if(fault!=='missing-extra'&&fault!=='frame-getter')s.extra('ordinary',fault==='missing-response'?other:{},fault==='status'?{statusCode:201}:{});
     if(fault==='duplicate-extra')s.extra('ordinary');s.identity();s.login();const r=await s.binder.finish(true);
-    assert.notEqual(r.diagnostic,'bound',fault);assert.equal(s.receipts(),0,fault);
+    if(['missing-extra','missing-response'].includes(fault)){
+      assert.equal(r.diagnostic,'bound',fault);assert.equal(s.receipts(),1,fault);assert.equal(r.manualCookieGuard.diagnosticCoverage,'partial');
+    }else{assert.notEqual(r.diagnostic,'bound',fault);assert.equal(s.receipts(),0,fault);}
   }
   assert.equal(reads,0);
 });
@@ -144,4 +148,84 @@ test('later unframed ordinary metadata cannot clear the first session-cookie rej
   for(let i=0;i<300;i++)emit('Network.requestWillBeSent',{requestId:'later-'+i,type:'Image',loaderId:loader,request:{method:'GET',url:'https://outside.invalid/asset'}});
   emit('Network.responseReceivedExtraInfo',{requestId:'later-0',statusCode:200,headers:other});
   const r=g.finish();assert.deepEqual(g.trace(),first);assert.equal(g.rejection(),'cookie_candidate');assert.ok(r.candidateAttempts);privateSummary(r);
+});
+
+test('ordinary methods and empty or absent loaders cannot cross into strict account evidence',async()=>{
+  for(const method of ['GET','HEAD','POST','OPTIONS','PUT','PATCH','DELETE'])
+    for(const type of ['Image','Fetch','Ping','Preflight','EventSource','Prefetch'])
+      for(const loaderKind of ['valid','empty','absent'])for(const framed of [false,true]){
+        const s=fixture();s.document();const url='https://outside.invalid/PRIVATE_ASSET';
+        const params={requestId:'ordinary',type,request:{method,url},...(framed?{frameId:root}:{})};
+        if(loaderKind!=='absent')params.loaderId=loaderKind==='empty'?'':loader;
+        s.emit('Network.requestWillBeSent',params);
+        s.extra('ordinary',other);
+        s.response('ordinary',url,{},true,loaderKind==='empty'?{loaderId:''}:{});
+        s.identity();s.login();const r=await s.binder.finish(true);
+        assert.equal(r.diagnostic,'bound',method+'/'+type+'/'+loaderKind+'/'+framed);assert.equal(s.receipts(),1);
+        assert.equal(r.manualCookieGuard.otherAttempts,1);assert.equal(r.canAuthorize,false);
+        if(!framed||loaderKind!=='valid')assert.equal(r.manualCookieGuard.diagnosticCoverage,'partial');
+        privateSummary(r.manualCookieGuard);
+      }
+});
+
+test('ordinary missing completion has the same admission outcome before and after diagnostic eviction',async()=>{
+  for(const fault of ['response','extra'])for(const evicted of [false,true])for(const framed of [false,true]){
+    const s=fixture();s.document();const url='https://outside.invalid/PRIVATE_ASSET';
+    s.request('ordinary',url,framed?{frameId:root}:{});
+    if(fault==='response')s.extra('ordinary',other);
+    else s.response('ordinary',url,other,true,framed?{frameId:root}:{});
+    if(evicted)for(let i=0;i<300;i++)s.request('later-'+i,url);
+    s.identity();s.login();const r=await s.binder.finish(true);
+    assert.equal(r.diagnostic,'bound');assert.equal(s.receipts(),1);
+    assert.equal(r.manualCookieGuard.diagnosticCoverage,'partial');privateSummary(r.manualCookieGuard);
+  }
+});
+
+test('new ordinary metadata combinations never suppress session-cookie or ambiguous attempts',async()=>{
+  for(const type of ['Image','Ping'])for(const evicted of [false,true])for(const name of ['auth_token','ct0'])
+    for(const kind of ['candidate','deletion','blocked','ambiguous','malformed']){
+      const s=fixture();s.document();const url='https://outside.invalid/PRIVATE_ASSET';
+      s.request('ordinary',url,{type,loaderId:'',request:{method:'POST',url}});
+      if(evicted)for(let i=0;i<300;i++)s.request('later-'+i,url);
+      if(kind==='blocked')s.extra('ordinary',{}, {blockedCookies:[{cookieLine:name+'=; Max-Age=0'}]});
+      else s.extra('ordinary',{'Set-Cookie':kind==='candidate'?name+'=PRIVATE_TOKEN':kind==='deletion'?name+'=; Max-Age=0':
+        kind==='ambiguous'?'PRIVATE_OTHER=x, '+name+'=PRIVATE_TOKEN':['PRIVATE_VALUE']});
+      s.identity();s.login();const r=await s.binder.finish(true);
+      assert.equal(r.diagnostic,'observed_cookie_write');assert.equal(s.receipts(),0);privateSummary(r.manualCookieGuard);
+    }
+});
+
+test('excluded request predicates survive the real failure latch as closed conditions only',async()=>{
+  const faults=[
+    ['request_shape',{request:null}],['request_url',{request:{method:'GET',url:'http://outside.invalid/PRIVATE'}}],
+    ['request_url',{request:{method:'GET',url:'https://PRIVATE:PRIVATE@outside.invalid/asset'}}],
+    ['protected_source',{request:{method:'GET',url:'https://x.com/home'}}],
+    ['protected_source',{type:'Document'}],['protected_source',{request:{method:'GET',url:'https://outside.invalid/1.1/account/settings.json'}}],
+    ['resource_type',{type:'PRIVATE_TYPE'}],['request_method',{request:{method:'PRIVATE_METHOD',url:'https://outside.invalid/asset'}}],
+    ['frame_malformed',{frameId:undefined}],['loader_malformed',{loaderId:undefined}],
+    ['loader_malformed',{loaderId:42}],['loader_malformed',{loaderId:'x'.repeat(513)}],
+  ];
+  for(const [condition,patch]of faults){
+    const s=fixture();s.document();s.request('ordinary','https://outside.invalid/asset',patch);s.extra('ordinary',other);
+    s.identity();s.login();const report=await s.binder.finish(true);let detail;
+    assert.throws(()=>requireBoundStartup(report,'collector',startupFailureLatch()),error=>{detail=startupDiagnostic(error);return true;});
+    assert.equal(detail.trace.firstCause,'guard_request_unbound');assert.equal(detail.trace.guardCondition,condition);
+    assert.ok(STARTUP_TRACE.guardCondition.includes(condition));assert.equal(s.receipts(),0);
+    privateSummary(detail);assert.equal(JSON.stringify(detail).includes('PRIVATE'),false);
+  }
+  const noSession=new ManualStartupCookieGuard(root);
+  noSession.observe({method:'Network.requestWillBeSent',params:{requestId:'ordinary',type:'Ping',loaderId:'',request:{method:'POST',url:'https://outside.invalid/asset'}}});
+  noSession.observe({method:'Network.responseReceivedExtraInfo',params:{requestId:'ordinary',statusCode:200,headers:other}});
+  assert.equal(noSession.trace().guardCondition,'session_missing');noSession.finish();
+});
+
+test('optional loader accessors are rejected without execution and first condition remains immutable',()=>{
+  let reads=0;
+  const g=new ManualStartupCookieGuard(root,scope.sessionId),emit=(method,params)=>g.observe({method,params,sessionId:scope.sessionId});
+  const p={requestId:'ordinary',type:'Ping',request:{method:'POST',url:'https://outside.invalid/asset'}};
+  Object.defineProperty(p,'loaderId',{get(){reads++;throw new Error('PRIVATE_GETTER');}});
+  emit('Network.requestWillBeSent',p);emit('Network.responseReceivedExtraInfo',{requestId:'ordinary',statusCode:200,headers:other});
+  assert.equal(g.trace().guardCondition,'loader_malformed');const first=g.trace();
+  emit('Network.responseReceivedExtraInfo',{requestId:'ordinary',statusCode:200,headers:{'Set-Cookie':'ct0=PRIVATE_TOKEN'}});
+  g.finish();assert.equal(reads,0);assert.deepEqual(g.trace(),first);assert.equal(g.rejection(),'guard_request_unbound');
 });

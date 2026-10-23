@@ -1487,9 +1487,9 @@ Ambiguous combined-cookie representations remain rejected rather than silently
 treated as an unknown attribute or a harmless value.
 
 Diagnostic capacity is separate from security coverage. A valid owned-session
-GET with a recognized resource type, valid request-local loader, and a
-qualified X or known outside HTTPS URL can enter a 256-request diagnostic queue;
-its frame must be valid or meet the narrow absent-frame rule below. Account
+Recognized ordinary HTTP methods/resource types with a qualified X or known
+outside HTTPS URL can enter a 256-request diagnostic queue. Optional absent
+frame and absent/empty loader references stay unavailable, as described below. Account
 settings and root documents cannot. An ordinary single-hop response and
 its one pending ExtraInfo projection remain diagnostic correlation. Redirects,
 reused IDs, repeated ExtraInfo, malformed/unqualified requests, root documents,
@@ -1520,20 +1520,47 @@ events cannot consume that binder budget. Ordinary and deferred QA keep their
 existing total-event cap. Transport framing, ownership and deadlines still bound
 both flows, and loss of common transport/security coverage remains fatal.
 
-An actually absent `frameId` field is eligible only for a previously observed
-owned-session ordinary GET resource with a valid loader and bounded HTTPS URL.
-It does not make a malformed/present frame valid, broaden identity/setter
-eligibility, or downgrade Home, Document, protected settings, unsupported methods,
-orphan metadata or redirects. The frame remains unknown; a later well-formed
-response frame is diagnostic metadata only and cannot rebind the request.
-Response URL/loader/status and declared ExtraInfo checks are unchanged. The
+Classification now precedes optional correlation for a previously observed,
+unique owned-session ordinary request with a bounded valid HTTPS nonprotected
+URL. Recognized methods are GET, HEAD, POST, OPTIONS, PUT, PATCH and DELETE;
+resource types include the existing non-Document list plus Ping, Preflight,
+EventSource and Prefetch. An actually absent `frameId` and absent/empty loader
+are unavailable metadata, not evidence of an account relationship. Present
+undefined, numeric, oversized or accessor references remain malformed. The
+exception does not broaden identity/setter eligibility or downgrade Home,
+Document, protected settings, unknown methods/types, orphan metadata or redirects.
+Home/settings exclusions apply to framed and unframed diagnostic admission.
+Later well-formed references are diagnostic metadata only and cannot rebind
+the request. Missing ordinary response/required ExtraInfo completion marks
+partial diagnostics without rejecting an independently valid account receipt;
+the outcome for that omission does not depend on diagnostic record eviction.
+Concrete response URL/status/loader/frame contradictions, malformed metadata,
+duplicates, root/settings/redirect completion and all header inspection bounds
+remain fail-closed. This is an explicit ordinary-diagnostic policy revision,
+not proof that an incomplete record had correlated provenance. The
 summary reports `diagnosticCoverage: partial` and
 `diagnosticMissingFrameRequests` separately from dropped-record counters.
 Candidates, blocked/deletion attempts and ambiguous headers still reject before
 ordinary routing, including after diagnostic eviction. Selected settings and
 private account proof retain their mandatory root-frame correlation. This
 offline policy correction does not identify the native request or authorize a
-new retained QA transfer.
+new retained QA transfer. The prior trace can be reproduced by both a request
+with an empty loader and a POST/Ping request; it cannot distinguish those cases.
+Closed conditions now report the first excluded request-shape, URL,
+protected-source, type, method, session, malformed-frame or malformed-loader
+predicate (or absent predecessor) through the existing private V7 wire.
+Catalog entries are append-only in Node and Go; no URL, cookie value, token,
+account identifier or raw request metadata is added to reports.
+
+Current offline acceptance passed 295 Node tests, four Go top-level tests
+including 21 startup diagnostic subcases, all four build-tag gates and Windows
+standalone compilation. The real retained QA entry was skipped before profile
+or lease access. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-e262bd8796474b6e84c4fb21b4078337.prepare.log.txt`.
+The accountless regressions reproduce the prior ambiguous trace with both an
+empty loader and POST/Ping, prove optional-completion admission is stable before
+and after diagnostic eviction, and preserve candidate, no-adoption, protected
+source, first-cause and Node/Go wire checks. Native acceptance remains pending.
 
 Minimal name parsing still requires a bounded token name followed by `=`. It
 rejects control characters, a comma in the initial cookie pair, or a comma

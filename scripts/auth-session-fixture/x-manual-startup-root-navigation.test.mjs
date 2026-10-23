@@ -116,9 +116,9 @@ async function handoffFixture({role='reader',order='before-commit',cookie='lang=
       binder.armManualReload(oldLoader);
       if(resourceMode){
         root(null);commit();
-        // POST is outside the releasable diagnostic-resource capability and
-        // deliberately exhausts the independent security provenance budget.
-        if(fault==='resource-budget')for(let i=0;i<1280;i++)emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:frame,loaderId:next,type:'Image',request:{method:'POST',url:'https://foreign.invalid/asset'}});
+        // Unsupported methods deliberately exhaust security provenance capacity;
+        // ordinary POST resources use diagnostic capacity instead.
+        if(fault==='resource-budget')for(let i=0;i<1280;i++)emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:frame,loaderId:next,type:'Image',request:{method:'TRACE',url:'https://foreign.invalid/asset'}});
         if(resourceMode!=='after-context')assetRequest();if(resourceMode==='response-before-context')assetResponse();created();
         if(resourceMode==='after-context')assetRequest();if(resourceMode!=='response-before-context')assetResponse();
       }else{if(order==='before-commit')root();commit();if(order==='before-context')root();created();if(order==='after-context')root();}
@@ -163,11 +163,15 @@ test('same-document provisional GET resource may finish before or after its matc
     if(!contextFirst)s.context();assert.equal(s.g.finish().diagnostic,'other_only');assert.equal(s.g.rejection(),'unknown');
   }
 });
-test('network cookie attempt without response or ExtraInfo fails closed with completion reason',()=>{
+test('ordinary missing response or ExtraInfo is partial while protected completion still rejects',()=>{
   for(const missing of ['response','extra']){
     const s=resourceFixture();s.ready();s.assetRequest();if(missing!=='response')s.assetResponse({'Set-Cookie':'lang=en; Path=/'});
     if(missing!=='extra')s.assetExtra(missing==='response'?{'Set-Cookie':'lang=en; Path=/'}:{});if(missing!=='context')s.context();
-    assert.equal(s.g.finish().diagnostic,'ambiguous');assert.equal(s.g.rejection(),'guard_completion_missing');
+    assert.equal(s.g.finish().diagnosticCoverage,'partial');assert.equal(s.g.rejection(),'unknown');
+    const strict=resourceFixture();strict.ready();strict.assetRequest({type:'Document',frameId:'child'});
+    if(missing!=='response')strict.assetResponse({'Set-Cookie':'lang=en; Path=/'},{frameId:'child'});
+    if(missing!=='extra')strict.assetExtra({'Set-Cookie':'lang=en; Path=/'});
+    assert.equal(strict.g.finish().diagnostic,'ambiguous');assert.equal(strict.g.rejection(),'guard_completion_missing');
   }
 });
 test('network provenance preserves rejected scope and redirects without context-based admission islands',()=>{
@@ -187,7 +191,7 @@ test('guard first rejection distinguishes unbound, ambiguous syntax, correlation
   const folded=resourceFixture();folded.ready();folded.assetRequest();folded.assetResponse({'Set-Cookie':'lang=x; Priority=Low, auth_token=y'});assert.equal(folded.g.rejection(),'guard_header_classification');assert.equal(folded.g.trace().guardHeaderReason,'syntax');
   const wrong=resourceFixture();wrong.ready();wrong.assetRequest();wrong.assetResponse({'Set-Cookie':'lang=en; Path=/'},{frameId:'other'});assert.equal(wrong.g.rejection(),'guard_response_correlation');
   const shape=resourceFixture();shape.ready();shape.assetRequest();shape.assetResponse({'Set-Cookie':['lang=x']});assert.equal(shape.g.rejection(),'guard_metadata_shape');
-  const budget=resourceFixture();budget.ready();for(let i=0;i<1280;i++)budget.emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:frame,loaderId:next,type:'Image',request:{method:'POST',url:'https://foreign.invalid/asset'}});
+  const budget=resourceFixture();budget.ready();for(let i=0;i<1280;i++)budget.emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:frame,loaderId:next,type:'Image',request:{method:'TRACE',url:'https://foreign.invalid/asset'}});
   assert.equal(budget.g.rejection(),'guard_request_budget');const report=budget.g.finish();assert.equal(report.candidateAttempts,0);assert.equal(report.otherAttempts,0);
   for(const mode of ['header','event']){
     const s=resourceFixture();s.ready();s.assetRequest();
