@@ -6,6 +6,8 @@ github.com/abangkis/ai4u-inference-sdk-go v0.12.1 h1:iD380Y11Y4k/Tae/OPAhd3yo+1v
 github.com/abangkis/ai4u-inference-sdk-go v0.12.1/go.mod h1:LnyqwBSWkbkrI7fo29VcvwJjSblgC7Qf6tCgTX2T+xk=
 github.com/abangkis/ai4u-inference-sdk-go v0.23.0 h1:/0RvcCQS1E50ChS3I+uoe1UPIMMnn0w37NQWegmg1S8=
 github.com/abangkis/ai4u-inference-sdk-go v0.23.0/go.mod h1:hkVHXuJfuz7vZzWGNmrIGJk31MOXNSQ/2wZ54okqJEM=
+github.com/abangkis/ai4u-inference-sdk-go v0.24.0 h1:c0bTmgEXSf4xgEB5jif8HNmIgMjQ4BL7Wn1B7m9QjTc=
+github.com/abangkis/ai4u-inference-sdk-go v0.24.0/go.mod h1:hkVHXuJfuz7vZzWGNmrIGJk31MOXNSQ/2wZ54okqJEM=
 github.com/dlclark/regexp2 v1.11.0 h1:G/nrcoOa7ZXlpoa/91N3X7mM3r8eIlMBBJZvsz/mxKI=
 github.com/dlclark/regexp2 v1.11.0/go.mod h1:DHkYz0B9wPfa6wondMfaivmHpzrQ3v9q8cnmRbL6yW8=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=

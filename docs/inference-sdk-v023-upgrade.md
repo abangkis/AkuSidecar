@@ -1,5 +1,9 @@
 # Inference SDK v0.23 upgrade contract
 
+Historical upgrade record. The [v0.24 contract](inference-sdk-v024-upgrade.md)
+supersedes its dependency version and calibration-assurance behavior; the
+validation and activation boundaries recorded here remain historical evidence.
+
 ## Dependency and activation boundary
 
 AkuSidecar requires the published `github.com/abangkis/ai4u-inference-sdk-go`

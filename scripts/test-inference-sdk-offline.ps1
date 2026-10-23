@@ -2,9 +2,9 @@ param()
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 $runId = [guid]::NewGuid().ToString('N')
-$gateRoot = Join-Path $projectRoot '.go-build\inference-sdk-v023'
+$gateRoot = Join-Path $projectRoot '.go-build\inference-sdk-v024'
 $runRoot = Join-Path $gateRoot ('run-' + $runId)
-foreach ($relative in @('.go-build', '.go-build\mod', '.go-build\sdk-v023-cache', '.go-build\inference-sdk-v023')) {
+foreach ($relative in @('.go-build', '.go-build\mod', '.go-build\sdk-v024-cache', '.go-build\inference-sdk-v024')) {
     $directory = Join-Path $projectRoot $relative
     if (!(Test-Path -LiteralPath $directory -PathType Container)) {
         New-Item -ItemType Directory -Path $directory | Out-Null
@@ -31,7 +31,7 @@ function Invoke-OfflineGo {
 Push-Location -LiteralPath $projectRoot
 try {
     $env:TEMP = $tempRoot; $env:TMP = $tempRoot; $env:GOTMPDIR = $tempRoot
-    $env:GOCACHE = Join-Path $projectRoot '.go-build\sdk-v023-cache'
+    $env:GOCACHE = Join-Path $projectRoot '.go-build\sdk-v024-cache'
     $env:GOMODCACHE = Join-Path $projectRoot '.go-build\mod'
     $env:GOWORK = 'off'; $env:GOPROXY = 'off'; $env:GOSUMDB = 'off'
     # An inherited GOPRIVATE/GONOPROXY must not bypass GOPROXY=off.
@@ -41,11 +41,12 @@ try {
     $env:AKU_FAKE_CODEX_APP_SERVER = '0'
     $modules = @(& go list -m -f '{{.Path}} {{.Version}}{{if .Replace}} replaced{{end}}' github.com/abangkis/ai4u-inference-sdk-go github.com/abangkis/ai4u-common-execution-profile-go)
     if ($LASTEXITCODE -ne 0 -or $modules.Count -ne 2 -or
-        $modules[0] -ne 'github.com/abangkis/ai4u-inference-sdk-go v0.23.0' -or
+        $modules[0] -ne 'github.com/abangkis/ai4u-inference-sdk-go v0.24.0' -or
         $modules[1] -ne 'github.com/abangkis/ai4u-common-execution-profile-go v0.2.0') {
-        throw 'Published SDK v0.23.0 and Common Profile v0.2.0 must already be cached, without replacements.'
+        throw 'Published SDK v0.24.0 and Common Profile v0.2.0 must already be cached, without replacements.'
     }
     $modules | Tee-Object -FilePath $logPath
+    Invoke-OfflineGo -GoArguments @('mod', 'verify')
     # This legacy factory test resolves OS credentials before its JSON fallback.
     # Other Gemini tests inject a static fake resolver and remain enabled.
     Invoke-OfflineGo -GoArguments @('test', '-p', '1', '-count=1', '-timeout=120s', '-skip', '^TestNewProviderRoutesGeminiEntries$', './internal/config', './internal/reasoning')
