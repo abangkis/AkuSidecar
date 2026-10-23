@@ -1786,22 +1786,32 @@ async function closeShortCollector(current) {
   return disposed && s.closed;
 }
 
-async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup, beforeIdentityRead,initialFailure, observationFactory = (...args) => new QABoundObservation(...args)) {
+export async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup, beforeIdentityRead,initialFailure, observationFactory = (...args) => new QABoundObservation(...args)) {
   const s = current.shortFeasibility;
+  // Classify at origin, before the owner-level identity fallback. Never inspect
+  // transport exception text or overwrite an already branded first cause.
+  const failure = (error, phase, reason = 'unavailable') => initialFailure ? initialFailure(error, phase, reason) : error;
   if (!s.navigated) {
     s.navigated = true;
-    await s.transport.send('Page.navigate', { url: HOME_URL }, s.sessionId, r => {
-      if (r.errorText || !safeId(r.frameId)) throw probeError('qa_short_collector_invalid');
-      return { acknowledged: true };
-    });
+    try {
+      await s.transport.send('Page.navigate', { url: HOME_URL }, s.sessionId, r => {
+        if (r.errorText || !safeId(r.frameId)) throw failure(probeError('qa_short_collector_invalid'), 'navigation', 'rejected');
+        return { acknowledged: true };
+      });
+    } catch (error) { throw failure(error, 'navigation'); }
     const until = Date.now() + 15000;
     let ready = false;
     while (!ready && Date.now() < until) {
-      ready = await s.transport.send('Runtime.evaluate', { expression: ACCOUNT_READY_EXPRESSION, returnByValue: true, awaitPromise: false, userGesture: false }, s.sessionId,
-        r => r.result?.type === 'boolean' && r.result.value === true);
+      try {
+        ready = await s.transport.send('Runtime.evaluate', { expression: ACCOUNT_READY_EXPRESSION, returnByValue: true, awaitPromise: false, userGesture: false }, s.sessionId,
+          r => r.result?.type === 'boolean' && r.result.value === true);
+      } catch (error) { throw failure(error, 'page_ready'); }
       if (!ready) await new Promise(resolve => setTimeout(resolve, 200));
     }
-    if (!ready) return { checkpoint: shortQACheckpoint(null), accountId: null, start: null, end: null };
+    if (!ready) {
+      if (initialFailure) throw failure(probeError('qa_short_collector_invalid'), 'page_ready', 'deadline');
+      return { checkpoint: shortQACheckpoint(null), accountId: null, start: null, end: null };
+    }
   }
   let binder, capture, instrumentationId, frameId, oldLoader, sampling = false, networkDisabled = false, synchronized = false, privateResult = {};
   const owned = current.manualStartupSelected ? s.transport.ownership() : null;
@@ -1862,8 +1872,10 @@ async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup
     ({ frameId, loaderId:oldLoader } = await command('Page.getFrameTree'));
     const pointOptions = { deferCookieMutation: !onPrivateStartup, onPrivateResult: r => { privateResult = r; } };
     if (onPrivateStartup) pointOptions.onPrivateStartup = onPrivateStartup;
-    binder = observationFactory(scope, frameId, requestId => command('Network.getResponseBody', { requestId }),
-      () => performance.now(), undefined, pointOptions);
+    try {
+      binder = observationFactory(scope, frameId, requestId => command('Network.getResponseBody', { requestId }),
+        () => performance.now(), undefined, pointOptions);
+    } catch (error) { throw failure(error, 'guard_bind', 'rejected'); }
     sampling = true;
     if(!s.manualCookieGuard)await command('Network.enable', { maxTotalBufferSize: MAX_TOTAL_NETWORK_BUFFER_BYTES, maxResourceBufferSize: MAX_RESOURCE_NETWORK_BUFFER_BYTES, maxPostDataSize: 0 });
     await command('Network.setCacheDisabled', { cacheDisabled: true });
@@ -1907,7 +1919,7 @@ export function createOwnedManualStartupOwners(message,diagnostics=startupFailur
     if (sink.signal?.aborted) throw probeError('manual_startup_unavailable');
     const abort = () => rendezvous.cancel();
     sink.signal?.addEventListener('abort', abort, { once: true });
-    const failure=(error,phase)=>diagnostics.record(error,role,phase);
+    const failure=(error,phase,reason='unavailable')=>diagnostics.record(error,role,phase,reason);
     const manualObservation=(...args)=>createManualV2BoundObservation(...args,(reason,trace)=>{
       diagnostics.record(startupFailure(role,'bound_finish',reason,false,undefined,trace),role,'bound_finish',reason);
     },role==='reader'?current.manualCookieGuard:collector.manualCookieGuard);

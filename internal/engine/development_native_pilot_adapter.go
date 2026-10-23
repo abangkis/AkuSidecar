@@ -174,7 +174,7 @@ func (v nativePilotInitialTrace) GoString() string { return v.String() }
 type nativePilotInitialError struct{ detail nativePilotInitialDetail }
 
 var nativePilotInitialRoles = []string{"reader", "collector", "pair", "unknown"}
-var nativePilotInitialPhases = []string{"prepare", "inspect_before", "inspect_after", "acquire_rpc", "identity", "rendezvous", "settings", "cleanup", "bound_finish", "wire_decode", "joint"}
+var nativePilotInitialPhases = []string{"prepare", "inspect_before", "inspect_after", "acquire_rpc", "identity", "rendezvous", "settings", "cleanup", "bound_finish", "wire_decode", "joint", "navigation", "page_ready", "guard_bind"}
 var nativePilotInitialReasons = []string{"unavailable", "rejected", "identity_unavailable", "source_unavailable", "stale_observation", "cleanup_unverified", "scope_lost", "observed_cookie_write", "deadline", "canceled", "replay", "sample_missing", "sample_duplicate", "invalid_shape", "scope_mismatch", "time_invalid"}
 
 func (e *nativePilotInitialError) Error() string    { return "startup-projection-rejected" }

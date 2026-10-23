@@ -1,5 +1,36 @@
 # Local one-login concurrency fixture
 
+## Collector preflight failure classification (2026-10-23)
+
+The manual collector classifies failures before its generic identity fallback:
+
+| Phase | Reason | Meaning |
+| --- | --- | --- |
+| `navigation` | `unavailable` | The initial `Page.navigate` command failed. |
+| `navigation` | `rejected` | Its reply reported a navigation error or lacked a valid frame ID. |
+| `page_ready` | `unavailable` | The fixed page-readiness evaluation failed. |
+| `page_ready` | `deadline` | No positive readiness result arrived within the existing 15-second window. |
+| `guard_bind` | `rejected` | Observation construction or the existing guard claim rejected the binding. |
+
+These closed categories describe where failure occurred, not a login verdict.
+They never copy exception text, URLs, cookie/token values or scope identifiers.
+The first branded failure remains authoritative through owner PREPARE, private
+RPC and Go decoding, including an earlier cookie-guard failure from either role.
+The three phase values are appended to the Node/Go catalogs without changing
+existing indices, V7 wire shape or the 80-character diagnostic bound.
+
+Run `scripts/test-native-manual-pilot-startup.ps1` for accountless transport,
+real guard-claim rejection, owner/RPC propagation, Node-to-Go diagnostic parity,
+startup/controller regressions and build-tag isolation. The transport tests call
+the actual collector checkpoint function; no browser/profile, session transfer,
+Store or user runtime is used. The readiness expression, polling window, guard
+rules, identity acquisition and cleanup behavior are unchanged. The ordinary
+short-QA path retains its existing null checkpoint on readiness expiration.
+
+This fixes the demonstrated stage misclassification. It does not establish
+which native command or binding caused the archived
+`collector / identity / unavailable` failure; no native rerun was performed.
+
 ## No-reload current-self source qualification
 
 `scripts/test-x-qa-source.ps1 -LiveCurrentSelf` runs offline preflight only.

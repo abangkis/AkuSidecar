@@ -1,7 +1,7 @@
 // Closed private initial-evidence diagnostics. Arbitrary exception messages,
 // properties and patterned xnp_* strings never become trusted categories.
 export const STARTUP_ROLES=Object.freeze(['reader','collector','pair','unknown']);
-export const STARTUP_PHASES=Object.freeze(['prepare','inspect_before','inspect_after','acquire_rpc','identity','rendezvous','settings','cleanup','bound_finish','wire_decode','joint']);
+export const STARTUP_PHASES=Object.freeze(['prepare','inspect_before','inspect_after','acquire_rpc','identity','rendezvous','settings','cleanup','bound_finish','wire_decode','joint','navigation','page_ready','guard_bind']);
 export const STARTUP_REASONS=Object.freeze(['unavailable','rejected','identity_unavailable','source_unavailable','stale_observation','cleanup_unverified','scope_lost','observed_cookie_write','deadline','canceled','replay','sample_missing','sample_duplicate','invalid_shape','scope_mismatch','time_invalid']);
 export const STARTUP_GUARD_CAUSES=Object.freeze(['guard_request_unbound','guard_request_budget','guard_header_classification','guard_response_correlation','guard_metadata_shape','guard_completion_missing','guard_header_budget','guard_event_budget']);
 // Append-only V2 catalog prefix plus V3/V4/V5/V6/V7 guard fields form the private wire contract.

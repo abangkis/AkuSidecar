@@ -5,11 +5,13 @@ package engine
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
 	"time"
 )
@@ -18,6 +20,55 @@ import (
 // neither a Chrome/profile command nor a native provenance path. Private reply
 // bytes never reach test logs; output allocation is bounded independently.
 type nativePilotNodeBuffer struct{ bytes.Buffer }
+
+func TestNativePilotNodePreflightDiagnostics(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal("offline Node runtime unavailable")
+	}
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("offline fixture location unavailable")
+	}
+	module := filepath.Join(filepath.Dir(file), "..", "..", "scripts", "auth-session-fixture", "x-manual-startup-diagnostic.mjs")
+	const script = `import{pathToFileURL}from'node:url';const m=await import(pathToFileURL(process.argv[1]));const codes=[];for(const phase of ['navigation','page_ready','guard_bind'])for(const reason of ['unavailable','rejected','deadline'])for(const trace of [undefined,{firstCause:'unknown'}])codes.push(m.startupRPCCode(m.startupFailure('collector',phase,reason,false,undefined,trace)));console.log(JSON.stringify({phases:m.STARTUP_PHASES,codes}));`
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, node, "--input-type=module", "-e", script, module)
+	var output nativePilotNodeBuffer
+	cmd.Stdout, cmd.Stderr = &output, io.Discard
+	if cmd.Run() != nil {
+		t.Fatal("offline diagnostic projection failed")
+	}
+	defer clear(output.Bytes())
+	var result struct {
+		Phases []string `json:"phases"`
+		Codes  []string `json:"codes"`
+	}
+	if json.Unmarshal(output.Bytes(), &result) != nil || !slices.Equal(result.Phases, nativePilotInitialPhases) || len(result.Codes) != 18 {
+		t.Fatal("Node and Go startup phase catalogs diverged")
+	}
+	i := 0
+	for _, phase := range []string{"navigation", "page_ready", "guard_bind"} {
+		for _, reason := range []string{"unavailable", "rejected", "deadline"} {
+			for _, traced := range []bool{false, true} {
+				code := result.Codes[i]
+				i++
+				detail, ok := nativePilotInitialCode(code)
+				if !ok || len(code) > 80 || detail.role != "collector" || detail.phase != phase || detail.reason != reason || detail.peer || (detail.trace != nil) != traced {
+					t.Fatal("preflight diagnostic changed across the private wire")
+				}
+				wrapped := nativePilotInitialOf(nativePilotInitialRPC(code), "collector", "identity")
+				if wrapped.phase != phase || wrapped.reason != reason {
+					t.Fatal("identity fallback replaced the preflight diagnostic")
+				}
+			}
+		}
+	}
+	if _, ok := nativePilotInitialCode("manual_initial_collector_PRIVATE_unavailable_primary"); ok {
+		t.Fatal("unknown phase accepted")
+	}
+}
 
 func (b *nativePilotNodeBuffer) Write(p []byte) (int, error) {
 	if b.Len()+len(p) > nativePilotStartupWireMax {
