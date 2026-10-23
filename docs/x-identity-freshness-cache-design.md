@@ -1,8 +1,9 @@
 # X identity freshness and cache authority
 
-Status: design only. No service, new acceptance policy, recovery command, or
-freshness refresh is implemented or activated by this document. Root diagnostics
-are implemented separately and preserve the `691875d` acceptance envelope.
+Status: implemented as a bounded in-memory authority in the Manual V2 fixture
+observation/driver/owner path. No new acceptance policy, recovery command, or
+freshness refresh is activated. The implementation preserves the `d33bfdb`
+acceptance envelope and the preceding root diagnostics.
 
 ## Problem and existing contract
 
@@ -24,9 +25,9 @@ nonredirect root response; the full header/evidence separation also strengthened
 that root policy. Whether each root cache class meets the intended identity
 freshness invariant requires explicit policy review, not a diagnostic exception.
 
-## Proposed owner-local component
+## Implemented owner-local component
 
-`IdentityFreshnessLedger` is a pure, bounded, synchronous reducer owned by one
+`IdentityFreshnessLedger` is a pure, bounded, synchronous authority owned by one
 manual observation generation. It owns no browser, credentials, timers, storage,
 network client, or process. Its immutable policy has a stable version, explicit
 allowed source/cache classes, monotonic age limits, and requirements for source
@@ -41,25 +42,24 @@ can acquire authority through a later unrelated event.
 
 Creation initially pins the owner/session/target/role generation. Before the new
 document is known, bounded provisional observations may record cache-control
-receipts and the explicitly armed root request, but remain nonauthorizing. A
-single atomic bind step installs the complete new document/context tuple only
-after exact request/response/commit/context correlation. Only provisional receipts
-already tied to that owner generation and selected root can participate; orphan,
-foreign, reused, or previous-document evidence cannot be adopted. The proposed
-integration uses this provisional-to-bound lifecycle. A validated `RootBound`
-event supplied by the existing root/context authorities performs the atomic bind;
-the ledger does not independently discover or guess the document relationship.
+receipts and the explicitly armed root request, but remain nonauthorizing.
+`bindDocument` installs the document/context tuple already validated by the bound
+observer. `observeRoot` consumes only the same-generation guard receipt after its
+finish validation. Only an armed, accepted root produces `root_bound`; an unarmed
+legacy observation remains `document_bound` even when accepted under existing
+policy. Orphan, foreign, reused, or previous-document evidence cannot be adopted.
+The ledger does not independently discover or guess the document relationship.
 
-Suggested API (design, not exported implementation):
+Implemented API (revision and generation are required for every mutation):
 
 | Operation | Contract |
 | --- | --- |
-| `create(policy, binding, monotonicNow)` | Create an empty immutable snapshot with a generation and revision. Validate policy and private binding. |
-| `observe(expectedRevision, event, now)` | Atomically reduce a bounded owned observation, including a validated `RootBound` event; reject stale revisions and contradictory source tuples. Never execute effects. |
+| `new IdentityFreshnessLedger(binding, now, guard)` | Create an empty generation under the fixed exported policy. Validate private binding and bind the guard exactly once. |
+| `bindDocument` / `observeIdentity` / `observeRoot` / `observeCacheControl` | Accept bounded facts from their existing sole owners; reject stale revisions, foreign generations, and contradictory source tuples. Never execute effects. |
 | `read(now)` | Return an immutable age-adjusted view; no refresh, mutation, or implicit command. |
 | `readRootPolicyVerdict(now)` | Return `accepted_under_policy`, `rejected`, or `unknown`, separately from freshness proof. Acceptance under a permissive cache class does not mean server freshness is proven. |
-| `invalidate(expectedRevision, reason)` | Record a sticky generation-local loss; later success cannot repair it. |
-| `update(expectedRevision, boundEvidence, now)` | Atomically publish a new evidence snapshot only after policy-required source proof and exact binding validate; preserve observation time separately from read time. |
+| `invalidate(revision, generation, reason, now)` | Record a sticky generation-local loss; later success cannot repair it. |
+| `update(revision, generation, evidence, now)` | Atomically publish a new evidence snapshot only after policy-required source proof and exact binding validate; preserve observation time separately from read time. |
 
 An update never overwrites evidence piecemeal: identity, source proof, cache
 observations, age anchors, and policy version form one immutable revision. A
@@ -109,19 +109,19 @@ The ledger may return a closed explanation of missing
 proof, but cannot schedule or perform recovery. A successful effect only produces
 an observation to validate; it never directly sets `ready`.
 
-Before wiring this component: agree on root/identity freshness classes, map each
-existing consumer to a policy verdict, test contradictory and out-of-order
+Before changing policy: agree on root/identity freshness classes, map each
+affected consumer to a policy verdict, test contradictory and out-of-order
 observations, expiry and clock reversal, stale revision updates, restart isolation,
 both-role account mismatch, and absence of implicit effects. Shadow comparison
 must establish parity before any deliberately versioned acceptance change.
 
-The integration map has one authority per fact: the driver supplies cache-control
+The implemented integration map has one authority per fact: the driver supplies cache-control
 command receipts; the root guard supplies selected root observations; the bound
-observation supplies identity and settings evidence; the pair controller consumes
-the two snapshots and enforces joint matching. The ledger consolidates policy
+observation supplies identity and settings evidence; the existing pair controller
+consumes the unchanged private receipts and enforces joint matching. The ledger consolidates policy
 evaluation without duplicating command ownership or account selection. It remains
 in-memory only: no Store writes, persisted credentials, cross-run cache, or restart
-inheritance are part of this proposal.
+inheritance are part of this implementation.
 
 ## Root diagnostic implementation in this change
 
@@ -150,3 +150,50 @@ error text. No raw URLs, request IDs, cookies, account IDs, or accessor results
 are emitted. Cache controls and identity age are not inferred from this trace.
 The historical native failure remains unresolved because its old trace discarded
 the specific predicate; instrumentation cannot reconstruct it retroactively.
+
+## Integration and verification
+
+The bound observer replaces its Manual V2 five-second calculation with the ledger
+verdict; ordinary/deferred QA retains its existing calculation. It supplies the
+first valid identity capture, selected settings request and validated login proof,
+and the completed guard receipt as one publication decision. Root cache attributes
+still allow absent/undefined values while settings still requires three false
+flags. Unarmed fixture compatibility remains explicit rather than claiming an
+armed root proof. Source freshness remains unknown even for an accepted root.
+
+The real driver records cache-control request and acknowledgment times without
+issuing extra commands. Imported control times can precede ledger creation; they
+are not fabricated as observation-start times. Root response observation time and
+ledger receipt time are separate. An unknown timestamp stays unknown.
+
+The existing private startup sample is branded in a WeakMap only after ledger
+readiness. Production owned startup actors require and consume that one-use brand,
+matching role and pinned scope before forwarding the unchanged sample to the
+existing two-second challenge/source verifier and Go controller. Copies, JSON
+roundtrips, cross-role samples, replay, and invalidated ledger generations cannot
+provide that capability. Offline generic owner fixtures retain their explicit
+non-production path. No policy or identity fields are added to the wire.
+
+Reads are pure: age is evaluated against the supplied monotonic time without
+advancing revision, capturing identity again, or refreshing evidence. Sample age
+means time since the last atomic evidence update; identity capture age remains
+time since the first valid capture. Cache-control observations cannot reset sample
+age. A read earlier than the last observed mutation returns invalidated evidence;
+clock reversal observed by a mutation is sticky. The bound observer remains the
+monotonic event-clock owner and invalidates on reversal, including read boundaries.
+
+Unit and real-binder tests cover atomic/descriptor validation, stale revisions,
+generation/role isolation, root ordering, strict settings, expiry, clock reversal,
+private owner publication gates, and no authority from cache acknowledgment. A
+12-case comparison against immutable d33bfdb matches complete public reports and
+publication presence. Existing ten-second observation, five-second evidence,
+two-second source, and sixty-second pilot limits remain distinct and unchanged.
+
+The first retained native attempt with this implementation rejected at the
+reader root response: `root_response_service_worker`, with `fromDiskCache=false`,
+`fromServiceWorker=true`, and `fromPrefetchCache=false`. A response delivered by a
+service worker is not automatically stale; the preserved root policy nevertheless
+rejects that class. No policy exception or recovery was applied. This result
+qualifies the failing predicate for this run, not the unknown predicate of an
+older run. Final cleanup was verified without retry. See the manual pilot record
+and the bounded `fad333f8489b49d296a40f97aeee1b8a.run.log.txt` evidence.

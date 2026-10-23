@@ -4,6 +4,7 @@ import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, validateBootstrapCurrentSelf } from 
 import { QADirectCapture } from './x-qa-direct-ab.mjs';
 import { qaSourceRoute } from './x-qa-source-qualification.mjs';
 import { ManualStartupCookieGuard } from './x-manual-startup-cookie-guard.mjs';
+import { IdentityFreshnessLedger } from './x-identity-freshness-ledger.mjs';
 import { closedStartupTrace, rememberBoundStartup, STARTUP_GUARD_CAUSES } from './x-manual-startup-diagnostic.mjs';
 
 const own = (v, k) => Object.getOwnPropertyDescriptor(v, k)?.value;
@@ -13,8 +14,8 @@ const requestRef = v => typeof v === 'string' && v.length > 0 && v.length <= 512
 const error = () => new Error('qa_bound_observation_invalid');
 const manualV2CookiePolicy = Symbol();
 // Selected by trusted Manual V2 owner code only, never by a JSON option.
-export function createManualV2BoundObservation(scope, frameId, readBody, now, observeCookieWrites, pointOptions, onFailure = () => {}, provenance) {
-  return new QABoundObservation(scope, frameId, readBody, now, observeCookieWrites, pointOptions, manualV2CookiePolicy, onFailure, provenance);
+export function createManualV2BoundObservation(scope, frameId, readBody, now, observeCookieWrites, pointOptions, onFailure = () => {}, provenance, freshnessOptions) {
+  return new QABoundObservation(scope, frameId, readBody, now, observeCookieWrites, pointOptions, manualV2CookiePolicy, onFailure, provenance, freshnessOptions);
 }
 
 export function identityProjectionMatches(p) {
@@ -71,12 +72,13 @@ export class QABoundObservation {
   #identityAt = null; #sourceAt = null; #projection = null; #failure = null; #events = 0; #closed = false;
   #startupCookieWriteObserved = false;
   #manualCookieGuard;
+  #freshness;
   #externalCookieGuard = false;
   #firstCause = 'unknown'; #hasFirst = false; #onManualFailure; #early = 'unknown'; #handoff = 'unknown';
   #needsExtra = null; #extraStatus = null; #resolveDone;
   #observeCookieWrites;
   #pointOptions; #requestAt = null; #networkRequest = null; #networkInterval = null;
-  constructor(scope, frameId, readBody, now = () => performance.now(), observeCookieWrites = () => {}, pointOptions = { deferCookieMutation: false, onPrivateResult: () => {} }, cookiePolicy, onManualFailure, provenance) {
+  constructor(scope, frameId, readBody, now = () => performance.now(), observeCookieWrites = () => {}, pointOptions = { deferCookieMutation: false, onPrivateResult: () => {} }, cookiePolicy, onManualFailure, provenance, freshnessOptions) {
     if (!scope || Object.keys(scope).sort().join(',') !== 'owner,profileId,sessionId,targetId' ||
         !Number.isSafeInteger(scope.owner) || scope.owner <= 0 || !['profileId', 'sessionId', 'targetId'].every(k => safe(scope[k])) ||
         !safe(frameId) || typeof now !== 'function' || typeof observeCookieWrites !== 'function' ||
@@ -88,11 +90,15 @@ export class QABoundObservation {
     this.#scope = Object.freeze({ ...scope }); this.#frame = frameId; this.#now = now;
     this.#observeCookieWrites = observeCookieWrites;
     this.#pointOptions = Object.freeze({ ...pointOptions });
-    this.#manualCookieGuard = cookiePolicy === manualV2CookiePolicy ? provenance?.claim(frameId,scope.sessionId) ?? new ManualStartupCookieGuard(frameId,scope.sessionId) : null;
+    this.#manualCookieGuard = cookiePolicy === manualV2CookiePolicy ? provenance?.claim(frameId,scope.sessionId) ?? new ManualStartupCookieGuard(frameId,scope.sessionId,{now}) : null;
     this.#externalCookieGuard = provenance !== undefined;
     this.#onManualFailure = onManualFailure;
     this.#start = this.#last = now();
     if (!Number.isFinite(this.#start)) throw error();
+    if(this.#manualCookieGuard){
+      this.#freshness=new IdentityFreshnessLedger({...scope,frameId,role:freshnessOptions?.role??'unknown'},this.#start,this.#manualCookieGuard);
+      if(freshnessOptions?.cacheControl!==undefined)this.#freshness.observeCacheControl(this.#freshness.revision,this.#freshness.generation,freshnessOptions.cacheControl,this.#start);
+    }
     this.capture = new QADirectCapture('a', frameId, readBody, now);
     this.done = new Promise(resolve => { this.#resolveDone = resolve; });
   }
@@ -112,6 +118,7 @@ export class QABoundObservation {
   invalidate(reason = 'scope_lost', cause = 'unknown') {
     this.#noteCause(reason,cause);
     if (!this.#failure || this.#failure === 'observed_cookie_write' && reason !== 'observed_cookie_write') this.#failure = reason;
+    if(this.#freshness)try{this.#freshness.invalidate(this.#freshness.revision,this.#freshness.generation,reason,this.#last);}catch{}
     // Only the separately gated short-QA mode can retain a source observation
     // across cookie writes. The V1 binding remains rejected and non-authorizing.
     if (!(reason === 'observed_cookie_write' && this.#pointOptions.deferCookieMutation)) this.capture.invalidate();
@@ -135,6 +142,7 @@ export class QABoundObservation {
     if (id === null) return;
     if (!stableId(id) || !identityProjectionMatches(projection)) { this.invalidate('scope_lost','identity_mismatch'); return; }
     if (this.#id !== null && this.#id !== id) { this.invalidate('scope_lost','identity_mismatch'); return; }
+    if(this.#freshness)try{this.#freshness.observeIdentity(this.#freshness.revision,this.#freshness.generation,id,t);}catch{this.invalidate('scope_lost','identity_mismatch');return;}
     this.#id = id; this.#identityAt ??= t; this.#projection = projection;
   }
   identityReady() {
@@ -181,7 +189,10 @@ export class QABoundObservation {
     if (raw.method === 'Runtime.executionContextCreated' && p.context?.auxData?.isDefault === true && p.context.auxData.frameId === this.#frame) {
       if (!this.#loader) return; // Runtime.enable reports the pre-reload context.
       if (this.#context !== null || p.context.origin !== 'https://x.com' || !Number.isSafeInteger(p.context.id) || p.context.id <= 0) this.invalidate('scope_lost','context_lost');
-      else this.#context = p.context.id;
+      else {
+        this.#context = p.context.id;
+        if(this.#freshness)try{this.#freshness.bindDocument(this.#freshness.revision,this.#freshness.generation,{documentId:this.#loader,contextId:this.#context},this.#last);}catch{this.invalidate('scope_lost','context_lost');}
+      }
     }
     if(!this.#externalCookieGuard)this.#manualCookieGuard?.observe(raw);
     this.checkCookieGuard();
@@ -264,24 +275,33 @@ export class QABoundObservation {
     const t = this.#tick();
     this.#closed = true;
     const identity = this.#id !== null && identityProjectionMatches(this.#projection);
-    const fresh = this.#identityAt !== null && this.#sourceAt !== null &&
-      Math.abs(this.#sourceAt - this.#identityAt) <= 5000 && t - Math.min(this.#identityAt, this.#sourceAt) <= 5000;
     const login = source.diagnostic === 'http_200_unqualified' && source.status === 200 && source.matchingRequests === 1 &&
       source.responseFresh === true && source.completed && source.bodyReadAttempts === 1 && source.body?.category === 'settings_match';
+    let freshness=null;
+    if(this.#freshness){
+      try{
+        this.#freshness.observeRoot(this.#freshness.revision,this.#freshness.generation,this.#manualCookieGuard,t);
+        if(this.#sourceAt!==null)this.#freshness.update(this.#freshness.revision,this.#freshness.generation,{identityAt:this.#identityAt,settingsAt:this.#sourceAt,settingsRequestId,login},t);
+      }catch{if(!this.#failure)this.invalidate('scope_lost','owner_scope');}
+      freshness=this.#freshness.read(t);
+    }
+    const fresh = freshness?freshness.withinIdentitySettingsWindow:this.#identityAt !== null && this.#sourceAt !== null &&
+      Math.abs(this.#sourceAt - this.#identityAt) <= 5000 && t - Math.min(this.#identityAt, this.#sourceAt) <= 5000;
     const diagnostic = this.#failure ?? (!cleanupVerified ? 'cleanup_unverified' : !identity ? 'identity_unavailable' :
-      !login ? 'source_unavailable' : !fresh ? 'stale_observation' : 'bound');
+      !login ? 'source_unavailable' : !fresh ? 'stale_observation' : freshness&&!freshness.readyUnderPolicy?'scope_lost':'bound');
     try {
       this.#pointOptions.onPrivateResult({ accountId: this.#id, start: this.#requestAt, end: this.#sourceAt, networkInterval: this.#networkInterval });
       // Only this fixed validated recipe can supply the optional private startup
       // sink. Public QA output and deferred-mutation samples cannot supply it.
       if (diagnostic === 'bound' && !this.#pointOptions.deferCookieMutation) {
-        this.#pointOptions.onPrivateStartup?.(Object.freeze({
+        const publication=Object.freeze({
           accountId: this.#id, ownerId: String(this.#scope.owner), profileId: this.#scope.profileId,
           contextId: String(this.#context), targetId: this.#scope.targetId,
           frameId: this.#frame, documentId: this.#loader, settingsRequestId,
           identityAt: this.#identityAt, settingsAt: this.#sourceAt,
           qualification: QA_BOUND_QUALIFICATION,
-        }));
+        });
+        this.#pointOptions.onPrivateStartup?.(this.#freshness?this.#freshness.publish(publication,t,this.#now):publication);
       }
     }
     finally { this.#id = null; this.#scope = null; this.#networkRequest = null; this.#networkInterval = null; }

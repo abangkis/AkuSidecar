@@ -54,6 +54,9 @@ export class ManualStartupCookieGuard {
   #frame; #session; #candidate=0; #other=0; #ambiguous=0;
   #closed=false; #baseline; #claimed=false;
   #armed=false; #oldLoader; #root=null; #commit=null;
+  #freshness=null;
+  #freshnessGeneration=null;
+  #now;
   #history=new Map(); #diagnosticRequests=new Map();
   #diagnosticDropped=0; #diagnosticHeaderDropped=0; #diagnosticEvents=0; #diagnosticLines=0;
   #diagnosticUnframed=0; #diagnosticPartial=false;
@@ -61,11 +64,12 @@ export class ManualStartupCookieGuard {
   #condition='unknown'; #epoch='unknown';
   #guardDiskCache='unknown'; #guardServiceWorker='unknown'; #guardPrefetchCache='unknown';
   #guardRequestFrame='unknown'; #guardHeaderReason='unknown'; #onRejection;
-  constructor(frameId, sessionId, { beforeSeed = false, onRejection = () => {} } = {}) {
+  constructor(frameId, sessionId, { beforeSeed = false, onRejection = () => {}, now = () => performance.now() } = {}) {
     if (!ref(frameId) || typeof beforeSeed !== 'boolean' || beforeSeed && !ref(sessionId)) throw new Error('manual_cookie_guard_invalid');
     this.#frame = frameId; this.#session = sessionId; this.#baseline = !beforeSeed;
     if(typeof onRejection!=='function')throw new Error('manual_cookie_guard_invalid');
     this.#onRejection=onRejection;
+    if(typeof now!=='function')throw new Error('manual_cookie_guard_invalid');this.#now=now;
   }
   beginPostSeed() {
     if (this.#closed || this.#baseline) { this.#fail('guard_request_unbound','baseline'); throw new Error('manual_cookie_guard_invalid'); }
@@ -101,6 +105,15 @@ export class ManualStartupCookieGuard {
     this.#note(reason,trigger,provenance,condition,cache,frame,headerReason); this.#ambiguous = Math.min(64,this.#ambiguous + 1);
   }
   rejection() { return this.#rejection; }
+  // Private owner evidence, never included in diagnostic or IPC reports.
+  bindFreshnessGeneration(generation,frame,session) {
+    if(this.#freshnessGeneration!==null||typeof generation!=='symbol'||frame!==this.#frame||session!==this.#session)throw new Error('manual_cookie_guard_invalid');
+    this.#freshnessGeneration=generation;
+  }
+  freshnessEvidence(frame,session,generation) {
+    if(frame!==this.#frame||session!==this.#session||generation!==this.#freshnessGeneration)return null;
+    return this.#freshness;
+  }
   // Preserve the first failure domain without changing the private trace wire.
   failureReason() { return this.#provenance==='root_scope'?'scope_lost':'observed_cookie_write'; }
   trace() { return Object.freeze({guardTrigger:this.#trigger,guardProvenance:this.#provenance,guardCondition:this.#condition,guardEpoch:this.#epoch,
@@ -236,6 +249,7 @@ export class ManualStartupCookieGuard {
         // Retain only closed cache projections for subsequent root failures.
         // The sticky first trace is never enriched from a later response.
         root.cache??=cacheProjection(response);
+        if(root.observedAt===undefined){try{const t=this.#now();root.observedAt=Number.isFinite(t)&&t>=0?t:'unknown';}catch{root.observedAt='unknown';}}
         const frame=requestFrameProjection(p,this.#frame);
         const condition=firstCondition([[root.response,'root_response_duplicate'],[data(p,'frameId')!==this.#frame,`root_response_frame_${frame}`],[data(p,'loaderId')!==root.loaderId,'root_response_loader'],[data(response,'url')!=='https://x.com/home','root_response_url'],[data(response,'status')!==200,'root_response_status'],[typeof extra!=='boolean','root_response_extra_flag'],...['fromDiskCache','fromServiceWorker','fromPrefetchCache'].map((k,i)=>[data(response,k)!==undefined&&data(response,k)!==false,['root_response_disk_cache','root_response_service_worker','root_response_prefetch_cache'][i]])]);
         if(condition)this.#rootFailure('guard_response_correlation','response',condition,response);
@@ -258,6 +272,8 @@ export class ManualStartupCookieGuard {
     const root=this.#root;
     if(this.#armed&&!root)this.#rootFailure('guard_completion_missing','finish','root_missing');
     if(root){const condition=firstCondition([[!root.response,'root_response_missing'],[this.#commit!==root.loaderId,'root_commit_missing'],[root.needsExtra===true&&root.extra===null,'root_extra_missing']]);if(condition)this.#rootFailure('guard_completion_missing','finish',condition);}
+    this.#freshness=Object.freeze({armed:this.#armed,documentId:root?.loaderId??null,
+      accepted:this.#rejection==='unknown',observedAt:root?.observedAt??'unknown',cache:root?.cache?Object.freeze({...root.cache}):null});
     // Correlation of ordinary headers is deliberately not claimed. An absence
     // of cookie candidates is bounded observed-header evidence only.
     this.#history.clear();this.#diagnosticRequests.clear();this.#root=null;

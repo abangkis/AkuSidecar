@@ -4,6 +4,7 @@
 import { randomBytes } from 'node:crypto';
 import { createManualStartupCapture } from './x-manual-startup-source.mjs';
 import {startupFailureLatch} from './x-manual-startup-diagnostic.mjs';
+import {consumeFreshnessPublication} from './x-identity-freshness-ledger.mjs';
 
 const FIELDS = ['ownerId', 'profileId', 'contextId', 'targetId', 'frameId', 'documentId'];
 const unavailable = () => new Error('manual_startup_owner_unavailable');
@@ -28,8 +29,8 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-export function createManualStartupOwner({ run, role='unknown',diagnostics=startupFailureLatch(), now, wallNow }) {
-  if (typeof run !== 'function') throw unavailable();
+export function createManualStartupOwner({ run, role='unknown',diagnostics=startupFailureLatch(), now, wallNow, requireFreshness=false }) {
+  if (typeof run !== 'function'||typeof requireFreshness!=='boolean') throw unavailable();
   const ready = deferred(), release = deferred(), abort = new AbortController();
   const handle = randomBytes(24).toString('hex');
   let state = 'new', actual = null, running = null, sink = null;
@@ -68,6 +69,7 @@ export function createManualStartupOwner({ run, role='unknown',diagnostics=start
         },
         onPrivateStartup: value => {
           if (state !== 'acquiring' || !sink || abort.signal.aborted) throw unavailable();
+          if(requireFreshness&&!consumeFreshnessPublication(value,role,actual))throw unavailable();
           sink(value);
         },
       })).then(() => {

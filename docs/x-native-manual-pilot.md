@@ -1709,9 +1709,28 @@ numeric encoding, and legacy V2–V7 decoding are unchanged; catalogs are append
 No acceptance rule is changed from `691875d`, including absent/undefined cache
 attributes and ordinary-header noninterference.
 
-[Identity freshness and cache design](x-identity-freshness-cache-design.md) proposes
-an owner-local immutable ledger and explicit versioned policy. It is design only:
-no service, cache policy, freshness refresh, reload, recovery, or new network
-operation is activated. The earlier root cache strengthening and its relationship
+[Identity freshness and cache design](x-identity-freshness-cache-design.md) documents
+the implemented owner-local immutable ledger under the existing versioned policy.
+The Manual V2 binder uses its freshness verdict and the production startup owner
+requires its private one-use publication. No new cache policy, freshness refresh,
+reload, recovery, or network operation is activated. The earlier root cache strengthening and its relationship
 to identity freshness remain an explicit policy question. Historical traces with
 unknown root predicates cannot be reconstructed from the new diagnostics.
+
+The ledger implementation passed 269 Node tests, four build-tag gates,
+source-pinned Windows compilation, and Go/RPC checks. Twelve differential binder
+cases matched complete public reports and publication presence against `d33bfdb`.
+Preparation evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-fad333f8489b49d296a40f97aeee1b8a.prepare.log.txt`.
+
+One explicitly authorized retained QA attempt then rejected after 10.37 seconds.
+The first failure was reader/root response correlation during `reload_armed`:
+`root_response_service_worker`, with disk cache false, service worker true,
+prefetch cache false, and request frame matching. This identifies an observed
+service-worker response rejected by the current root policy; it does not prove
+that the response was stale, nor establish every other predicate or collector
+readiness. The ledger does not override this existing policy. The intermediate
+`cleanup-uncertain` result was secondary: final Job/lease cleanup was verified,
+the disposable root was removed, the retained manifest was clean, and its
+exclusive lock was released. No retry occurred. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-fad333f8489b49d296a40f97aeee1b8a.run.log.txt`.

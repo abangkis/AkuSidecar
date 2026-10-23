@@ -1915,14 +1915,15 @@ export function createOwnedManualStartupOwners(message,diagnostics=startupFailur
   const current = requireOwner(message), collector = current.shortFeasibility;
   if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !manualStartupStateReady(current)) throw probeError('manual_startup_unavailable');
   const rendezvous = new QACheckpointRendezvous();
-  const owner = role => createManualStartupOwner({role,diagnostics,run: async sink => {
+  const owner = role => createManualStartupOwner({role,diagnostics,requireFreshness:true,run: async sink => {
     if (sink.signal?.aborted) throw probeError('manual_startup_unavailable');
     const abort = () => rendezvous.cancel();
     sink.signal?.addEventListener('abort', abort, { once: true });
     const failure=(error,phase,reason='unavailable')=>diagnostics.record(error,role,phase,reason);
     const manualObservation=(...args)=>createManualV2BoundObservation(...args,(reason,trace)=>{
       diagnostics.record(startupFailure(role,'bound_finish',reason,false,undefined,trace),role,'bound_finish',reason);
-    },role==='reader'?current.manualCookieGuard:collector.manualCookieGuard);
+    },role==='reader'?current.manualCookieGuard:collector.manualCookieGuard,
+    {role,cacheControl:(role==='reader'?current:collector).manualFreshnessCacheControl});
     const together=async()=>{try{await rendezvous.arrive(role);}catch{throw diagnostics.record(startupFailure('pair','rendezvous','deadline'),'pair','rendezvous');}};
     try {
       let observation;
@@ -2046,12 +2047,16 @@ async function startManualCookieObservation(current) {
   s.manualCookieUnsubscribe=s.transport.subscribe(raw=>s.manualCookieGuard.observe(raw));
   // Prepare the existing uncached envelope before enrollment traffic. This
   // neither bypasses service workers nor repairs an earlier provenance loss.
+  current.manualFreshnessCacheControl={state:'requested',requestedAt:performance.now(),acknowledgedAt:'unknown'};
   const readerCache=await send('Network.setCacheDisabled',{cacheDisabled:true},current.sessionId,'manual_provenance');
   if(readerCache?.acknowledged!==true)throw probeError('manual_setup_unavailable');
+  current.manualFreshnessCacheControl=Object.freeze({...current.manualFreshnessCacheControl,state:'acknowledged',acknowledgedAt:performance.now()});
+  s.manualFreshnessCacheControl={state:'requested',requestedAt:performance.now(),acknowledgedAt:'unknown'};
   await s.transport.send('Network.setCacheDisabled',{cacheDisabled:true},s.sessionId,r=>{
     if(!isObject(r)||Object.keys(r).length!==0)throw probeError('manual_setup_unavailable');
     return{acknowledged:true};
   });
+  s.manualFreshnessCacheControl=Object.freeze({...s.manualFreshnessCacheControl,state:'acknowledged',acknowledgedAt:performance.now()});
   current.manualCacheControlReady=true;
   const params={maxTotalBufferSize:MAX_TOTAL_NETWORK_BUFFER_BYTES,maxResourceBufferSize:MAX_RESOURCE_NETWORK_BUFFER_BYTES,maxPostDataSize:0};
   await send('Network.enable',params,current.sessionId,'manual_provenance');

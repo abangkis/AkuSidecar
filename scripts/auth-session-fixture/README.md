@@ -3261,5 +3261,6 @@ first failed root predicate and already-observed cache state through the existin
 V7 private wire. The root-navigation regression matrix covers acceptance, closed
 projections, descriptor safety, and actual reader/collector handoff failures.
 See [identity freshness and cache design](../../docs/x-identity-freshness-cache-design.md)
-for the proposed component contract. That component is design only and is not wired
-into the manual pilot; no new cache or freshness acceptance policy is enabled.
+for the implemented component contract. Manual V2 freshness and production private
+publication now use the in-memory ledger; ordinary/deferred QA and the existing
+cache/freshness acceptance policy are unchanged.
