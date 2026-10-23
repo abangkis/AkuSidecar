@@ -116,7 +116,9 @@ async function handoffFixture({role='reader',order='before-commit',cookie='lang=
       binder.armManualReload(oldLoader);
       if(resourceMode){
         root(null);commit();
-        if(fault==='resource-budget')for(let i=0;i<1280;i++)emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:frame,loaderId:next,type:'Image',request:{method:'GET',url:'https://foreign.invalid/asset'}});
+        // POST is outside the releasable diagnostic-resource capability and
+        // deliberately exhausts the independent security provenance budget.
+        if(fault==='resource-budget')for(let i=0;i<1280;i++)emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:frame,loaderId:next,type:'Image',request:{method:'POST',url:'https://foreign.invalid/asset'}});
         if(resourceMode!=='after-context')assetRequest();if(resourceMode==='response-before-context')assetResponse();created();
         if(resourceMode==='after-context')assetRequest();if(resourceMode!=='response-before-context')assetResponse();
       }else{if(order==='before-commit')root();commit();if(order==='before-context')root();created();if(order==='after-context')root();}
@@ -179,13 +181,13 @@ test('network provenance preserves rejected scope and redirects without context-
   }
 });
 
-test('guard first rejection distinguishes unbound, ambiguous syntax, correlation, shape and unchanged budgets',()=>{
+test('guard first rejection distinguishes unbound, ambiguous syntax, correlation, shape and security budgets',()=>{
   const unbound=resourceFixture();unbound.ready();unbound.assetResponse({'Set-Cookie':'lang=en; Path=/'});assert.equal(unbound.g.rejection(),'guard_request_unbound');
   const unusual=resourceFixture();unusual.ready();unusual.assetRequest();unusual.assetResponse({'Set-Cookie':'unknown_private=x; Path=/; Priority=High; Partitioned'});unusual.assetExtra();assert.equal(unusual.g.rejection(),'unknown');assert.equal(unusual.g.finish().diagnostic,'other_only');
   const folded=resourceFixture();folded.ready();folded.assetRequest();folded.assetResponse({'Set-Cookie':'lang=x; Priority=Low, auth_token=y'});assert.equal(folded.g.rejection(),'guard_header_classification');assert.equal(folded.g.trace().guardHeaderReason,'syntax');
   const wrong=resourceFixture();wrong.ready();wrong.assetRequest();wrong.assetResponse({'Set-Cookie':'lang=en; Path=/'},{frameId:'other'});assert.equal(wrong.g.rejection(),'guard_response_correlation');
   const shape=resourceFixture();shape.ready();shape.assetRequest();shape.assetResponse({'Set-Cookie':['lang=x']});assert.equal(shape.g.rejection(),'guard_metadata_shape');
-  const budget=resourceFixture();budget.ready();for(let i=0;i<1280;i++)budget.emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:frame,loaderId:next,type:'Image',request:{method:'GET',url:'https://foreign.invalid/asset'}});
+  const budget=resourceFixture();budget.ready();for(let i=0;i<1280;i++)budget.emit('Network.requestWillBeSent',{requestId:'foreign-'+i,frameId:frame,loaderId:next,type:'Image',request:{method:'POST',url:'https://foreign.invalid/asset'}});
   assert.equal(budget.g.rejection(),'guard_request_budget');const report=budget.g.finish();assert.equal(report.candidateAttempts,0);assert.equal(report.otherAttempts,0);
   for(const mode of ['header','event']){
     const s=resourceFixture();s.ready();s.assetRequest();

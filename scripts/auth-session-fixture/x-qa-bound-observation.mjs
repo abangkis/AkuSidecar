@@ -169,8 +169,16 @@ export class QABoundObservation {
     if (this.#closed) return;
     this.#tick();
     if (!scope || Object.keys(this.#scope).some(k => scope[k] !== this.#scope[k])) { this.invalidate('scope_lost','owner_scope'); return; }
-    if (++this.#events > 4096) { this.invalidate('scope_lost','event_cap'); return; }
     const p = raw.params ?? {};
+    // Manual V2's guard inspects every owned-session network header separately.
+    // Generic network diagnostics cannot consume the identity/lifecycle/source
+    // event budget. Ordinary and deferred QA retain their original total cap.
+    const ownedTargetEvent = raw.method === 'Target.detachedFromTarget' && p.sessionId === this.#scope.sessionId ||
+      raw.method === 'Target.targetDestroyed' && p.targetId === this.#scope.targetId;
+    const securityEvent = !this.#manualCookieGuard || ownedTargetEvent || raw.sessionId === this.#scope.sessionId &&
+      (!raw.method?.startsWith('Network.') || p.requestId === this.capture.chosen ||
+        raw.method === 'Network.requestWillBeSent' && qaSourceRoute(p.request?.url) === 'api_v1');
+    if (securityEvent && ++this.#events > 4096) { this.invalidate('scope_lost','event_cap'); return; }
     if (raw.method === 'Target.detachedFromTarget' && p.sessionId === this.#scope.sessionId ||
         raw.method === 'Target.targetDestroyed' && p.targetId === this.#scope.targetId) this.invalidate('scope_lost','target_lost');
     if (raw.sessionId !== this.#scope.sessionId) return;

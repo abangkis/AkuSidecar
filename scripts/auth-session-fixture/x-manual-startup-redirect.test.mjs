@@ -354,9 +354,9 @@ test('same-ID hop chains and pending metadata consume the lifetime record budget
   const pending=fixture();pending.request();for(let i=0;i<1280;i++)pending.extra(302);assert.equal(pending.g.rejection(),'guard_request_budget');
 });
 
-test('1280 request records are available across the seed boundary; record 1281 rejects without resetting the first failure',()=>{
+test('1280 security request records are available across the seed boundary; record 1281 rejects without resetting the first failure',()=>{
   const s=fixture({beforeSeed:true});
-  const request=i=>s.request(0,{requestId:'record-'+i});
+  const request=i=>s.request(0,{requestId:'record-'+i,type:'Document'});
   for(let i=0;i<640;i++)request(i);
   assert.equal(s.g.rejection(),'unknown');s.g.beginPostSeed();
   for(let i=640;i<1280;i++)request(i);
@@ -367,9 +367,9 @@ test('1280 request records are available across the seed boundary; record 1281 r
   assert.deepEqual(s.g.trace(),first);assert.equal(s.g.category(),'candidate_observed');
 });
 
-test('requests and queued ExtraInfo share the exact 1280-record capacity',()=>{
+test('security requests and queued ExtraInfo share the exact 1280-record capacity',()=>{
   const s=fixture();
-  for(let i=0;i<640;i++)s.request(0,{requestId:'record-'+i});
+  for(let i=0;i<640;i++)s.request(0,{requestId:'record-'+i,type:'Document'});
   for(let i=0;i<640;i++)s.emit('Network.responseReceivedExtraInfo',{requestId:'record-'+i,statusCode:200,headers:{},blockedCookies:[]});
   assert.equal(s.g.rejection(),'unknown');
   s.emit('Network.responseReceivedExtraInfo',{requestId:'record-0',statusCode:200,headers:{},blockedCookies:[]});
@@ -385,11 +385,11 @@ test('candidate attempts beyond the former 128-record ceiling still revoke immed
   }
 });
 
-test('reader and collector guard instances each retain their own 1280-record capacity',()=>{
+test('reader and collector guard instances each retain their own 1280 security-record capacity',()=>{
   const reader=fixture(),collector=fixture();
-  for(let i=0;i<1280;i++)reader.request(0,{requestId:'reader-'+i});
+  for(let i=0;i<1280;i++)reader.request(0,{requestId:'reader-'+i,type:'Document'});
   for(let i=0;i<200;i++)collector.request(0,{requestId:'collector-'+i});
-  reader.request();assert.equal(reader.g.rejection(),'guard_request_budget');
+  reader.request(0,{type:'Document'});assert.equal(reader.g.rejection(),'guard_request_budget');
   collector.request();collector.response(0,{headers:other});accepted(collector,1);rejected(reader,'guard_request_budget');
 });
 

@@ -9,6 +9,11 @@ const data = (v, k) => {
 };
 const ref = v => typeof v === 'string' && v.length > 0 && v.length <= 512;
 const MAX_REQUEST_RECORDS = 1280;
+const MAX_DIAGNOSTIC_RECORDS = 256;
+// Exact no-adoption markers survive diagnostic eviction. Losing even these
+// bounded markers is coverage loss, not a successful truncated observation.
+const MAX_DIAGNOSTIC_IDS = 16384;
+const increment = value => Math.min(Number.MAX_SAFE_INTEGER, value + 1);
 // Diagnostic only. Acceptance uses private request-local frame correlation.
 function requestFrameProjection(params, root) {
   const d = Object.getOwnPropertyDescriptor(params, 'frameId');
@@ -95,6 +100,8 @@ export class ManualStartupCookieGuard {
   #frame; #session; #requests = new Map(); #candidate = 0; #other = 0; #ambiguous = 0;
   #events = 0; #lines = 0; #closed = false; #baseline; #claimed = false;
   #armed = false; #oldLoader; #rootId = null; #root = null; #commit = null; #records = 0;
+  #diagnosticRequests = new Map(); #diagnosticIds = new Set();
+  #diagnosticDropped = 0; #diagnosticHeaderDropped = 0; #diagnosticEvents = 0; #diagnosticLines = 0;
   #rejection = 'unknown'; #trigger = 'unknown'; #provenance = 'unknown';
   #condition = 'unknown'; #epoch = 'unknown';
   #guardDiskCache = 'unknown'; #guardServiceWorker = 'unknown'; #guardPrefetchCache = 'unknown';
@@ -171,11 +178,20 @@ export class ManualStartupCookieGuard {
     if(!present&&!malformed)return null;
     if(request)request.cookie=true;
     const frame=request?.frameStatus??'unknown';
-    if(++this.#events>64){this.#fail('guard_event_budget',trigger,provenance,'unknown',null,frame,'capacity');return null;}
-    if(lines.length>32||this.#lines+lines.length>32){this.#fail('guard_header_budget',trigger,provenance,'unknown',null,frame,'capacity');return null;}
-    this.#lines+=lines.length;
     const kinds=lines.map(line=>lineKind(line));
     if(kinds.includes('candidate'))this.#note('cookie_candidate',trigger,provenance,'unknown',null,frame);
+    // Per-message bounds protect inspection itself. Cumulative diagnostic
+    // counters must never short-circuit candidate or ambiguous inspection.
+    if(lines.length>32){this.#fail('guard_header_budget',trigger,provenance,'unknown',null,frame,'capacity');return null;}
+    if(request?.diagnostic){
+      if(this.#diagnosticEvents>=64||this.#diagnosticLines+lines.length>32)this.#diagnosticHeaderDropped=increment(this.#diagnosticHeaderDropped);
+      this.#diagnosticEvents=Math.min(64,this.#diagnosticEvents+1);
+      this.#diagnosticLines=Math.min(32,this.#diagnosticLines+lines.length);
+    }else{
+      if(++this.#events>64)this.#fail('guard_event_budget',trigger,provenance,'unknown',null,frame,'capacity');
+      if(this.#lines+lines.length>32)this.#fail('guard_header_budget',trigger,provenance,'unknown',null,frame,'capacity');
+      this.#lines=Math.min(33,this.#lines+lines.length);
+    }
     if(malformed||!lines.length)this.#fail(malformedReason,trigger,provenance,'unknown',null,frame,malformedReason==='guard_header_budget'?'capacity':'metadata_shape');
     const other=[];
     for(const kind of kinds){
@@ -204,6 +220,25 @@ export class ManualStartupCookieGuard {
     // Reusing a request ID never replenishes it, including across the seed.
     if(this.#records>=MAX_REQUEST_RECORDS){this.#fail('guard_request_budget',trigger,provenance,'unknown',null,frame);return false;}
     this.#records++;return true;
+  }
+  #retainDiagnostic(id, chain) {
+    if(this.#diagnosticIds.size>=MAX_DIAGNOSTIC_IDS){this.#fail('guard_request_budget','request','unknown');return false;}
+    this.#diagnosticIds.add(id);
+    if(this.#diagnosticRequests.size>=MAX_DIAGNOSTIC_RECORDS){
+      // Only diagnostic correlation is discarded. The ID remains permanently
+      // ineligible for a fresh request, redirect, root, or settings adoption.
+      const oldest=this.#diagnosticRequests.keys().next().value;
+      this.#diagnosticRequests.delete(oldest);this.#diagnosticDropped=increment(this.#diagnosticDropped);
+    }
+    this.#diagnosticRequests.set(id,chain);return true;
+  }
+  #promote(id, chain, trigger, frame) {
+    if(!chain?.diagnostic)return true;
+    // Redirects and repeated ExtraInfo remain security-required until closure.
+    // Promotion never silently evicts another security-required record.
+    for(let i=0;i<chain.hops.length+chain.extras.length;i++)if(!this.#reserve(trigger,'redirect',frame))return false;
+    chain.diagnostic=false;for(const r of chain.hops)r.diagnostic=false;
+    this.#diagnosticRequests.delete(id);this.#requests.set(id,chain);return true;
   }
   #chainFailure(chain, trigger, provenance) {
     if(chain?.redirected||chain?.hops.some(r=>r.cookie||r.root))this.#fail('guard_response_correlation',trigger,provenance,'unknown',null,chain.hops.at(-1)?.frameStatus??'unknown');
@@ -255,11 +290,10 @@ export class ManualStartupCookieGuard {
     }
     const id=data(p,'requestId');
     if(method==='Network.requestWillBeSent'){
-      const redirect=data(p,'redirectResponse'),chain=this.#requests.get(id),previous=chain?.hops.at(-1);
+      const redirect=data(p,'redirectResponse'),chain=this.#requests.get(id)??this.#diagnosticRequests.get(id),previous=chain?.hops.at(-1);
       const other=redirect!==undefined?this.#attempt(data(redirect,'headers'),undefined,previous,'redirect','redirect'):null;
       if(!ref(id)){this.#fail('guard_metadata_shape','request');return true;}
       const frameStatus=requestFrameProjection(p,this.#frame);
-      if(!this.#reserve('request',redirect!==undefined?'redirect':chain?'reused':'unknown',frameStatus))return true;
       const scope=setter(data(data(p,'request'),'url')),loader=data(p,'loaderId'),frame=data(p,'frameId');
       // Cookie provenance is local to the owned CDP session. A valid nonroot
       // request cannot supply account evidence, but its own response can be
@@ -271,6 +305,12 @@ export class ManualStartupCookieGuard {
       const outsideURL=!scope&&ref(this.#session)&&frameScoped&&ref(loader)?outsideRequestURL(data(data(p,'request'),'url')):null;
       const r={scope,outsideURL,provenance,frameStatus,frameId:ref(frame)?frame:null,loaderId:ref(loader)?loader:null,response:false,bad:false,cookie:false,status:null,needsExtra:null,root:false,cache:false,cacheProjection:null,other:null,
         resource:resourceTypes.has(data(p,'type'))&&data(data(p,'request'),'method')==='GET'&&!settingsScope(scope)};
+      const discarded=this.#diagnosticIds.has(id)&&!chain;
+      if(discarded){this.#fail('guard_request_unbound','request',redirect!==undefined?'redirect':'reused','unknown',null,frameStatus);return true;}
+      const diagnostic=!chain&&redirect===undefined&&r.resource&&(provenance==='scoped'||outsideURL!==null);
+      r.diagnostic=diagnostic;
+      if(chain?.diagnostic&&!this.#promote(id,chain,'request',frameStatus))return true;
+      if(!diagnostic&&!this.#reserve('request',redirect!==undefined?'redirect':chain?'reused':'unknown',frameStatus))return true;
       const current=chain??{hops:[],extras:[],redirected:false,bad:false,cache:false,failed:false,completed:false};
       if(chain&&redirect===undefined){r.provenance='reused';current.bad=true;this.#fail('guard_request_unbound','request','reused','unknown',null,frameStatus);}
       if(redirect!==undefined){
@@ -297,7 +337,9 @@ export class ManualStartupCookieGuard {
           else{previous.response=true;previous.status=status;previous.needsExtra=extra;previous.other=other;}
         }
       }
-      current.hops.push(r);this.#requests.set(id,current);
+      current.hops.push(r);
+      if(diagnostic){current.diagnostic=true;if(!this.#retainDiagnostic(id,current))return true;}
+      else this.#requests.set(id,current);
       if(this.#armed&&data(p,'type')==='Document'&&data(p,'frameId')===this.#frame){
         const valid=this.#rootId===null&&!chain&&redirect===undefined&&provenance==='scoped'&&data(data(p,'request'),'method')==='GET'&&scope.url==='https://x.com/home'&&loader!==this.#oldLoader&&(!this.#commit||this.#commit===loader);
         if(!valid){r.provenance='root_scope';this.#fail('guard_request_unbound','request','root_scope','unknown',null,frameStatus);}
@@ -305,10 +347,14 @@ export class ManualStartupCookieGuard {
       }
     }
     if(method==='Network.responseReceived'||method==='Network.responseReceivedExtraInfo'){
-      const chain=this.#requests.get(id),r=chain?.hops.at(-1),response=data(p,'response');
+      const chain=this.#requests.get(id)??this.#diagnosticRequests.get(id),r=chain?.hops.at(-1),response=data(p,'response');
+      const discarded=!chain&&this.#diagnosticIds.has(id);
       // Parse attempts before correlation failures so candidates/unknown syntax
       // are observed even when no hop can ever receive this metadata.
-      const other=this.#attempt(method==='Network.responseReceived'?data(response,'headers'):data(p,'headers'),method==='Network.responseReceivedExtraInfo'?data(p,'blockedCookies'):undefined,r,method==='Network.responseReceived'?'response':'extra');
+      const other=this.#attempt(method==='Network.responseReceived'?data(response,'headers'):data(p,'headers'),method==='Network.responseReceivedExtraInfo'?data(p,'blockedCookies'):undefined,r??(discarded?{diagnostic:true}:undefined),method==='Network.responseReceived'?'response':'extra');
+      // A known discarded diagnostic request cannot regain correlation or
+      // provide evidence. Only its header safety inspection survives eviction.
+      if(discarded)return this.#candidate>0||this.#ambiguous>0;
       if(method==='Network.responseReceived'&&r){
         const status=data(response,'status'),extra=data(p,'hasExtraInfo');
         r.bad ||= r.response||data(p,'loaderId')!==r.loaderId||data(p,'frameId')!==r.frameId||data(response,'url')!==(r.scope?.url??r.outsideURL)||!statusValid(status)||r.root&&status!==200||typeof extra!=='boolean';
@@ -321,14 +367,15 @@ export class ManualStartupCookieGuard {
         if(chain.redirected)r.other=other;else this.#apply(other,r,'response');
       }else if(method==='Network.responseReceivedExtraInfo'&&r){
         const status=data(p,'statusCode');
-        if(this.#reserve('extra',r.provenance,r.frameStatus))chain.extras.push({status:statusValid(status)?status:null,bad:!statusValid(status),other,headersShape:object(data(p,'headers')),blockedShape:blockedShape(data(p,'blockedCookies'))});
+        if(chain.diagnostic&&chain.extras.length&&!this.#promote(id,chain,'extra',r.frameStatus))return true;
+        if(chain.diagnostic||this.#reserve('extra',r.provenance,r.frameStatus))chain.extras.push({status:statusValid(status)?status:null,bad:!statusValid(status),other,headersShape:object(data(p,'headers')),blockedShape:blockedShape(data(p,'blockedCookies'))});
         if(!chain.redirected&&(chain.extras.length>1||!statusValid(status)||r.response&&(r.needsExtra!==true||status!==r.status)))r.bad=true;
         if(r.provenance!=='scoped'&&!r.outsideURL)this.#apply(other,r,'extra');
       }else this.#apply(other,r,method==='Network.responseReceived'?'response':'extra');
       if(r?.bad)this.#chainFailure(chain,method==='Network.responseReceived'?'response':'extra',r.provenance);
     }
     if(['Network.requestServedFromCache','Network.loadingFinished','Network.loadingFailed'].includes(method)){
-      const chain=this.#requests.get(id);
+      const chain=this.#requests.get(id)??this.#diagnosticRequests.get(id);
       if(chain){
         if(method==='Network.requestServedFromCache')chain.cache=true;
         else if(method==='Network.loadingFailed')chain.failed=true;
@@ -343,8 +390,11 @@ export class ManualStartupCookieGuard {
     this.#closed=true;
     if(!this.#baseline)this.#fail('guard_request_unbound','baseline');
     for(const chain of this.#requests.values())this.#complete(chain);
+    for(const chain of this.#diagnosticRequests.values())this.#complete(chain);
     this.#requests.clear();
+    this.#diagnosticRequests.clear();this.#diagnosticIds.clear();
     this.#root=null;
-    return Object.freeze({schema:'aku.x.manual-startup-cookie-guard.v1',diagnostic:this.category(),candidateAttempts:this.#candidate,otherAttempts:this.#other,ambiguousAttempts:this.#ambiguous});
+    return Object.freeze({schema:'aku.x.manual-startup-cookie-guard.v1',diagnostic:this.category(),candidateAttempts:this.#candidate,otherAttempts:this.#other,ambiguousAttempts:this.#ambiguous,
+      diagnosticCoverage:this.#diagnosticDropped||this.#diagnosticHeaderDropped?'partial':'complete',diagnosticRecordsDropped:this.#diagnosticDropped,diagnosticHeadersDropped:this.#diagnosticHeaderDropped});
   }
 }

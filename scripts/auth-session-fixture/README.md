@@ -1,5 +1,32 @@
 # Local one-login concurrency fixture
 
+## Manual V2 diagnostic capacity isolation (2026-10-23)
+
+Ordinary eligible GET resources now use a 256-entry diagnostic correlation
+queue, separate from the 1,280 lifetime security-record budget for root,
+settings, redirects and unsupported/malformed requests. The diagnostic queue
+may evict tuples; an exact-ID registry prevents discarded IDs from being
+adopted later as new evidence, root requests or redirects. That registry holds
+at most 16,384 diagnostic IDs per role; exhausting it is security coverage loss
+and still rejects. This is bounded diagnostic isolation, not unlimited traffic.
+
+Every observed owned-session header remains inspected for `auth_token`/`ct0`
+attempts and ambiguous/malformed syntax, including after tuple eviction or
+diagnostic header-counter saturation. Known discarded ordinary-cookie metadata
+can only mark diagnostic loss; it cannot restore correlation or provide proof.
+Unknown orphan headers remain fail-closed. The summary exposes partial
+diagnostics and value-free dropped-record/header counters. Root/settings and
+promoted redirect records retain mandatory response/ExtraInfo checks.
+
+Manual V2's identity/lifecycle/selected-settings event budget is also separate
+from ordinary network traffic and foreign-session events. Strict/default and
+deferred QA retain their original event policy. Transport framing, ownership,
+security coverage and deadlines still fail closed. Run
+`scripts/prepare-x-manual-retained-qa.ps1` without flags for the accountless
+capacity, candidate-after-eviction, no-adoption, first-cause and authority
+regressions plus default-off Windows compilation. This command does not run
+Chrome, acquire a profile or transfer a session. Native acceptance is separate.
+
 ## Manual V2 ordinary cookies outside the setter allowlist (2026-10-23)
 
 An unambiguous cookie other than `auth_token`/`ct0` on a known outside request
@@ -27,11 +54,11 @@ The actual reader dispatcher also accepts the fully correlated outside ordinary
 fixture while preserving its strict private startup evidence path. Default
 strict/deferred QA policies, Store and runtime activation are unchanged.
 
-This is a targeted routing fix, not complete traffic isolation. Request/header
-budgets and observer failure state remain shared. A broader split between
-evidence production, session revocation and diagnostic-only traffic requires a
-separate contract; it is not implemented or activated by this change. Native
-acceptance has not been rerun.
+This routing fix does not itself establish complete traffic isolation. The
+capacity isolation described above separates diagnostic buffering from security
+records and counters; genuine observer/transport failure still revokes evidence.
+A broader typed split between evidence production, session revocation and
+diagnostic consumers remains separate. Native acceptance has not been rerun.
 
 ## Collector preflight failure classification (2026-10-23)
 

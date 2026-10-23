@@ -1478,13 +1478,46 @@ must still belong to the exact owned CDP session and supported HTTPS X/API origi
 with the same bounded request/response and required ExtraInfo completion. A
 noncandidate classification provides no account, login or continuity evidence.
 
-The unchanged structural caps still take precedence when the input cannot be
-classified within bounds: 1,280 lifetime ledger records per role, 128 header
-fields, 16 KiB per header value, 4,096 characters per cookie line, 32 line parts,
-32 total cookie lines and 64 header-bearing events. Candidate detection must not
-be bypassed by mixing a candidate with another cookie or a malformed line.
+The structural inspection caps still take precedence when the input cannot be
+classified within bounds: 128 header fields, 16 KiB per header value, 4,096
+characters per cookie line, 32 line parts, and 32 cookie lines per message.
+Candidate detection must not be bypassed by mixing a candidate with another
+cookie or a malformed line.
 Ambiguous combined-cookie representations remain rejected rather than silently
 treated as an unknown attribute or a harmless value.
+
+Diagnostic capacity is separate from security coverage. A valid owned-session
+GET with a recognized resource type, valid request-local frame/loader, and a
+qualified X or known outside HTTPS URL can enter a 256-request diagnostic queue;
+account settings and root documents cannot. An ordinary single-hop response and
+its one pending ExtraInfo projection remain diagnostic correlation. Redirects,
+reused IDs, repeated ExtraInfo, malformed/unqualified requests, root documents,
+and account settings retain the independent 1,280 lifetime security-record cap.
+Promotion reserves existing records before adding security-required metadata;
+those records are never evicted. Security headers retain the 64-event/32-line
+cumulative bound. All observed headers are still inspected for candidates and
+ambiguous syntax before cumulative counters, including after diagnostic eviction.
+
+The 256-entry queue bounds retained diagnostic tuples and pending projections.
+Eviction drops only diagnostic correlation and increments an explicit counter.
+A separate exact-ID registry keeps up to 16,384 lifetime diagnostic request IDs
+per role so a discarded ID cannot be adopted as a new settings/root request or
+redirect. Exhausting that registry is genuine provenance coverage loss and
+rejects; this is not an unlimited-traffic guarantee. Known discarded ordinary
+headers cannot supply a correlated `other` result or any account/login evidence;
+unknown orphan or malformed headers still reject. Diagnostic header counters
+also saturate independently at 64 events/32 lines, with later observations
+counted as dropped diagnostics. The public guard summary reports
+`diagnosticCoverage: partial`, `diagnosticRecordsDropped`, and
+`diagnosticHeadersDropped`, without names, values, IDs, or URLs. Partial
+diagnostics do not imply a healthy observer, complete coverage, or authority.
+
+Manual V2 counts owned lifecycle/identity and selected settings traffic against
+the binder's 4,096-event security budget. The guard independently inspects every
+owned-session network header; unrelated network diagnostics and foreign-session
+events cannot consume that binder budget. Ordinary and deferred QA keep their
+existing total-event cap. Transport framing, ownership and deadlines still bound
+both flows, and loss of common transport/security coverage remains fatal.
 
 Minimal name parsing still requires a bounded token name followed by `=`. It
 rejects control characters, a comma in the initial cookie pair, or a comma
