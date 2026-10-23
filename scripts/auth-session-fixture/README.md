@@ -1,5 +1,30 @@
 # Local one-login concurrency fixture
 
+## Manual V2 ordinary traffic with an absent frame (2026-10-23)
+
+A previously observed, owned-session GET resource may enter the diagnostic
+queue when its `frameId` field is absent. It still needs a valid bounded HTTPS
+URL, recognized resource type and loader reference. Home, Documents, protected
+settings paths, unsupported methods, malformed frame fields, orphan metadata
+and redirects do not gain this capability. Frame absence never supplies or
+repairs account/login evidence, and no main-frame ID is inferred.
+
+The private tuple keeps the frame unknown. A later response frame, if present,
+must be well-formed but cannot adopt the tuple into root/settings evidence.
+Exact response URL/loader/status and declared ExtraInfo checks are retained.
+The public summary marks `diagnosticCoverage: partial` and includes the bounded
+`diagnosticMissingFrameRequests` count; missing frame metadata is not counted
+as dropped records. Candidate/blocked/deletion attempts and malformed/ambiguous
+headers still reject before diagnostic routing, including after eviction.
+Existing no-adoption markers and security/diagnostic capacities remain active.
+
+`x-manual-unframed-traffic.test.mjs` covers the narrow exception and its authority
+boundaries. The accountless real reader dispatcher also exercises an absent
+request frame followed by a normal response without rebinding account evidence.
+Default strict/deferred policies, Store and native activation are unchanged.
+Only offline acceptance has been performed; the native failing request remains
+unidentified and no retained QA execution or transfer was repeated.
+
 ## Manual V2 diagnostic capacity isolation (2026-10-23)
 
 Ordinary eligible GET resources now use a 256-entry diagnostic correlation

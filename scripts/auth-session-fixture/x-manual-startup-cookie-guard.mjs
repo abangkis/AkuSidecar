@@ -93,6 +93,13 @@ function settingsScope(scope) {
   const path = new URL(scope.url).pathname;
   return path === '/1.1/account/settings.json' || path === '/i/api/1.1/account/settings.json';
 }
+function unframedResourceURL(scope, outsideURL) {
+  const url=scope?.url??outsideURL;
+  if(!url||settingsScope({url}))return null;
+  const parsed=new URL(url);
+  // A missing frame never downgrades Home or protected settings to diagnostics.
+  return parsed.hostname==='x.com'&&parsed.pathname==='/home'?null:url;
+}
 
 // Request provenance is browser metadata. JavaScript context belongs to the
 // separate identity binder and never determines whether a request was seen.
@@ -102,6 +109,7 @@ export class ManualStartupCookieGuard {
   #armed = false; #oldLoader; #rootId = null; #root = null; #commit = null; #records = 0;
   #diagnosticRequests = new Map(); #diagnosticIds = new Set();
   #diagnosticDropped = 0; #diagnosticHeaderDropped = 0; #diagnosticEvents = 0; #diagnosticLines = 0;
+  #diagnosticUnframed = 0;
   #rejection = 'unknown'; #trigger = 'unknown'; #provenance = 'unknown';
   #condition = 'unknown'; #epoch = 'unknown';
   #guardDiskCache = 'unknown'; #guardServiceWorker = 'unknown'; #guardPrefetchCache = 'unknown';
@@ -206,7 +214,7 @@ export class ManualStartupCookieGuard {
     for(let i=0;i<other.length;i++){
       const scope=request?.scope;
       const frame=request?.frameStatus??'unknown';
-      if(request?.outsideURL){
+      if(request?.unframed||request?.outsideURL){
         if(request.bad)this.#fail('guard_response_correlation',trigger,provenance,condition,cache,frame);
         else this.#other=Math.min(64,this.#other+1);
       }
@@ -224,6 +232,7 @@ export class ManualStartupCookieGuard {
   #retainDiagnostic(id, chain) {
     if(this.#diagnosticIds.size>=MAX_DIAGNOSTIC_IDS){this.#fail('guard_request_budget','request','unknown');return false;}
     this.#diagnosticIds.add(id);
+    if(chain.hops[0].unframed)this.#diagnosticUnframed=increment(this.#diagnosticUnframed);
     if(this.#diagnosticRequests.size>=MAX_DIAGNOSTIC_RECORDS){
       // Only diagnostic correlation is discarded. The ID remains permanently
       // ineligible for a fresh request, redirect, root, or settings adoption.
@@ -303,11 +312,17 @@ export class ManualStartupCookieGuard {
       // This separate private URL permits only known ordinary-cookie traffic
       // to be correlated. It cannot widen setter eligibility or root evidence.
       const outsideURL=!scope&&ref(this.#session)&&frameScoped&&ref(loader)?outsideRequestURL(data(data(p,'request'),'url')):null;
+      const resource=resourceTypes.has(data(p,'type'))&&data(data(p,'request'),'method')==='GET'&&!settingsScope(scope);
+      const diagnosticURL=!chain&&redirect===undefined&&resource&&frameStatus==='absent'&&ref(this.#session)&&ref(loader)?
+        unframedResourceURL(scope,outsideRequestURL(data(data(p,'request'),'url'))):null;
+      // An absent field is optional diagnostic metadata, never a guessed root.
+      // Present malformed frame fields keep the existing fail-closed path.
+      const unframed=diagnosticURL!==null;
       const r={scope,outsideURL,provenance,frameStatus,frameId:ref(frame)?frame:null,loaderId:ref(loader)?loader:null,response:false,bad:false,cookie:false,status:null,needsExtra:null,root:false,cache:false,cacheProjection:null,other:null,
-        resource:resourceTypes.has(data(p,'type'))&&data(data(p,'request'),'method')==='GET'&&!settingsScope(scope)};
+        resource,unframed,diagnosticURL};
       const discarded=this.#diagnosticIds.has(id)&&!chain;
       if(discarded){this.#fail('guard_request_unbound','request',redirect!==undefined?'redirect':'reused','unknown',null,frameStatus);return true;}
-      const diagnostic=!chain&&redirect===undefined&&r.resource&&(provenance==='scoped'||outsideURL!==null);
+      const diagnostic=!chain&&redirect===undefined&&r.resource&&(provenance==='scoped'||outsideURL!==null||unframed);
       r.diagnostic=diagnostic;
       if(chain?.diagnostic&&!this.#promote(id,chain,'request',frameStatus))return true;
       if(!diagnostic&&!this.#reserve('request',redirect!==undefined?'redirect':chain?'reused':'unknown',frameStatus))return true;
@@ -357,7 +372,8 @@ export class ManualStartupCookieGuard {
       if(discarded)return this.#candidate>0||this.#ambiguous>0;
       if(method==='Network.responseReceived'&&r){
         const status=data(response,'status'),extra=data(p,'hasExtraInfo');
-        r.bad ||= r.response||data(p,'loaderId')!==r.loaderId||data(p,'frameId')!==r.frameId||data(response,'url')!==(r.scope?.url??r.outsideURL)||!statusValid(status)||r.root&&status!==200||typeof extra!=='boolean';
+        const frameMismatch=r.unframed?requestFrameProjection(p,this.#frame)==='malformed':data(p,'frameId')!==r.frameId;
+        r.bad ||= r.response||data(p,'loaderId')!==r.loaderId||frameMismatch||data(response,'url')!==(r.scope?.url??r.outsideURL??r.diagnosticURL)||!statusValid(status)||r.root&&status!==200||typeof extra!=='boolean';
         if(!r.cache&&unsafeCache(response)){r.cache=true;r.cacheProjection=cacheProjection(response);}
         if(chain.redirected&&!object(data(response,'headers'))){r.bad=true;this.#fail('guard_metadata_shape','response',r.provenance,'unknown',null,r.frameStatus);}
         r.response=true;r.status=statusValid(status)?status:null;r.needsExtra=typeof extra==='boolean'?extra:null;
@@ -370,7 +386,7 @@ export class ManualStartupCookieGuard {
         if(chain.diagnostic&&chain.extras.length&&!this.#promote(id,chain,'extra',r.frameStatus))return true;
         if(chain.diagnostic||this.#reserve('extra',r.provenance,r.frameStatus))chain.extras.push({status:statusValid(status)?status:null,bad:!statusValid(status),other,headersShape:object(data(p,'headers')),blockedShape:blockedShape(data(p,'blockedCookies'))});
         if(!chain.redirected&&(chain.extras.length>1||!statusValid(status)||r.response&&(r.needsExtra!==true||status!==r.status)))r.bad=true;
-        if(r.provenance!=='scoped'&&!r.outsideURL)this.#apply(other,r,'extra');
+        if(r.provenance!=='scoped'&&!r.outsideURL&&!r.unframed)this.#apply(other,r,'extra');
       }else this.#apply(other,r,method==='Network.responseReceived'?'response':'extra');
       if(r?.bad)this.#chainFailure(chain,method==='Network.responseReceived'?'response':'extra',r.provenance);
     }
@@ -395,6 +411,7 @@ export class ManualStartupCookieGuard {
     this.#diagnosticRequests.clear();this.#diagnosticIds.clear();
     this.#root=null;
     return Object.freeze({schema:'aku.x.manual-startup-cookie-guard.v1',diagnostic:this.category(),candidateAttempts:this.#candidate,otherAttempts:this.#other,ambiguousAttempts:this.#ambiguous,
-      diagnosticCoverage:this.#diagnosticDropped||this.#diagnosticHeaderDropped?'partial':'complete',diagnosticRecordsDropped:this.#diagnosticDropped,diagnosticHeadersDropped:this.#diagnosticHeaderDropped});
+      diagnosticCoverage:this.#diagnosticDropped||this.#diagnosticHeaderDropped||this.#diagnosticUnframed?'partial':'complete',diagnosticRecordsDropped:this.#diagnosticDropped,diagnosticHeadersDropped:this.#diagnosticHeaderDropped,
+      diagnosticMissingFrameRequests:this.#diagnosticUnframed});
   }
 }

@@ -1487,9 +1487,10 @@ Ambiguous combined-cookie representations remain rejected rather than silently
 treated as an unknown attribute or a harmless value.
 
 Diagnostic capacity is separate from security coverage. A valid owned-session
-GET with a recognized resource type, valid request-local frame/loader, and a
+GET with a recognized resource type, valid request-local loader, and a
 qualified X or known outside HTTPS URL can enter a 256-request diagnostic queue;
-account settings and root documents cannot. An ordinary single-hop response and
+its frame must be valid or meet the narrow absent-frame rule below. Account
+settings and root documents cannot. An ordinary single-hop response and
 its one pending ExtraInfo projection remain diagnostic correlation. Redirects,
 reused IDs, repeated ExtraInfo, malformed/unqualified requests, root documents,
 and account settings retain the independent 1,280 lifetime security-record cap.
@@ -1518,6 +1519,21 @@ owned-session network header; unrelated network diagnostics and foreign-session
 events cannot consume that binder budget. Ordinary and deferred QA keep their
 existing total-event cap. Transport framing, ownership and deadlines still bound
 both flows, and loss of common transport/security coverage remains fatal.
+
+An actually absent `frameId` field is eligible only for a previously observed
+owned-session ordinary GET resource with a valid loader and bounded HTTPS URL.
+It does not make a malformed/present frame valid, broaden identity/setter
+eligibility, or downgrade Home, Document, protected settings, unsupported methods,
+orphan metadata or redirects. The frame remains unknown; a later well-formed
+response frame is diagnostic metadata only and cannot rebind the request.
+Response URL/loader/status and declared ExtraInfo checks are unchanged. The
+summary reports `diagnosticCoverage: partial` and
+`diagnosticMissingFrameRequests` separately from dropped-record counters.
+Candidates, blocked/deletion attempts and ambiguous headers still reject before
+ordinary routing, including after diagnostic eviction. Selected settings and
+private account proof retain their mandatory root-frame correlation. This
+offline policy correction does not identify the native request or authorize a
+new retained QA transfer.
 
 Minimal name parsing still requires a bounded token name followed by `=`. It
 rejects control characters, a comma in the initial cookie pair, or a comma

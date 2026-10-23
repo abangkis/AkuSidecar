@@ -262,12 +262,16 @@ async function driverScenario(scenario, continuous=false, injectedCookie='lang=e
   return {scenario,evaluations,receipts,diagnostic:observation.diagnostic,first,trace,commands,observation};
 }
 
-for(const scenario of ['clean','precommit-resource','postcommit-resource','observed-before-seed','foreign-session-response','qualified-redirect-late','qualified-redirect-early','request-frame-different','nonroot-settings','foreign-origin'])test(`actual driver retains bounded network provenance: ${scenario}`,async()=>{
+for(const scenario of ['clean','precommit-resource','postcommit-resource','observed-before-seed','foreign-session-response','qualified-redirect-late','qualified-redirect-early','request-frame-different','nonroot-settings','foreign-origin','request-frame-absent'])test(`actual driver retains bounded network provenance: ${scenario}`,async()=>{
   const r=await driverScenario(scenario,true);assert.equal(r.diagnostic,'bound');assert.equal(r.receipts,1);assert.equal(r.evaluations,2);
   assert.equal(r.commands.filter(v=>v==='Network.enable').length,1);
   assert.ok(r.commands.indexOf('Network.disable')>r.commands.indexOf('receipt'));
+  if(scenario==='request-frame-absent'){
+    assert.equal(r.observation.manualCookieGuard.diagnosticCoverage,'partial');
+    assert.equal(r.observation.manualCookieGuard.diagnosticMissingFrameRequests,1);
+  }
 });
-for(const [kind,state]of [['absent','absent'],['empty','malformed'],['number','malformed']])test(`actual reader dispatcher retains first request frame status through binder and latch: ${kind}`,async()=>{
+for(const [kind,state]of [['empty','malformed'],['number','malformed']])test(`actual reader dispatcher retains first request frame status through binder and latch: ${kind}`,async()=>{
   const r=await driverScenario('request-frame-'+kind,true);
   assert.equal(r.receipts,0);assert.equal(r.evaluations,0);
   assert.equal(r.trace.firstCause,'guard_request_unbound');assert.equal(r.trace.guardTrigger,'extra');

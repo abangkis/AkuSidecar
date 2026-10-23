@@ -32,6 +32,7 @@ if(mode!==undefined){
     'x-qa-bound-observation.mjs','x-qa-bound-observation.test.mjs','x-qa-cookie-writes.mjs',
     'x-manual-startup-cookie-guard.mjs','x-manual-startup-cookie-guard.test.mjs',
     'x-manual-diagnostic-capacity.test.mjs',
+    'x-manual-unframed-traffic.test.mjs',
     'x-manual-startup-redirect.test.mjs',
     'x-manual-startup-first-cause-offline.mjs','x-manual-startup-first-cause.test.mjs',
     'x-manual-startup-root-navigation.test.mjs','x-manual-network-provenance.test.mjs'].map(file=>{

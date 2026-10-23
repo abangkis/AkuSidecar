@@ -40,7 +40,7 @@ function frameParams(kind,onRead=()=>{}){
 for(const [kind,state]of frameCases)test(`request frame metadata separates valid session-local provenance from invalid references: ${kind}`,()=>{
   const s=fixture();let reads=0;
   s.emit('Network.requestWillBeSent',frameParams(kind,()=>reads++));
-  const valid=['matching','different'].includes(kind);
+  const valid=['absent','matching','different'].includes(kind);
   assert.equal(s.extra(200,other),!valid);
   if(valid){s.response(0,{extra:true,frameId:kind==='different'?'PRIVATE_CHILD_FRAME':'frame'});accepted(s,1);assert.equal(s.g.trace().guardRequestFrame,'unknown');}
   else{
