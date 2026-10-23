@@ -28,6 +28,17 @@ function setter(url) {
     return { host: u.hostname, path, url };
   } catch { return null; }
 }
+// Correlation metadata only: never a qualified account/login source or setter.
+// Malformed URLs and unqualified forms of an X URL remain fail-closed.
+function outsideRequestURL(url) {
+  if (typeof url !== 'string' || url.length > 4096) return null;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:' || !u.hostname || ['x.com', 'api.x.com'].includes(u.hostname) ||
+        u.port || u.username || u.password || u.hash) return null;
+    return url;
+  } catch { return null; }
+}
 // Retain only a marker for a pending noncandidate line, never its name or value.
 // Candidate and ambiguous name evidence is decided immediately.
 function lineKind(line) {
@@ -179,7 +190,11 @@ export class ManualStartupCookieGuard {
     for(let i=0;i<other.length;i++){
       const scope=request?.scope;
       const frame=request?.frameStatus??'unknown';
-      if(!scope||request.provenance!=='scoped')this.#fail('guard_request_unbound',trigger,provenance,condition,cache,frame);
+      if(request?.outsideURL){
+        if(request.bad)this.#fail('guard_response_correlation',trigger,provenance,condition,cache,frame);
+        else this.#other=Math.min(64,this.#other+1);
+      }
+      else if(!scope||request.provenance!=='scoped')this.#fail('guard_request_unbound',trigger,provenance,condition,cache,frame);
       else if(request.bad)this.#fail('guard_response_correlation',trigger,provenance,condition,cache,frame);
       else this.#other=Math.min(64,this.#other+1);
     }
@@ -251,7 +266,10 @@ export class ManualStartupCookieGuard {
       // correlated without inventing a relationship to the identity root.
       const frameScoped=ref(frame)&&(frame===this.#frame||ref(this.#session));
       const provenance=!scope?'origin_scope':!frameScoped?'frame_scope':!ref(loader)?'loader_missing':'scoped';
-      const r={scope,provenance,frameStatus,frameId:ref(frame)?frame:null,loaderId:ref(loader)?loader:null,response:false,bad:false,cookie:false,status:null,needsExtra:null,root:false,cache:false,cacheProjection:null,other:null,
+      // This separate private URL permits only known ordinary-cookie traffic
+      // to be correlated. It cannot widen setter eligibility or root evidence.
+      const outsideURL=!scope&&ref(this.#session)&&frameScoped&&ref(loader)?outsideRequestURL(data(data(p,'request'),'url')):null;
+      const r={scope,outsideURL,provenance,frameStatus,frameId:ref(frame)?frame:null,loaderId:ref(loader)?loader:null,response:false,bad:false,cookie:false,status:null,needsExtra:null,root:false,cache:false,cacheProjection:null,other:null,
         resource:resourceTypes.has(data(p,'type'))&&data(data(p,'request'),'method')==='GET'&&!settingsScope(scope)};
       const current=chain??{hops:[],extras:[],redirected:false,bad:false,cache:false,failed:false,completed:false};
       if(chain&&redirect===undefined){r.provenance='reused';current.bad=true;this.#fail('guard_request_unbound','request','reused','unknown',null,frameStatus);}
@@ -293,7 +311,7 @@ export class ManualStartupCookieGuard {
       const other=this.#attempt(method==='Network.responseReceived'?data(response,'headers'):data(p,'headers'),method==='Network.responseReceivedExtraInfo'?data(p,'blockedCookies'):undefined,r,method==='Network.responseReceived'?'response':'extra');
       if(method==='Network.responseReceived'&&r){
         const status=data(response,'status'),extra=data(p,'hasExtraInfo');
-        r.bad ||= r.response||data(p,'loaderId')!==r.loaderId||data(p,'frameId')!==r.frameId||data(response,'url')!==r.scope?.url||!statusValid(status)||r.root&&status!==200||typeof extra!=='boolean';
+        r.bad ||= r.response||data(p,'loaderId')!==r.loaderId||data(p,'frameId')!==r.frameId||data(response,'url')!==(r.scope?.url??r.outsideURL)||!statusValid(status)||r.root&&status!==200||typeof extra!=='boolean';
         if(!r.cache&&unsafeCache(response)){r.cache=true;r.cacheProjection=cacheProjection(response);}
         if(chain.redirected&&!object(data(response,'headers'))){r.bad=true;this.#fail('guard_metadata_shape','response',r.provenance,'unknown',null,r.frameStatus);}
         r.response=true;r.status=statusValid(status)?status:null;r.needsExtra=typeof extra==='boolean'?extra:null;
@@ -305,7 +323,7 @@ export class ManualStartupCookieGuard {
         const status=data(p,'statusCode');
         if(this.#reserve('extra',r.provenance,r.frameStatus))chain.extras.push({status:statusValid(status)?status:null,bad:!statusValid(status),other,headersShape:object(data(p,'headers')),blockedShape:blockedShape(data(p,'blockedCookies'))});
         if(!chain.redirected&&(chain.extras.length>1||!statusValid(status)||r.response&&(r.needsExtra!==true||status!==r.status)))r.bad=true;
-        if(r.provenance!=='scoped')this.#apply(other,r,'extra');
+        if(r.provenance!=='scoped'&&!r.outsideURL)this.#apply(other,r,'extra');
       }else this.#apply(other,r,method==='Network.responseReceived'?'response':'extra');
       if(r?.bad)this.#chainFailure(chain,method==='Network.responseReceived'?'response':'extra',r.provenance);
     }

@@ -1,5 +1,38 @@
 # Local one-login concurrency fixture
 
+## Manual V2 ordinary cookies outside the setter allowlist (2026-10-23)
+
+An unambiguous cookie other than `auth_token`/`ct0` on a known outside request
+can contribute only to the existing `other_only` diagnostic. The private request
+record holds a separate bounded HTTPS URL for correlation; it does not become
+an eligible setter, identity source or protected settings request. The owned CDP
+session, valid frame/loader references, exact response URL/frame/loader/status
+and declared ExtraInfo checks still apply. Eligible ExtraInfo can arrive before
+or after the response and is counted once. Existing single-hop completion checks
+are preserved; this does not add a universal `loadingFinished` requirement.
+
+The narrow outside path excludes malformed URLs, non-HTTPS URLs, credentials,
+non-default ports, fragments and unqualified forms of an allowlisted X URL.
+Orphan metadata, replay, unsupported redirects, root navigation changes and
+contradictory or missing declared response/ExtraInfo remain rejected. Candidate
+cookie attempts, deletions, blocked candidates, malformed/ambiguous headers and
+the existing parser/capacity limits are checked before ordinary-cookie routing.
+No URL, cookie name/value or scope identifier is added to a report.
+
+Offline regressions cover response/ExtraInfo/blocked-cookie order, root and
+nonroot request frames, before/after-identity timing, candidate precedence and
+noninterference with missing/wrong identity, nonroot or foreign settings,
+non-200/cached settings, lifecycle loss, stale evidence and failed cleanup.
+The actual reader dispatcher also accepts the fully correlated outside ordinary
+fixture while preserving its strict private startup evidence path. Default
+strict/deferred QA policies, Store and runtime activation are unchanged.
+
+This is a targeted routing fix, not complete traffic isolation. Request/header
+budgets and observer failure state remain shared. A broader split between
+evidence production, session revocation and diagnostic-only traffic requires a
+separate contract; it is not implemented or activated by this change. Native
+acceptance has not been rerun.
+
 ## Collector preflight failure classification (2026-10-23)
 
 The manual collector classifies failures before its generic identity fallback:

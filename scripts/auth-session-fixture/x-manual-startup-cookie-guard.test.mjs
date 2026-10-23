@@ -139,6 +139,117 @@ test('other-cookie effective default paths do not use the former QA path allowli
   assert.equal(JSON.stringify(r).includes('PRIVATE_NAME'),false);assert.equal(JSON.stringify(r).includes('PRIVATE_VALUE'),false);
 });
 
+const outsideURL = 'https://static.invalid/PRIVATE_PATH/asset';
+function outsideCookie(s, {id = 'outside', source = 'response', frameId = 'frame', headers = {'Set-Cookie': 'PRIVATE_NAME=PRIVATE_VALUE; Priority=High; Partitioned'},
+  requestPatch = {}, responsePatch = {}, extraPatch = {}, orphan = false} = {}) {
+  if (!orphan) s.request(id, {frameId, request: {method: 'GET', url: outsideURL}, ...requestPatch});
+  const extra = () => s.extra(id, source === 'blocked' ? {} : headers,
+    {...(source === 'blocked' ? {blockedCookies: [{cookieLine: 'PRIVATE_NAME=PRIVATE_VALUE'}]} : {}), ...extraPatch});
+  if (['extra-before', 'blocked'].includes(source)) extra();
+  s.response(id, source === 'response' ? headers : {}, {frameId, hasExtraInfo: source !== 'response',
+    response: {url: outsideURL, status: 200, headers: source === 'response' ? headers : {}}, ...responsePatch});
+  if (source === 'extra-after') extra();
+}
+
+test('known outside ordinary cookies are diagnostic only across response/ExtraInfo order, frame and identity timing', async () => {
+  for (const source of ['response', 'extra-before', 'extra-after', 'blocked']) for (const frameId of ['frame', 'child']) for (const before of [true, false]) {
+    const s = sample(); s.document(); if (!before) s.identity();
+    outsideCookie(s, {source, frameId});
+    const r = await finish(s);
+    assert.equal(r.diagnostic, 'bound'); assert.equal(s.published(), 1);
+    assert.equal(r.manualCookieGuard.diagnostic, 'other_only');
+    assert.equal(r.manualCookieGuard.otherAttempts, 1); assert.equal(r.manualCookieGuard.ambiguousAttempts, 0);
+    assert.equal(r.canAuthorize, false); assert.equal(r.continuity, 'unknown');
+    for (const raw of [outsideURL, 'PRIVATE_NAME', 'PRIVATE_VALUE']) assert.equal(JSON.stringify(r).includes(raw), false);
+  }
+});
+
+test('outside provenance never suppresses session-cookie attempts, deletion, blocked cookies or mixed lines', async () => {
+  for (const name of ['auth_token', 'ct0']) for (const source of ['response', 'extra-before', 'extra-after', 'blocked']) for (const suffix of ['=PRIVATE; Path=/', '=; Max-Age=0']) {
+    const s = sample(); s.document();
+    outsideCookie(s, {source, headers: {'Set-Cookie': 'lang=en\n' + name + suffix},
+      ...(source === 'blocked' ? {extraPatch: {blockedCookies: [{cookieLine: name + suffix}]}} : {})});
+    const r = await finish(s);
+    assert.equal(r.diagnostic, 'observed_cookie_write'); assert.equal(s.published(), 0);
+    assert.equal(r.manualCookieGuard.diagnostic, 'candidate_observed');
+    assert.ok(r.manualCookieGuard.candidateAttempts > 0);
+  }
+});
+
+test('outside ambiguous, malformed and accessor headers remain closed without echoing their values', async () => {
+  let reads = 0;
+  for (const headers of [{'Set-Cookie': 'lang=x, ct0=PRIVATE'}, {'Set-Cookie': 'lang=x; Priority=Low, auth_token=PRIVATE'},
+    {'Set-Cookie': 'lang'}, {'Set-Cookie': ['PRIVATE']}, {'Set-Cookie': 'lang=x\rct0=PRIVATE'},
+    Object.defineProperty({}, 'Set-Cookie', {get() {reads++; throw new Error('PRIVATE');}})]) {
+    const s = sample(); s.document(); outsideCookie(s, {headers});
+    const r = await finish(s);
+    assert.equal(r.diagnostic, 'observed_cookie_write'); assert.equal(s.published(), 0);
+    assert.equal(r.manualCookieGuard.diagnostic, 'ambiguous');
+    assert.equal(JSON.stringify(r).includes('PRIVATE'), false);
+  }
+  assert.equal(reads, 0);
+});
+
+test('outside ordinary markers cannot repair missing, mismatched or unowned provenance', async () => {
+  for (const options of [{orphan: true}, {requestPatch: {frameId: undefined}}, {requestPatch: {loaderId: undefined}},
+    {responsePatch: {frameId: 'different'}}, {responsePatch: {loaderId: 'different'}},
+    {responsePatch: {response: {url: 'https://other.invalid/asset', status: 200, headers: {'Set-Cookie': 'lang=en'}}}},
+    {source: 'extra-before', extraPatch: {statusCode: 201}}]) {
+    const s = sample(); s.document(); outsideCookie(s, options);
+    const r = await finish(s);
+    assert.equal(r.diagnostic, 'observed_cookie_write'); assert.equal(s.published(), 0);
+  }
+  for (const url of ['not-a-url', 'http://static.invalid/asset', 'https://x.com/asset#fragment',
+    'https://static.invalid/asset#fragment', 'https://user:PRIVATE@static.invalid/asset', 'https://static.invalid:444/asset']) {
+    const s = sample(); s.document();
+    outsideCookie(s, {requestPatch: {request: {method: 'GET', url}},
+      responsePatch: {response: {url, status: 200, headers: {'Set-Cookie': 'lang=en'}}}});
+    assert.equal((await finish(s)).diagnostic, 'observed_cookie_write'); assert.equal(s.published(), 0);
+  }
+});
+
+test('outside diagnostics cannot supply or repair identity/login, lifecycle, freshness or cleanup evidence', async () => {
+  for (const fault of ['identity', 'wrong-identity', 'login', 'settings-origin', 'settings-frame', 'cache', 'owner', 'context', 'stale', 'cleanup']) {
+    const s = sample(); s.document(); outsideCookie(s);
+    if (fault !== 'identity') s.identity();
+    if (fault === 'wrong-identity') s.binder.acceptIdentity('99999', {});
+    if (fault === 'settings-origin') {
+      s.request('settings', {request: {method: 'GET', url: 'https://static.invalid/1.1/account/settings.json'}});
+      s.response('settings', {}, {response: {url: 'https://static.invalid/1.1/account/settings.json', status: 200, headers: {}}});
+    } else if (fault === 'settings-frame') {
+      s.request('settings', {frameId: 'child', request: {method: 'GET', url: QA_AB_URL}});
+    } else s.settings(fault === 'login' ? 401 : 200);
+    if (fault === 'cache') s.emit('Network.requestServedFromCache', {requestId: 'settings'});
+    if (fault === 'owner') s.emit('Page.loadEventFired', {}, {...s.scope, owner: 2});
+    if (fault === 'context') s.emit('Runtime.executionContextDestroyed', {executionContextId: 7});
+    if (fault === 'stale') s.time(6000);
+    // Later ordinary traffic cannot clear a previous secure-path rejection.
+    outsideCookie(s, {id: 'later'});
+    const r = await s.binder.finish(fault !== 'cleanup');
+    assert.notEqual(r.diagnostic, 'bound', fault); assert.equal(s.published(), 0, fault);
+    assert.equal(r.manualCookieGuard.diagnostic, 'other_only', fault);
+    assert.equal(r.manualCookieGuard.otherAttempts, 2, fault);
+    assert.equal(r.canAuthorize, false); assert.equal(r.continuity, 'unknown');
+  }
+});
+
+test('outside ordinary traffic retains replay, redirect and declared response/ExtraInfo checks', async () => {
+  for (const fault of ['missing-response', 'missing-extra', 'duplicate-extra', 'undeclared-extra', 'reused', 'redirect']) {
+    const s = sample(); s.document();
+    s.request('outside', {request: {method: 'GET', url: outsideURL}});
+    if (fault === 'reused') s.request('outside', {request: {method: 'GET', url: outsideURL}});
+    if (fault === 'redirect') s.request('outside', {request: {method: 'GET', url: 'https://other.invalid/asset'},
+      redirectHasExtraInfo: false, redirectResponse: {url: outsideURL, status: 302, headers: {'Set-Cookie': 'lang=en'}}});
+    if (fault !== 'missing-response') s.response('outside', {'Set-Cookie': 'lang=en'}, {hasExtraInfo: fault !== 'undeclared-extra',
+      response: {url: outsideURL, status: 200, headers: {'Set-Cookie': 'lang=en'}}});
+    if (fault !== 'missing-extra') s.extra('outside', fault === 'missing-response' ? {'Set-Cookie': 'lang=en'} : {}, {});
+    if (fault === 'duplicate-extra') s.extra('outside', {}, {});
+    const r = await finish(s);
+    assert.equal(r.diagnostic, 'observed_cookie_write', fault); assert.equal(s.published(), 0, fault);
+    assert.equal(r.manualCookieGuard.diagnostic, 'ambiguous');
+  }
+});
+
 test('Manual V2 candidate attempts revoke before identity, after identity, mixed and blocked', async () => {
   for (const before of [true, false]) for (const name of ['auth_token', 'ct0']) for (const blocked of [false, true]) {
     const s = sample(); s.document(); if (!before) s.identity(); s.request();

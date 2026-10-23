@@ -262,7 +262,7 @@ async function driverScenario(scenario, continuous=false, injectedCookie='lang=e
   return {scenario,evaluations,receipts,diagnostic:observation.diagnostic,first,trace,commands,observation};
 }
 
-for(const scenario of ['clean','precommit-resource','postcommit-resource','observed-before-seed','foreign-session-response','qualified-redirect-late','qualified-redirect-early','request-frame-different','nonroot-settings'])test(`actual driver retains bounded network provenance: ${scenario}`,async()=>{
+for(const scenario of ['clean','precommit-resource','postcommit-resource','observed-before-seed','foreign-session-response','qualified-redirect-late','qualified-redirect-early','request-frame-different','nonroot-settings','foreign-origin'])test(`actual driver retains bounded network provenance: ${scenario}`,async()=>{
   const r=await driverScenario(scenario,true);assert.equal(r.diagnostic,'bound');assert.equal(r.receipts,1);assert.equal(r.evaluations,2);
   assert.equal(r.commands.filter(v=>v==='Network.enable').length,1);
   assert.ok(r.commands.indexOf('Network.disable')>r.commands.indexOf('receipt'));
@@ -365,7 +365,7 @@ for(const mode of ['early','late','reordered','missing','candidate','nonroot'])t
     assert.ok(r.commands.indexOf('Network.disable')>r.commands.indexOf('receipt'));assert.equal(r.observation.continuity,'unknown');assert.equal(r.observation.canAuthorize,false);
   }
 });
-for(const [scenario,provenance,trigger]of [['before-observer-late-response','absent','extra'],['foreign-origin','origin_scope','extra'],['resource-redirect','redirect','redirect']])test(`actual driver keeps unqualified provenance closed: ${scenario}`,async()=>{
+for(const [scenario,provenance,trigger]of [['before-observer-late-response','absent','extra'],['resource-redirect','redirect','redirect']])test(`actual driver keeps unqualified provenance closed: ${scenario}`,async()=>{
   const r=await driverScenario(scenario,true);assert.equal(r.receipts,0);assert.equal(r.evaluations,0);
   assert.equal(r.trace.firstCause,'guard_request_unbound');assert.equal(r.trace.guardProvenance,provenance);assert.equal(r.trace.guardTrigger,trigger);
   assert.equal(r.trace.early,'evaluation_failed');assert.equal(r.trace.handoff,'accepted');assert.equal(r.trace.extra,'complete');
