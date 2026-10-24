@@ -18,6 +18,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/abangkis/AkuSidecar/internal/batchbehavior"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
@@ -1170,6 +1171,10 @@ func (s *Store) ClaimCommandForCollector(ctx context.Context, runID, bridgeID, c
 }
 
 func (s *Store) claimCommand(ctx context.Context, runID, bridgeID, collector string) (*domain.BridgeCommand, error) {
+	return s.claimCommandWithBehavior(ctx, runID, bridgeID, collector, batchbehavior.Policy{})
+}
+
+func (s *Store) claimCommandWithBehavior(ctx context.Context, runID, bridgeID, collector string, policy batchbehavior.Policy) (*domain.BridgeCommand, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -1180,6 +1185,9 @@ func (s *Store) claimCommand(ctx context.Context, runID, bridgeID, collector str
 		return nil, err
 	}
 	if err := requireSourceCaptureAllowed(ctx, tx, captureSource); err != nil {
+		return nil, err
+	}
+	if allowed, err := s.captureBehaviorAllowed(ctx, tx, captureSource, policy); err != nil || !allowed {
 		return nil, err
 	}
 	gate, err := s.captureCommandClaimGate(ctx, tx, runID)

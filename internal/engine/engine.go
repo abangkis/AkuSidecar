@@ -1077,7 +1077,7 @@ func (e *Engine) claimCommandForCollector(ctx context.Context, runID, bridgeID, 
 	if wrongDriver {
 		return nil, fmt.Errorf("%w: command belongs to another collection driver", errStaleCaptureRuntime)
 	}
-	command, err := e.store.ClaimCommandForCollector(ctx, runID, bridgeID, collector)
+	command, err := e.store.ClaimCommandWithBehavior(ctx, runID, bridgeID, collector, e.capturePacingPolicy())
 	if err != nil || command == nil {
 		return command, err
 	}
@@ -2581,7 +2581,7 @@ func (e *Engine) claimMediaRecaptureForCollector(ctx context.Context, id, bridge
 		}
 		return domain.MediaRecapture{}, err
 	}
-	return e.store.ClaimMediaRecaptureForCollector(ctx, id, bridgeID, collector)
+	return e.store.ClaimMediaRecaptureWithBehavior(ctx, id, bridgeID, collector, e.capturePacingPolicy())
 }
 
 func (e *Engine) ensureAdmittedBrowserRecapture(job domain.MediaRecapture) error {

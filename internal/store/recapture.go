@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/abangkis/AkuSidecar/internal/batchbehavior"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
@@ -493,6 +494,10 @@ func (s *Store) ClaimMediaRecapture(ctx context.Context, id, bridgeID string) (d
 }
 
 func (s *Store) ClaimMediaRecaptureForCollector(ctx context.Context, id, bridgeID, collector string) (domain.MediaRecapture, error) {
+	return s.claimMediaRecaptureWithBehavior(ctx, id, bridgeID, collector, batchbehavior.Policy{})
+}
+
+func (s *Store) claimMediaRecaptureWithBehavior(ctx context.Context, id, bridgeID, collector string, policy batchbehavior.Policy) (domain.MediaRecapture, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.MediaRecapture{}, err
@@ -503,6 +508,9 @@ func (s *Store) ClaimMediaRecaptureForCollector(ctx context.Context, id, bridgeI
 		return domain.MediaRecapture{}, err
 	}
 	if err := requireSourceCaptureAllowed(ctx, tx, job.Source); err != nil {
+		return domain.MediaRecapture{}, err
+	}
+	if allowed, err := s.captureBehaviorAllowed(ctx, tx, job.Source, policy); err != nil || !allowed {
 		return domain.MediaRecapture{}, err
 	}
 	var sessionID sql.NullString

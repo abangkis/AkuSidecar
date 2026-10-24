@@ -51,7 +51,7 @@ not enabled or replaced by this change. This is not a qualification of that pilo
 against live X. An older binary does not enforce this new metadata latch; do not
 downgrade and resume X capture while a pause is unresolved.
 
-## Existing pacing and proposed consolidation
+## Configurable capture pacing
 
 `internal/engine/adaptive_update.go` already uses consumption, reading grace,
 queue pressure, supply backoff and technical backoff. Its refill and standby
@@ -60,19 +60,79 @@ to four scrolls (maximum six), a 0.75 viewport step and 900 ms settle.
 The jitter in `AkuBridge/native-runtime-scheduler.js` belongs to runtime checks,
 not feed acquisition, and remains separate.
 
-The next bounded policy increment belongs in the same admission layer:
+The optional `capture.behavior` startup configuration now enables a shared
+pacing policy for ordinary Bridge, Quiet and Headless commands and media
+recapture. It is independent of the persistent challenge guard. Older
+configuration files omit this block and retain the existing pacing behavior.
+
+Admission is checked in the same Store transaction that claims an operation.
+An operation waiting for pacing remains queued and has no `claimed_at` or lease.
+Durable claimed rows reserve one slot per local source across sessions and
+recapture. Reasoning does not hold that slot. Accepted results, failures,
+cancellation and existing lease-expiry handling complete the exact operation;
+a stale callback cannot release a newer claim.
+
+Cooldown is computed from claimed operations' durable terminal history:
+
+`notBefore = completion + max(minimum interval, temporary backoff) + added jitter`
+
+The jitter sample is stable for the completed operation. Polling and restart
+do not redraw it. It never shortens the minimum interval. Success ends a
+temporary-failure streak; explicitly classified temporary timeouts/transport
+failures back off exponentially up to the configured base-backoff cap, with
+jitter added afterward. Unknown errors, login requirements and challenges are
+not classified as temporary recovery. Existing login failures stay nonretryable;
+this change adds no login recovery API or authentication retries.
+
+The policy reads durable history and claim state, so process restart retains
+the cooldown and current occupancy. It does not repair orphaned claims: the
+existing cancellation and lease-expiry mechanisms remain responsible for them.
+
+| Setting | Default | Valid values |
+| --- | --- | --- |
+| `enabled` | `false` | Explicit opt-in; challenge guard remains active when false |
+| `minCaptureIntervalMs` | `5000` | `1000..900000` |
+| `additionalJitterMs` | `0` | `0..60000`, added after the minimum/backoff |
+| `scrollFraction` | `0.75` | `0.5..1`, shared Bridge/worker range |
+| `scrollSettleMs` | `900` | `100..2000`, shared Bridge/worker range |
+| `temporaryBackoffBaseMs` | `10000` | `1000..300000` |
+| `temporaryBackoffMaxMs` | `120000` | At least base, at most `900000` |
+
+Zero values for minimum interval, scroll tuning and backoff select the stated
+defaults; zero additional jitter disables added delay. Invalid values and unknown
+startup configuration fields are rejected. These are engineering bounds, not
+platform-approved rates or a claim of safe/undetectable automated access.
+
+Copy the `capture.behavior` block from
+[`config/capture-behavior.example.json`](../config/capture-behavior.example.json)
+into the intended instance's existing configuration, preserving all other
+settings. The example is a fragment, not a complete launch configuration. An
+explicit coordinated restart is required to apply changes; this implementation
+has not edited the running instance's configuration or enabled Auto Update.
+
+Configured scroll fraction/settle values are stamped into ordinary capture
+payloads before persistence. Existing scroll/post/time limits still apply;
+recapture's zero-scroll behavior and follow-up continuation remain intact.
+The private native pilot's closed payload projection and original 60-second
+authorization are unchanged; this is not activation or live qualification of it.
+
+`AutoUpdateStatus.captureBehavior` exposes enabled/source/allowed/reason and an
+optional `notBefore`, without operation identifiers, session values, or raw
+failure details. Scheduler diagnostics show source spacing, active capture,
+temporary backoff, or manual verification. These projections are not authority.
+
+Responsibilities remain separate:
 
 | Concern | Responsibility | Constraint |
 | --- | --- | --- |
 | Schedule | Existing adaptive/fixed scheduler | Generate demand; do not bypass admission |
 | Concurrency and spacing | Engine admission | One capture per scope and a minimum interval |
-| Optional scheduling jitter | Admission clock/RNG | Add delay after the minimum, never shorten it |
+| Optional capture jitter | Admission policy | Stable added delay after minimum/backoff |
 | Scroll and readiness | Worker | Existing post/scroll/time caps; bounded readiness wait |
-| Temporary failure | Scheduler | Bounded backoff; honor a source retry deadline when available |
-| Challenge or login requirement | Access admission | No automatic retry, profile fallback, reseed, or timer resume |
+| Temporary failure | Admission policy | Bounded backoff for explicitly classified temporary errors |
+| Challenge | Access admission | No automatic retry, profile fallback, reseed, or timer resume |
 | Audit | Safe structured status | Policy reason, budgets, phase and durations; no session secrets |
 
-These additional pacing rules are a design proposal, not new runtime defaults.
 No mouse imitation, fingerprint modification, CAPTCHA automation, or clearance
 cookie reuse is part of this policy. Timing changes are load controls, not a
 method of concealing automation.
@@ -83,6 +143,10 @@ Tests use synthetic DOM, mock transports, temporary SQLite databases, and inject
 contexts. Cover both screens, quoted-text false positives, typed error transport,
 first-cause retention, restart persistence, stale recovery IDs, late results,
 cross-source isolation, and explicit recovery without enabling Auto Update.
+Pacing tests additionally cover deterministic clock/sample boundaries, typed
+configuration loading, invalid settings, concurrent claims, follow-up deferral
+without consuming a lease, recapture sharing, restart-stable cooldown and stale
+callbacks. No real-account traffic is needed for these tests.
 
 During this change Auto Update was explicitly disabled using the running local
 API; no active batch existed at readback. Browser profiles, credentials, the

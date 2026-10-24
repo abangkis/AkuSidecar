@@ -1,5 +1,6 @@
 import { createDirtyStateTracker } from "./settings-dirty-state.js";
 import { renderSourceCapturePause, confirmSourceCaptureRecovery } from "./source-capture-pause.js";
+import { captureBehaviorDiagnostics } from "./capture-behavior-status.js";
 import { collectionModeState, browserCollectorProbeAllowed } from "./collection-mode.js";
 import { createNativePostRouter } from "./native-post-routing.js";
 import { nativePostWaitReason, syncNativePostAvailability } from "./native-post-availability.js";
@@ -3602,6 +3603,7 @@ function renderAutoUpdateStatus(status) {
   if (adaptive && status.adaptiveReadingGraceUntil && Date.parse(status.adaptiveReadingGraceUntil) > Date.now()) diagnostics.push(`Reading grace until ${formatDate(status.adaptiveReadingGraceUntil)}`);
   if (status.supplyBackoffUntil && Date.parse(status.supplyBackoffUntil) > Date.now()) diagnostics.push(`Supply cooldown until ${formatDate(status.supplyBackoffUntil)}`);
   if (status.technicalBackoffUntil && Date.parse(status.technicalBackoffUntil) > Date.now()) diagnostics.push(`Retry cooldown until ${formatDate(status.technicalBackoffUntil)}`);
+  diagnostics.push(...captureBehaviorDiagnostics(status.captureBehavior, { sourceLabel, formatMoment: formatDate }));
   queue.textContent = diagnostics.join(" · ");
   const actual = quotaUsed === used ? "" : ` · ${formatTokenCount(used)} actual today`;
   const manualReset = status.lastManualBudgetResetAt ? ` · quota reset ${formatDate(status.lastManualBudgetResetAt)}` : "";

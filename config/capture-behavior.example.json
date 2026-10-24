@@ -1,0 +1,13 @@
+{
+  "capture": {
+    "behavior": {
+      "enabled": true,
+      "minCaptureIntervalMs": 8000,
+      "additionalJitterMs": 3000,
+      "scrollFraction": 0.5,
+      "scrollSettleMs": 1400,
+      "temporaryBackoffBaseMs": 20000,
+      "temporaryBackoffMaxMs": 180000
+    }
+  }
+}

@@ -73,3 +73,44 @@ func TestSourceCapturePauseHTTPRequiresCurrentExplicitConfirmation(t *testing.T)
 		t.Fatal("recovery silently enabled Auto Update")
 	}
 }
+
+func TestCaptureBehaviorHTTPStatusKeepsChallengeOutsideTimedRecovery(t *testing.T) {
+	ctx := context.Background()
+	settings := domain.DefaultSettings("expanded", "quiet", "guarded_live", true)
+	settings.ActiveSources = []domain.Source{domain.SourceX}
+	settings.AutoUpdateEnabled = false
+	state, err := store.Open(filepath.Join(t.TempDir(), "synthetic.db"), settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	logger := log.New(io.Discard, "", 0)
+	cfg := config.Config{Capture: config.CaptureConfig{Behavior: config.CaptureBehaviorConfig{Enabled: true}}}
+	runtime := engine.New(state, reasoning.Deterministic{}, cfg, logger)
+	server, err := New(cfg, state, runtime, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := state.PauseXCapture(ctx); err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/auto-update/status", nil)
+	server.api().ServeHTTP(response, request)
+	var value struct {
+		AutoUpdate domain.AutoUpdateStatus `json:"autoUpdate"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &value); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusOK || len(value.AutoUpdate.CaptureBehavior) != 1 {
+		t.Fatalf("missing status %s", response.Body.String())
+	}
+	status := value.AutoUpdate.CaptureBehavior[0]
+	if !status.Enabled || status.Allowed || status.Reason != "challenge_required" || status.NotBefore != "" {
+		t.Fatalf("challenge turned into a timer: %+v", status)
+	}
+	if value.AutoUpdate.Enabled {
+		t.Fatal("status read enabled Auto Update")
+	}
+}

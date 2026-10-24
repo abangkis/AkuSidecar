@@ -84,9 +84,14 @@ func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus,
 		return domain.AutoUpdateStatus{}, err
 	}
 	dailyBudget := int64(settings.AutoUpdateDailyTokenBudget)
+	behavior, err := e.captureBehaviorStatus(ctx, settings.ActiveSources)
+	if err != nil {
+		return domain.AutoUpdateStatus{}, err
+	}
 	manualReserve := dailyBudget * int64(settings.AutoUpdateManualReservePct) / 100
 	automaticLimit := dailyBudget - manualReserve
 	status := domain.AutoUpdateStatus{
+		CaptureBehavior:    behavior,
 		SourceCapturePause: sourcePause,
 		Enabled:            settings.AutoUpdateEnabled, Mode: settings.AutoUpdateMode, State: "idle",
 		BudgetResetAt: localBudgetResetAt(e.store.Now()), LastManualBudgetResetAt: usage.LastManualResetAt,

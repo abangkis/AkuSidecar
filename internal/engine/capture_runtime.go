@@ -1199,6 +1199,10 @@ func (e *Engine) ownedCapturePayload(run domain.Run, leaseID string, settings do
 		return nil, err
 	}
 	payload := capturePayload(run, leaseID, settings, round, continuation, reason)
+	if behavior := e.config.Capture.Behavior.Effective(); behavior.Enabled {
+		payload["scrollFraction"] = behavior.ScrollFraction
+		payload["scrollSettleMs"] = behavior.ScrollSettleMS
+	}
 	e.captureMu.Lock()
 	driver := "browser"
 	if lease := e.captureSessions[run.SessionID]; lease != nil {

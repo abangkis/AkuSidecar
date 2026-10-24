@@ -448,10 +448,11 @@ func (p ProviderConfig) Validate(name string) error {
 }
 
 type CaptureConfig struct {
-	Profile              string `json:"profile"`
-	Visibility           string `json:"visibility"`
-	OpenMissingSource    bool   `json:"openMissingSource"`
-	MaxAcquisitionRounds int    `json:"maxAcquisitionRounds"`
+	Behavior             CaptureBehaviorConfig `json:"behavior,omitempty"`
+	Profile              string                `json:"profile"`
+	Visibility           string                `json:"visibility"`
+	OpenMissingSource    bool                  `json:"openMissingSource"`
+	MaxAcquisitionRounds int                   `json:"maxAcquisitionRounds"`
 }
 
 type PreferenceConfig struct {
@@ -629,6 +630,9 @@ func (c Config) Validate() error {
 	}
 	if c.Capture.MaxAcquisitionRounds < 1 || c.Capture.MaxAcquisitionRounds > 2 {
 		return errors.New("max acquisition rounds must be one or two")
+	}
+	if err := c.Capture.Behavior.Validate(); err != nil {
+		return err
 	}
 	for providerName, provider := range c.Reasoning.Providers {
 		for roleName, role := range map[string]ModelConfig{

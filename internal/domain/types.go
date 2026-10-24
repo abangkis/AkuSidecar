@@ -643,6 +643,7 @@ type AutoUpdateUsageLimitPause struct {
 }
 
 type AutoUpdateStatus struct {
+	CaptureBehavior                     []CaptureBehaviorStatus `json:"captureBehavior,omitempty"`
 	SourceCapturePause                  *SourceCapturePause     `json:"sourceCapturePause,omitempty"`
 	Enabled                             bool                    `json:"enabled"`
 	NativeReaderBlocked                 bool                    `json:"nativeReaderBlocked"`
