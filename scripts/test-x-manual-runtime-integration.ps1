@@ -70,9 +70,13 @@ try {
     $env:GOWORK = 'off'; $env:GOPROXY = 'off'; $env:GOSUMDB = 'off'
     $env:GOTOOLCHAIN = 'local'; $env:CGO_ENABLED = '0'; $env:GOFLAGS = ''
     Write-Output ('Offline X manual runtime integration: ' + $runId) | Tee-Object -FilePath $log
-    # Named sources exclude package TestMain and all database/native fixtures.
-    $core = @('development_native_pilot_adapter.go', 'development_native_pilot_startup.go', 'development_native_pilot_controller.go', 'development_native_pilot_broker.go', 'development_native_pilot_runtime.go', 'development_native_pilot_runtime_fixture.go', 'development_native_pilot_runtime_fixture_test.go')
-    $sources = @($core | ForEach-Object { Join-Path 'internal/engine' $_ })
+    # Actual production sources include the private Store composition's Engine
+    # methods. Explicit tests still exclude TestMain and all database/native QA.
+    $production = @(& go list -tags 'auth_session_dev auth_session_fixture' -f '{{range .GoFiles}}{{println .}}{{end}}' ./internal/engine)
+    if ($LASTEXITCODE -ne 0 -or $production.Count -eq 0) { throw 'Engine production source inventory unavailable.' }
+    $engineRoot = Join-Path $projectRoot 'internal/engine'
+    $sources = @($production | Where-Object { $_.Trim() -ne '' } | ForEach-Object { Join-Path $engineRoot $_ })
+    $sources += Join-Path $engineRoot 'development_native_pilot_runtime_fixture_test.go'
     & go test -tags 'auth_session_dev auth_session_fixture' -run '^TestManualRuntime' -count=1 -timeout=30s -v @sources 2>&1 | Tee-Object -FilePath $log -Append
     if ($LASTEXITCODE -ne 0) { throw 'Manual runtime connector regression failed.' }
     $valid = '{"grant":"synthetic-x-manual-owned","scenario":"overlap"}'

@@ -54,6 +54,8 @@ type nativePilotBroker struct {
 	prepareDone, cleanupDone chan struct{}
 	prepared                 []nativePilotPreparedRole
 	controller               *nativePilotManualController
+	// Installed only by private development Store composition. Called unlocked.
+	onStop func()
 }
 
 func (b *nativePilotBroker) noteInitial(err error, role, phase string) {
@@ -233,7 +235,11 @@ func (b *nativePilotBroker) stop(reason string) nativePilotDiagnostic {
 	}
 	prepared := b.prepared
 	b.prepared = nil
+	onStop := b.onStop
 	b.mu.Unlock()
+	if onStop != nil {
+		onStop()
+	}
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	var cleanup sync.WaitGroup
@@ -504,5 +510,12 @@ func (b *nativePilotBroker) complete(ctx context.Context, t *nativePilotManualTi
 	return b.use(ctx, func(c *nativePilotManualController) nativePilotDiagnostic { return c.complete(ctx, t, effect) })
 }
 func (b *nativePilotBroker) cancel(work string) nativePilotDiagnostic {
-	return b.use(context.Background(), func(c *nativePilotManualController) nativePilotDiagnostic { return c.cancel(work) })
+	d := b.use(context.Background(), func(c *nativePilotManualController) nativePilotDiagnostic { return c.cancel(work) })
+	b.mu.Lock()
+	onStop := b.onStop
+	b.mu.Unlock()
+	if onStop != nil && d.Reason == "work-canceled" {
+		onStop()
+	}
+	return d
 }

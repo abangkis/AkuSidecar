@@ -1262,6 +1262,12 @@ func (e *Engine) AcceptObservation(ctx context.Context, commandID, runID string,
 	if err := e.store.SaveObservation(ctx, commandID, runID, value); err != nil {
 		return domain.Run{}, err
 	}
+	return e.afterAcceptedObservation(ctx, run)
+}
+
+// afterAcceptedObservation schedules work after persistence has been confirmed.
+func (e *Engine) afterAcceptedObservation(ctx context.Context, run domain.Run) (domain.Run, error) {
+	runID := run.ID
 	session, err := e.store.GetSession(ctx, run.SessionID)
 	if err != nil {
 		return domain.Run{}, err

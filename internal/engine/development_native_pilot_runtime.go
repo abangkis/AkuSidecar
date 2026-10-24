@@ -30,6 +30,8 @@ type nativePilotRuntime struct {
 	mu                sync.Mutex
 	requests          map[string]bool
 	results           map[string]domain.Observation
+	storeLink         *nativePilotStoreRuntime
+	storeBinding      bool
 }
 
 func (*nativePilotRuntime) String() string     { return "private-native-manual-runtime" }
@@ -120,6 +122,12 @@ func (r *nativePilotRuntime) openReader(ctx context.Context, request readerbroke
 }
 
 func (r *nativePilotRuntime) capture(ctx context.Context, work string, source domain.Source) (*nativePilotManualTicket, error) {
+	r.mu.Lock()
+	storeBound := r.storeBinding
+	r.mu.Unlock()
+	if storeBound {
+		return nil, errors.New("Store runtime requires Engine capture entry")
+	}
 	if source != domain.SourceX {
 		return nil, errors.New("manual capture requires X")
 	}
@@ -151,6 +159,12 @@ func (r *nativePilotRuntime) capture(ctx context.Context, work string, source do
 }
 
 func (r *nativePilotRuntime) complete(ctx context.Context, ticket *nativePilotManualTicket, observation domain.Observation) error {
+	r.mu.Lock()
+	storeBound := r.storeBinding
+	r.mu.Unlock()
+	if storeBound {
+		return errors.New("Store runtime requires guarded result commit")
+	}
 	if observation.Source != domain.SourceX {
 		return errors.New("manual result source rejected")
 	}

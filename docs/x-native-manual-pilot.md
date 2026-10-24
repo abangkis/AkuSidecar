@@ -37,6 +37,15 @@ fencing with synthetic-only issuance and the schema-30 compatibility barrier;
 it does not activate this connector against the user's database.
 The existing synthetic single-profile and renewal fixtures keep their contracts.
 
+The next private development increment connects the validated startup vector to
+Store permits and the actual Engine claim/result path. Its execution tests use
+invented owners and evidence with fresh synthetic databases. The trusted Go
+issuer is not registered in main; public QA reports and offline vectors cannot
+mint native Store authority. See the
+[Engine/Store composition](x-manual-pilot-store-contract.md#private-engine-and-startup-composition)
+and `scripts/test-manual-pilot-engine-store.ps1`. No native transfer or user-runtime
+activation is included in this increment.
+
 Run `scripts/test-x-manual-runtime-integration.ps1` for the accountless
 actual-main gate/scenario checks and Coordinator regressions. Fixtures include
 active capture overlap, duplicate completion, expiry, opt-out, parent loss,

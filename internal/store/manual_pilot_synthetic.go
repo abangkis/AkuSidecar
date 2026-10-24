@@ -30,6 +30,10 @@ func (s *Store) IssueSyntheticManualPilot(ctx context.Context, r ManualPilotSynt
 	if r.StartedAt.IsZero() || r.StartedAt.After(s.Now()) || !s.Now().Before(r.StartedAt.Add(60*time.Second)) {
 		return nil, errManualPilot
 	}
+	return s.issueDevelopmentManualPilot(ctx, r.SessionID, r.RunID, r.SyntheticOwnerRef, r.SyntheticPairRef, domain.NewID("manual-attempt"), 1, r.StartedAt.Add(60*time.Second))
+}
+
+func (s *Store) issueDevelopmentManualPilot(ctx context.Context, sessionID, runID, owner, pair, attempt string, generation uint64, deadline time.Time) (*ManualPilotPermit, error) {
 	s.manualPilotMu.Lock()
 	defer s.manualPilotMu.Unlock()
 	tx, e := s.db.BeginTx(ctx, nil)
@@ -44,13 +48,13 @@ func (s *Store) IssueSyntheticManualPilot(ctx context.Context, r ManualPilotSynt
 	if n != 0 {
 		return nil, errors.New("existing account checkpoint is incompatible with manual pilot; no migration or relabeling performed")
 	}
-	if e = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM meta WHERE key=?`, manualPilotSessionPrefix+r.SessionID).Scan(&n); e != nil {
+	if e = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM meta WHERE key=?`, manualPilotSessionPrefix+sessionID).Scan(&n); e != nil {
 		return nil, e
 	}
 	if n != 0 {
 		return nil, errManualPilot
 	}
-	if e = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM bridge_commands c JOIN runs r ON r.id=c.run_id WHERE r.session_id=? AND c.status='claimed'`, r.SessionID).Scan(&n); e != nil {
+	if e = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM bridge_commands c JOIN runs r ON r.id=c.run_id WHERE r.session_id=? AND c.status='claimed'`, sessionID).Scan(&n); e != nil {
 		return nil, e
 	}
 	if n != 0 {
@@ -65,29 +69,29 @@ func (s *Store) IssueSyntheticManualPilot(ctx context.Context, r ManualPilotSynt
 	if e != nil {
 		return nil, e
 	}
-	v := manualPilotState{SessionID: r.SessionID, RunID: r.RunID, Source: domain.SourceX, Incarnation: incarnation, Epoch: domain.NewID("manual-epoch"), Attempt: domain.NewID("manual-attempt"), OwnerRef: r.SyntheticOwnerRef, PairRef: r.SyntheticPairRef, OwnerGeneration: 1, Revision: 1}
+	v := manualPilotState{SessionID: sessionID, RunID: runID, Source: domain.SourceX, Incarnation: incarnation, Epoch: domain.NewID("manual-epoch"), Attempt: attempt, OwnerRef: owner, PairRef: pair, OwnerGeneration: generation, Revision: 1}
 	raw, e := json.Marshal(v)
 	if e != nil {
 		return nil, e
 	}
-	if _, e = tx.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES(?,?)`, manualPilotSessionPrefix+r.SessionID, string(raw)); e != nil {
+	if _, e = tx.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES(?,?)`, manualPilotSessionPrefix+sessionID, string(raw)); e != nil {
 		return nil, e
 	}
-	p := &ManualPilotPermit{store: s, state: v, deadline: r.StartedAt.Add(60 * time.Second)}
+	p := &ManualPilotPermit{store: s, state: v, deadline: deadline}
 	if s.manualPilots == nil {
 		s.manualPilots = make(map[string]*ManualPilotPermit)
 	}
-	s.manualPilots[r.SessionID] = p
-	s.manualPilotClosures.Store(r.SessionID, p)
+	s.manualPilots[sessionID] = p
+	s.manualPilotClosures.Store(sessionID, p)
 	if e = s.liveManualPilot(ctx, tx, p); e != nil {
-		delete(s.manualPilots, r.SessionID)
-		s.manualPilotClosures.Delete(r.SessionID)
+		delete(s.manualPilots, sessionID)
+		s.manualPilotClosures.Delete(sessionID)
 		return nil, e
 	}
 	if e = tx.Commit(); e != nil {
 		p.revoked.Store(true)
-		delete(s.manualPilots, r.SessionID)
-		s.manualPilotClosures.Delete(r.SessionID)
+		delete(s.manualPilots, sessionID)
+		s.manualPilotClosures.Delete(sessionID)
 		return nil, e
 	}
 	return p, nil
