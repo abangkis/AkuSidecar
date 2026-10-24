@@ -163,6 +163,35 @@ test('capture counts only observed scroll movement and records no_movement', asy
   assert.equal(observation.coverage.frontier.hasMoreCandidateSignal, true);
 });
 
+test('round 2 challenge stops before restoring scroll and keeps only a safe category', async () => {
+  let challenge = false, scrollActions = 0;
+  const page = {
+    url: 'about:blank',
+    async navigate(url) { this.url = url; return {}; },
+    async send() { return {}; },
+    async evaluate(expression) {
+      if (expression === 'location.href') return this.url;
+      if (expression.includes('detectXAccessChallenge(document, location)')) {
+        return challenge ? { code: 'challenge_required', category: 'cloudflare', message: 'untrusted text' } : null;
+      }
+      if (expression.includes('window.scrollTo') || expression.includes('window.scrollBy')) { scrollActions++; return; }
+      if (expression.includes('XHeadlessPoC.collect()')) return JSON.stringify({
+        posts: [{ id: '1890000000000000000', permalink: 'https://x.com/example/status/1890000000000000000', author: 'Example', text: 'Fixture post' }],
+        scroll: { y: 0, viewportHeight: 900, height: 1800 }, documentReady: true,
+      });
+    },
+  };
+  const assets = { x: ['runtime', 'adapter', 'extractor'].map((relative, i) => ({ relative, sha256: String(i).repeat(64), execute: false })) };
+  const first = await capture(page, assets, 'x', { scrolls: 0, sourceHydrationTimeoutMs: 1000, captureTimeoutMs: 3000 });
+  const actionsBeforeChallenge = scrollActions;
+  challenge = true;
+  await assert.rejects(capture(page, assets, 'x', { acquisitionRound: 2, scrolls: 0,
+    continuation: { startScrollY: first.coverage.frontier.scrollY, anchorKeys: first.coverage.frontier.anchorKeys, settleMs: 0 },
+    sourceHydrationTimeoutMs: 1000, captureTimeoutMs: 3000 }),
+  { code: 'challenge_required', challengeCategory: 'cloudflare', message: 'source presented an access challenge' });
+  assert.equal(scrollActions, actionsBeforeChallenge);
+});
+
 test('capture leaves scroll count and continuation unknown when the post-scroll position is unavailable', async () => {
   let collectCount = 0;
   const page = {

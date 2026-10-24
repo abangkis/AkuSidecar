@@ -279,6 +279,12 @@ test('maps shared helper stale-control and unsupported errors to bounded outcome
 });
 
 test('propagates login and challenge states instead of admitting old feed evidence', async t => {
+  await t.test('challenge takes priority when a login prompt is also present', async () => {
+    const { page, state } = makePage();
+    await assert.rejects(invoke({ page, initial: snapshot([], { loginRequired: true, challengeDetected: true }) }),
+      { code: 'challenge_required' });
+    assert.equal(state.probeCalls, 0);
+  });
   await t.test('login is already required on the initial snapshot', async () => {
     const { page, state } = makePage();
     await assert.rejects(invoke({ page, initial: snapshot([post('10001', 'Original')], { loginRequired: true }) }),

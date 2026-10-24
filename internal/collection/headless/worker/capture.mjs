@@ -151,6 +151,10 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
     const actualUrl = await page.evaluate('location.href', timeLeft(deadline));
     frontierUrlMismatch = pageKey(source, actualUrl) !== state.pageUrl;
     resumeScrollY = options.continuation.startScrollY;
+    if (source === 'x') {
+      await inject(page, assets, deadline);
+      await assertNoXAccessChallenge(page, deadline);
+    }
     await page.evaluate(`globalThis.XHeadlessPoC?.scrollSourceTo ? globalThis.XHeadlessPoC.scrollSourceTo(${resumeScrollY}) : window.scrollTo({top:${resumeScrollY},behavior:'instant'})`, timeLeft(deadline));
     await sleep(Math.min(options.continuation.settleMs, timeLeft(deadline)));
   }
@@ -281,6 +285,7 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
       let noMovement = false;
       let movementUnknown = false;
       if (scroll > 0) {
+        if (source === 'x') await assertNoXAccessChallenge(page, deadline);
         const previousScrollY = Number.isFinite(snapshot?.scroll?.y) ? Math.trunc(snapshot.scroll.y) : null;
         await page.evaluate(`globalThis.XHeadlessPoC?.scrollSourceBy ? globalThis.XHeadlessPoC.scrollSourceBy(${options.scrollFraction}) : window.scrollBy(0,Math.round(innerHeight*${options.scrollFraction}))`, timeLeft(deadline));
         await sleep(Math.min(options.scrollSettleMs, timeLeft(deadline)));
@@ -499,10 +504,16 @@ async function resolveSnapshotStructuredMedia(page, source, snapshot, assets, de
 }
 
 function sourceStateError(snapshot) {
+  if (snapshot.challengeDetected === true) return Object.assign(captureError('challenge_required', 'source presented an access challenge'),
+    { challengeCategory: ['cloudflare','x_human_verification'].includes(snapshot.challengeCategory) ? snapshot.challengeCategory : undefined });
   if (snapshot.loginRequired === true) return captureError('login_required', 'source requires an authenticated login');
-  if (snapshot.challengeDetected === true) return captureError('challenge_required', 'source presented an access challenge');
   if (snapshot.sourceUnavailable) return captureError('source_unavailable', 'source reports that content is unavailable');
   return null;
+}
+
+async function assertNoXAccessChallenge(page, deadline) {
+  const challenge = await page.evaluate('globalThis.AkuCapturePrimitives?.detectXAccessChallenge(document, location) || null', timeLeft(deadline));
+  if (challenge?.code === 'challenge_required') throw sourceStateError({ challengeDetected: true, challengeCategory: challenge.category });
 }
 
 function ensureTime(deadline) {

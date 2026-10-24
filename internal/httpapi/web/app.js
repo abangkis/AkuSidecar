@@ -1,4 +1,5 @@
 import { createDirtyStateTracker } from "./settings-dirty-state.js";
+import { renderSourceCapturePause, confirmSourceCaptureRecovery } from "./source-capture-pause.js";
 import { collectionModeState, browserCollectorProbeAllowed } from "./collection-mode.js";
 import { createNativePostRouter } from "./native-post-routing.js";
 import { nativePostWaitReason, syncNativePostAvailability } from "./native-post-availability.js";
@@ -484,6 +485,7 @@ $("#processing-settings-button").addEventListener("click", () => setView("settin
 $("#auto-update-timeline-settings").addEventListener("click", handleAutoUpdateTimelineAction);
 $("#reset-auto-update-budget").addEventListener("click", resetAutoUpdateBudget);
 $("#confirm-codex-usage-restored").addEventListener("click", confirmCodexUsageRestored);
+$("#confirm-x-capture-recovery").addEventListener("click", confirmXCaptureRecovery);
 $("#prepare-batch-now").addEventListener("click", prepareBatchNow);
 $("#onboarding-learning-previous").addEventListener("click", () => moveOnboardingLearning(-1, true));
 $("#onboarding-learning-next").addEventListener("click", () => moveOnboardingLearning(1, true));
@@ -3215,7 +3217,7 @@ function renderSourceSessionReadiness() {
     if (!status || !button) continue;
     setSettingsClass(status, "source-session-status" +
       (observation?.state === "ready" ? " source-session-ready" :
-       ["login_required", "permission_required"].includes(observation?.state) ? " source-session-warning" : ""));
+       ["login_required", "permission_required", "challenge_required"].includes(observation?.state) ? " source-session-warning" : ""));
     if (state.sourceSessionProbeInFlight && !observation) {
       setSettingsText(status, "Session: checking existing tabs");
       setSettingsText(button, "Open source");
@@ -3226,6 +3228,7 @@ function renderSourceSessionReadiness() {
     const labels = {
       ready: "Session: feed available",
       login_required: "Session: sign-in required",
+      challenge_required: "Session: human verification required",
       permission_required: "Access: permission required",
       not_observed: "Session: source not open",
       loading: "Session: loading",
@@ -3270,6 +3273,7 @@ function renderOnboardingSourceReadiness() {
     const labels = {
       ready: "Session: feed available",
       login_required: "Session: sign-in required",
+      challenge_required: "Session: human verification required",
       permission_required: "Session: permission required",
       not_observed: "Session: source not open",
       loading: "Session: loading",
@@ -3278,7 +3282,7 @@ function renderOnboardingSourceReadiness() {
     };
     setSettingsClass(sessionStatus, "source-session-status" +
       (stateValue === "ready" ? " source-session-ready" :
-       ["login_required", "permission_required"].includes(stateValue) ? " source-session-warning" : ""));
+       ["login_required", "permission_required", "challenge_required"].includes(stateValue) ? " source-session-warning" : ""));
     setSettingsText(sessionStatus, labels[stateValue] ?? labels.unknown);
     sessionStatus.title = observation?.detail || "";
     setSettingsText(button, !access?.permissionGranted || stateValue === "permission_required"
@@ -3473,6 +3477,8 @@ function renderSettings(settings) {
 }
 
 function renderAutoUpdateStatus(status) {
+	const capturePause = status?.sourceCapturePause;
+	renderSourceCapturePause({ panel: $("#x-capture-pause"), detail: $("#x-capture-pause-detail") }, capturePause);
   renderNativeReaderNotice(status);
   const detail = $("#auto-update-status");
   const queue = $("#auto-update-queue-status");
@@ -3722,6 +3728,20 @@ async function resetAutoUpdateBudget() {
   } finally {
     button.disabled = Boolean(state.session);
   }
+}
+
+async function confirmXCaptureRecovery() {
+  const pause = state.bootstrap?.autoUpdate?.sourceCapturePause;
+  if (!pause) return;
+  if (!window.confirm("Have you completed verification manually in X? This allows another capture attempt; it does not verify X automatically or turn Auto Update on.")) return;
+  const button = $("#confirm-x-capture-recovery");
+  button.disabled = true;
+  try {
+    const { autoUpdate } = await confirmSourceCaptureRecovery(api, pause, true);
+    state.bootstrap.autoUpdate = autoUpdate;
+    renderAutoUpdateStatus(autoUpdate);
+  } catch (error) { showError(error); }
+  finally { button.disabled = false; }
 }
 
 async function confirmCodexUsageRestored() {

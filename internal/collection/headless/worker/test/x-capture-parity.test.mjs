@@ -8,7 +8,8 @@ const shared = await readFile(new URL('../../../../../../AkuBridge/capture-primi
 const extractor = await readFile(new URL('../vendor/x-extract.js', import.meta.url), 'utf8');
 const quoteResolver = await readFile(new URL('../vendor/x-quote-identity.js', import.meta.url), 'utf8');
 
-function fixture({ detail = true, replaceRoute = false } = {}) {
+function fixture({ detail = true, replaceRoute = false, pageNodes = [], challengeDom = false,
+  loginRequired = false, emptyFeed = false } = {}) {
   const permalink = 'https://x.com/owner/status/2106867448746021278';
   const location = { href: detail ? permalink : 'https://x.com/home', hostname: 'x.com', pathname: detail ? '/owner/status/2106867448746021278' : '/home' };
   const textNode = text => ({ nodeType: 1, tagName: 'DIV', childNodes: [{ nodeType: 3, nodeValue: text }], innerText: text,
@@ -22,16 +23,30 @@ function fixture({ detail = true, replaceRoute = false } = {}) {
   const container = { querySelector: selector => selector === 'text' ? root : null,
     querySelectorAll: selector => selector === 'text' ? [root] : selector === 'time' ? [time] : selector === 'more' && more ? [button] : [],
     getBoundingClientRect: () => ({ top: 0, bottom: 200, height: 200 }) };
-  const adapter = { version: 'fixture', discoverCandidates: () => ({ candidates: [container] }), findQuotedRoot: () => null,
+  let discoveries = 0;
+  const adapter = { version: 'fixture', discoverCandidates: () => {
+    discoveries++;
+    return { candidates: emptyFeed ? [] : [container] };
+  }, findQuotedRoot: () => null,
     findAuthor: () => 'Owner', findAvatar: () => null, contentRootSelector: 'text',
     extractText: (_, helpers) => helpers.structuredText(root), extractSemantics: () => ({}), extractQuotedPost: () => null,
     contentExpansion: { buttonSelector: 'more', attempts: 2, intervalMs: 1, restorable: false },
-    imageSelector: 'img', mediaHosts: [], mediaAcquisition: { detectExpectedKinds: () => [] }, loginRequired: () => false };
+    imageSelector: 'img', mediaHosts: [], mediaAcquisition: { detectExpectedKinds: () => [] }, loginRequired: () => loginRequired };
+  const pageElement = (tagName, attributes = {}, children = []) => ({
+    nodeType: 1, tagName: tagName.toUpperCase(), childNodes: children,
+    getAttribute: name => attributes[name] ?? null,
+    matches: selector => selector === 'article[data-testid="tweet"]'
+      ? tagName.toLowerCase() === 'article' && attributes['data-testid'] === 'tweet'
+      : selector === '[data-testid="tweetText"]' ? attributes['data-testid'] === 'tweetText'
+      : selector === '[data-testid="quoteTweet"]' ? attributes['data-testid'] === 'quoteTweet' : false,
+  });
+  const body = pageElement('body', {}, pageNodes);
   const context = vm.createContext({ URL, setTimeout, location, AkuSourceAdapters: { get: () => adapter },
     innerHeight: 900, innerWidth: 1200, scrollY: 0,
-    document: { querySelector: () => null, body: { innerText: '' }, readyState: 'complete', visibilityState: 'visible' } });
+    document: { querySelector: selector => challengeDom && selector === '#challenge-running' ? {} : null,
+      body, readyState: 'complete', visibilityState: 'visible', title: 'Fixture', scrollingElement: { scrollHeight: 1000 } } });
   vm.runInContext(shared + '\n' + quoteResolver + '\n' + extractor, context);
-  return { context, clicks: () => clicks };
+  return { context, clicks: () => clicks, discoveries: () => discoveries };
 }
 
 test('headless uses shared expansion with replacement DOM and preserves feed click policy', async () => {
@@ -63,4 +78,54 @@ test('Node recovery consumes the identical shared asset and fails closed when mi
   assert.equal(primitives.evaluateTextReplacement({ originalText: 'short', recoveredText: 'longer text', identityMatches: false, resolved: true }), false);
   assert.equal(primitives.canonicalizeXPermalink('https://user@x.com/a/status/12345'), null);
   assert.throws(() => capturePrimitivesFor([]), /asset is required/);
+});
+
+test('headless X collector stops before candidate discovery or expansion on either challenge screen', async () => {
+  const xPage = fixture({ pageNodes: [
+    { nodeType: 3, nodeValue: "Let's confirm you are a human. Open the X app on your phone to continue." },
+  ], loginRequired: true });
+  const xResult = await xPage.context.XHeadlessPoC.collect();
+  assert.equal(xResult.challengeDetected, true);
+  assert.equal(xResult.challengeCategory, 'x_human_verification');
+  assert.equal(xResult.loginRequired, false);
+  assert.equal(xPage.discoveries(), 0);
+  assert.equal(xPage.clicks(), 0);
+
+  const cloudflare = fixture({ challengeDom: true });
+  const cfResult = await cloudflare.context.XHeadlessPoC.collect();
+  assert.equal(cfResult.challengeDetected, true);
+  assert.equal(cfResult.challengeCategory, 'cloudflare');
+  assert.equal(cloudflare.discoveries(), 0);
+  assert.equal(cloudflare.clicks(), 0);
+});
+
+test('quoted tweet challenge phrases do not classify the page as an access challenge', async () => {
+  const quotedPost = {
+    nodeType: 1, tagName: 'ARTICLE', childNodes: [{
+      nodeType: 1, tagName: 'DIV', childNodes: [{
+        nodeType: 3, nodeValue: "Let's confirm you are a human. Open the X app on your phone to continue.",
+      }],
+      getAttribute: name => name === 'data-testid' ? 'quoteTweet' : null,
+      matches: selector => selector === '[data-testid="quoteTweet"]',
+    }],
+    getAttribute: name => name === 'data-testid' ? 'tweet' : null,
+    matches: selector => selector === 'article[data-testid="tweet"]',
+  };
+  const post = fixture({ pageNodes: [quotedPost] });
+  const snapshot = await post.context.XHeadlessPoC.collect();
+  assert.equal(snapshot.challengeDetected, false);
+  assert.equal(snapshot.posts.length, 1);
+  assert.ok(post.discoveries() > 0);
+});
+
+test('login-only X page remains a login state and is not promoted to a challenge', async () => {
+  const page = fixture({
+    pageNodes: [{ nodeType: 1, tagName: 'MAIN', childNodes: [{ nodeType: 3, nodeValue: 'Sign in to X. Email or username. Password.' }],
+      getAttribute: () => null, matches: () => false }],
+    loginRequired: true,
+    emptyFeed: true,
+  });
+  const snapshot = await page.context.XHeadlessPoC.collect();
+  assert.equal(snapshot.challengeDetected, false);
+  assert.equal(snapshot.loginRequired, true);
 });

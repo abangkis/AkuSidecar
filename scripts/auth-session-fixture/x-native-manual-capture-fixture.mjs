@@ -27,13 +27,15 @@ export function syntheticXDOM() {
 }
 export function syntheticCaptureTransport({hold,parserThrow=false,cookie=false,pendingExtra=false,lateCookie=false,websocket=false}={}) {
   const dom=syntheticXDOM(),listeners=new Set();let closed=false,registered=false;
+  let targetCreatedResolve;
+  const targetCreated=new Promise(resolve=>{targetCreatedResolve=resolve;});
   return {
-    dom,events:[],
+    dom,events:[],targetCreated,
     subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},
     get closed(){return closed;},
     async command(method,params={},session){
       this.events.push(method);
-      if(method==='Target.createTarget')return{targetId:'capture-target'};
+      if(method==='Target.createTarget'){targetCreatedResolve();return{targetId:'capture-target'};}
       if(method==='Target.attachToTarget')return{sessionId:'capture-session'};
       if(method==='Target.closeTarget'){closed=true;if(lateCookie)for(const listener of listeners)listener({sessionId:'capture-session',method:'Network.responseReceivedExtraInfo',params:{requestId:'feed-request',statusCode:200,headers:{'set-cookie':'ct0=late-synthetic; Path=/'}}});return{success:true};}
       if(method==='Page.getFrameTree')return{frameTree:{frame:{id:'capture-frame',loaderId:'capture-loader'}}};

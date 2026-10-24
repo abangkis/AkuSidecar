@@ -67,6 +67,10 @@ func (e *Engine) RecordUIAccess(ctx context.Context) {
 }
 
 func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus, error) {
+	sourcePause, err := e.store.SourceCapturePause(ctx)
+	if err != nil {
+		return domain.AutoUpdateStatus{}, err
+	}
 	settings, err := e.store.GetSettings(ctx)
 	if err != nil {
 		return domain.AutoUpdateStatus{}, err
@@ -83,7 +87,8 @@ func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus,
 	manualReserve := dailyBudget * int64(settings.AutoUpdateManualReservePct) / 100
 	automaticLimit := dailyBudget - manualReserve
 	status := domain.AutoUpdateStatus{
-		Enabled: settings.AutoUpdateEnabled, Mode: settings.AutoUpdateMode, State: "idle",
+		SourceCapturePause: sourcePause,
+		Enabled:            settings.AutoUpdateEnabled, Mode: settings.AutoUpdateMode, State: "idle",
 		BudgetResetAt: localBudgetResetAt(e.store.Now()), LastManualBudgetResetAt: usage.LastManualResetAt,
 		DailyTokenBudget: dailyBudget, DailyTokensUsed: usage.ActualTotal,
 		QuotaTokensUsed: usage.QuotaTotal, DailyTokensRemaining: maxNonNegative(dailyBudget - usage.QuotaTotal),

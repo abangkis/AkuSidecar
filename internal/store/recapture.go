@@ -502,6 +502,9 @@ func (s *Store) ClaimMediaRecaptureForCollector(ctx context.Context, id, bridgeI
 	if err != nil {
 		return domain.MediaRecapture{}, err
 	}
+	if err := requireSourceCaptureAllowed(ctx, tx, job.Source); err != nil {
+		return domain.MediaRecapture{}, err
+	}
 	var sessionID sql.NullString
 	if err := tx.QueryRowContext(ctx, `SELECT session_id FROM timeline_items WHERE id=?`, job.TimelineID).Scan(&sessionID); err != nil {
 		return domain.MediaRecapture{}, errors.New("media recapture session lookup failed")
@@ -571,6 +574,9 @@ func (s *Store) completeMediaRecapture(ctx context.Context, id string, observati
 	defer tx.Rollback()
 	job, err := mediaRecaptureByID(ctx, tx, id)
 	if err != nil {
+		return domain.MediaRecapture{}, err
+	}
+	if err := requireSourceCaptureAllowed(ctx, tx, job.Source); err != nil {
 		return domain.MediaRecapture{}, err
 	}
 	if job.Status != "claimed" {
@@ -702,7 +708,12 @@ func (s *Store) completeMediaRecapture(ctx context.Context, id string, observati
 }
 
 func (s *Store) FailMediaRecapture(ctx context.Context, id string, failure domain.Failure) (domain.MediaRecapture, error) {
-	job, err := s.MediaRecapture(ctx, id)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.MediaRecapture{}, err
+	}
+	defer tx.Rollback()
+	job, err := mediaRecaptureByID(ctx, tx, id)
 	if err != nil {
 		return domain.MediaRecapture{}, err
 	}
@@ -712,9 +723,20 @@ func (s *Store) FailMediaRecapture(ctx context.Context, id string, failure domai
 	if failure.Stage == "" {
 		failure.Stage = "media_recapture"
 	}
+	if job.Source == domain.SourceX && domain.IsAccessChallenge(failure.Code) {
+		failure = domain.SafeXChallenge(failure)
+	}
 	raw, _ := json.Marshal(failure)
 	now := domain.Now()
-	if _, err := s.db.ExecContext(ctx, `UPDATE media_recaptures SET status='failed',error_json=?,completed_at=? WHERE id=? AND status IN ('queued','claimed')`, string(raw), now, id); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE media_recaptures SET status='failed',error_json=?,completed_at=? WHERE id=? AND status IN ('queued','claimed')`, string(raw), now, id); err != nil {
+		return domain.MediaRecapture{}, err
+	}
+	if job.Source == domain.SourceX && domain.IsAccessChallenge(failure.Code) {
+		if err := s.pauseXCaptureTx(ctx, tx, "", domain.XChallengeCategory(failure)); err != nil {
+			return domain.MediaRecapture{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		return domain.MediaRecapture{}, err
 	}
 	job.Status = "failed"

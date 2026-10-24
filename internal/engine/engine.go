@@ -25,7 +25,7 @@ import (
 
 const (
 	ExpectedBridgeVersion       = "0.9.2"
-	ExpectedBridgeRevision      = "source-adapters-v116"
+	ExpectedBridgeRevision      = "source-adapters-v117"
 	ExpectedBridgeID            = "aku-bridge-chrome-mv3-v0"
 	BridgeProtocolMajor         = 2
 	BridgeProtocolMinor         = 0
@@ -93,6 +93,8 @@ type Engine struct {
 	topics                                   livingtopics.Resolver
 	autoCancel                               context.CancelFunc
 	autoWake                                 chan struct{}
+	captureBehaviorMu                        sync.Mutex
+	captureWork                              map[string]context.CancelFunc
 }
 
 type Logger interface{ Printf(string, ...any) }
@@ -652,6 +654,10 @@ func (e *Engine) startSession(ctx context.Context, intent string, policy domain.
 		return domain.Session{}, errors.New("collection runtime does not match the saved collection mode")
 	}
 	validSources := e.grantedActiveSources(settings)
+	validSources, err = e.captureBehaviorSources(ctx, validSources)
+	if err != nil {
+		return domain.Session{}, err
+	}
 	if len(validSources) == 0 {
 		return domain.Session{}, noGrantedActiveSourceError()
 	}
@@ -2287,7 +2293,16 @@ func (e *Engine) FailCommand(ctx context.Context, commandID, runID string, failu
 	if failure.Stage == "" {
 		failure.Stage = "capture"
 	}
+	e.captureBehaviorMu.Lock()
 	fallback, err := e.store.FailCommand(ctx, commandID, runID, failure)
+	if err == nil && domain.IsAccessChallenge(failure.Code) {
+		if run, loadErr := e.store.GetRun(ctx, runID); loadErr == nil && run.Source == domain.SourceX {
+			for _, cancel := range e.captureWork {
+				cancel()
+			}
+		}
+	}
+	e.captureBehaviorMu.Unlock()
 	if err != nil {
 		return domain.Run{}, err
 	}
@@ -2634,7 +2649,15 @@ func (e *Engine) FailMediaRecapture(ctx context.Context, id string, failure doma
 	if err := e.validateRecaptureOwner(ctx, id); err != nil {
 		return domain.MediaRecapture{}, err
 	}
-	return e.store.FailMediaRecapture(ctx, id, failure)
+	e.captureBehaviorMu.Lock()
+	defer e.captureBehaviorMu.Unlock()
+	job, err := e.store.FailMediaRecapture(ctx, id, failure)
+	if err == nil && job.Source == domain.SourceX && domain.IsAccessChallenge(failure.Code) {
+		for _, cancel := range e.captureWork {
+			cancel()
+		}
+	}
+	return job, err
 }
 
 func (e *Engine) ApplyPassiveXMediaEvidence(ctx context.Context, timelineID, bridgeID string, value domain.PassiveXMediaEvidence) (domain.MediaRecapture, bool, error) {

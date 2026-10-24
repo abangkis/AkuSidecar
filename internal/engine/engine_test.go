@@ -1460,7 +1460,7 @@ func TestBridgeCompatibilityUsesProtocolAndRequiredCapabilitySubsets(t *testing.
 	value.ExtensionVersion = "0.8.1"
 	value.RuntimeRevision = "source-adapters-v106"
 	value.BuildID = "aku-bridge-0.8.1-source-adapters-v108"
-	value.AdapterVersions["x"] = "x-dom-v23"
+	value.AdapterVersions["x"] = domain.ExpectedAdapterVersions()["x"] + "-future"
 	value.MediaEvidenceAdapterVersions["x"] = "x-response-evidence-v3"
 	value.Actions = append(value.Actions, "future_optional_action")
 	value.UpdateCapabilities = append(value.UpdateCapabilities, "future_update_capability")

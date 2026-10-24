@@ -1112,6 +1112,9 @@ func (s *Store) StartRun(ctx context.Context, runID string, payload map[string]a
 		return domain.BridgeCommand{}, err
 	}
 	defer tx.Rollback()
+	if err := requireSourceCaptureAllowed(ctx, tx, run.Source); err != nil {
+		return domain.BridgeCommand{}, err
+	}
 	if _, err = tx.ExecContext(ctx, `UPDATE sessions SET status='running',active_source=?,started_at=COALESCE(started_at,?) WHERE id=?`, run.Source, now, run.SessionID); err != nil {
 		return domain.BridgeCommand{}, err
 	}
@@ -1137,6 +1140,13 @@ func (s *Store) QueueFollowUp(ctx context.Context, runID string, payload map[str
 		return domain.BridgeCommand{}, err
 	}
 	defer tx.Rollback()
+	var source domain.Source
+	if err := tx.QueryRowContext(ctx, `SELECT source FROM runs WHERE id=?`, runID).Scan(&source); err != nil {
+		return domain.BridgeCommand{}, err
+	}
+	if err := requireSourceCaptureAllowed(ctx, tx, source); err != nil {
+		return domain.BridgeCommand{}, err
+	}
 	if _, err = tx.ExecContext(ctx, `UPDATE runs SET status='waiting_for_bridge',stage='follow_up_capture' WHERE id=? AND status='reasoning'`, runID); err != nil {
 		return domain.BridgeCommand{}, err
 	}
@@ -1165,6 +1175,13 @@ func (s *Store) claimCommand(ctx context.Context, runID, bridgeID, collector str
 		return nil, err
 	}
 	defer tx.Rollback()
+	var captureSource domain.Source
+	if err := tx.QueryRowContext(ctx, `SELECT source FROM runs WHERE id=?`, runID).Scan(&captureSource); err != nil {
+		return nil, err
+	}
+	if err := requireSourceCaptureAllowed(ctx, tx, captureSource); err != nil {
+		return nil, err
+	}
 	gate, err := s.captureCommandClaimGate(ctx, tx, runID)
 	if err != nil || gate.paused || gate.protected && !gate.allowed {
 		return nil, err
@@ -1442,6 +1459,13 @@ func (s *Store) SaveObservation(ctx context.Context, commandID, runID string, ob
 }
 
 func (s *Store) saveObservationTx(ctx context.Context, tx *sql.Tx, commandID, runID string, observation domain.Observation, now string) error {
+	var captureSource domain.Source
+	if err := tx.QueryRowContext(ctx, `SELECT source FROM runs WHERE id=?`, runID).Scan(&captureSource); err != nil {
+		return err
+	}
+	if err := requireSourceCaptureAllowed(ctx, tx, captureSource); err != nil {
+		return err
+	}
 	var err error
 	var expectedRun string
 	var status string
@@ -1589,7 +1613,6 @@ func (s *Store) ResumableReasoningRunIDs(ctx context.Context) ([]string, error) 
 }
 
 func (s *Store) FailCommand(ctx context.Context, commandID, runID string, failure domain.Failure) (bool, error) {
-	raw, _ := json.Marshal(failure)
 	now := domain.Now()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -1604,6 +1627,14 @@ func (s *Store) FailCommand(ctx context.Context, commandID, runID string, failur
 	if err = tx.QueryRowContext(ctx, `SELECT r.stage,(SELECT COUNT(*) FROM observations o WHERE o.run_id=r.id) FROM runs r JOIN bridge_commands c ON c.run_id=r.id WHERE r.id=? AND c.id=?`, runID, commandID).Scan(&runStage, &observationCount); err != nil {
 		return false, err
 	}
+	var source domain.Source
+	if err := tx.QueryRowContext(ctx, `SELECT source FROM runs WHERE id=?`, runID).Scan(&source); err != nil {
+		return false, err
+	}
+	if source == domain.SourceX && domain.IsAccessChallenge(failure.Code) {
+		failure = domain.SafeXChallenge(failure)
+	}
+	raw, _ := json.Marshal(failure)
 	result, err := tx.ExecContext(ctx, `UPDATE bridge_commands SET status='failed',completed_at=?,error_json=? WHERE id=? AND run_id=? AND status='claimed'`, now, string(raw), commandID, runID)
 	if err != nil {
 		return false, err
@@ -1611,6 +1642,13 @@ func (s *Store) FailCommand(ctx context.Context, commandID, runID string, failur
 	count, _ := result.RowsAffected()
 	if count != 1 {
 		return false, errors.New("bridge command is not active")
+	}
+	if domain.IsAccessChallenge(failure.Code) {
+		if source == domain.SourceX {
+			if err := s.pauseXCaptureTx(ctx, tx, runID, domain.XChallengeCategory(failure)); err != nil {
+				return false, err
+			}
+		}
 	}
 	if runStage == "follow_up_capture" && observationCount > 0 {
 		if _, err = tx.ExecContext(ctx, `UPDATE runs SET status='reasoning',stage='reasoning' WHERE id=?`, runID); err != nil {

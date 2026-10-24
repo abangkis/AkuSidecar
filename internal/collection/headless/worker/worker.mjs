@@ -316,6 +316,8 @@ export async function runWorker({
       const safe = {
         code: error?.code || 'worker_error',
         message: String(error?.message || 'worker request failed').slice(0, 500),
+        ...(error?.code === 'challenge_required' && ['cloudflare','x_human_verification'].includes(error.challengeCategory)
+          ? { challengeCategory: error.challengeCategory } : {}),
         ...(['empty_unverified','invalid_observation'].includes(error?.code) && error.diagnostics ? {diagnostics:error.diagnostics} : {}),
       };
       await write(responseFor(id, false, undefined, safe));

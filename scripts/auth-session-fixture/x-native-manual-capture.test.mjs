@@ -27,9 +27,9 @@ test('wrong scope, arbitrary scripts, expired deadline, parser failure, and cook
     await assert.rejects(captureNativeXTarget({request:request(),bridgePath,command:transport.command.bind(transport),subscribe:transport.subscribe.bind(transport),browserContextId:'owned'}));assert.equal(transport.closed,true);
   }
 });
-test('cancellation closes only the capture target and cannot deliver a late result',async()=>{
+test('cancellation closes only the capture target and cannot deliver a late result',{timeout:5000},async()=>{
   let release;const hold=new Promise(r=>release=r),transport=syntheticCaptureTransport({hold});const port=await syntheticCapturePort(pins,transport,bridgePath);
   const capturing=port.execute({id:20,op:'manual_capture',owner:1,role:'collector',handle:'collector-handle',request:request()});
-  await new Promise(r=>setTimeout(r,30));await port.execute({id:21,op:'manual_capture_cancel',owner:1,role:'collector',handle:'collector-handle'});
+  await transport.targetCreated;await port.execute({id:21,op:'manual_capture_cancel',owner:1,role:'collector',handle:'collector-handle'});
   release();await assert.rejects(capturing);assert.equal(transport.closed,true);assert.equal(transport.events.includes('Browser.close'),false);
 });

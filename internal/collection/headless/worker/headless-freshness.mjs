@@ -361,8 +361,9 @@ function isApprovedRoute(value, options, contract) {
 }
 
 function sourceStateError(value) {
+  if (value?.challengeDetected === true) return Object.assign(captureError('challenge_required', 'source presented an access challenge'),
+    { challengeCategory: ['cloudflare','x_human_verification'].includes(value.challengeCategory) ? value.challengeCategory : undefined });
   if (value?.loginRequired === true) return captureError('login_required', 'source requires an authenticated login');
-  if (value?.challengeDetected === true) return captureError('challenge_required', 'source presented an access challenge');
   if (value?.sourceUnavailable === true) return captureError('source_unavailable', 'source reports that content is unavailable');
   return null;
 }

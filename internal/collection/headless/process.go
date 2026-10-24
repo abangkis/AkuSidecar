@@ -36,8 +36,9 @@ type reply struct {
 	Error  json.RawMessage `json:"error"`
 }
 type CaptureError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code              string `json:"code"`
+	Message           string `json:"message"`
+	ChallengeCategory string `json:"challengeCategory,omitempty"`
 }
 
 func (e *CaptureError) Error() string { return e.Code + ": " + e.Message }

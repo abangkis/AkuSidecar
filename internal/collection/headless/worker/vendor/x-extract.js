@@ -37,6 +37,7 @@
     .filter(button => !quote?.contains(button));
   async function expandDetail(adapter, container) {
     if (globalThis.AkuHeadlessCapturePolicy?.allowContentExpansion === false) return;
+    if (primitives.detectXAccessChallenge(document, location)) return;
     const quote = adapter.findQuotedRoot(container);
     const ownLink = [...container.querySelectorAll('time')].find(t => !quote?.contains(t))?.closest('a[href]')?.href;
     if (location.hostname === 'x.com' && canonical(location.href) !== canonical(ownLink)) return;
@@ -86,8 +87,30 @@
     return { status: expectedWithoutUrl.length ? 'missing_expected_url' : media.length ? 'observed_urls_partial' : 'no_media_observed',
       expectedWithoutUrl, notReady: media.filter(m => !m.loaded).length };
   }
+  function challengeSnapshot(adapter, challenge) {
+    return {
+      adapterVersion: adapter.version,
+      visibility: document.visibilityState,
+      url: location.href,
+      title: document.title,
+      candidateCount: 0,
+      discoveryStrategy: 'access_challenge',
+      rejected: 0,
+      rejectionReasons: { missing_identity: 0, ambiguous_identity: 0, missing_author: 0, empty_evidence: 0 },
+      posts: [],
+      scroll: { y: scrollY, height: document.scrollingElement?.scrollHeight ?? null,
+        viewportWidth: innerWidth, viewportHeight: innerHeight },
+      loginRequired: false,
+      challengeDetected: true,
+      challengeCategory: challenge.category,
+      challengeMessage: challenge.message,
+      documentReady: document.readyState === 'complete',
+      authenticatedUiObserved: false,
+    };
+  }
   globalThis.XHeadlessPoC = {
     clickQuote(primaryId) {
+      if (primitives.detectXAccessChallenge(document, location)) return false;
       const adapter = globalThis.AkuSourceAdapters.get('x');
       for (const container of adapter.discoverCandidates(helpers).candidates) {
         const quote = adapter.findQuotedRoot(container);
@@ -103,10 +126,20 @@
     },
     async collect() {
       const adapter = globalThis.AkuSourceAdapters.get('x');
+      const challenge = primitives.detectXAccessChallenge(document, location);
+      if (challenge) return challengeSnapshot(adapter, challenge);
       for (const container of adapter.discoverCandidates(helpers).candidates) {
         const box = container.getBoundingClientRect();
-        if (box.height > 0 && box.bottom > 0 && box.top < innerHeight) await expandDetail(adapter, container);
+        if (box.height > 0 && box.bottom > 0 && box.top < innerHeight) {
+          const currentChallenge = primitives.detectXAccessChallenge(document, location);
+          if (currentChallenge) return challengeSnapshot(adapter, currentChallenge);
+          await expandDetail(adapter, container);
+          const afterExpansionChallenge = primitives.detectXAccessChallenge(document, location);
+          if (afterExpansionChallenge) return challengeSnapshot(adapter, afterExpansionChallenge);
+        }
       }
+      const challengeBeforeDiscovery = primitives.detectXAccessChallenge(document, location);
+      if (challengeBeforeDiscovery) return challengeSnapshot(adapter, challengeBeforeDiscovery);
       const discovery = adapter.discoverCandidates(helpers);
       let rejected = 0;
       const rejectionReasons = { missing_identity: 0, ambiguous_identity: 0, missing_author: 0, empty_evidence: 0 };
@@ -181,14 +214,14 @@
         }];
       });
       const loginLink = Boolean(document.querySelector('a[href="/login"], a[href^="/i/flow/login"]'));
-      const challenge = Boolean(document.querySelector('iframe[src*="captcha"], iframe[src*="arkoselabs"], #challenge-running'))
-        || /verify you are human|unusual activity|authenticate your account/i.test(document.body?.innerText ?? '');
+      const finalChallenge = primitives.detectXAccessChallenge(document, location);
+      if (finalChallenge) return challengeSnapshot(adapter, finalChallenge);
       return { adapterVersion: adapter.version, visibility: document.visibilityState,
         url: location.href, title: document.title, candidateCount: discovery.candidates.length,
         discoveryStrategy: discovery.strategy, rejected, rejectionReasons, posts,
         scroll: { y: scrollY, height: document.scrollingElement?.scrollHeight ?? null, viewportWidth: innerWidth, viewportHeight: innerHeight },
         loginRequired: adapter.loginRequired() || (!posts.length && location.pathname === '/home' && loginLink),
-        challengeDetected: challenge, documentReady: document.readyState === 'complete',
+        challengeDetected: false, documentReady: document.readyState === 'complete',
         authenticatedUiObserved: Boolean(document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]')),
       };
     },

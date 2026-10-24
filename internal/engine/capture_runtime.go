@@ -553,6 +553,10 @@ func headlessFailure(err error) domain.Failure {
 }
 
 func internalCollectorFailure(err error, collector string) domain.Failure {
+	var typed *headless.CaptureError
+	if errors.As(err, &typed) && domain.IsAccessChallenge(typed.Code) {
+		return domain.Failure{Code: "challenge_required", Stage: "capture", Message: typed.Message, Retryable: false, Details: map[string]any{"challengeCategory": typed.ChallengeCategory}}
+	}
 	failure := headlessFailure(err)
 	if collector == collection.BackendQuiet {
 		failure.Code = "quiet_" + failure.Code[len("headless_"):]
@@ -1257,10 +1261,22 @@ func (e *Engine) quietSourceAuthorized(source domain.Source) bool {
 }
 
 func (e *Engine) captureForCollector(ctx context.Context, source domain.Source, payload map[string]any, collector string) (domain.Observation, error) {
+	work, done, err := e.beginCaptureBehavior(ctx, source)
+	if err != nil {
+		if errors.Is(err, store.ErrSourceCapturePaused) {
+			return domain.Observation{}, &headless.CaptureError{Code: "challenge_required", Message: domain.XChallengeMessage}
+		}
+		return domain.Observation{}, err
+	}
+	defer done()
 	if collector == collection.BackendQuiet && !e.quietSourceAuthorized(source) {
 		return domain.Observation{}, &headless.CaptureError{Code: "source_access_revoked", Message: "Browser source access is no longer confirmed; grant source access before retrying Quiet capture."}
 	}
-	return e.collectionRuntime.Capture(ctx, source, payload)
+	observation, err := e.collectionRuntime.Capture(work, source, payload)
+	if err != nil {
+		return domain.Observation{}, normalizeXChallenge(source, err)
+	}
+	return observation, nil
 }
 
 // RunCaptureCollector is read-only and uses the persisted command route rather
