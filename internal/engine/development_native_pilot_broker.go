@@ -75,7 +75,13 @@ func (b *nativePilotBroker) initialDiagnostic() nativePilotInitialDetail {
 		fromSource := c.adapter.initial
 		c.adapter.mu.Unlock()
 		if fromSource.role != "" {
-			return fromSource.closed()
+			// A joint cancellation/deadline can follow a recorded owner failure.
+			// Keep its originating predicate, while a known branded source cause
+			// remains authoritative over subsequent inspection during teardown.
+			jointCancellation := fromSource.role == "pair" && fromSource.phase == "joint" && (fromSource.reason == "canceled" || fromSource.reason == "deadline")
+			if detail.role == "" || !jointCancellation {
+				return fromSource.closed()
+			}
 		}
 	}
 	if detail.role == "" {

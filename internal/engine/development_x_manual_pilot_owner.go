@@ -293,39 +293,82 @@ func (p *xManualPilotOwnerPorts) inspect(ctx context.Context, prepared nativePil
 func (p *xManualPilotOwnerPorts) inspectPhase(ctx context.Context, prepared nativePilotPreparedRole, requirePause bool) (nativePilotOwner, error) {
 	p.mu.Lock()
 	stored, ok := p.prepared[prepared.owner.role]
+	acquired := p.acquired[prepared.owner.role]
 	p.mu.Unlock()
+	phase := "inspect_before"
+	if acquired && !requirePause {
+		phase = "inspect_after"
+	}
+	fail := func(stage, condition string) (nativePilotOwner, error) {
+		trace := nativePilotInitialTrace{firstCause: "inspection", terminal: "unavailable", inspectStage: stage, inspectCondition: condition}
+		return nativePilotOwner{}, &nativePilotInitialError{(nativePilotInitialDetail{role: prepared.owner.role, phase: phase, reason: "unavailable", trace: &trace}).closed()}
+	}
 	if !ok || stored != prepared {
-		return nativePilotOwner{}, errors.New("x-owner-handle-mismatch")
+		return fail("go_stored", "handle_mismatch")
 	}
 	core, err := p.core(ctx, prepared.owner.role)
 	if err != nil {
-		return nativePilotOwner{}, err
+		return fail("go_core_before", "os_snapshot")
 	}
 	var raw json.RawMessage
 	if err := p.backend.rpc(ctx, prepared.owner.role, "manual_inspect", nil, &raw); err != nil {
-		return nativePilotOwner{}, err
+		clear(raw)
+		// The transport's branded Node diagnostic owns the originating predicate.
+		// Arbitrary RPC error text never enters the private closed diagnostic.
+		var typed *nativePilotInitialError
+		if errors.As(err, &typed) {
+			return nativePilotOwner{}, nativePilotInitialWrap(err, prepared.owner.role, phase)
+		}
+		return fail("go_rpc", "command_failed")
 	}
 	defer clear(raw)
 	var result xManualPilotInspection
-	if xManualPilotDecode(raw, &result) != nil || result.Invalid == nil || *result.Invalid || result.Headless == nil || *result.Headless != (prepared.owner.role == "collector") || result.Paused == nil || result.WindowCount == nil || result.BootstrapCount == nil {
-		return nativePilotOwner{}, errors.New("x-owner-inspect-invalid")
+	if xManualPilotDecode(raw, &result) != nil {
+		return fail("go_decode", "reply_invalid")
 	}
-	if requirePause && !*result.Paused || *result.WindowCount < 0 || *result.WindowCount > 16 || *result.BootstrapCount < 0 || *result.BootstrapCount > 16 {
-		return nativePilotOwner{}, errors.New("x-owner-inspect-invalid")
+	if result.Invalid == nil || *result.Invalid {
+		return fail("go_validate", "invalid_flag")
 	}
-	if prepared.owner.role == "reader" && (*result.WindowCount < 1 || *result.WindowCount > 16 || *result.BootstrapCount != 1) {
-		return nativePilotOwner{}, errors.New("x-owner-inventory-invalid")
+	if result.Headless == nil || *result.Headless != (prepared.owner.role == "collector") {
+		return fail("go_validate", "headless_mismatch")
 	}
-	if prepared.owner.role == "collector" && (*result.WindowCount != 0 || *result.BootstrapCount != 0) {
-		return nativePilotOwner{}, errors.New("x-owner-inventory-invalid")
+	if result.Paused == nil {
+		return fail("go_validate", "paused_missing")
+	}
+	if result.WindowCount == nil || result.BootstrapCount == nil {
+		return fail("go_validate", "inventory_missing")
+	}
+	if requirePause && !*result.Paused {
+		return fail("go_validate", "pause_required")
+	}
+	if *result.WindowCount < 0 || *result.WindowCount > 16 {
+		return fail("go_validate", "window_count")
+	}
+	if *result.BootstrapCount < 0 || *result.BootstrapCount > 16 {
+		return fail("go_validate", "bootstrap_count")
+	}
+	if prepared.owner.role == "reader" && *result.WindowCount < 1 {
+		return fail("go_validate", "reader_windows")
+	}
+	if prepared.owner.role == "reader" && *result.BootstrapCount != 1 {
+		return fail("go_validate", "reader_bootstrap")
+	}
+	if prepared.owner.role == "collector" && *result.WindowCount != 0 {
+		return fail("go_validate", "collector_windows")
+	}
+	if prepared.owner.role == "collector" && *result.BootstrapCount != 0 {
+		return fail("go_validate", "bootstrap_count")
 	}
 	bound, err := xManualPilotBind(core, result.Pins)
 	if err != nil || bound != prepared.owner {
-		return nativePilotOwner{}, errors.New("x-owner-scope-changed")
+		return fail("go_bind", "pins_mismatch")
 	}
 	after, err := p.core(ctx, prepared.owner.role)
-	if err != nil || after != core {
-		return nativePilotOwner{}, errors.New("x-owner-os-changed")
+	if err != nil {
+		return fail("go_core_after", "os_snapshot")
+	}
+	if after != core {
+		return fail("go_core_after", "os_changed")
 	}
 	return bound, nil
 }

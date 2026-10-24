@@ -4,9 +4,9 @@ export const STARTUP_ROLES=Object.freeze(['reader','collector','pair','unknown']
 export const STARTUP_PHASES=Object.freeze(['prepare','inspect_before','inspect_after','acquire_rpc','identity','rendezvous','settings','cleanup','bound_finish','wire_decode','joint','navigation','page_ready','guard_bind']);
 export const STARTUP_REASONS=Object.freeze(['unavailable','rejected','identity_unavailable','source_unavailable','stale_observation','cleanup_unverified','scope_lost','observed_cookie_write','deadline','canceled','replay','sample_missing','sample_duplicate','invalid_shape','scope_mismatch','time_invalid']);
 export const STARTUP_GUARD_CAUSES=Object.freeze(['guard_request_unbound','guard_request_budget','guard_header_classification','guard_response_correlation','guard_metadata_shape','guard_completion_missing','guard_header_budget','guard_event_budget']);
-// Append-only V2 catalog prefix plus V3/V4/V5/V6/V7 guard fields form the private wire contract.
+// Append-only catalogs: V8 adds inspection predicates without raw owner data.
 export const STARTUP_TRACE=Object.freeze({
-  firstCause:Object.freeze(['unknown','cookie_candidate','cookie_ambiguous','context_lost','target_lost','navigation','owner_scope','event_cap','identity_order','identity_mismatch','settings_order','response_frame','extra_shape','extra_status','extra_missing','extra_unexpected','generic_early','stale_observation','cleanup_failed',...STARTUP_GUARD_CAUSES,'root_control']),
+  firstCause:Object.freeze(['unknown','cookie_candidate','cookie_ambiguous','context_lost','target_lost','navigation','owner_scope','event_cap','identity_order','identity_mismatch','settings_order','response_frame','extra_shape','extra_status','extra_missing','extra_unexpected','generic_early','stale_observation','cleanup_failed',...STARTUP_GUARD_CAUSES,'root_control','inspection']),
   terminal:Object.freeze(['unknown',...STARTUP_REASONS,'bound']),
   early:Object.freeze(['unknown','captured','deadline','script_limit','wrong_page','unexpected_pause','evaluation_failed','setup_failed']),
   handoff:Object.freeze(['unknown','accepted','rejected']),
@@ -21,6 +21,8 @@ export const STARTUP_TRACE=Object.freeze({
   guardPrefetchCache:Object.freeze(['unknown','absent','false','true','malformed']),
   guardRequestFrame:Object.freeze(['unknown','absent','malformed','different','matching']),
   guardHeaderReason:Object.freeze(['unknown','name_unknown','syntax','attribute_unsupported','attribute_invalid','scope_domain','scope_path','metadata_shape','capacity']),
+  inspectStage:Object.freeze(['unknown','node_snapshot','node_validate','go_stored','go_core_before','go_rpc','go_decode','go_validate','go_bind','go_core_after','snapshot_attach','snapshot_page','snapshot_runtime','snapshot_frame','snapshot_inventory']),
+  inspectCondition:Object.freeze(['unknown','command_failed','snapshot_shape','owner_dead','reference_invalid','headless_mismatch','window_count','bootstrap_count','reader_windows','reader_bootstrap','collector_windows','owner_mismatch','profile_mismatch','target_mismatch','session_mismatch','frame_mismatch','document_mismatch','context_mismatch','lifecycle_unready','handle_mismatch','os_snapshot','reply_invalid','invalid_flag','paused_missing','pause_required','inventory_missing','pins_mismatch','os_changed']),
 });
 const boundTraces=new WeakMap();
 export function closedStartupTrace(input={}){
@@ -44,12 +46,17 @@ export function preserveStartup(error,role,phase,reason='unavailable',message=me
   const d=startupDiagnostic(error);
   return d?startupFailure(d.role==='unknown'?role:d.role,d.phase,d.reason,d.peer,message,d.trace):startupFailure(role,phase,reason,false,message);
 }
+// Only trusted call sites select these categories; exception text is never read.
+export function startupInspectionFailure(error,role,phase,inspectStage,inspectCondition){
+  return startupDiagnostic(error)?preserveStartup(error,role,phase,'unavailable',messages[2]):
+    startupFailure(role,phase,'unavailable',false,messages[2],{firstCause:'inspection',inspectStage,inspectCondition});
+}
 export function startupRPCCode(error){
   const d=startupDiagnostic(error)??{role:'unknown',phase:'acquire_rpc',reason:'unavailable',peer:false};
   if(d.trace){
     const head=[STARTUP_ROLES.indexOf(d.role),STARTUP_PHASES.indexOf(d.phase),STARTUP_REASONS.indexOf(d.reason),d.peer?1:0];
     const tail=Object.entries(STARTUP_TRACE).map(([key,values])=>values.indexOf(d.trace[key]));
-    return 'manual_initial_v7_'+[...head,...tail].join('_');
+    return 'manual_initial_v8_'+[...head,...tail].join('_');
   }
   return `manual_initial_${d.role}_${d.phase}_${d.reason}_${d.peer?'peer':'primary'}`;
 }
@@ -63,7 +70,7 @@ export function startupFailureLatch(){
       if(first.trace&&d.trace&&first.role===d.role&&role===first.role&&!d.peer&&first.trace.firstCause===d.trace.firstCause){
         const trace={...first.trace};
         for(const key of Object.keys(STARTUP_TRACE)){
-          if(['guardDiskCache','guardServiceWorker','guardPrefetchCache','guardRequestFrame','guardHeaderReason'].includes(key))continue;
+          if(['guardDiskCache','guardServiceWorker','guardPrefetchCache','guardRequestFrame','guardHeaderReason','inspectStage','inspectCondition'].includes(key))continue;
           if(key==='guardCondition'&&d.trace.guardCondition==='response_cache'&&trace.guardCondition!=='response_cache')continue;
           if(trace[key]==='unknown'&&d.trace[key]!=='unknown')trace[key]=d.trace[key];
         }

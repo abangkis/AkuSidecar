@@ -427,7 +427,7 @@ func TestXManualPilotRetainedQA(t *testing.T) {
 
 func TestXManualPilotRetainedSeedDiagnostics(t *testing.T) {
 	seedCacheCode := "manual_seed_v2_9_3_0_v6_0_8_7_0_19_0_0_0_0_0_8_6_20_1_3_2_1_4"
-	seedCacheWant := "phase=seed_write reason=rejected write=not_attempted initial=(role=reader phase=bound_finish reason=observed_cookie_write kind=primary first=guard_request_unbound terminal=unknown early=unknown handoff=unknown cookie=unknown extra=unknown trigger=redirect provenance=redirect condition=response_cache epoch=before_seed disk_cache=true service_worker=false prefetch_cache=absent request_frame=matching header_reason=unknown domain=unknown)"
+	seedCacheWant := "phase=seed_write reason=rejected write=not_attempted initial=(role=reader phase=bound_finish reason=observed_cookie_write kind=primary first=guard_request_unbound terminal=unknown early=unknown handoff=unknown cookie=unknown extra=unknown trigger=redirect provenance=redirect condition=response_cache epoch=before_seed disk_cache=true service_worker=false prefetch_cache=absent request_frame=matching header_reason=unknown inspect_stage=unknown inspect_condition=unknown domain=unknown)"
 	for _, sample := range []struct {
 		err  error
 		want string
@@ -507,7 +507,7 @@ for await(const line of createInterface({input:process.stdin})){const q=JSON.par
 	case <-ctx.Done():
 		t.Fatal("offline diagnostic handshake timeout")
 	}
-	for _, want := range []string{"phase=seed_write reason=rejected write=not_attempted initial=(role=reader phase=bound_finish reason=observed_cookie_write kind=primary first=guard_header_classification terminal=unknown early=unknown handoff=unknown cookie=unknown extra=unknown trigger=response provenance=scoped condition=unknown epoch=before_seed disk_cache=unknown service_worker=unknown prefetch_cache=unknown request_frame=unknown header_reason=attribute_unsupported domain=header)", "phase=preconditions reason=replay write=not_attempted"} {
+	for _, want := range []string{"phase=seed_write reason=rejected write=not_attempted initial=(role=reader phase=bound_finish reason=observed_cookie_write kind=primary first=guard_header_classification terminal=unknown early=unknown handoff=unknown cookie=unknown extra=unknown trigger=response provenance=scoped condition=unknown epoch=before_seed disk_cache=unknown service_worker=unknown prefetch_cache=unknown request_frame=unknown header_reason=attribute_unsupported inspect_stage=unknown inspect_condition=unknown domain=header)", "phase=preconditions reason=replay write=not_attempted"} {
 		err = b.rpc(ctx, "manual_seed_bootstrap", map[string]any{"owner": 1}, nil)
 		if xManualRetainedSeedRPCDiagnostic(err) != want {
 			t.Fatal("Node-to-Go closed seed diagnostic lost")

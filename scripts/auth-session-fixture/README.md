@@ -1,5 +1,35 @@
 # Local one-login concurrency fixture
 
+## Owner inspection predicate diagnostics (2026-10-24)
+
+Private startup diagnostics now distinguish the first failed ownership inspection
+predicate using closed `inspectStage` and `inspectCondition` fields. Node reports
+snapshot attachment/domain/frame/inventory command failure separately from owner,
+profile, session, target, document, context, lifecycle and window validation. Go
+reports stored-handle, OS snapshot, RPC, strict decoding, inventory and pin checks.
+The V8 numeric wire retains the 80-character bound and legacy V2-V7 decoding.
+No exception text, IDs, URLs, cookie/token values or raw snapshots are reported.
+
+The originating inspection detail remains separate from later peer cancellation,
+cleanup or terminal stop status. Earlier branded guard failures remain primary;
+later inspection metadata cannot enrich a different original failure. Snapshot
+commands still use the lifecycle observer session for observation and the original
+paused startup session for frame inspection. All admission predicates and limits
+remain unchanged. These diagnostics cannot reconstruct the exact missing
+predicate in the previous `reader / inspect_before / unavailable` native log.
+
+Run `scripts/prepare-x-manual-retained-qa.ps1` without flags for offline predicate,
+first-cause, wire compatibility, default-off and Windows compilation checks. This
+does not launch Chrome or access any profile. Another native transfer is neither
+performed nor authorized by this change.
+
+Offline acceptance: 310 Node tests; 47 standalone Go top-level tests with 182
+subcases; four build-tag gates; standalone Windows compilation; and closed
+Node/Windows-RPC/Go catalog parity. The native entry was skipped before lease or
+profile access. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-7906f86ec59047bcb4e69872d1a73361.prepare.log.txt`
+and `runtime/qa/auth-session-sidecar/run-inspect-go-fc478cf358434bc79e7c1d666cec0bae/go-tests.log`.
+
 ## Manual V2 header safety and account evidence separation (2026-10-23)
 
 The current Manual V2 policy makes two independent decisions. Every observed

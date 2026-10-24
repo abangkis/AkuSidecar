@@ -34,7 +34,7 @@ import { createXManualOwnerPort, manualOwnerOperation } from './x-native-manual-
 import { createRetainedManualSetup, manualSeedFailure, manualSeedDiagnosticCode } from './x-manual-retained-setup.mjs';
 import { ManualEnrollmentCapture } from './x-manual-enrollment-capture.mjs';
 import { ManualStartupObservation } from './x-manual-startup-cookie-guard.mjs';
-import {startupFailure,startupFailureLatch,startupRPCCode,requireBoundStartup} from './x-manual-startup-diagnostic.mjs';
+import {startupFailure,startupFailureLatch,startupRPCCode,requireBoundStartup,startupInspectionFailure} from './x-manual-startup-diagnostic.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -1961,14 +1961,41 @@ export function manualStartupStateReady(current){
   return !!(current?.gate?.loginVisible&&!current.gate.observationStarted&&!current.earlyAttempted&&!current.qualificationAttempted&&collector&&!collector.closed&&collector.contextId&&collector.sessionId&&current.manualSeeded);
 }
 
-async function manualReaderInventory(current) {
-  const {targetIds}=await send('Target.getTargets',{},undefined,'manual_owner');
+async function manualReaderInventory(current,readerSend=send) {
+  const {targetIds}=await readerSend('Target.getTargets',{},undefined,'manual_owner');
   const windows=new Set();let bootstrapWindow;
   for(const targetId of targetIds){
-    const {windowId}=await send('Browser.getWindowForTarget',{targetId},undefined,'manual_owner');
+    const {windowId}=await readerSend('Browser.getWindowForTarget',{targetId},undefined,'manual_owner');
     windows.add(windowId);if(targetId===current.targetId)bootstrapWindow=windowId;
   }
   return {windowCount:windows.size,bootstrapCount:bootstrapWindow&&windows.has(bootstrapWindow)?1:0};
+}
+
+// The same snapshot path is exercised accountlessly with injected transports.
+// Wrapping command failures never publishes transport messages or source pins.
+export async function manualOwnerSnapshot({current,collector,role,document,pins,phase='prepare',readerSend=send,readerAlive=()=>!childExited&&!cdpFailure}){
+  const step=async(stage,run)=>{try{return await run();}catch(error){throw startupInspectionFailure(error,role,phase,stage,'command_failed');}};
+  const reader=role==='reader',owned=reader?{pid:current.pid,profileId:current.profileId,alive:readerAlive()}:collector.transport.ownership();
+  const targetId=reader?current.targetId:collector.targetId,state=reader?current:collector;
+  if(document&&!state.manualObserver){
+    const attached=await step('snapshot_attach',()=>reader?readerSend('Target.attachToTarget',{targetId,flatten:true},undefined,'manual_owner'):
+      collector.transport.send('Target.attachToTarget',{targetId,flatten:true},undefined,r=>{
+        if(!safeId(r.sessionId))throw probeError('manual_owner_unavailable');return{sessionId:r.sessionId};}));
+    state.manualObserver={sessionId:attached.sessionId,context:null,frameId:pins.frameId};
+    for(const method of ['Page.enable','Runtime.enable'])await step(method==='Page.enable'?'snapshot_page':'snapshot_runtime',()=>
+      reader?readerSend(method,{},attached.sessionId,'manual_owner'):collector.transport.send(method,{},attached.sessionId,()=>({acknowledged:true})));
+  }
+  const observer=state.manualObserver;
+  let frame;
+  if(document)frame=await step('snapshot_frame',()=>reader?readerSend('Page.getFrameTree',{},current.sessionId,'manual_owner'):
+    collector.transport.send('Page.getFrameTree',{},collector.sessionId,r=>{
+      const value=r.frameTree?.frame;
+      if(!value||!isHomeTarget(value.url)||!safeId(value.id)||!safeId(value.loaderId))throw probeError('manual_owner_unavailable');
+      return{frameId:value.id,loaderId:value.loaderId};}));
+  const inventory=reader?await step('snapshot_inventory',()=>manualReaderInventory(current,readerSend)):{windowCount:0,bootstrapCount:0};
+  return{ownerId:String(owned.pid),profileId:owned.profileId,targetId,sessionId:observer?.sessionId??(reader?current.sessionId:collector.sessionId),
+    alive:owned.alive,headless:!reader,...inventory,frameId:frame?.frameId,documentId:frame?.loaderId,contextId:String(observer?.context??''),
+    lifecycleReady:!!observer&&Number.isSafeInteger(observer.context)&&observer.context>0};
 }
 
 // Fixed private owner RPCs are intentionally concurrent: the two actors meet at
@@ -1986,37 +2013,7 @@ export async function executeManualOwnerRPC(message) {
       const diagnostics=current.manualCookieDiagnostics??startupFailureLatch();
       current.manualStartupPort=createXManualOwnerPort({enabled:true,owner:current.owner,diagnostics,
         createOwners:()=>createOwnedManualStartupOwners(message,diagnostics),
-        snapshot:async(role,document,pins)=>{
-          const reader=role==='reader', owned=reader?{pid:current.pid,profileId:current.profileId,alive:!childExited&&!cdpFailure}:collector.transport.ownership();
-          const targetId=reader?current.targetId:collector.targetId;
-          if(document){
-            const state=reader?current:collector;
-            if(!state.manualObserver){
-              const attached=reader?await send('Target.attachToTarget',{targetId,flatten:true},undefined,'manual_owner'):
-                await collector.transport.send('Target.attachToTarget',{targetId,flatten:true},undefined,r=>{
-                  if(!safeId(r.sessionId))throw probeError('manual_owner_unavailable');return{sessionId:r.sessionId};});
-              state.manualObserver={sessionId:attached.sessionId,context:null,frameId:pins.frameId};
-              for(const method of ['Page.enable','Runtime.enable']){
-                if(reader)await send(method,{},attached.sessionId,'manual_owner');
-                else await collector.transport.send(method,{},attached.sessionId,()=>({acknowledged:true}));
-              }
-            }
-          }
-          const observer=(reader?current:collector).manualObserver;
-          let frame;
-          if(document){
-            if(reader)frame=await send('Page.getFrameTree',{},current.sessionId,'manual_owner');
-            else frame=await collector.transport.send('Page.getFrameTree',{},collector.sessionId,r=>{
-              const value=r.frameTree?.frame;
-              if(!value||!isHomeTarget(value.url)||!safeId(value.id)||!safeId(value.loaderId))throw probeError('manual_owner_unavailable');
-              return{frameId:value.id,loaderId:value.loaderId};});
-          }
-          return {ownerId:String(owned.pid),profileId:owned.profileId,targetId,
-            sessionId:observer?.sessionId??(reader?current.sessionId:collector.sessionId),
-            alive:owned.alive,headless:!reader,...(reader?await manualReaderInventory(current):{windowCount:0,bootstrapCount:0}),
-            frameId:frame?.frameId,documentId:frame?.loaderId,contextId:String(observer?.context??''),
-            lifecycleReady:!!observer&&Number.isSafeInteger(observer.context)&&observer.context>0};
-        },
+        snapshot:(role,document,pins,phase)=>manualOwnerSnapshot({current,collector,role,document,pins,phase}),
         retire:async(role,preserveReader)=>{
           if(role==='reader'){
             await retireManualReader(current,preserveReader);

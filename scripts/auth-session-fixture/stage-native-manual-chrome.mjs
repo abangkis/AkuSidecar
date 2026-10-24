@@ -24,7 +24,7 @@ if(mode!==undefined){
 }
 const manifest = { schema: 'aku.native-manual-chrome.staging.v1', copied: [], extracted: [] };
 if(mode!==undefined){
-  manifest.nodeSources=['x-native-manual-owner-port.mjs','x-native-manual-owner-offline.mjs','x-native-metadata-probe-driver.mjs',
+  manifest.nodeSources=['x-native-manual-owner-port.mjs','x-native-manual-owner-port.test.mjs','x-native-manual-owner-offline.mjs','x-native-metadata-probe-driver.mjs',
     'x-qa-feasibility-collector.mjs','x-manual-startup-owner.mjs','x-manual-startup-owner.test.mjs',
     'x-manual-startup-source.mjs','x-manual-startup-offline-fixture.mjs',
     'x-manual-header-safety.mjs','x-manual-root-document.mjs','x-manual-root-source-policy.mjs','x-manual-root-controls.mjs','x-manual-root-controls.test.mjs',

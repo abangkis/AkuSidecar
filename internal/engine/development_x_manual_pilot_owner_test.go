@@ -165,6 +165,218 @@ func TestXManualPilotOwnerInspectDiagnostic(t *testing.T) {
 		})
 	}
 }
+
+// This backend wraps invented ownership only; hooks isolate inspection failure
+// predicates without opening a browser, touching a profile or admitting work.
+type testXManualInspectBackend struct {
+	*testXManualOwnerBackend
+	snapshotHook func(context.Context, string) (nativePilotOwner, error)
+	rpcHook      func(context.Context, string, string, map[string]any, any) error
+}
+
+func (f *testXManualInspectBackend) snapshot(ctx context.Context, role string) (nativePilotOwner, error) {
+	return f.snapshotHook(ctx, role)
+}
+func (f *testXManualInspectBackend) rpc(ctx context.Context, role, op string, fields map[string]any, out any) error {
+	return f.rpcHook(ctx, role, op, fields, out)
+}
+
+func TestXManualPilotOwnerInspectPredicates(t *testing.T) {
+	tests := []struct {
+		name, role, stage, condition string
+		field                        string
+		value                        any
+	}{
+		{name: "stored", stage: "go_stored", condition: "handle_mismatch"},
+		{name: "core-before", stage: "go_core_before", condition: "os_snapshot"},
+		{name: "rpc", stage: "go_rpc", condition: "command_failed"},
+		{name: "duplicate", stage: "go_decode", condition: "reply_invalid"},
+		{name: "unknown-field", stage: "go_decode", condition: "reply_invalid", field: "PRIVATE_BODY", value: "PRIVATE_VALUE"},
+		{name: "null", stage: "go_decode", condition: "reply_invalid", field: "paused", value: nil},
+		{name: "case-alias", stage: "go_decode", condition: "reply_invalid", field: "Paused", value: true},
+		{name: "wrong-type", stage: "go_decode", condition: "reply_invalid", field: "windowCount", value: "PRIVATE_VALUE"},
+		{name: "invalid-missing", stage: "go_validate", condition: "invalid_flag", field: "invalid"},
+		{name: "invalid", stage: "go_validate", condition: "invalid_flag", field: "invalid", value: true},
+		{name: "headless-missing", stage: "go_validate", condition: "headless_mismatch", field: "headless"},
+		{name: "headless", stage: "go_validate", condition: "headless_mismatch", field: "headless", value: true},
+		{name: "paused-missing", stage: "go_validate", condition: "paused_missing", field: "paused"},
+		{name: "pause-required", stage: "go_validate", condition: "pause_required", field: "paused", value: false},
+		{name: "windows-missing", stage: "go_validate", condition: "inventory_missing", field: "windowCount"},
+		{name: "bootstrap-missing", stage: "go_validate", condition: "inventory_missing", field: "bootstrapCount"},
+		{name: "windows-negative", stage: "go_validate", condition: "window_count", field: "windowCount", value: -1},
+		{name: "windows-over-cap", stage: "go_validate", condition: "window_count", field: "windowCount", value: 17},
+		{name: "bootstrap-negative", stage: "go_validate", condition: "bootstrap_count", field: "bootstrapCount", value: -1},
+		{name: "bootstrap-over-cap", stage: "go_validate", condition: "bootstrap_count", field: "bootstrapCount", value: 17},
+		{name: "reader-windows", stage: "go_validate", condition: "reader_windows", field: "windowCount", value: 0},
+		{name: "reader-bootstrap", stage: "go_validate", condition: "reader_bootstrap", field: "bootstrapCount", value: 0},
+		{name: "collector-windows", role: "collector", stage: "go_validate", condition: "collector_windows", field: "windowCount", value: 1},
+		{name: "collector-bootstrap", role: "collector", stage: "go_validate", condition: "bootstrap_count", field: "bootstrapCount", value: 1},
+		{name: "bind", stage: "go_bind", condition: "pins_mismatch"},
+		{name: "core-after-error", stage: "go_core_after", condition: "os_snapshot"},
+		{name: "core-after-change", stage: "go_core_after", condition: "os_changed"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg, f := testXManualOwnerConfig()
+			role := test.role
+			if role == "" {
+				role = "reader"
+			}
+			p := &xManualPilotOwnerPorts{cfg: cfg, backend: f, prepared: map[string]nativePilotPreparedRole{}, begun: map[string]bool{}, acquired: map[string]bool{}, cleanupTokens: map[string]string{}, cleanupUnknown: map[string]bool{}}
+			prepared, err := p.prepare(context.Background(), nativePilotPrepareRequest{role: role, profile: f.core[role].profile, parent: f.core[role].parent, attempt: cfg.pilot.binding.attempt})
+			if err != nil {
+				t.Fatal("offline preparation failed")
+			}
+			if test.name == "stored" {
+				prepared.handle = "PRIVATE_WRONG_HANDLE"
+			}
+			calls := 0
+			p.backend = &testXManualInspectBackend{testXManualOwnerBackend: f, snapshotHook: func(ctx context.Context, role string) (nativePilotOwner, error) {
+				calls++
+				if test.name == "core-before" || test.name == "core-after-error" && calls == 2 {
+					return nativePilotOwner{}, errors.New("PRIVATE_OS_ERROR")
+				}
+				o, err := f.snapshot(ctx, role)
+				if test.name == "core-after-change" && calls == 2 {
+					o.creation = "PRIVATE_CHANGED_CREATION"
+				}
+				return o, err
+			}, rpcHook: func(ctx context.Context, role, op string, fields map[string]any, out any) error {
+				if test.name == "rpc" {
+					return errors.New("PRIVATE_RPC_ERROR")
+				}
+				if test.name == "duplicate" {
+					*out.(*json.RawMessage) = json.RawMessage(`{"invalid":false,"invalid":false}`)
+					return nil
+				}
+				if err := f.rpc(ctx, role, op, fields, out); err != nil {
+					return err
+				}
+				var reply map[string]any
+				if json.Unmarshal(*out.(*json.RawMessage), &reply) != nil {
+					t.Fatal("invented reply unavailable")
+				}
+				if test.field != "" {
+					if test.value == nil && test.name != "null" {
+						delete(reply, test.field)
+					} else {
+						reply[test.field] = test.value
+					}
+				}
+				if test.name == "bind" {
+					reply["pins"].(map[string]any)["documentId"] = "PRIVATE_WRONG_DOCUMENT"
+				}
+				return testXManualReply(out, reply)
+			}}
+			owner, err := p.inspectPhase(context.Background(), prepared, true)
+			d := nativePilotInitialOf(err, "unknown", "acquire_rpc")
+			if err == nil || owner != (nativePilotOwner{}) || d.role != role || d.phase != "inspect_before" || d.trace == nil || d.trace.firstCause != "inspection" || d.trace.inspectStage != test.stage || d.trace.inspectCondition != test.condition || strings.Contains(fmt.Sprintf("%v %#v %v", d, d, err), "PRIVATE") {
+				t.Fatalf("inspection predicate lost or leaked: %s", d)
+			}
+			if strings.Contains(d.String(), "domain=inspection") == false {
+				t.Fatal("inspection domain missing")
+			}
+		})
+	}
+}
+
+func TestXManualPilotOwnerInspectPreservesNodeCause(t *testing.T) {
+	cfg, f := testXManualOwnerConfig()
+	p := &xManualPilotOwnerPorts{cfg: cfg, backend: f, prepared: map[string]nativePilotPreparedRole{}, begun: map[string]bool{}, acquired: map[string]bool{}, cleanupTokens: map[string]string{}, cleanupUnknown: map[string]bool{}}
+	prepared, err := p.prepare(context.Background(), nativePilotPrepareRequest{role: "reader", profile: f.core["reader"].profile, parent: f.core["reader"].parent, attempt: cfg.pilot.binding.attempt})
+	if err != nil {
+		t.Fatal("offline preparation failed")
+	}
+	for _, phase := range []string{"inspect_before", "inspect_after"} {
+		trace := nativePilotInitialTrace{firstCause: "inspection", inspectStage: "snapshot_runtime", inspectCondition: "command_failed"}
+		origin := (nativePilotInitialDetail{role: "collector", phase: phase, reason: "scope_lost", peer: true, trace: &trace}).closed()
+		p.backend = &testXManualInspectBackend{testXManualOwnerBackend: f, snapshotHook: f.snapshot, rpcHook: func(context.Context, string, string, map[string]any, any) error {
+			return fmt.Errorf("PRIVATE_TRANSPORT: %w", &nativePilotInitialError{origin})
+		}}
+		_, err := p.inspectPhase(context.Background(), prepared, true)
+		if got := nativePilotInitialOf(err, "unknown", "acquire_rpc"); got.String() != origin.String() {
+			t.Fatalf("Node originating diagnostic replaced: %s", got)
+		}
+	}
+}
+
+func TestXManualPilotOwnerInspectPauseAndPhase(t *testing.T) {
+	cfg, f := testXManualOwnerConfig()
+	p := &xManualPilotOwnerPorts{cfg: cfg, backend: f, prepared: map[string]nativePilotPreparedRole{}, begun: map[string]bool{}, acquired: map[string]bool{}, cleanupTokens: map[string]string{}, cleanupUnknown: map[string]bool{}}
+	prepared, err := p.prepare(context.Background(), nativePilotPrepareRequest{role: "reader", profile: f.core["reader"].profile, parent: f.core["reader"].parent, attempt: cfg.pilot.binding.attempt})
+	if err != nil {
+		t.Fatal("offline preparation failed")
+	}
+	f.acquired["reader"], p.acquired["reader"] = true, true
+	if owner, err := p.inspect(context.Background(), prepared); err != nil || owner != prepared.owner {
+		t.Fatal("post-acquire inspection unexpectedly requires pause")
+	}
+	if _, err := p.inspectPhase(context.Background(), prepared, true); err == nil || nativePilotInitialOf(err, "unknown", "acquire_rpc").phase != "inspect_before" {
+		t.Fatal("pre-acquire inspection pause predicate weakened")
+	}
+	f.windows = 0
+	_, err = p.inspect(context.Background(), prepared)
+	if d := nativePilotInitialOf(err, "unknown", "acquire_rpc"); err == nil || d.phase != "inspect_after" || d.trace.inspectCondition != "reader_windows" {
+		t.Fatal("post-acquire local phase lost")
+	}
+}
+
+func TestXManualPilotOwnerInspectBrokerPreservesEarlierCause(t *testing.T) {
+	trace := nativePilotInitialTrace{firstCause: "inspection", inspectStage: "go_bind", inspectCondition: "pins_mismatch"}
+	origin := (nativePilotInitialDetail{role: "reader", phase: "inspect_before", reason: "unavailable", trace: &trace}).closed()
+	b := &nativePilotBroker{initial: origin, controller: &nativePilotManualController{adapter: &nativePilotAdapter{initial: nativePilotInitialDetail{role: "pair", phase: "joint", reason: "canceled"}}}}
+	if got := b.initialDiagnostic(); got.String() != origin.String() {
+		t.Fatalf("later source cancellation replaced owner predicate: %s", got)
+	}
+	b.initial = nativePilotInitialDetail{}
+	b.controller.adapter.initial = origin
+	if got := b.initialDiagnostic(); got.String() != origin.String() {
+		t.Fatal("source origin lost without prior broker failure")
+	}
+	// A source that already recorded a branded cookie rejection must keep it;
+	// inspection during teardown cannot change the first observed cause.
+	cookieTrace := nativePilotInitialTrace{firstCause: "cookie_candidate", cookie: "candidate_observed", terminal: "observed_cookie_write"}
+	cookie := (nativePilotInitialDetail{role: "collector", phase: "bound_finish", reason: "observed_cookie_write", trace: &cookieTrace}).closed()
+	b.controller.adapter.initial = cookie
+	b.noteInitial(&nativePilotInitialError{origin}, "reader", "inspect_before")
+	if got := b.initialDiagnostic(); got.String() != cookie.String() {
+		t.Fatal("later inspection replaced branded source cause")
+	}
+}
+
+func TestXManualPilotOwnerInspectionCodeVersions(t *testing.T) {
+	for _, version := range []struct{ number, count int }{{2, 6}, {3, 8}, {4, 10}, {5, 13}, {6, 14}, {7, 15}, {8, 17}} {
+		code := fmt.Sprintf("manual_initial_v%d", version.number) + strings.Repeat("_0", 4+version.count)
+		detail, ok := nativePilotInitialCode(code)
+		if !ok || detail.trace == nil || detail.trace.inspectStage != "unknown" || detail.trace.inspectCondition != "unknown" {
+			t.Fatalf("V%d compatibility/defaults lost", version.number)
+		}
+		for _, bad := range []string{code[:strings.LastIndex(code, "_")], code + "_0", strings.TrimSuffix(code, "_0") + "_99", strings.TrimSuffix(code, "_0") + "_00", strings.Replace(code, "_0_", "_+0_", 1), code + strings.Repeat("0", 80)} {
+			if _, ok := nativePilotInitialCode(bad); ok {
+				t.Fatalf("V%d noncanonical or over-cap code accepted", version.number)
+			}
+		}
+	}
+	for field := 15; field < 17; field++ {
+		for index, value := range nativePilotTraceCatalogs[field] {
+			parts := make([]string, 21)
+			for i := range parts {
+				parts[i] = "0"
+			}
+			parts[4] = strconv.Itoa(len(nativePilotTraceCatalogs[0]) - 1)
+			parts[4+field] = strconv.Itoa(index)
+			code := "manual_initial_v8_" + strings.Join(parts, "_")
+			d, ok := nativePilotInitialCode(code)
+			if !ok || len(code) > 80 || d.trace == nil || d.trace.firstCause != "inspection" || d.trace.values()[field] != value || !strings.Contains(d.String(), "domain=inspection") {
+				t.Fatal("inspection catalog index or wire arity lost")
+			}
+		}
+	}
+	unsafe := nativePilotInitialTrace{firstCause: "inspection", inspectStage: "PRIVATE_STAGE", inspectCondition: strings.Repeat("PRIVATE", 1000)}
+	if strings.Contains(fmt.Sprintf("%v %#v", unsafe, unsafe), "PRIVATE") || !strings.Contains(unsafe.String(), "inspect_stage=unknown inspect_condition=unknown") {
+		t.Fatal("untrusted inspection fields escaped closed formatting")
+	}
+}
 func (f *testXManualOwnerBackend) cleanup(_ context.Context, role, handle string, preserve bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

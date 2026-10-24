@@ -1,6 +1,6 @@
 // Private, default-off QA transport. OS provenance belongs to the compiled Go
 // owner backend; this module cannot grant it through a request or JSON flag.
-import {startupFailureLatch} from './x-manual-startup-diagnostic.mjs';
+import {startupFailureLatch,startupInspectionFailure} from './x-manual-startup-diagnostic.mjs';
 const roles=['reader','collector'];
 const pinKeys=['ownerId','profileId','contextId','targetId','frameId','documentId'];
 const requestKeys=['challenge','role',...pinKeys];
@@ -35,13 +35,27 @@ export function createXManualOwnerPort({enabled=false,owner,createOwners,snapsho
   let failed=false;
   const invalidate=role=>{diagnostics.record(null,role,'joint','scope_lost','xnp_manual_owner_unavailable');state[role].invalid=true;failed=true;};
   const checked=async(role,document=false,phase='prepare')=>{try{
-    const s=state[role], value=await snapshot(role,document,s.pins);
-    if(!value||value.alive!==true||!['ownerId','profileId','targetId','sessionId'].every(k=>ref(value[k]))||
-      value.headless!==(role==='collector')||!Number.isSafeInteger(value.windowCount)||value.windowCount<0||value.windowCount>128||
-      !Number.isSafeInteger(value.bootstrapCount)||value.bootstrapCount<0||value.bootstrapCount>value.windowCount||
-      role==='reader'&&(value.windowCount<1||value.bootstrapCount!==1)||role==='collector'&&(value.windowCount!==0||value.bootstrapCount!==0))throw failure();
-    if(s.pins&&(['ownerId','profileId','targetId'].some(k=>s.pins[k]!==value[k])||s.session!==value.sessionId||
-      document&&(s.pins.frameId!==value.frameId||s.pins.documentId!==value.documentId||s.pins.contextId!==value.contextId||value.lifecycleReady!==true)))throw failure();
+    const s=state[role];let value;
+    try{value=await snapshot(role,document,s.pins,phase);}
+    catch(error){throw startupInspectionFailure(error,role,phase,'node_snapshot','command_failed');}
+    const reject=condition=>{throw startupInspectionFailure(null,role,phase,'node_validate',condition);};
+    if(!value)reject('snapshot_shape');
+    if(value.alive!==true)reject('owner_dead');
+    if(!['ownerId','profileId','targetId','sessionId'].every(k=>ref(value[k])))reject('reference_invalid');
+    if(value.headless!==(role==='collector'))reject('headless_mismatch');
+    if(!Number.isSafeInteger(value.windowCount)||value.windowCount<0||value.windowCount>128)reject('window_count');
+    if(!Number.isSafeInteger(value.bootstrapCount)||value.bootstrapCount<0||value.bootstrapCount>value.windowCount)reject('bootstrap_count');
+    if(role==='reader'&&value.windowCount<1)reject('reader_windows');
+    if(role==='reader'&&value.bootstrapCount!==1)reject('reader_bootstrap');
+    if(role==='collector'&&(value.windowCount!==0||value.bootstrapCount!==0))reject('collector_windows');
+    if(s.pins){
+      for(const [key,condition]of [['ownerId','owner_mismatch'],['profileId','profile_mismatch'],['targetId','target_mismatch']])if(s.pins[key]!==value[key])reject(condition);
+      if(s.session!==value.sessionId)reject('session_mismatch');
+      if(document){
+        for(const [key,condition]of [['frameId','frame_mismatch'],['documentId','document_mismatch'],['contextId','context_mismatch']])if(s.pins[key]!==value[key])reject(condition);
+        if(value.lifecycleReady!==true)reject('lifecycle_unready');
+      }
+    }
     return value;
   }catch(error){const cause=diagnostics.record(error,role,phase,'unavailable','xnp_manual_owner_unavailable');invalidate(role);throw cause;}};
   return Object.freeze({
@@ -102,8 +116,9 @@ export function createXManualOwnerPort({enabled=false,owner,createOwners,snapsho
       }
       if(!s.pins)throw failure();
       if(message.op==='manual_inspect'){
-        const value=await checked(role,true,s.acquired?'inspect_after':'inspect_before');
-        if(s.invalid||failed)throw failure();
+        const phase=s.acquired?'inspect_after':'inspect_before';
+        const value=await checked(role,true,phase);
+        if(s.invalid||failed)throw diagnostics.record(null,role,phase,'scope_lost','xnp_manual_owner_unavailable');
         return {pins:s.pins,windowCount:value.windowCount,bootstrapCount:value.bootstrapCount,paused:!s.acquired,invalid:false,headless:value.headless};
       }
       if(message.op==='manual_acquire'){
