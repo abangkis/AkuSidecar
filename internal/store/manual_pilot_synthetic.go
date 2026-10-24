@@ -19,6 +19,8 @@ type ManualPilotSyntheticRequest struct {
 	FactoryOptIn                                          bool
 	SessionID, RunID, SyntheticOwnerRef, SyntheticPairRef string
 	StartedAt                                             time.Time
+	// ValidUntil may shorten, never extend, the original synthetic attempt.
+	ValidUntil time.Time
 }
 
 // IssueSyntheticManualPilot exists only in development builds. It cannot
@@ -30,7 +32,14 @@ func (s *Store) IssueSyntheticManualPilot(ctx context.Context, r ManualPilotSynt
 	if r.StartedAt.IsZero() || r.StartedAt.After(s.Now()) || !s.Now().Before(r.StartedAt.Add(60*time.Second)) {
 		return nil, errManualPilot
 	}
-	return s.issueDevelopmentManualPilot(ctx, r.SessionID, r.RunID, r.SyntheticOwnerRef, r.SyntheticPairRef, domain.NewID("manual-attempt"), 1, r.StartedAt.Add(60*time.Second))
+	deadline := r.StartedAt.Add(60 * time.Second)
+	if !r.ValidUntil.IsZero() {
+		if !r.ValidUntil.After(r.StartedAt) || r.ValidUntil.After(deadline) {
+			return nil, errManualPilot
+		}
+		deadline = r.ValidUntil
+	}
+	return s.issueDevelopmentManualPilot(ctx, r.SessionID, r.RunID, r.SyntheticOwnerRef, r.SyntheticPairRef, domain.NewID("manual-attempt"), 1, deadline)
 }
 
 func (s *Store) issueDevelopmentManualPilot(ctx context.Context, sessionID, runID, owner, pair, attempt string, generation uint64, deadline time.Time) (*ManualPilotPermit, error) {

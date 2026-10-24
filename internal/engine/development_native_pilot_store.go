@@ -27,7 +27,27 @@ type nativePilotStoreRuntime struct {
 	revokeID    string
 	work        map[string]*nativePilotStoreWork
 	afterCommit func(context.Context, domain.Run) (domain.Run, error)
+	admission   nativePilotStoreAdmission
 }
+
+// Implementations are private trusted Go composition. The ordinary implementation
+// requires native startup; an offline Chrome implementation exists only in tests.
+type nativePilotStoreAdmission interface {
+	validate(context.Context) (store.DevelopmentManualPilotBinding, error)
+	issue(context.Context, string, string) (*store.ManualPilotPermit, error)
+}
+type nativePilotNativeStoreAdmission struct {
+	broker *nativePilotBroker
+	store  *store.Store
+}
+
+func (a nativePilotNativeStoreAdmission) validate(ctx context.Context) (store.DevelopmentManualPilotBinding, error) {
+	return a.broker.storeStartup(ctx)
+}
+func (a nativePilotNativeStoreAdmission) issue(ctx context.Context, session, run string) (*store.ManualPilotPermit, error) {
+	return a.store.NewDevelopmentManualPilotIssuer(a.validate)(ctx, session, run)
+}
+
 type nativePilotStoreWork struct {
 	result nativePilotStoreResult
 	done   bool
@@ -91,15 +111,24 @@ func (l *nativePilotStoreRuntime) close() {
 }
 
 func (e *Engine) bindNativePilotStore(ctx context.Context, r *nativePilotRuntime, sessionID, runID string) error {
+	if e == nil || r == nil {
+		return errors.New("manual Store wiring unavailable")
+	}
+	return e.bindNativePilotStoreAdmission(ctx, r, sessionID, runID, nativePilotNativeStoreAdmission{broker: r.broker, store: e.store})
+}
+func (e *Engine) bindNativePilotStoreAdmission(ctx context.Context, r *nativePilotRuntime, sessionID, runID string, admission nativePilotStoreAdmission) error {
 	if e == nil || !e.config.Dev || e.store == nil || r == nil || r.broker == nil {
 		return errors.New("manual Store wiring unavailable")
 	}
 	b := r.broker
-	v, err := b.storeStartup(ctx)
+	if admission == nil {
+		return errors.New("manual Store admission unavailable")
+	}
+	v, err := admission.validate(ctx)
 	if err != nil {
 		return err
 	}
-	l := &nativePilotStoreRuntime{engine: e, runtime: r, revokeID: domain.NewID("manual-revoke"), work: map[string]*nativePilotStoreWork{}, afterCommit: e.afterAcceptedObservation}
+	l := &nativePilotStoreRuntime{engine: e, runtime: r, revokeID: domain.NewID("manual-revoke"), work: map[string]*nativePilotStoreWork{}, afterCommit: e.afterAcceptedObservation, admission: admission}
 	b.mu.Lock()
 	r.mu.Lock()
 	if b.stopped || b.onStop != nil || r.storeBinding {
@@ -111,7 +140,7 @@ func (e *Engine) bindNativePilotStore(ctx context.Context, r *nativePilotRuntime
 	r.mu.Unlock()
 	b.onStop = l.close
 	b.mu.Unlock()
-	p, err := e.store.NewDevelopmentManualPilotIssuer(b.storeStartup)(ctx, sessionID, runID)
+	p, err := admission.issue(ctx, sessionID, runID)
 	if err != nil {
 		l.close()
 		return err
@@ -132,7 +161,7 @@ func (e *Engine) bindNativePilotStore(ctx context.Context, r *nativePilotRuntime
 	// Timers use only the remaining original budget, never a fresh 60 seconds.
 	delay := v.Deadline.Sub(e.store.Now())
 	time.AfterFunc(max(delay, 0), func() { b.stop("attempt-expired") })
-	if _, err = b.storeStartup(ctx); err != nil {
+	if _, err = admission.validate(ctx); err != nil {
 		l.close()
 		return err
 	}
@@ -206,7 +235,7 @@ func (e *Engine) captureNativePilotOnce(ctx context.Context, l *nativePilotStore
 	}
 	// A confirmed claim is not a committed result.
 	out.Outcome = store.RejectedNoMutation
-	if _, err := b.storeStartup(ctx); err != nil {
+	if _, err := l.admission.validate(ctx); err != nil {
 		l.close()
 		return fail(err)
 	}

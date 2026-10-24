@@ -10,6 +10,7 @@ import { concurrentFixtureCookie } from './concurrent-engine-commands.mjs';
 import { createManualStartupOwner } from './x-manual-startup-owner.mjs';
 import { projectQADirectBody } from './x-qa-direct-ab.mjs';
 import { parseStrictJSON } from './x-evidence-ingress.mjs';
+import { captureManualFixtureDOM } from './chrome-manual-pilot-capture.mjs';
 
 const fail = () => new Error('fixture_manual_rejected');
 const ref = v => typeof v === 'string' && v.length > 0 && v.length <= 512 && !/[\u0000-\u001f\u007f]/u.test(v);
@@ -28,7 +29,7 @@ export async function boundedFixtureAcquire(operation, milliseconds = 1750) {
 export function manualChromeCommand(raw) {
   const fields = { fixture_bootstrap: ['op','withholdReady'], launch: ['id','op','role','nativeReaderStartup'],
     login: ['id','op','owner'], seed_fixture: ['id','op','owner','value'], prepare: ['id','op','owner'],
-    acquire: ['id','op','owner','handle','request'], inspect: ['id','op','owner'],
+    acquire: ['id','op','owner','handle','request'], inspect: ['id','op','owner'], capture_fixture: ['id','op','owner'],
     inventory: ['id','op','owner'], open_independent_window: ['id','op','owner'],
     context_drift: ['id','op','owner'], close_window:['id','op','owner','index'], abort: ['id','op','owner','handle','preserveReader'], release: ['id','op','owner'] }[raw?.op];
   if (!raw || ![Object.prototype,null].includes(Object.getPrototypeOf(raw)) || !fields ||
@@ -50,6 +51,8 @@ export async function runManualChromeDriver(executable, root, origin) {
   concurrentFixtureCookie('0'.repeat(64), origin);
   let browser, page, bootstrapTarget, started = false, owner = 0, login = false, seed = false, actor, handle, observation;
   let phase='idle';
+  let capturing=false;
+  let captureCancel;
   const emit = value => process.stdout.write(JSON.stringify(value) + '\n');
   const inventory = () => inventoryFixtureWindows(browser, origin, bootstrapTarget);
   const currentPins = () => {
@@ -174,6 +177,17 @@ export async function runManualChromeDriver(executable, root, origin) {
     }
     if(!browser||message.owner!==owner)throw fail();
     switch(message.op) {
+      case 'capture_fixture': {
+        if(process.env.AKU_MANUAL_CHROME_STORE_ENABLED!=='1'||capturing||browser.role!=='collector'||phase!=='complete')throw fail();
+        capturing=true;
+        captureCancel=new AbortController();
+        const pins=currentPins();
+        try {
+          const result=await captureManualFixtureDOM(browser,origin,pins,captureCancel.signal);
+          if(JSON.stringify(currentPins())!==JSON.stringify(pins))throw fail();
+          return result;
+        } finally {capturing=false;captureCancel=null;}
+      }
       case 'login':if(browser.role!=='owner'||login)throw fail();login=true;return{status:(await page.request('/login','POST')).status};
       case 'seed_fixture':if(browser.role!=='collector'||seed)throw fail();await browser.send('Storage.setCookies',{cookies:[concurrentFixtureCookie(message.value,origin)]});seed=true;return{seeded:true};
       case 'prepare':if(actor)throw fail();actor=createManualStartupOwner({run:startup});{const ready=await actor.prepare();handle=ready.handle;return ready;}
@@ -192,22 +206,29 @@ export async function runManualChromeDriver(executable, root, origin) {
         return{...result,remaining:browser.isExited()?0:(await inventory()).length,rootExited:browser.isExited()};
       }
       case 'context_drift':await browser.send('Target.closeTarget',{targetId:page.targetId});observation.invalid=true;return{changed:true};
-      case 'abort':await actor.abort(message.handle);observation?.unsubscribe?.();if(!message.preserveReader)await browser.close();return{closed:true};
-      case 'release':if(handle)await actor.abort(handle);observation?.unsubscribe?.();await browser.close();return{exited:browser.isExited()};
+      case 'abort':captureCancel?.abort();await actor.abort(message.handle);observation?.unsubscribe?.();if(!message.preserveReader)await browser.close();return{closed:true};
+      case 'release':captureCancel?.abort();if(handle)await actor.abort(handle);observation?.unsubscribe?.();await browser.close();return{exited:browser.isExited()};
       default:throw fail();
     }
   }
   const input=readline.createInterface({input:process.stdin,crlfDelay:Infinity});
   let chain=Promise.resolve();
-  input.on('line',line=>{chain=chain.then(async()=>{
+  input.on('line',line=>{
+    // Capture has a separate bounded lane. Owner inspection and abort must not
+    // queue behind a feed response waiting on the synthetic HTTP barrier.
+    let parsed;
+    try { if(Buffer.byteLength(line)>16384)throw fail();parsed=manualChromeCommand(parseStrictJSON(line,{maxJSONDepth:4,maxJSONTokens:96})); }
+    catch {emit({id:0,ok:false,code:'fixture_manual_rejected'});return;}
+    const run=async()=>{
     let message;
     try {
-      if(Buffer.byteLength(line)>16384)throw fail();
-      message=manualChromeCommand(parseStrictJSON(line,{maxJSONDepth:4,maxJSONTokens:96}));
+      message=parsed;
       const result=await execute(message);
       emit(message.op==='fixture_bootstrap'?{ready:true}:{id:message.id,ok:true,result});
     }catch{emit({id:Number.isSafeInteger(message?.id)?message.id:0,ok:false,code:'fixture_manual_'+phase});}
-  });});
+    };
+    if(parsed.op==='capture_fixture')void run();else chain=chain.then(run);
+  });
   input.on('close',()=>{void chain.finally(async()=>{if(handle)await actor.abort(handle).catch(()=>{});if(browser)await browser.close().catch(()=>{});});});
   let exitSent=false;
   setInterval(()=>{if(browser?.isExited()&&owner&&!exitSent){emit({event:'chrome_exit',owner});exitSent=true;}},25).unref();

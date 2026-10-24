@@ -17,6 +17,51 @@ import (
 
 type manualTestClock struct{ now time.Time }
 
+func TestManualPilotSyntheticShorterOriginalDeadline(t *testing.T) {
+	ctx := context.Background()
+	for _, limit := range []time.Duration{3 * time.Second, 61 * time.Second, -time.Second} {
+		t.Run(limit.String(), func(t *testing.T) {
+			s := openTestStore(t)
+			clock := &manualTestClock{time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC)}
+			s.clock = clock
+			settings, err := s.GetSettings(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			settings.CollectionMode = "headless"
+			settings.ActiveSources = []domain.Source{domain.SourceX}
+			session, err := createVisibleUpdateSession(s, ctx, "synthetic shorter deadline", settings)
+			if err != nil {
+				t.Fatal(err)
+			}
+			command, err := s.StartRun(ctx, session.Runs[0].ID, map[string]any{"captureRuntime": map[string]any{"driver": "headless"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			p, err := s.IssueSyntheticManualPilot(ctx, ManualPilotSyntheticRequest{FactoryOptIn: true, SessionID: session.ID, RunID: command.RunID, SyntheticOwnerRef: "synthetic:owner", SyntheticPairRef: "synthetic:pair", StartedAt: clock.now, ValidUntil: clock.now.Add(limit)})
+			if limit != 3*time.Second {
+				if err == nil || p != nil {
+					t.Fatal("invalid deadline issued")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			claim, err := s.ClaimManualPilot(ctx, p, command.ID, "short-claim")
+			if err != nil || claim.Handle == nil {
+				t.Fatal(err)
+			}
+			clock.now = clock.now.Add(3 * time.Second)
+			outcome, err := s.CommitManualPilotResult(ctx, claim.Handle, "short-result", manualObservation())
+			if err == nil || outcome != RejectedNoMutation {
+				t.Fatal("shorter limit was reset")
+			}
+			assertManualCounts(t, s, 0)
+		})
+	}
+}
+
 func (c *manualTestClock) Now() time.Time { return c.now }
 
 type manualFixture struct {

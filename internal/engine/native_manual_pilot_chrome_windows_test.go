@@ -30,10 +30,11 @@ import (
 const nativeManualChromeAccount = "1908123456789012345"
 
 type nativeManualChromeHTTP struct {
-	mu               sync.Mutex
-	server           *httptest.Server
-	token            string
-	logins, settings atomic.Int32
+	mu                       sync.Mutex
+	server                   *httptest.Server
+	token                    string
+	logins, settings         atomic.Int32
+	feedEntered, feedRelease chan struct{}
 }
 
 func startNativeManualChromeHTTP(t *testing.T) *nativeManualChromeHTTP {
@@ -76,6 +77,22 @@ func startNativeManualChromeHTTP(t *testing.T) *nativeManualChromeHTTP {
 			return
 		}
 		switch r.URL.Path {
+		case "/feed":
+			if f.feedEntered == nil || f.feedRelease == nil {
+				w.WriteHeader(404)
+				return
+			}
+			select {
+			case f.feedEntered <- struct{}{}:
+			default:
+			}
+			select {
+			case <-f.feedRelease:
+			case <-r.Context().Done():
+				return
+			}
+			w.Header().Set("Content-Type", "text/html")
+			io.WriteString(w, `<!doctype html><title>Synthetic DOM feed</title><article data-fixture-post="1908123456789012346"><span data-author>Synthetic Author</span><div data-text>A real Chrome DOM post about bounded local collection.</div><a data-permalink href="https://x.com/synthetic/status/1908123456789012346">Post</a></article>`)
 		case "/startup":
 			w.Header().Set("Content-Type", "text/html")
 			io.WriteString(w, `<!doctype html><title>Owned startup fixture</title><script>globalThis.__aku_fixture_self='1908123456789012345';debugger;fetch('/settings',{cache:'no-store'}).then(r=>r.json());</script>`)

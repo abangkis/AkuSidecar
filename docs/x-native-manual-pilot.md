@@ -2,6 +2,11 @@
 
 Decision: 2026-10-21. Contract: `aku.x.dev-pilot.manual-startup.v2`.
 
+The 2026-10-25 [Chrome/Store fixture checkpoint](x-manual-pilot-store-contract.md#actual-chrome-capture-with-synthetic-store-admission-2026-10-25)
+adds real DOM capture, durable result ingestion and actual deterministic Engine
+reasoning with fresh synthetic profiles/database. It does not qualify native X
+capture or authorize another credential transfer/main-dev activation.
+
 ## Manual startup connector: synthetic application wiring (2026-10-24)
 
 Native QA `44ef8548cef144058954d07a7a7308b3` on source `d7c97f5` passed

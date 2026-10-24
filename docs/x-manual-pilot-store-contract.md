@@ -152,3 +152,58 @@ fixture passed all ten actual-main scenarios, four build variants, early native
 provider rejection and absent config/database sentinels in run
 `8d59d1ce1276459f9a69f2ad33ce88e4`. All successful-run temporary roots were removed.
 Evidence logs remain under `runtime/qa/auth-session-sidecar/` with these run IDs.
+
+## Actual Chrome capture with synthetic Store admission (2026-10-25)
+
+The dual-tag Windows adapter now reads a post from actual Chrome DOM and returns
+the production observation format through the shared Engine claim/result path.
+It uses a dedicated capture RPC lane; control/owner inspection remains responsive
+while the synthetic feed response is held. Capture opens a separate target in the
+collector browser and keeps the startup identity target/document unchanged.
+There is no caller-selected URL, source or script. The compiled loopback DOM
+extractor supplies the actual text, author, permalink and post ID to production
+`observation.mjs`; Go does not manufacture the captured post.
+
+The Go reply is bounded to 140 KiB, rejects unknown fields, matches every frozen
+startup pin, requires a distinct capture target and X source, and validates one
+snapshot with at most twenty canonical post identities. Node bounds its
+observation to 128 KiB, post text to 8,192 characters and author to 256 characters.
+Capture/abort use separate lanes; retiring capture closes its dedicated target.
+
+A separate test-only admission capability requires fresh Job-owned Chrome/Node
+processes, distinct physical profile directories, verified directory handles and
+the helper's explicit process gate. It issues a synthetic permit bound to the
+full owner hash; it never changes offline provenance into native authority. The
+native issuer still rejects the same offline vector. Synthetic issuance accepts
+an optional earlier `ValidUntil`; it cannot extend the original 60-second limit.
+
+Run `scripts/test-manual-pilot-chrome-store.ps1` for offline boundaries, tag gates,
+compilation and disabled-entry verification. Add `-VerifyChrome` to execute the
+fresh-profile loopback acceptance. No retained QA profile or native X operation
+is included. The executable includes actual Engine production sources and only
+the explicit local Chrome test/helper files; browser package TestMain and native
+retained-profile tests are excluded.
+
+Acceptance run `3a894c544d154329862cd0a778c05c92` passed five Node checks, four
+tag gates, disabled-entry skip and two actual Chrome scenarios in 4.33 seconds:
+
+- A held feed request overlaps an additional reader window. Startup/bootstrap
+  pins and collector PID/generation remain unchanged. Real DOM evidence commits
+  once, deterministic Engine reasoning completes, replay does not recapture, and
+  closing the final reader closes admission.
+- Cancellation during held capture rejects the late real DOM result with zero
+  observations committed.
+
+All four role Jobs/process trees were verified empty. The helper removed its
+owned profiles, databases and test binary; the evidence log remains at
+`runtime/qa/auth-session-sidecar/manual-pilot-chrome-store-3a894c544d154329862cd0a778c05c92.log.txt`.
+This is actual Chrome execution with synthetic accounts/posts and Store permits.
+It does not qualify native X selectors/network evidence, activate a main provider,
+access a user's database, or authorize a real-session transfer.
+
+Post-change regression evidence: `61390719cad04b3d9623ac7f2d697226` passed the
+nineteen Engine/Store integration cases and four ordinary continuation tests;
+`5c8a17242b7d4a3d8860532ed7c80bef` passed all four Store builds, shorter-deadline
+cases and historical schema-29 consumer checks; `46d4d1b2d90841dbaf35fdae6a95a589`
+passed all ten actual-main fixture scenarios and four build variants. Successful
+regression roots were removed. Their logs remain under the same QA evidence root.

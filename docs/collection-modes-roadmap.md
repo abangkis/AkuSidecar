@@ -1,5 +1,19 @@
 # Browser and headless collection roadmap
 
+### Chrome capture through Engine/Store (2026-10-25)
+
+The private dual-tag Chrome adapter now passes actual DOM evidence through the
+confirmed Store claim, guarded result commit and deterministic Engine reasoning
+path. Synthetic acceptance `3a894c544d154329862cd0a778c05c92` verifies reader
+overlap during a held capture, fixed collector ownership, exactly-once persistence,
+late-result rejection and owned cleanup. Five Node checks, four tag gates and
+the disabled-entry check passed. See the
+[Chrome/Store checkpoint](x-manual-pilot-store-contract.md#actual-chrome-capture-with-synthetic-store-admission-2026-10-25).
+The factory, login, posts and database remain fixture-only; offline evidence
+cannot become native X authority. Native source capture/provider composition and
+separately authorized X QA/dev activation remain before use in main dev. No
+renewal/rotation qualification is added to the MVP gate.
+
 ### Store claim/result increment (2026-10-24)
 
 The [manual pilot Store contract](x-manual-pilot-store-contract.md) implements
