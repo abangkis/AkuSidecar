@@ -2014,6 +2014,7 @@ export async function executeManualOwnerRPC(message) {
       current.manualStartupPort=createXManualOwnerPort({enabled:true,owner:current.owner,diagnostics,
         createOwners:()=>createOwnedManualStartupOwners(message,diagnostics),
         snapshot:(role,document,pins,phase)=>manualOwnerSnapshot({current,collector,role,document,pins,phase}),
+        capture:(request,options)=>collector.transport.captureWorker(request,{...options,browserContextId:collector.contextId}),
         retire:async(role,preserveReader)=>{
           if(role==='reader'){
             await retireManualReader(current,preserveReader);

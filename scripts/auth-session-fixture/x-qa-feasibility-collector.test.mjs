@@ -300,7 +300,9 @@ test('requires the caller to inject the existing CDP frame decoder', async (t) =
 
 test('accepts the fixed bound bootstrap expression within a bounded whitelist limit', async (t) => {
   const root = await makeRoot(t);
-  assert.equal(QA_BOUND_BOOTSTRAP_EXPRESSION.length, 8646);
+  // Git may check out CRLF. Whitelist the original expression below while
+  // comparing the canonical source length independently of line endings.
+  assert.equal(QA_BOUND_BOOTSTRAP_EXPRESSION.replaceAll('\r\n', '\n').length, 8646);
   assert.ok(QA_BOUND_BOOTSTRAP_EXPRESSION.length > 8192);
   assert.ok(QA_BOUND_BOOTSTRAP_EXPRESSION.length <= 16 * 1024);
   assert.doesNotThrow(() => createQAFeasibilityCollector({

@@ -170,7 +170,7 @@ func (b *xManualPilotWindowsBackend) rpc(ctx context.Context, role, op string, f
 		return errors.New("x-owner-transport-unavailable")
 	}
 	switch op {
-	case "manual_prepare", "manual_acquire", "manual_inspect", "manual_inventory", "manual_abort":
+	case "manual_prepare", "manual_acquire", "manual_inspect", "manual_inventory", "manual_abort", "manual_capture", "manual_capture_cancel":
 	default:
 		return errors.New("x-owner-operation-unavailable")
 	}
@@ -217,12 +217,16 @@ func (b *xManualPilotWindowsBackend) cleanup(ctx context.Context, role, handle s
 // Default-off, private QA construction only. Provenance is fixed by this native
 // implementation, not selected from config/JSON. No caller is registered here.
 func newXManualPilotOwnerBroker(parent context.Context, cfg xManualPilotOwnerConfig, reader, collector xManualPilotWindowsRole) (*nativePilotBroker, nativePilotDiagnostic) {
+	b, _, d := newXManualPilotOwnerCaptureBroker(parent, cfg, reader, collector)
+	return b, d
+}
+func newXManualPilotOwnerCaptureBroker(parent context.Context, cfg xManualPilotOwnerConfig, reader, collector xManualPilotWindowsRole) (*nativePilotBroker, *xManualPilotOwnerPorts, nativePilotDiagnostic) {
 	if !cfg.enabled {
-		return nil, nativePilotDiagnostic{Reason: "admission-disabled"}
+		return nil, nil, nativePilotDiagnostic{Reason: "admission-disabled"}
 	}
 	if reader.role != "reader" || collector.role != "collector" || reader.bridge == nil || collector.bridge == nil || reader.chrome.PID == collector.chrome.PID || reader.profileID == "" || reader.profileID == collector.profileID {
-		return nil, nativePilotDiagnostic{Reason: "invalid-configuration"}
+		return nil, nil, nativePilotDiagnostic{Reason: "invalid-configuration"}
 	}
 	backend := &xManualPilotWindowsBackend{roles: map[string]xManualPilotWindowsRole{"reader": reader, "collector": collector}}
-	return newXManualPilotOwnerBrokerWithBackend(parent, cfg, backend)
+	return newXManualPilotOwnerBrokerPorts(parent, cfg, backend)
 }

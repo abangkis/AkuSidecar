@@ -109,6 +109,17 @@ function pageKey(source, url) {
 }
 
 export async function capture(browser, assetsBySource, source, payload) {
+  return captureScoped(browser,assetsBySource,source,payload,sourceFrontiers);
+}
+
+// Private manual attempts cannot reuse another attempt's continuation IDs.
+export async function captureIsolated(browser,assetsBySource,source,payload) {
+  const frontier=new Map();
+  try{return await captureScoped(browser,assetsBySource,source,payload,frontier);}
+  finally{frontier.clear();}
+}
+
+async function captureScoped(browser, assetsBySource, source, payload, sourceFrontiers) {
   const options = validateCapture(source, payload);
   const deadline = Date.now() + options.captureTimeoutMs;
   const page = typeof browser.forSource === 'function' ? await browser.forSource(source) : browser;

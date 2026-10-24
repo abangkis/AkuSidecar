@@ -1,5 +1,19 @@
 # Browser and headless collection roadmap
 
+### Native X capture composition: offline first (2026-10-25)
+
+The private native collector now composes the existing X parser/worker with the
+same startup owner ports, Engine and guarded Store path. Its capture target and
+transport capability are separate from startup account evidence. The initial
+capture is explicitly round-one-only; unsupported continuation is rejected.
+Use `scripts/test-x-manual-native-capture.ps1` for VM-backed parser/Node/Store
+validation without a browser, profile or X request. Prepared manifests now pin
+the worker and sibling AkuBridge parser assets. See the
+[native capture contract](x-manual-pilot-store-contract.md#prepared-native-x-capture-through-the-existing-worker-2026-10-25).
+Actual native capture QA, its separately authorized one-shot session transfer,
+and explicit main-dev opt-in remain acceptance boundaries. The helper does not
+activate any of them or reopen deferred renewal/rotation work.
+
 ### Chrome capture through Engine/Store (2026-10-25)
 
 The private dual-tag Chrome adapter now passes actual DOM evidence through the

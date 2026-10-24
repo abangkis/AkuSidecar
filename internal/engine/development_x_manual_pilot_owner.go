@@ -429,13 +429,18 @@ func (p *xManualPilotOwnerPorts) state(ctx context.Context) (nativePilotBrokerSt
 	return s, nil
 }
 func newXManualPilotOwnerBrokerWithBackend(parent context.Context, cfg xManualPilotOwnerConfig, backend xManualPilotOwnerBackend) (*nativePilotBroker, nativePilotDiagnostic) {
+	b, _, d := newXManualPilotOwnerBrokerPorts(parent, cfg, backend)
+	return b, d
+}
+func newXManualPilotOwnerBrokerPorts(parent context.Context, cfg xManualPilotOwnerConfig, backend xManualPilotOwnerBackend) (*nativePilotBroker, *xManualPilotOwnerPorts, nativePilotDiagnostic) {
 	if !cfg.enabled {
-		return nil, nativePilotDiagnostic{Reason: "admission-disabled"}
+		return nil, nil, nativePilotDiagnostic{Reason: "admission-disabled"}
 	}
 	if backend == nil || cfg.policy == nil || (backend.provenance() != nativePilotTrustedStartup && backend.provenance() != nativePilotOfflineOnly) {
-		return nil, nativePilotDiagnostic{Reason: "invalid-configuration"}
+		return nil, nil, nativePilotDiagnostic{Reason: "invalid-configuration"}
 	}
 	p := &xManualPilotOwnerPorts{cfg: cfg, backend: backend, prepared: map[string]nativePilotPreparedRole{}, begun: map[string]bool{}, acquired: map[string]bool{}, cleanupTokens: map[string]string{}, cleanupUnknown: map[string]bool{}}
 	ports := nativePilotBrokerPorts{now: backend.now, prepare: p.prepare, inspect: p.inspect, acquire: p.acquire, state: p.state, abort: p.abort}
-	return newNativePilotBroker(parent, nativePilotBrokerConfig{enabled: true, offlineTest: backend.provenance() == nativePilotOfflineOnly, pilot: cfg.pilot}, ports)
+	b, d := newNativePilotBroker(parent, nativePilotBrokerConfig{enabled: true, offlineTest: backend.provenance() == nativePilotOfflineOnly, pilot: cfg.pilot}, ports)
+	return b, p, d
 }

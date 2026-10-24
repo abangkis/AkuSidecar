@@ -2,6 +2,12 @@
 
 Decision: 2026-10-21. Contract: `aku.x.dev-pilot.manual-startup.v2`.
 
+The next [native capture composition](x-manual-pilot-store-contract.md#prepared-native-x-capture-through-the-existing-worker-2026-10-25)
+connects the production X worker/parser to the guarded Engine/Store path through
+the same private startup owner ports. Its current validation is accountless and
+synthetic; the native capture capability stays disabled and no retained QA run,
+real-session transfer or main-dev activation is authorized by this increment.
+
 The 2026-10-25 [Chrome/Store fixture checkpoint](x-manual-pilot-store-contract.md#actual-chrome-capture-with-synthetic-store-admission-2026-10-25)
 adds real DOM capture, durable result ingestion and actual deterministic Engine
 reasoning with fresh synthetic profiles/database. It does not qualify native X

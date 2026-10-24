@@ -23,7 +23,7 @@ $planPath=Join-Path $root 'prepared-plan.json'
 $marker=Join-Path $root 'cleanup.verified'
 $names=@('TEMP','TMP','GOTMPDIR','GOCACHE','GOMODCACHE','GOWORK','GOPROXY','GOSUMDB','GOTOOLCHAIN','CGO_ENABLED','GOFLAGS',
  'AKU_NATIVE_MANUAL_PROJECT_ROOT','AKU_CHROME_FIXTURE_ROOT','AKU_CHROME_FIXTURE_CLEANUP_MARKER','AKU_CHROME_FIXTURE_NODE','AKU_CHROME_FIXTURE_EXE',
- 'AKU_X_MANUAL_RETAINED_QA_ENABLED','AKU_X_MANUAL_RETAINED_TRANSFER_ONCE','AKU_X_QA_SHORT_TRANSFER_ALLOWED','AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED')
+ 'AKU_X_MANUAL_RETAINED_QA_ENABLED','AKU_X_MANUAL_RETAINED_TRANSFER_ONCE','AKU_X_QA_SHORT_TRANSFER_ALLOWED','AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED','AKU_X_NATIVE_MANUAL_CAPTURE_ALLOWED')
 $previous=@{};foreach($name in $names){$previous[$name]=[Environment]::GetEnvironmentVariable($name,'Process')}
 $remove=$false
 Push-Location -LiteralPath $project
@@ -33,7 +33,7 @@ try{
  $env:GOWORK='off';$env:GOPROXY='off';$env:GOSUMDB='off';$env:GOTOOLCHAIN='local';$env:CGO_ENABLED='0';$env:GOFLAGS=''
  $env:AKU_NATIVE_MANUAL_PROJECT_ROOT=$project;$env:AKU_CHROME_FIXTURE_ROOT=$root;$env:AKU_CHROME_FIXTURE_CLEANUP_MARKER=$marker
  $env:AKU_CHROME_FIXTURE_NODE=$node;$env:AKU_CHROME_FIXTURE_EXE=$chrome
- $env:AKU_X_MANUAL_RETAINED_QA_ENABLED='0';$env:AKU_X_MANUAL_RETAINED_TRANSFER_ONCE='0';$env:AKU_X_QA_SHORT_TRANSFER_ALLOWED='0';$env:AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED='0'
+ $env:AKU_X_MANUAL_RETAINED_QA_ENABLED='0';$env:AKU_X_MANUAL_RETAINED_TRANSFER_ONCE='0';$env:AKU_X_QA_SHORT_TRANSFER_ALLOWED='0';$env:AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED='0';$env:AKU_X_NATIVE_MANUAL_CAPTURE_ALLOWED='0'
  Write-Output ('Retained manual QA '+$(if($RunPrepared){'execution'}else{'preparation'})+': '+$id) | Tee-Object -FilePath $log
  if(!$RunPrepared){
   & $node --test --test-timeout=15000 scripts/auth-session-fixture/x-manual-retained-setup.test.mjs scripts/auth-session-fixture/x-native-metadata-probe-driver.test.mjs scripts/auth-session-fixture/x-manual-enrollment-capture.test.mjs scripts/auth-session-fixture/x-manual-startup-diagnostic.test.mjs scripts/auth-session-fixture/x-manual-startup-cookie-guard.test.mjs scripts/auth-session-fixture/x-manual-diagnostic-capacity.test.mjs scripts/auth-session-fixture/x-manual-unframed-traffic.test.mjs scripts/auth-session-fixture/x-manual-startup-redirect.test.mjs scripts/auth-session-fixture/x-qa-bound-observation.test.mjs scripts/auth-session-fixture/x-manual-startup-first-cause.test.mjs scripts/auth-session-fixture/x-manual-startup-root-navigation.test.mjs scripts/auth-session-fixture/x-manual-network-provenance.test.mjs scripts/auth-session-fixture/x-identity-freshness-ledger.test.mjs scripts/auth-session-fixture/x-manual-root-controls.test.mjs scripts/auth-session-fixture/x-manual-startup-owner.test.mjs 2>&1 | Tee-Object -FilePath $log -Append
@@ -56,7 +56,7 @@ try{
   & $exe '-test.run=^TestXManualPilotRetained(QA|SeedDiagnostics|SeedNodeDiagnostic|StartupDiagnostic|TraceCodes)$' '-test.timeout=10s' '-test.v' 2>&1 | Tee-Object -FilePath $log -Append
   if($LASTEXITCODE -ne 0){throw 'Default-off entry rejection failed.'}
   $provenance=Get-Content -LiteralPath (Join-Path $root 'staging-provenance.json') -Raw | ConvertFrom-Json
-  $paths=@($provenance.copied.source)+@($provenance.extracted.source)+@($provenance.nodeSources.source)+@('scripts/auth-session-fixture/x-manual-retained-setup.mjs','scripts/auth-session-fixture/x-retained-source-qualification-driver.mjs','scripts/prepare-x-manual-retained-qa.ps1')
+  $paths=@($provenance.copied.source)+@($provenance.extracted.source)+@($provenance.nodeSources.source)+@($provenance.captureSourceAssets.source)+@('scripts/auth-session-fixture/x-manual-retained-setup.mjs','scripts/auth-session-fixture/x-retained-source-qualification-driver.mjs','scripts/prepare-x-manual-retained-qa.ps1')
   $fingerprints=@($paths | Sort-Object -Unique | ForEach-Object {@{source=$_;sha256=(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLower()}})
   $plan=@{schema='aku.x.manual-retained-preparation.v1';project=$project;root=$root;maxAttemptMS=60000;defaultOff=$true;executionApproved=$false;cookieNames=@('auth_token','ct0');sources=$fingerprints;
    executableSHA256=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLower();nodeSHA256=(Get-FileHash -LiteralPath $node -Algorithm SHA256).Hash.ToLower();chromeSHA256=(Get-FileHash -LiteralPath $chrome -Algorithm SHA256).Hash.ToLower()}

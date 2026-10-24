@@ -24,8 +24,9 @@ const driver=await import('data:text/javascript;base64,'+Buffer.from(code).toStr
 // profile validation, native send or process creation is invoked by these tests.
 const collectorPath=resolve('scripts/auth-session-fixture/x-qa-feasibility-collector.mjs');
 let collectorCode=await fs.readFile(collectorPath,'utf8');
+collectorCode=collectorCode.replace(/from '(\.\/[^']+)'/g,(_,p)=>`from '${new URL(p,pathToFileURL(collectorPath)).href}'`);
 collectorCode=collectorCode.replace('fileURLToPath(import.meta.url)',JSON.stringify(collectorPath))
-  .replace('return Object.freeze({ launch, send, subscribe, close, ownership });','return Object.freeze({ subscribe, deliver:deliverMessage });');
+  .replace('return Object.freeze({ launch, send, subscribe, close, ownership, captureWorker });','return Object.freeze({ subscribe, deliver:deliverMessage });');
 const collectorModule=await import('data:text/javascript;base64,'+Buffer.from(collectorCode).toString('base64'));
 
 async function collectorRepeatScenario(mode){

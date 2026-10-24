@@ -207,3 +207,72 @@ nineteen Engine/Store integration cases and four ordinary continuation tests;
 cases and historical schema-29 consumer checks; `46d4d1b2d90841dbaf35fdae6a95a589`
 passed all ten actual-main fixture scenarios and four build variants. Successful
 regression roots were removed. Their logs remain under the same QA evidence root.
+
+## Prepared native X capture through the existing worker (2026-10-25)
+
+The native owner protocol now has private `manual_capture` and
+`manual_capture_cancel` operations. A matching collector handle, frozen startup
+pins, request correlation and original deadline are required. The Windows backend
+routes capture through its dedicated RPC lane. The Engine composition constructs
+the native backend from the same owner ports that prepared and acquired startup
+evidence, then uses the existing guarded Store claim/result path. There is no
+main, CLI or HTTP registration.
+
+Capture calls production `sourceAssets` and `captureIsolated`, including the
+AkuBridge X adapter, vendored X extractor and normal observation mapper. A new
+target belongs to the already owned collector browser context; it cannot replace
+the startup account-evidence target. The source-specific worker controls DOM
+extraction and canonical X navigation. Source, arbitrary scripts, raw CDP commands
+and public QA authority flags cannot be selected by a capture request.
+
+The startup transport retains its original fixed-expression restrictions. A
+separate private worker capability permits the operations needed for capture and
+installs header/cookie observation before navigation. Authentication-cookie writes
+or ambiguous header coverage reject capture. This capability cannot publish an
+account identity receipt. Native cookie/target behavior still requires separately
+authorized QA; offline success is not native account/session qualification.
+
+The initial MVP capture supports acquisition round one only, with bounded scroll,
+post count and hydration settings. Unsupported continuation/round-two requests
+are explicitly rejected rather than changed into a new first round. Each native
+capture uses an isolated frontier map; the ordinary worker's persistent frontier
+behavior remains unchanged. Capture stops at the original attempt deadline and
+retires only its own target. There is no new seed, retry, renewal or fallback.
+
+Observation JSON is limited to 512 KiB; the complete escaped response envelope is
+limited to 768 KiB. The Go adapter validates schema, correlation, exact pins,
+distinct capture target, observation digest and X observation before allowing the
+existing Store result transaction. Failure does not trigger another capture.
+
+Use `scripts/test-x-manual-native-capture.ps1` for the accountless Node/Go tests.
+The synthetic transport executes the actual parser/worker in a VM-backed DOM/CDP
+environment, then passes its output through Node stdio, Engine, Store and
+deterministic reasoning. No browser or profile is launched, no X request or session
+transfer runs, and only newly created QA databases are opened. Prepared-source
+fingerprints include the new native module and the worker/parser code assets.
+
+Acceptance run `4c710fc29a2343d6a461895764bf015b` passed 68 Node checks, six Go
+result scenarios and four tag gates. The Go test uses the actual owner-port
+constructor, prepare/acquire transitions and `bindXNativePilotRuntime`; it then
+executes the production parser over synthetic CDP/DOM through Node stdio. Valid
+evidence commits and completes deterministic reasoning. Wrong owner, target,
+source, digest and expiry reject the result and never recapture on replay.
+Known missing HTTP/ExtraInfo coverage is rejected; non-HTTP WebSocket events do
+not become HTTP response obligations. Live cross-target/service-worker coverage
+remains unqualified.
+
+Post-change regression runs `e0ecaf81c6a74df2bf971188fb97225a` and
+`8f86940d29bf474f9c31ddeded22c8ad` passed the nineteen Engine/Store cases, four
+ordinary continuation regressions and ten actual-main scenarios/four builds.
+Store/schema code was unchanged, so the preceding Store compatibility evidence
+remains applicable.
+
+Preparation-only run `578e6bcdaecb4672b270fb7bc1f1ff3f` passed 278 startup/network
+Node checks plus 32 owner-port checks, standalone compilation and disabled-entry
+verification before profile access. Its plan retained `executionApproved=false`
+and `defaultOff=true`, with 75 source fingerprints including 25 worker/parser
+assets. This validates the existing startup QA preparation, not a native capture
+execution through Engine/Store. A dedicated capture QA entry and fresh explicit
+one-shot authorization remain required before a live test. Logs/provenance remain
+under `runtime/qa/auth-session-sidecar/`; temporary databases, test binaries and
+preparation roots from this increment were removed.

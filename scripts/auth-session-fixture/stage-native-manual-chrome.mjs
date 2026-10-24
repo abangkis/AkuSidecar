@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { sourceAssets } from '../../internal/collection/headless/worker/worker.mjs';
 
 // Fixed source allowlist; never stage Engine initialization or Store imports.
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -25,6 +26,7 @@ if(mode!==undefined){
 const manifest = { schema: 'aku.native-manual-chrome.staging.v1', copied: [], extracted: [] };
 if(mode!==undefined){
   manifest.nodeSources=['x-native-manual-owner-port.mjs','x-native-manual-owner-port.test.mjs','x-native-manual-owner-offline.mjs','x-native-metadata-probe-driver.mjs',
+    'x-native-manual-capture.mjs','x-native-manual-capture.test.mjs',
     'x-qa-feasibility-collector.mjs','x-manual-startup-owner.mjs','x-manual-startup-owner.test.mjs',
     'x-manual-startup-source.mjs','x-manual-startup-offline-fixture.mjs',
     'x-manual-header-safety.mjs','x-manual-root-document.mjs','x-manual-root-source-policy.mjs','x-manual-root-controls.mjs','x-manual-root-controls.test.mjs',
@@ -42,6 +44,11 @@ if(mode!==undefined){
     const source='scripts/auth-session-fixture/'+file;
     return {source,sha256:hash(fs.readFileSync(path.join(project,source)))};
   });
+  // These are code assets only. No browser, profile or native driver executes.
+  // Pin both the shared worker and sibling AkuBridge parser files used by X.
+  manifest.captureSourceAssets=(await sourceAssets(path.resolve(project,'..','AkuBridge'),'x')).map(asset=>({
+    source:path.relative(project,asset.path).replaceAll('\\','/'),sha256:asset.sha256,
+  }));
 }
 for (const file of files) {
   const relative = `internal/engine/${file}`, bytes = fs.readFileSync(path.join(project, relative));

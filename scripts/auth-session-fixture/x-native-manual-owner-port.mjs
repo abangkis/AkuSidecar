@@ -1,6 +1,7 @@
 // Private, default-off QA transport. OS provenance belongs to the compiled Go
 // owner backend; this module cannot grant it through a request or JSON flag.
 import {startupFailureLatch,startupInspectionFailure} from './x-manual-startup-diagnostic.mjs';
+import {validateManualCaptureRequest} from './x-native-manual-capture.mjs';
 const roles=['reader','collector'];
 const pinKeys=['ownerId','profileId','contextId','targetId','frameId','documentId'];
 const requestKeys=['challenge','role',...pinKeys];
@@ -14,7 +15,7 @@ function exact(value, keys) {
 export function manualOwnerOperation(value) {
   const operations={manual_prepare:['id','op','owner','role'],manual_acquire:['id','op','owner','role','handle','request'],
     manual_inspect:['id','op','owner','role'],manual_inventory:['id','op','owner','role'],
-    manual_abort:['id','op','owner','role','handle','preserveReader']};
+    manual_abort:['id','op','owner','role','handle','preserveReader'],manual_capture:['id','op','owner','role','handle','request'],manual_capture_cancel:['id','op','owner','role','handle']};
   const op=value&&Object.getOwnPropertyDescriptor(value,'op')?.value;
   const keys=typeof op==='string'&&Object.hasOwn(operations,op)?operations[op]:null;
   if(!keys)throw failure();exact(value,keys);
@@ -25,9 +26,11 @@ export function manualOwnerOperation(value) {
     exact(value.request,requestKeys);
     if(!requestKeys.every(k=>ref(value.request[k]))||value.request.role!==value.role)throw failure();
   }
+  if(value.op==='manual_capture'){if(value.role!=='collector')throw failure();validateManualCaptureRequest(value.request);}
+  if(value.op==='manual_capture_cancel'&&value.role!=='collector')throw failure();
   return value;
 }
-export function createXManualOwnerPort({enabled=false,owner,createOwners,snapshot,retire,diagnostics=startupFailureLatch()}={}) {
+export function createXManualOwnerPort({enabled=false,owner,createOwners,snapshot,retire,capture,diagnostics=startupFailureLatch()}={}) {
   if(enabled!==true||!Number.isSafeInteger(owner)||owner<1||![createOwners,snapshot,retire].every(v=>typeof v==='function'))throw failure();
   const actors=createOwners();
   if(!actors||!roles.every(role=>['prepare','acquire','abort','cancel'].every(k=>typeof actors[role]?.[k]==='function')))throw failure();
@@ -77,6 +80,9 @@ export function createXManualOwnerPort({enabled=false,owner,createOwners,snapsho
     async execute(raw){
       const message=manualOwnerOperation(raw), role=message.role,s=state[role];
       if(message.owner!==owner)throw failure();
+      if(message.op==='manual_capture_cancel'){
+        if(!s.handle||message.handle!==s.handle)throw failure();s.captureCancel?.abort();return{closed:true};
+      }
       if(message.op==='manual_abort'){
         if(message.handle!==null&&(!s.handle||message.handle!==s.handle))throw failure();
         if(s.cleanup){
@@ -86,7 +92,7 @@ export function createXManualOwnerPort({enabled=false,owner,createOwners,snapsho
           }
           return s.cleanup;
         }
-        s.closed=true;failed=true;
+        s.captureCancel?.abort();s.closed=true;failed=true;
         s.preserved=message.preserveReader;
         s.cleanup=(async()=>{
           if(message.handle===null)await s.actor.cancel();else await s.actor.abort(s.handle);
@@ -115,6 +121,21 @@ export function createXManualOwnerPort({enabled=false,owner,createOwners,snapsho
         }catch(error){const cause=diagnostics.record(error,role,'prepare','unavailable','xnp_manual_owner_unavailable');invalidate(role);if(s.handle)await s.actor.abort(s.handle).catch(()=>{});throw cause;}
       }
       if(!s.pins)throw failure();
+      if(message.op==='manual_capture'){
+        if(typeof capture!=='function'||s.captureCancel||!roles.every(r=>state[r].acquired)||message.handle!==s.handle||pinKeys.some(k=>message.request.pins[k]!==s.pins[k]))throw failure();
+        s.captureSeen??=new Set();
+        if(s.captureSeen.size>=32||s.captureSeen.has(message.request.correlation)||s.captureDeadline&&message.request.deadlineMS>s.captureDeadline)throw failure();
+        s.captureSeen.add(message.request.correlation);s.captureDeadline=message.request.deadlineMS;
+        s.captureCancel=new AbortController();
+        try{
+          await checked(role,true,'inspect_after');
+          const result=await capture(message.request,{signal:s.captureCancel.signal,proofSession:s.session,onUnsafe:()=>invalidate(role)});
+          await checked(role,true,'inspect_after');
+          if(failed||s.invalid||s.closed||s.captureCancel.signal.aborted)throw failure();
+          return result;
+        }catch(error){invalidate(role);throw error;}
+        finally{s.captureCancel=null;}
+      }
       if(message.op==='manual_inspect'){
         const phase=s.acquired?'inspect_after':'inspect_before';
         const value=await checked(role,true,phase);

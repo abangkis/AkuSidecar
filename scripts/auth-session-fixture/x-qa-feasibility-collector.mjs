@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { lstat, mkdir, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {captureNativeXTarget} from './x-native-manual-capture.mjs';
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(MODULE_DIR, '..', '..');
@@ -547,6 +548,13 @@ export function createQAFeasibilityCollector({
     if (cleanParams === null || cleanParams === undefined || pending.size >= MAX_PENDING
       || nextId > Number.MAX_SAFE_INTEGER) return Promise.reject(fixedError('qa_command_rejected'));
     if (method === 'Network.setCookies') cookieSeedUsed = cookieState.used;
+	return writeCommand(method,cleanParams,sessionId,project);
+  };
+
+  // Only trusted worker composition receives this private writer. The public
+  // startup send retains its fixed-expression and home-only restrictions.
+  const writeCommand=(method,cleanParams,sessionId,project=result=>result,timeoutMs=COMMAND_TIMEOUT_MS)=>{
+    if(!['launched','closing'].includes(state)||transportFailed||processExited||pending.size>=MAX_PENDING) return Promise.reject(fixedError('qa_transport_unavailable'));
 
     const id = nextId;
     nextId += 1;
@@ -558,6 +566,7 @@ export function createQAFeasibilityCollector({
     let wire;
     try {
       wire = Buffer.from(`${JSON.stringify(request)}\0`, 'utf8');
+      if(wire.length>262144)throw fixedError('qa_command_rejected');
     } catch {
       return Promise.reject(fixedError('qa_command_rejected'));
     }
@@ -567,7 +576,7 @@ export function createQAFeasibilityCollector({
         if (!pending.has(id)) return;
         pending.delete(id);
         rejectResponse(fixedError('qa_command_timeout'));
-      }, COMMAND_TIMEOUT_MS);
+      }, Math.max(1,Math.min(60000,timeoutMs)));
       pending.set(id, { sessionId, project, resolve: resolveResponse, reject: rejectResponse, timer });
       try {
         child.stdio[3].write(wire, (error) => {
@@ -629,6 +638,14 @@ export function createQAFeasibilityCollector({
     if(!child || !ownedProfile) throw fixedError('qa_transport_unavailable');
     return Object.freeze({pid:child.pid,profileId:ownedProfile,alive:state==='launched'&&!transportFailed&&!processExited});
   };
-  return Object.freeze({ launch, send, subscribe, close, ownership });
+  let captureBusy=false;
+  const captureWorker=async(request,{browserContextId,proofSession,signal,onUnsafe}={})=>{
+    if(process.env.AKU_X_NATIVE_MANUAL_CAPTURE_ALLOWED!=='1'||captureBusy||request?.pins?.ownerId!==String(child?.pid)||request?.pins?.profileId!==ownedProfile)throw fixedError('qa_capture_unavailable');
+    captureBusy=true;
+    try{return await captureNativeXTarget({request,bridgePath:resolve(PROJECT_ROOT,'..','AkuBridge'),browserContextId,proofSession,signal,onUnsafe,subscribe,
+      command:(method,params,sessionId,timeoutMs)=>writeCommand(method,params,sessionId,result=>result,timeoutMs)});}
+    finally{captureBusy=false;}
+  };
+  return Object.freeze({ launch, send, subscribe, close, ownership, captureWorker });
 }
 
