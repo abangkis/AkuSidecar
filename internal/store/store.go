@@ -22,14 +22,19 @@ import (
 )
 
 type Store struct {
-	db                *sql.DB
-	path              string
-	clock             Clock
-	capturePermitMu   sync.RWMutex
-	capturePermit     *accountCheckpointPermit
-	fenceAttemptMu    sync.Mutex
-	issuedFenceHoldID string
-	consumedFence     bool
+	db                      *sql.DB
+	path                    string
+	clock                   Clock
+	capturePermitMu         sync.RWMutex
+	capturePermit           *accountCheckpointPermit
+	fenceAttemptMu          sync.Mutex
+	issuedFenceHoldID       string
+	consumedFence           bool
+	manualPilotMu           sync.Mutex
+	manualPilots            map[string]*ManualPilotPermit
+	manualPilotClosures     sync.Map
+	manualPilotBeforeCommit func()
+	manualPilotCommit       func(*sql.Tx) error
 }
 
 // FeedbackTiming records the stages of one routine Timeline feedback request.
@@ -1164,6 +1169,9 @@ func (s *Store) claimCommand(ctx context.Context, runID, bridgeID, collector str
 	if err != nil || gate.paused || gate.protected && !gate.allowed {
 		return nil, err
 	}
+	if err := rejectManualPilotRun(ctx, tx, runID); err != nil {
+		return nil, err
+	}
 	var claimed int
 	if err = tx.QueryRowContext(ctx, `
 		SELECT COUNT(*)
@@ -1309,6 +1317,7 @@ func (s *Store) ExpiredBridgeCommands(ctx context.Context, now time.Time) ([]dom
 		SELECT id,run_id,type,status,payload_json,created_at,claimed_at
 		FROM bridge_commands
 		WHERE status='claimed' AND claimed_at IS NOT NULL
+		AND NOT EXISTS (SELECT 1 FROM runs r JOIN meta m ON m.key='manual_pilot_session_v1:'||r.session_id WHERE r.id=bridge_commands.run_id)
 		ORDER BY claimed_at`)
 	if err != nil {
 		return nil, err
@@ -1423,6 +1432,17 @@ func (s *Store) SaveObservation(ctx context.Context, commandID, runID string, ob
 		return err
 	}
 	defer tx.Rollback()
+	if err := rejectManualPilotRun(ctx, tx, runID); err != nil {
+		return err
+	}
+	if err := s.saveObservationTx(ctx, tx, commandID, runID, observation, now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) saveObservationTx(ctx context.Context, tx *sql.Tx, commandID, runID string, observation domain.Observation, now string) error {
+	var err error
 	var expectedRun string
 	var status string
 	var commandClaimedAt sql.NullString
@@ -1480,7 +1500,7 @@ func (s *Store) SaveObservation(ctx context.Context, commandID, runID string, ob
 		runID, captureDurationMS, now); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return nil
 }
 
 func durableCaptureCoverage(raw string, next map[string]any) map[string]any {
@@ -1576,6 +1596,9 @@ func (s *Store) FailCommand(ctx context.Context, commandID, runID string, failur
 		return false, err
 	}
 	defer tx.Rollback()
+	if err := rejectManualPilotRun(ctx, tx, runID); err != nil {
+		return false, err
+	}
 	var runStage string
 	var observationCount int
 	if err = tx.QueryRowContext(ctx, `SELECT r.stage,(SELECT COUNT(*) FROM observations o WHERE o.run_id=r.id) FROM runs r JOIN bridge_commands c ON c.run_id=r.id WHERE r.id=? AND c.id=?`, runID, commandID).Scan(&runStage, &observationCount); err != nil {
@@ -1606,8 +1629,18 @@ func (s *Store) FailCommand(ctx context.Context, commandID, runID string, failur
 
 func (s *Store) FailRun(ctx context.Context, runID string, failure domain.Failure) error {
 	raw, _ := json.Marshal(failure)
-	_, err := s.db.ExecContext(ctx, `UPDATE runs SET status='failed',stage=?,completed_at=?,error_json=? WHERE id=? AND status NOT IN ('completed','failed','cancelled')`, failure.Stage, domain.Now(), string(raw), runID)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = rejectManualPilotRun(ctx, tx, runID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE runs SET status='failed',stage=?,completed_at=?,error_json=? WHERE id=? AND status NOT IN ('completed','failed','cancelled')`, failure.Stage, domain.Now(), string(raw), runID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) FailQueuedRuns(ctx context.Context, sessionID string, failure domain.Failure) error {
@@ -1615,8 +1648,22 @@ func (s *Store) FailQueuedRuns(ctx context.Context, sessionID string, failure do
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE runs SET status='failed',stage=?,completed_at=?,error_json=? WHERE session_id=? AND status='queued'`, failure.Stage, s.Now().UTC().Format(time.RFC3339Nano), string(raw), sessionID)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var protected int
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM meta WHERE key=?`, manualPilotSessionPrefix+sessionID).Scan(&protected); err != nil {
+		return err
+	}
+	if protected != 0 {
+		return errManualPilot
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE runs SET status='failed',stage=?,completed_at=?,error_json=? WHERE session_id=? AND status='queued'`, failure.Stage, s.Now().UTC().Format(time.RFC3339Nano), string(raw), sessionID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) SaveTelemetry(ctx context.Context, value domain.ReasoningTelemetry) error {
@@ -2357,12 +2404,23 @@ func (s *Store) AddFeedback(ctx context.Context, timelineID string, input domain
 }
 
 func (s *Store) CancelSession(ctx context.Context, id string) error {
+	if value, ok := s.manualPilotClosures.Load(id); ok {
+		value.(*ManualPilotPermit).revoked.Store(true)
+	}
+	s.manualPilotMu.Lock()
+	defer s.manualPilotMu.Unlock()
+	if p := s.manualPilots[id]; p != nil {
+		p.revoked.Store(true)
+	}
 	now := domain.Now()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if err := revokeManualPilotSessionTx(ctx, tx, id); err != nil {
+		return err
+	}
 	if _, err = tx.ExecContext(ctx, `UPDATE sessions SET status='cancelled',active_source=NULL,completed_at=? WHERE id=? AND status IN ('queued','running')`, now, id); err != nil {
 		return err
 	}

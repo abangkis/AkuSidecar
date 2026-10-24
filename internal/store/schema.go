@@ -1,8 +1,8 @@
 package store
 
-const SchemaVersion = 29
+const SchemaVersion = 30
 
-const schemaVersion = "29"
+const schemaVersion = "30"
 
 // memorySchemaSQL is deliberately kept separate from the operational schema.
 // Personal Memory has no foreign keys into sessions, runs, or Timeline rows;

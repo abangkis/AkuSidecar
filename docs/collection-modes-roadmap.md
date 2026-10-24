@@ -1,5 +1,17 @@
 # Browser and headless collection roadmap
 
+### Store claim/result increment (2026-10-24)
+
+The [manual pilot Store contract](x-manual-pilot-store-contract.md) implements
+opaque process-local permits, persistent session fencing, idempotent operation
+receipts and atomic result ingestion behind the schema-30 compatibility barrier.
+Issuance remains synthetic and development-only. The approved 60-second limit is
+checked immediately before COMMIT, measured from the original attempt start;
+COMMIT completion latency is not guaranteed. Synthetic migration/downgrade tests
+use a real schema-29 binary and the same test database. Native enrollment,
+Engine dispatch/result wiring to these permits and explicit main-dev activation
+remain integration work. No user database, login or runtime is opened here.
+
 ### Current MVP gate: manual startup pilot (2026-10-21)
 
 Current native blocker (2026-10-23): the last authorized attempt of `c4d12c8`

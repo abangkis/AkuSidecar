@@ -31,7 +31,10 @@ All adapter owners, account evidence, work and results in this increment are
 invented. No Chrome, private native listener, activation target, login, profile,
 Store or database is opened. This does not claim that the native transport now
 implements the application's capture protocol or foreground activation. Those
-connections and Store's guarded claim/result contract remain separate work.
+connections and native Store enrollment remain separate work. The subsequent
+[Store claim/result contract](x-manual-pilot-store-contract.md) implements durable
+fencing with synthetic-only issuance and the schema-30 compatibility barrier;
+it does not activate this connector against the user's database.
 The existing synthetic single-profile and renewal fixtures keep their contracts.
 
 Run `scripts/test-x-manual-runtime-integration.ps1` for the accountless
