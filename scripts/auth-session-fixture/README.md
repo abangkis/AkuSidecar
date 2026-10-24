@@ -1,5 +1,27 @@
 # Local one-login concurrency fixture
 
+## X manual-startup main/Coordinator connector (2026-10-24)
+
+Use `scripts/test-x-manual-runtime-integration.ps1` to exercise actual main's
+`synthetic-x-manual-fixture` route with a fixed offline adapter. The route requires
+`--dev` and both fixture/development build tags and returns before ordinary
+configuration or database startup. It composes the manual-startup broker and
+Coordinator with separate reader/collector Managers and synthetic X evidence.
+It does not substitute the older snapshot/renewal controller.
+
+The test matrix covers active capture while the framed reader request borrows
+the distinct reader Manager, retained collector identity/generation/leases,
+fenced late/duplicate results, lifecycle loss and closed source/broker/startup
+rejections. All public authority flags remain false. The helper launches only
+the compiled accountless Sidecar fixture, with absent configuration/database
+sentinels; no Chrome, login, Store, database, profile or native listener is used.
+See [the connector boundary](../../docs/x-native-manual-pilot.md#manual-startup-connector-synthetic-application-wiring-2026-10-24).
+
+Offline acceptance run `2878529aee234ff89405ba0fc32a022c` passed 15 Go
+top-level tests/33 subcases, ten actual-main scenarios, all four main build
+variants and strict input/absent-state checks. Temporary binaries were removed.
+Evidence: `runtime/qa/auth-session-sidecar/x-manual-runtime-2878529aee234ff89405ba0fc32a022c.log.txt`.
+
 ## Owner inspection predicate diagnostics (2026-10-24)
 
 Private startup diagnostics now distinguish the first failed ownership inspection

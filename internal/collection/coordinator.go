@@ -95,7 +95,7 @@ type Coordinator struct {
 	concurrentSession         *syntheticConcurrentHooks
 }
 
-// Only dual-tag fixture wiring can populate this default-nil route.
+// Only explicit development wiring can populate this default-nil route.
 type syntheticConcurrentHooks struct {
 	reader        *captureruntime.Manager
 	beforeReader  func(context.Context) error
@@ -206,6 +206,7 @@ func (c *Coordinator) Status() RuntimeStatus {
 	requested, interactive, collectionBorrow, failure, available := c.requested, c.interactive, c.browserCollection, c.failure, c.headlessAvailable
 	development := c.developmentSession
 	developmentSources := append([]domain.Source(nil), c.developmentSources...)
+	concurrent := c.concurrentSession != nil
 	nativeGeneration := c.nativeReaderGeneration
 	nativeSince := c.nativeReaderSince
 	backend, generation := c.browserCollector, c.browserGeneration
@@ -239,6 +240,9 @@ func (c *Coordinator) Status() RuntimeStatus {
 	}
 	if development {
 		status.SupportedSources = developmentSources
+	}
+	if concurrent {
+		status.SupportedSources = []domain.Source{domain.SourceX}
 	}
 	status.NativeReaderOnly = nativeGeneration != 0 && nativeGeneration == s.Generation
 	if status.NativeReaderOnly {

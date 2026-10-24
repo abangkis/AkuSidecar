@@ -2,6 +2,51 @@
 
 Decision: 2026-10-21. Contract: `aku.x.dev-pilot.manual-startup.v2`.
 
+## Manual startup connector: synthetic application wiring (2026-10-24)
+
+Native QA `44ef8548cef144058954d07a7a7308b3` on source `d7c97f5` passed
+strict startup for both roles, an additional reader window with the collector
+preserved, one in-memory completion, duplicate rejection and owned cleanup in
+9.72 seconds. This accepts the bounded QA recipe; it grants no Store or main-dev
+activation authority. Reuse this evidence rather than reopening deferred renewal.
+
+The next connector increment exercises that same manual-startup broker and
+controller through actual main's early dispatch, the framed reader broker and
+the collection Coordinator. The explicit provider is
+`--dev --dev-session-reuse=synthetic-x-manual-fixture` in a build carrying both
+`auth_session_dev` and `auth_session_fixture`. It exits before configuration,
+database, normal provider or app-shell startup. Other builds and native provider
+names reject the selection. The default route remains unchanged.
+
+The runtime connector uses distinct reader and collector Managers. Captures use
+only the backend pinned to the admitted collector generation. A reader request
+borrows the reader Manager and cannot invoke exclusive headless replacement.
+Reader/capture operations execute outside the manual controller's local-effect
+callbacks; those callbacks remain bounded in-memory admission/completion only.
+X is the only supported source. Bootstrap windows count toward reader lifetime.
+No source evidence is renewed, no session is transferred, and every report keeps
+`canAuthorize`, `nativeQualified` and `storePermit` false.
+
+All adapter owners, account evidence, work and results in this increment are
+invented. No Chrome, private native listener, activation target, login, profile,
+Store or database is opened. This does not claim that the native transport now
+implements the application's capture protocol or foreground activation. Those
+connections and Store's guarded claim/result contract remain separate work.
+The existing synthetic single-profile and renewal fixtures keep their contracts.
+
+Run `scripts/test-x-manual-runtime-integration.ps1` for the accountless
+actual-main gate/scenario checks and Coordinator regressions. Fixtures include
+active capture overlap, duplicate completion, expiry, opt-out, parent loss,
+owner drift, last-window loss, wrong source, malformed broker request and startup
+failure. Missing configuration/database sentinels must remain absent.
+
+Acceptance run `2878529aee234ff89405ba0fc32a022c` passed 15 Go top-level
+tests with 33 subcases, all ten actual-main scenarios, four main build variants,
+strict input rejection and the absent configuration/database checks. It verifies
+same-backend owner binding, source/result/ticket fencing and external operations
+outside the controller locks. The owned temporary build root was removed.
+Evidence: `runtime/qa/auth-session-sidecar/x-manual-runtime-2878529aee234ff89405ba0fc32a022c.log.txt`.
+
 The current manual-V2 cookie observation boundary is the
 [session-local revision](#session-local-cookie-provenance-and-root-only-identity).
 It supersedes the root-only cookie scope below; account evidence remains root-only.
