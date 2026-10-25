@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/batchbehavior"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
@@ -137,6 +138,9 @@ func (s *Store) liveManualPilot(ctx context.Context, tx *sql.Tx, p *ManualPilotP
 	if p == nil || p.store != s || p.revoked.Load() || !s.Now().Before(p.deadline) || s.manualPilots[p.state.SessionID] != p {
 		return errManualPilot
 	}
+	if err := requireSourceCaptureAllowed(ctx, tx, domain.SourceX); err != nil {
+		return err
+	}
 	v, _, err := readManualState(ctx, tx, p.state.SessionID)
 	if err != nil {
 		return err
@@ -228,6 +232,12 @@ func (s *Store) finishManualTx(ctx context.Context, tx *sql.Tx, op ManualPilotOp
 	return Indeterminate, fmt.Errorf("manual pilot commit outcome unresolved: %w", err)
 }
 func (s *Store) ClaimManualPilot(ctx context.Context, p *ManualPilotPermit, commandID, opID string) (ManualPilotClaimResult, error) {
+	return s.ClaimManualPilotWithBehavior(ctx, p, commandID, opID, batchbehavior.Policy{})
+}
+
+// The same transaction owns ordinary and pilot admission. The active-source
+// fence is mandatory for the pilot even when optional pacing is disabled.
+func (s *Store) ClaimManualPilotWithBehavior(ctx context.Context, p *ManualPilotPermit, commandID, opID string, policy batchbehavior.Policy) (ManualPilotClaimResult, error) {
 	result := ManualPilotClaimResult{Outcome: RejectedNoMutation}
 	if p == nil || p.store != s || strings.TrimSpace(opID) == "" || commandID == "" {
 		return result, errManualPilot
@@ -254,6 +264,19 @@ func (s *Store) ClaimManualPilot(ctx context.Context, p *ManualPilotPermit, comm
 	}
 	if e = s.liveManualPilot(ctx, tx, p); e != nil {
 		return result, e
+	}
+	active, e := activeSourceCaptureCount(ctx, tx, domain.SourceX)
+	if e != nil {
+		return result, e
+	}
+	if active != 0 {
+		return result, errors.New("manual capture admission busy")
+	}
+	if allowed, err := s.captureBehaviorAllowed(ctx, tx, domain.SourceX, policy); err != nil || !allowed {
+		if err == nil {
+			err = errors.New("manual capture pacing waiting")
+		}
+		return result, err
 	}
 	var cmd domain.BridgeCommand
 	var raw string

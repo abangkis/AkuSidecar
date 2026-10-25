@@ -784,9 +784,12 @@ func TestEmbeddedPrimaryViewsShareClearNavigationAndHeaders(t *testing.T) {
 			"CHECK HISTORY",
 		},
 		"web/app.js": {
-			"setAttribute(\"aria-current\", timeline ? \"page\" : \"false\")",
-			"setAttribute(\"aria-current\", inbox ? \"page\" : \"false\")",
-			"setAttribute(\"aria-current\", settings ? \"page\" : \"false\")",
+			"from \"./page-navigation.js\"",
+			"renderPageNavigation(document, view",
+		},
+		"web/page-navigation.js": {
+			"export const PAGES",
+			"setAttribute('aria-current', active ? 'page' : 'false')",
 		},
 		"web/styles.css": {
 			".timeline-heading-row, .section-heading",

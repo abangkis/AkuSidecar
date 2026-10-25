@@ -207,6 +207,19 @@ func xManualRetainedCloseRole(r xManualPilotWindowsRole) {
 }
 
 func TestXManualPilotRetainedQA(t *testing.T) {
+	runXManualRetainedQA(t, nil)
+}
+
+// Shared startup recipe; continuations never repeat enrollment or the seed.
+type xManualRetainedReady struct {
+	broker            *nativePilotBroker
+	ports             *xManualPilotOwnerPorts
+	reader, collector xManualPilotWindowsRole
+	root              string
+}
+
+func runXManualRetainedQA(t *testing.T, capture func(context.Context, xManualRetainedReady)) {
+	t.Helper()
 	if !xManualRetainedExecutionEnabled() {
 		t.Skip("retained manual QA requires separate execution and one-transfer authorization")
 	}
@@ -365,13 +378,18 @@ func TestXManualPilotRetainedQA(t *testing.T) {
 	policy := func(call context.Context) (nativePilotBrokerState, error) {
 		return nativePilotBrokerState{account: binding.account, enrollment: binding.enrollment, pair: binding.pair, attempt: binding.attempt, derivation: binding.derivation, policy: binding.policy, consent: binding.consent, readerWindows: 1, completeInventory: true, parentAlive: ctx.Err() == nil, channelHealthy: !bridge.isClosed(), invalidationsReady: true, optedIn: true}, call.Err()
 	}
-	broker, _ = newXManualPilotOwnerBroker(ctx, xManualPilotOwnerConfig{enabled: true, pilot: nativePilotConfig{enabled: true, contract: nativePilotContract, limitationAcknowledged: true, binding: binding, attemptStarted: started}, policy: policy}, reader, collector)
+	var ports *xManualPilotOwnerPorts
+	broker, ports, _ = newXManualPilotOwnerCaptureBroker(ctx, xManualPilotOwnerConfig{enabled: true, pilot: nativePilotConfig{enabled: true, contract: nativePilotContract, limitationAcknowledged: true, binding: binding, attemptStarted: started}, policy: policy}, reader, collector)
 	if broker == nil {
 		t.Fatal("manual-retained-broker-unavailable")
 	}
 	d := broker.start(ctx)
 	if !d.ManualEligible || d.OfflineValidated || d.CanAuthorize || d.NativeQualified || d.StorePermit {
 		t.Fatalf("manual-retained-initial-rejected reason=%s detail=(%s)", d.Reason, broker.initialDiagnostic())
+	}
+	if capture != nil {
+		capture(ctx, xManualRetainedReady{broker: broker, ports: ports, reader: reader, collector: collector, root: caseRoot})
+		return
 	}
 	var frozenCollector nativePilotPreparedRole
 	for _, prepared := range broker.prepared {

@@ -4,10 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"github.com/abangkis/AkuSidecar/internal/batchbehavior"
-	"github.com/abangkis/AkuSidecar/internal/domain"
 	"sort"
 	"time"
+
+	"github.com/abangkis/AkuSidecar/internal/batchbehavior"
+	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
 // captureBehaviorAllowed runs in the claim transaction: durable claimed rows
@@ -35,10 +36,18 @@ func (s *Store) CaptureBehaviorDecision(ctx context.Context, source domain.Sourc
 
 func (s *Store) captureBehaviorDecision(ctx context.Context, tx *sql.Tx, source domain.Source, policy batchbehavior.Policy) (batchbehavior.Decision, error) {
 	if !policy.Enabled {
+		// A manual pilot is exclusive with ordinary capture for this source,
+		// independently of the optional spacing configuration.
+		var active int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM bridge_commands c JOIN runs r ON r.id=c.run_id JOIN meta m ON m.key=?||r.session_id WHERE r.source=? AND c.status='claimed'`, manualPilotSessionPrefix, source).Scan(&active); err != nil {
+			return batchbehavior.Decision{}, err
+		}
+		if active > 0 {
+			return batchbehavior.Decision{Reason: "capture_active"}, nil
+		}
 		return batchbehavior.Decision{Allowed: true}, nil
 	}
-	var active int
-	err := tx.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM bridge_commands c JOIN runs r ON r.id=c.run_id WHERE r.source=? AND c.status='claimed')+(SELECT COUNT(*) FROM media_recaptures WHERE source=? AND status='claimed')`, source, source).Scan(&active)
+	active, err := activeSourceCaptureCount(ctx, tx, source)
 	if err != nil {
 		return batchbehavior.Decision{}, err
 	}
@@ -82,6 +91,12 @@ func (s *Store) captureBehaviorDecision(ctx context.Context, tx *sql.Tx, source 
 	// selection; two RFC3339Nano timestamps may share the same Julian millisecond.
 	sort.SliceStable(recent, func(i, j int) bool { return recent[i].At.After(recent[j].At) })
 	return policy.Decide(s.Now(), false, recent, nil), nil
+}
+
+func activeSourceCaptureCount(ctx context.Context, tx *sql.Tx, source domain.Source) (int, error) {
+	var active int
+	err := tx.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM bridge_commands c JOIN runs r ON r.id=c.run_id WHERE r.source=? AND c.status='claimed')+(SELECT COUNT(*) FROM media_recaptures WHERE source=? AND status='claimed')`, source, source).Scan(&active)
+	return active, err
 }
 
 func (s *Store) ClaimCommandWithBehavior(ctx context.Context, runID, bridgeID, collector string, policy batchbehavior.Policy) (*domain.BridgeCommand, error) {

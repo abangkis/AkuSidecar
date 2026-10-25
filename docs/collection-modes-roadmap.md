@@ -1,5 +1,10 @@
 # Browser and headless collection roadmap
 
+**Current checkpoint:** [X concurrency dev readiness](concurrency-dev-readiness.md).
+The dated entries below preserve experiment history. Their old blocker/next-step
+wording must not override the current checkpoint. The bounded manual X pilot
+still defers full renewal/rotation qualification.
+
 ### Native X capture composition: offline first (2026-10-25)
 
 The private native collector now composes the existing X parser/worker with the
@@ -43,15 +48,11 @@ explicit main-dev activation remain integration work. No user database, login or
 runtime is opened here. See `scripts/test-manual-pilot-engine-store.ps1` for the
 bounded accountless connector checks.
 
-### Current MVP gate: manual startup pilot (2026-10-21)
+### Historical MVP gate: manual startup pilot (2026-10-21)
 
-Current native blocker (2026-10-23): the last authorized attempt of `c4d12c8`
-rejected the reader startup at a declared redirect before admission opened.
-The next scoped correction is
-[offline per-hop resource correlation](x-native-manual-pilot.md#per-hop-resource-redirect-correlation-2026-10-23),
-with candidate/scope/ambiguity guards retained. It does not reopen deferred
-renewal work or authorize another transfer. This remains work inside MVP-2;
-native acceptance and separately approved dev activation are still pending.
+Historical attempt `c4d12c8` rejected startup at a declared redirect. The
+[per-hop correlation investigation](x-native-manual-pilot.md#per-hop-resource-redirect-correlation-2026-10-23)
+records that earlier blocker; it is not the current capture acceptance gate.
 
 The user explicitly selected [`aku.x.dev-pilot.manual-startup.v2`](x-native-manual-pilot.md):
 one manually initiated attempt of at most 60 seconds, with strict initial

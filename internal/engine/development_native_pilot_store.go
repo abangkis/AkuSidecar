@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/collection/headless"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
@@ -57,6 +58,7 @@ type nativePilotStoreResult struct {
 	// a durable claim; it is never an instruction to recapture.
 	Outcome                         store.ManualPilotOutcome
 	ClaimOutcome                    store.ManualPilotOutcome
+	Phase                           string // Closed local stage; never derived from peer text.
 	Run                             domain.Run
 	PersistenceError, DeliveryError error
 }
@@ -173,7 +175,7 @@ func (e *Engine) bindNativePilotStoreAdmission(ctx context.Context, r *nativePil
 // silently turn into another capture. Follow-ups use new commands/claims.
 func (e *Engine) captureNativePilot(ctx context.Context, r *nativePilotRuntime, commandID string) nativePilotStoreResult {
 	rejected := func(err error) nativePilotStoreResult {
-		return nativePilotStoreResult{Outcome: store.RejectedNoMutation, PersistenceError: err}
+		return nativePilotStoreResult{Outcome: store.RejectedNoMutation, Phase: "admission", PersistenceError: err}
 	}
 	if r == nil {
 		return rejected(errors.New("manual Store route unavailable"))
@@ -188,7 +190,7 @@ func (e *Engine) captureNativePilot(ctx context.Context, r *nativePilotRuntime, 
 	if previous := l.work[commandID]; previous != nil {
 		result := previous.result
 		if !previous.done {
-			result = nativePilotStoreResult{Outcome: store.Indeterminate, PersistenceError: errors.New("manual work already in flight")}
+			result = nativePilotStoreResult{Outcome: store.Indeterminate, Phase: "in_flight", PersistenceError: errors.New("manual work already in flight")}
 		} else if result.Outcome == store.Committed {
 			result.Outcome = store.AlreadyCommitted
 		}
@@ -210,7 +212,7 @@ func (e *Engine) captureNativePilot(ctx context.Context, r *nativePilotRuntime, 
 }
 
 func (e *Engine) captureNativePilotOnce(ctx context.Context, l *nativePilotStoreRuntime, commandID string) nativePilotStoreResult {
-	out := nativePilotStoreResult{Outcome: store.RejectedNoMutation}
+	out := nativePilotStoreResult{Outcome: store.RejectedNoMutation, Phase: "dispatch"}
 	fail := func(err error) nativePilotStoreResult { out.PersistenceError = err; return out }
 	if ctx == nil {
 		return fail(errors.New("manual context required"))
@@ -225,7 +227,8 @@ func (e *Engine) captureNativePilotOnce(ctx context.Context, l *nativePilotStore
 	if !nativePilotRuntimeAllowed(b.claim(ctx, ticket, func() bool { return true })) {
 		return fail(errors.New("manual ticket claim rejected"))
 	}
-	claim, err := e.store.ClaimManualPilot(ctx, l.permit, commandID, "claim:"+l.revokeID+":"+commandID)
+	out.Phase = "store_claim"
+	claim, err := e.store.ClaimManualPilotWithBehavior(ctx, l.permit, commandID, "claim:"+l.revokeID+":"+commandID, e.capturePacingPolicy())
 	out.ClaimOutcome = claim.Outcome
 	if err != nil || claim.Handle == nil || claim.Command == nil {
 		if err == nil {
@@ -235,6 +238,7 @@ func (e *Engine) captureNativePilotOnce(ctx context.Context, l *nativePilotStore
 	}
 	// A confirmed claim is not a committed result.
 	out.Outcome = store.RejectedNoMutation
+	out.Phase = "owner_check"
 	if _, err := l.admission.validate(ctx); err != nil {
 		l.close()
 		return fail(err)
@@ -251,14 +255,37 @@ func (e *Engine) captureNativePilotOnce(ctx context.Context, l *nativePilotStore
 		b.invalidate("owner-or-policy-changed")
 		return fail(errors.New("manual collector changed"))
 	}
-	observation, err := r.coordinator.Capture(ctx, domain.SourceX, claim.Command.Payload)
+	out.Phase = "capture"
+	work, done, err := e.beginCaptureBehavior(ctx, domain.SourceX)
 	if err != nil {
+		l.close()
+		return fail(err)
+	}
+	defer done()
+	observation, err := r.coordinator.Capture(work, domain.SourceX, claim.Command.Payload)
+	if err != nil {
+		var challenge *headless.CaptureError
+		if errors.As(err, &challenge) && domain.IsAccessChallenge(challenge.Code) {
+			e.captureBehaviorMu.Lock()
+			pauseErr := e.store.FailManualPilotChallenge(ctx, claim.Handle, challenge.ChallengeCategory)
+			if pauseErr == nil {
+				for _, cancel := range e.captureWork {
+					cancel()
+				}
+			}
+			e.captureBehaviorMu.Unlock()
+			if pauseErr != nil {
+				err = pauseErr
+			}
+		}
+		l.close()
 		return fail(err)
 	}
 	if !ownerOK() {
 		b.invalidate("owner-or-policy-changed")
 		return fail(errors.New("manual result owner rejected"))
 	}
+	out.Phase = "result_validation"
 	if observation.Source != domain.SourceX {
 		b.invalidate("evidence-invalid")
 		return fail(errors.New("manual result source rejected"))
@@ -273,15 +300,20 @@ func (e *Engine) captureNativePilotOnce(ctx context.Context, l *nativePilotStore
 		l.close()
 		return fail(errors.New("manual result admission rejected"))
 	}
+	out.Phase = "store_commit"
 	out.Outcome, out.PersistenceError = e.store.CommitManualPilotResult(ctx, claim.Handle, "result:"+l.revokeID+":"+commandID, observation)
 	if out.Outcome != store.Committed && out.Outcome != store.AlreadyCommitted {
 		return out
 	}
+	out.Phase = "reasoning_delivery"
 	run, err := e.store.GetRun(ctx, claim.Command.RunID)
 	if err != nil {
 		out.DeliveryError = err
 		return out
 	}
 	out.Run, out.DeliveryError = l.afterCommit(ctx, run)
+	if out.DeliveryError == nil {
+		out.Phase = "completed"
+	}
 	return out
 }

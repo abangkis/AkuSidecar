@@ -5,7 +5,9 @@ import {registerFreshStartupSession,startupRootControls,allowsStartupControl,mus
 // Bounded frames/body strings are transient; no raw body is persisted/exported.
 // A separate retained-source mode can project scoped cookie attributes at the
 // private dispatch boundary. It never returns or transfers cookie values.
-// No mode retrieves headers, page text, input values or screenshots.
+// Raw headers, credentials and account bodies are never diagnostic output.
+// The separately gated manual capture lane may return bounded post observations
+// to its private Engine/QA Store consumer; it never returns form input values.
 import { spawn } from 'node:child_process';
 import { mkdir, lstat, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -31,6 +33,7 @@ import { QA_LIVE_SELF_EXPRESSION, projectQALiveSelf } from './x-qa-live-self.mjs
 import { QALiveSelfTransport, finishQALiveSelf, qaLiveSelfCommand } from './x-qa-live-self-transport.mjs';
 import { createManualStartupOwner } from './x-manual-startup-owner.mjs';
 import { createXManualOwnerPort, manualOwnerOperation } from './x-native-manual-owner-port.mjs';
+import { manualCaptureRPCCode } from './x-native-manual-capture.mjs';
 import { createRetainedManualSetup, manualSeedFailure, manualSeedDiagnosticCode } from './x-manual-retained-setup.mjs';
 import { ManualEnrollmentCapture } from './x-manual-enrollment-capture.mjs';
 import { ManualStartupObservation } from './x-manual-startup-cookie-guard.mjs';
@@ -767,20 +770,20 @@ let shuttingDown = false;
 let cdpFrames = new CDPFrameDecoder();
 const pending = new Map();
 
-function emit(value) {
+function emit(value, maxBytes = MAX_CONTROL_LINE_BYTES) {
   let bytes;
   try { bytes = Buffer.from(`${JSON.stringify(value)}\n`, 'utf8'); }
   catch { process.exitCode = 2; return; }
-  if (bytes.byteLength > MAX_CONTROL_LINE_BYTES) {
+  if (bytes.byteLength > maxBytes) {
     bytes = Buffer.from(`${JSON.stringify({ id: value?.id ?? 0, ok: false, code: 'output_too_large' })}\n`, 'utf8');
   }
   process.stdout.write(bytes);
 }
 
-function emitReply(id, result = undefined, code = undefined) {
+function emitReply(id, result = undefined, code = undefined, maxBytes = MAX_CONTROL_LINE_BYTES) {
   if (!Number.isSafeInteger(id) || id <= 0) return;
   if (code) emit({ id, ok: false, code });
-  else emit({ id, ok: true, result });
+  else emit({ id, ok: true, result }, maxBytes);
 }
 
 function safeCode(error) {
@@ -803,8 +806,8 @@ export async function executeManualReply(message,executeCommand=execute,reply=em
   let result;
   try{
     result=await executeCommand(message);
-    reply(id,Buffer.isBuffer(result)?parseStrictJSON(result.toString('utf8'),{maxJSONDepth:4,maxJSONTokens:96}):result);
-  }catch(error){reply(id,undefined,seed?manualSeedRPCCode(error):startupRPCCode(error));}
+    reply(id,Buffer.isBuffer(result)?parseStrictJSON(result.toString('utf8'),{maxJSONDepth:4,maxJSONTokens:96}):result,undefined,message.op==='manual_capture'?800*1024:MAX_CONTROL_LINE_BYTES);
+  }catch(error){reply(id,undefined,seed?manualSeedRPCCode(error):message.op==='manual_capture'?manualCaptureRPCCode(error):startupRPCCode(error));}
   finally{if(Buffer.isBuffer(result))result.fill(0);}
 }
 

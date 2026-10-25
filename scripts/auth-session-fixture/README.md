@@ -1,5 +1,14 @@
 # Local one-login concurrency fixture
 
+## Current X capture acceptance entry
+
+`scripts/prepare-x-manual-retained-qa.ps1 -Capture` prepares the real
+parser/Engine/Store test with all live execution gates disabled. It does not
+access the retained QA profile. The separate `capture-store` plan must be reviewed
+and explicitly authorized before execution; it cannot reuse startup-only
+approval. See [current dev readiness](../../docs/concurrency-dev-readiness.md)
+for scope, cleanup and the remaining native provider work.
+
 ## X manual-startup main/Coordinator connector (2026-10-24)
 
 Use `scripts/test-x-manual-runtime-integration.ps1` to exercise actual main's

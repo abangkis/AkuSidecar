@@ -1,4 +1,4 @@
-param([switch]$RunPrepared,[string]$PreparedRoot,[switch]$TransferAuthorized)
+param([switch]$RunPrepared,[string]$PreparedRoot,[switch]$TransferAuthorized,[switch]$Capture)
 $ErrorActionPreference='Stop'
 $project=(Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 $parent=Join-Path $project 'runtime\qa\auth-session-sidecar'
@@ -21,6 +21,8 @@ $log=Join-Path $parent ('x-manual-retained-'+$id+'.'+$(if($RunPrepared){'run'}el
 $exe=Join-Path $root 'x-manual-retained.test.exe'
 $planPath=Join-Path $root 'prepared-plan.json'
 $marker=Join-Path $root 'cleanup.verified'
+$scenario=if($Capture){'capture-store'}else{'startup-memory'}
+$entry=if($Capture){'TestXManualCaptureRetainedQA'}else{'TestXManualPilotRetainedQA'}
 $names=@('TEMP','TMP','GOTMPDIR','GOCACHE','GOMODCACHE','GOWORK','GOPROXY','GOSUMDB','GOTOOLCHAIN','CGO_ENABLED','GOFLAGS',
  'AKU_NATIVE_MANUAL_PROJECT_ROOT','AKU_CHROME_FIXTURE_ROOT','AKU_CHROME_FIXTURE_CLEANUP_MARKER','AKU_CHROME_FIXTURE_NODE','AKU_CHROME_FIXTURE_EXE',
  'AKU_X_MANUAL_RETAINED_QA_ENABLED','AKU_X_MANUAL_RETAINED_TRANSFER_ONCE','AKU_X_QA_SHORT_TRANSFER_ALLOWED','AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED','AKU_X_NATIVE_MANUAL_CAPTURE_ALLOWED')
@@ -47,18 +49,27 @@ try{
    if($LASTEXITCODE -ne 0 -or (($files -contains 'x_manual_pilot_retained_windows_test.go') -ne ($mode -eq 'auth_session_dev auth_session_fixture'))){throw 'Retained QA entry tag gate failed.'}
    Write-Output ('PASS: retained QA tag gate '+$mode) | Tee-Object -FilePath $log -Append
   }
-  $raw=& $node scripts/auth-session-fixture/stage-native-manual-chrome.mjs $root x-retained-manual
+  $stageMode=if($Capture){'x-retained-capture'}else{'x-retained-manual'}
+  $raw=& $node scripts/auth-session-fixture/stage-native-manual-chrome.mjs $root $stageMode
   if($LASTEXITCODE -ne 0){throw 'Retained QA exact-source staging failed.'}
   $stage=$raw | ConvertFrom-Json
   $sources=@($stage.files | ForEach-Object {Join-Path $stage.stage $_})
   & go test -c -tags 'auth_session_dev auth_session_fixture' -o $exe @sources 2>&1 | Tee-Object -FilePath $log -Append
   if($LASTEXITCODE -ne 0){throw 'Retained QA standalone compilation failed.'}
-  & $exe '-test.run=^TestXManualPilotRetained(QA|SeedDiagnostics|SeedNodeDiagnostic|StartupDiagnostic|TraceCodes)$' '-test.timeout=10s' '-test.v' 2>&1 | Tee-Object -FilePath $log -Append
+  & $exe '-test.run=^TestXManual(CaptureRetainedQA|PilotRetained(QA|SeedDiagnostics|SeedNodeDiagnostic|StartupDiagnostic|TraceCodes))$' '-test.timeout=15s' '-test.v' 2>&1 | Tee-Object -FilePath $log -Append
   if($LASTEXITCODE -ne 0){throw 'Default-off entry rejection failed.'}
   $provenance=Get-Content -LiteralPath (Join-Path $root 'staging-provenance.json') -Raw | ConvertFrom-Json
   $paths=@($provenance.copied.source)+@($provenance.extracted.source)+@($provenance.nodeSources.source)+@($provenance.captureSourceAssets.source)+@('scripts/auth-session-fixture/x-manual-retained-setup.mjs','scripts/auth-session-fixture/x-retained-source-qualification-driver.mjs','scripts/prepare-x-manual-retained-qa.ps1')
+  if($Capture){
+   # Pin local Go dependencies and the complete QA/worker JS graph, including
+   # newly added source files. This reads code only, never a retained profile.
+   foreach($directory in @('internal','scripts/auth-session-fixture')){
+    $paths+=@(Get-ChildItem -LiteralPath $directory -Recurse -File | Where-Object {$_.Extension -in @('.go','.mjs','.js')} | ForEach-Object {[IO.Path]::GetRelativePath($project,$_.FullName)})
+   }
+   $paths+=@('go.mod','go.sum','scripts/auth-session-fixture/stage-native-manual-chrome.mjs')
+  }
   $fingerprints=@($paths | Sort-Object -Unique | ForEach-Object {@{source=$_;sha256=(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLower()}})
-  $plan=@{schema='aku.x.manual-retained-preparation.v1';project=$project;root=$root;maxAttemptMS=60000;defaultOff=$true;executionApproved=$false;cookieNames=@('auth_token','ct0');sources=$fingerprints;
+  $plan=@{schema='aku.x.manual-retained-preparation.v1';scenario=$scenario;project=$project;root=$root;maxAttemptMS=60000;defaultOff=$true;executionApproved=$false;cookieNames=@('auth_token','ct0');sources=$fingerprints;
    executableSHA256=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLower();nodeSHA256=(Get-FileHash -LiteralPath $node -Algorithm SHA256).Hash.ToLower();chromeSHA256=(Get-FileHash -LiteralPath $chrome -Algorithm SHA256).Hash.ToLower()}
   $plan | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $planPath -Encoding utf8NoBOM
   Copy-Item -LiteralPath (Join-Path $root 'staging-provenance.json') -Destination (Join-Path $parent ('x-manual-retained-'+$id+'.provenance.json'))
@@ -66,13 +77,15 @@ try{
   Write-Output ('Prepared root: '+$root)
  }else{
   $plan=Get-Content -LiteralPath $planPath -Raw | ConvertFrom-Json
+  if($plan.scenario -ne $scenario){throw 'Prepared scenario mismatch; startup approval cannot execute native capture.'}
   if($plan.schema -ne 'aku.x.manual-retained-preparation.v1' -or $plan.project -ne $project -or $plan.root -ne $root -or $plan.maxAttemptMS -ne 60000 -or $plan.defaultOff -ne $true -or $plan.executionApproved -ne $false){throw 'Prepared plan does not match the bounded QA contract.'}
   if((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLower() -ne $plan.executableSHA256 -or (Get-FileHash -LiteralPath $node -Algorithm SHA256).Hash.ToLower() -ne $plan.nodeSHA256 -or (Get-FileHash -LiteralPath $chrome -Algorithm SHA256).Hash.ToLower() -ne $plan.chromeSHA256){throw 'Prepared executable drift; prepare again before authorization.'}
   foreach($source in $plan.sources){if((Get-FileHash -LiteralPath (Join-Path $project $source.source) -Algorithm SHA256).Hash.ToLower() -ne $source.sha256){throw 'Prepared source drift; prepare again before authorization.'}}
   if(Test-Path -LiteralPath (Join-Path $root 'derived-headless')){throw 'Collector profile must not exist before the one-shot run.'}
   $claim=[IO.File]::Open((Join-Path $root 'execution.claim'),[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);$claim.Dispose()
   $env:AKU_X_MANUAL_RETAINED_QA_ENABLED='1';$env:AKU_X_MANUAL_RETAINED_TRANSFER_ONCE='1';$env:AKU_X_QA_SHORT_TRANSFER_ALLOWED='1';$env:AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED='1'
-  & $exe '-test.run=^TestXManualPilotRetainedQA$' '-test.timeout=90s' '-test.v' 2>&1 | Tee-Object -FilePath $log -Append
+  if($Capture){$env:AKU_X_NATIVE_MANUAL_CAPTURE_ALLOWED='1'}
+  & $exe ('-test.run=^'+$entry+'$') '-test.timeout=90s' '-test.v' 2>&1 | Tee-Object -FilePath $log -Append
   $exitCode=$LASTEXITCODE
   $remove=(Test-Path -LiteralPath $marker -PathType Leaf) -and (Get-Content -LiteralPath $marker -Raw).Trim() -eq 'verified'
   if(!$remove){throw 'Owned Job/lease cleanup unverified; prepared root retained, no retry.'}

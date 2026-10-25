@@ -1,11 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
-import {captureNativeXTarget,validateManualCaptureRequest} from './x-native-manual-capture.mjs';
+import {captureNativeXTarget,validateManualCaptureRequest,manualCaptureRPCCode} from './x-native-manual-capture.mjs';
+import {executeManualReply} from './x-native-metadata-probe-driver.mjs';
 import {syntheticCaptureTransport,syntheticCapturePort} from './x-native-manual-capture-fixture.mjs';
 const bridgePath=fileURLToPath(new URL('../../../AkuBridge',import.meta.url));
 const pins={ownerId:'4102',profileId:'synthetic-collector',contextId:'proof-context',targetId:'proof-target',frameId:'proof-frame',documentId:'proof-document'};
 const request=()=>({correlation:'synthetic-capture',pins,deadlineMS:Date.now()+10000,payload:{scrolls:0,maxBlocksPerSnapshot:2}});
+
+test('capture wire retains only closed challenge categories and a separate bounded result capacity',async()=>{
+  for(const category of ['cloudflare','x_human_verification','PRIVATE_COOKIE']){
+    const error=Object.assign(new Error('PRIVATE_BODY'),{code:'challenge_required',challengeCategory:category});
+    let reply;await executeManualReply({id:1,op:'manual_capture'},async()=>{throw error;},(...args)=>reply=args);
+    assert.equal(reply[2],`manual_capture_challenge_${category==='PRIVATE_COOKIE'?'unknown':category}`);
+    assert.equal(JSON.stringify(reply).includes('PRIVATE'),false);
+  }
+  assert.equal(manualCaptureRPCCode(new Error('manual_capture_challenge_cloudflare')),'manual_capture_rejected');
+  for(const op of ['manual_capture','manual_inspect']){
+    let reply;await executeManualReply({id:1,op},async()=>({ok:true}),(...args)=>reply=args);
+    assert.equal(reply[3],op==='manual_capture'?800*1024:65536);
+  }
+  const payload=validateManualCaptureRequest({...request(),payload:{scrollFraction:.5,scrollSettleMs:1400}});
+  assert.equal(payload.scrollFraction,.5);assert.equal(payload.scrollSettleMs,1400);
+});
 test('production X worker and vendored parser execute on synthetic DOM',async()=>{
   const transport=syntheticCaptureTransport({websocket:true});const port=await syntheticCapturePort(pins,transport,bridgePath);
   const result=await port.execute({id:9,op:'manual_capture',owner:1,role:'collector',handle:'collector-handle',request:request()});

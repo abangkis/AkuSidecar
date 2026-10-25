@@ -92,6 +92,9 @@ func (b *xCaptureSyntheticBackend) rpc(ctx context.Context, role, op string, fie
 		}
 	} else if op == "manual_capture" {
 		b.calls.Add(1)
+		if b.mode == "cloudflare" || b.mode == "x_human_verification" {
+			return errors.New("manual_capture_challenge_" + b.mode)
+		}
 		project, node := os.Getenv("AKU_NATIVE_MANUAL_PROJECT_ROOT"), os.Getenv("AKU_CHROME_FIXTURE_NODE")
 		if os.Getenv("AKU_X_NATIVE_MANUAL_CAPTURE_OFFLINE") != "1" || !filepath.IsAbs(project) || !filepath.IsAbs(node) {
 			return errors.New("offline Node fixture unavailable")
@@ -148,7 +151,7 @@ func TestNativePilotXCaptureWorkerToStore(t *testing.T) {
 	if os.Getenv("AKU_X_NATIVE_MANUAL_CAPTURE_OFFLINE") != "1" {
 		t.Skip("explicit offline worker helper required")
 	}
-	for _, mode := range []string{"", "digest", "target", "owner", "source", "expiry"} {
+	for _, mode := range []string{"", "digest", "target", "owner", "source", "expiry", "cloudflare", "x_human_verification"} {
 		t.Run("result-"+mode, func(t *testing.T) {
 			x := newNativeStoreFixture(t, true, func(f *manualRuntimeFixture) {
 				f.now = time.Now().Truncate(time.Second)
@@ -199,6 +202,12 @@ func TestNativePilotXCaptureWorkerToStore(t *testing.T) {
 				x.e.captureNativePilot(context.Background(), runtime, x.command.ID)
 				if backend.calls.Load() != 1 {
 					t.Fatal("invalid result recaptured")
+				}
+				if mode == "cloudflare" || mode == "x_human_verification" {
+					pause, err := x.s.SourceCapturePause(context.Background())
+					if err != nil || pause == nil || pause.Category != mode {
+						t.Fatal("native challenge did not reach persistent pause")
+					}
 				}
 				return
 			}

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
+	"github.com/abangkis/AkuSidecar/internal/collection/headless"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 )
@@ -31,7 +32,8 @@ func (p *xNativePilotCapture) nativePilotCollectorOwner() nativePilotOwner { ret
 func (p *xNativePilotCapture) Capture(ctx context.Context, source domain.Source, payload map[string]any) (result domain.Observation, captureErr error) {
 	started := false
 	defer func() {
-		if started && captureErr != nil && p.revoke != nil {
+		var challenge *headless.CaptureError
+		if started && captureErr != nil && p.revoke != nil && !errors.As(captureErr, &challenge) {
 			p.revoke()
 		}
 	}()
@@ -68,7 +70,7 @@ func (p *xNativePilotCapture) Capture(ctx context.Context, source domain.Source,
 	if value, ok := payload["continuation"]; ok && value != nil {
 		return domain.Observation{}, bad
 	}
-	for _, key := range []string{"pageUrl", "scrolls", "maxBlocksPerSnapshot", "sourceHydrationTimeoutMs"} {
+	for _, key := range []string{"pageUrl", "scrolls", "maxBlocksPerSnapshot", "sourceHydrationTimeoutMs", "scrollFraction", "scrollSettleMs"} {
 		if value, ok := payload[key]; ok {
 			projected[key] = value
 		}
@@ -100,7 +102,17 @@ func (p *xNativePilotCapture) Capture(ctx context.Context, source domain.Source,
 	var raw json.RawMessage
 	started = true
 	if err := p.ports.backend.rpc(call, "collector", "manual_capture", map[string]any{"handle": p.prepared.handle, "request": request}, &raw); err != nil {
-		return domain.Observation{}, bad
+		category := ""
+		switch err.Error() {
+		case "manual_capture_challenge_cloudflare":
+			category = "cloudflare"
+		case "manual_capture_challenge_x_human_verification":
+			category = "x_human_verification"
+		case "manual_capture_challenge_unknown":
+		default:
+			return domain.Observation{}, bad
+		}
+		return domain.Observation{}, &headless.CaptureError{Code: "challenge_required", Message: domain.XChallengeMessage, ChallengeCategory: category}
 	}
 	defer clear(raw)
 	var wire struct {

@@ -1,5 +1,9 @@
 # X manual pilot: durable claim and result contract
 
+For the current acceptance boundary and prepared capture QA, see
+[X concurrency dev readiness](concurrency-dev-readiness.md). The prepared QA now
+includes shared pacing/challenge admission; native execution remains unapproved.
+
 Implementation boundary: 2026-10-24. Schema compatibility barrier: 29 to 30.
 
 The Store contract is independent of browser observations and broker routing.

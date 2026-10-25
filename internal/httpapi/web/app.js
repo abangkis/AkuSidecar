@@ -1,4 +1,5 @@
 import { createDirtyStateTracker } from "./settings-dirty-state.js";
+import { normalizePage, renderPageNavigation, focusPageHeading, renderSetupPage } from "./page-navigation.js";
 import { renderSourceCapturePause, confirmSourceCaptureRecovery } from "./source-capture-pause.js";
 import { captureBehaviorDiagnostics } from "./capture-behavior-status.js";
 import { collectionModeState, browserCollectorProbeAllowed } from "./collection-mode.js";
@@ -849,16 +850,10 @@ async function cleanDatabase(backup) {
 }
 
 function setView(view) {
+  view = normalizePage(view);
   if (state.bootstrapLoading || !state.bootstrap) {
     state.currentView = view;
-    $("#onboarding-panel").classList.add("hidden");
-    $("#calibration-panel").classList.add("hidden");
-    $("#settings-panel").classList.add("hidden");
-    $("#inbox-panel").classList.add("hidden");
-    $("#library-panel").classList.add("hidden");
-    $("#topics-panel").classList.add("hidden");
-    $("#timeline-panel").classList.remove("hidden");
-    document.querySelector(".view-switch")?.classList.add("hidden");
+    renderPageNavigation(document, view, {loading: true});
     return;
   }
   if (onboardingRequiresSetup()) {
@@ -876,30 +871,13 @@ function setView(view) {
   const topics = view === "topics";
   const inbox = view === "inbox";
   const settings = view === "settings";
-  $("#onboarding-panel").classList.add("hidden");
-  $("#calibration-panel").classList.add("hidden");
-  document.querySelector(".view-switch")?.classList.remove("hidden");
-  $("#settings-panel").classList.toggle("hidden", !settings);
-  $("#inbox-panel").classList.toggle("hidden", !inbox);
-  $("#library-panel").classList.toggle("hidden", !library);
-  $("#topics-panel").classList.toggle("hidden", !topics);
-  $("#timeline-panel").classList.toggle("hidden", !timeline);
+  renderPageNavigation(document, view, {focus: false});
   if (!timeline) {
     closeTimelineSidePane();
     closeTimelineContentContextDrawer({ clearActive: true, focusTrigger: false });
   }
   syncTimelineSidePaneVisibility();
-  $("#session-view-button").classList.toggle("selected", timeline);
-  $("#library-view-button").classList.toggle("selected", library);
-  $("#topics-view-button").classList.toggle("selected", topics);
-  $("#inbox-view-button").classList.toggle("selected", inbox);
-  $("#settings-view-button").classList.toggle("selected", settings);
-  $("#session-view-button").setAttribute("aria-current", timeline ? "page" : "false");
-  $("#library-view-button").setAttribute("aria-current", library ? "page" : "false");
-  $("#topics-view-button").setAttribute("aria-current", topics ? "page" : "false");
-  $("#inbox-view-button").setAttribute("aria-current", inbox ? "page" : "false");
-  $("#settings-view-button").setAttribute("aria-current", settings ? "page" : "false");
-  ({ timeline: $("#timeline-heading"), library: $("#library-heading"), topics: $("#topics-heading"), inbox: $("#inbox-heading"), settings: $("#settings-heading") }[view])?.focus?.();
+  focusPageHeading(document, view);
   if (library) {
     renderLibraryTabs();
     loadLibrary();
@@ -4171,13 +4149,7 @@ function showOnboarding(editing) {
   $("#onboarding-cancel").classList.toggle("hidden", !editing);
   $("#onboarding-finish").textContent = editing ? "Save profile" : "Continue when ready";
   $("#onboarding-error").textContent = "";
-  $("#settings-panel").classList.add("hidden");
-  $("#inbox-panel").classList.add("hidden");
-  $("#library-panel").classList.add("hidden");
-  $("#timeline-panel").classList.add("hidden");
-  $("#calibration-panel").classList.add("hidden");
-  $("#onboarding-panel").classList.remove("hidden");
-  document.querySelector(".view-switch")?.classList.add("hidden");
+  renderSetupPage(document, "onboarding");
   syncTimelineSidePaneVisibility();
   renderBrowserConnection();
   updateOnboardingSummary();
@@ -5578,13 +5550,7 @@ function showCalibration(calibration) {
   state.bootstrap.calibration.active = calibration;
   const unresolved = calibration.samples.findIndex((sample) => !sample.label && !sample.issueCode);
   state.calibrationOrdinal = unresolved >= 0 ? unresolved : Math.max(0, calibration.samples.length - 1);
-  $("#onboarding-panel").classList.add("hidden");
-  $("#settings-panel").classList.add("hidden");
-  $("#inbox-panel").classList.add("hidden");
-  $("#library-panel").classList.add("hidden");
-  $("#timeline-panel").classList.add("hidden");
-  $("#calibration-panel").classList.remove("hidden");
-  document.querySelector(".view-switch")?.classList.add("hidden");
+  renderSetupPage(document, "calibration");
   syncTimelineSidePaneVisibility();
   $("#calibration-heading").focus();
   window.scrollTo({ top: 0, behavior: "auto" });

@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import {execFileSync} from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { sourceAssets } from '../../internal/collection/headless/worker/worker.mjs';
 
-// Fixed source allowlist; never stage Engine initialization or Store imports.
+// Startup-only modes use a fixed allowlist. Capture mode compiles actual Engine
+// production sources but excludes package TestMain and unrelated browser tests.
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const task = path.resolve(process.argv[2] ?? '');
 const parent = path.join(project, 'runtime', 'qa', 'auth-session-sidecar');
@@ -15,13 +17,14 @@ const stage = path.join(task, 'go-src');
 fs.mkdirSync(stage);
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const mode=process.argv[3];
-const retained=mode==='x-retained-manual';
-const files = ['chrome_fixture_windows.go', 'development_native_pilot_adapter.go',
+const capture=mode==='x-retained-capture';
+const retained=mode==='x-retained-manual'||capture;
+const files = capture ? execFileSync('go',['list','-tags','auth_session_dev auth_session_fixture','-f','{{range .GoFiles}}{{println .}}{{end}}','./internal/engine'],{cwd:project,encoding:'utf8'}).trim().split(/\r?\n/u).concat(['x_manual_pilot_retained_windows_test.go','x_manual_capture_retained_windows_test.go']) : ['chrome_fixture_windows.go', 'development_native_pilot_adapter.go',
   'development_native_pilot_startup.go', 'development_native_pilot_controller.go',
   'development_native_pilot_broker.go', retained?'x_manual_pilot_retained_windows_test.go':'native_manual_pilot_chrome_windows_test.go'];
 if(mode!==undefined){
-  if(!['x-owner-port','x-retained-manual'].includes(mode))throw new Error('standalone_stage_mode_invalid');
-  files.push('development_x_manual_pilot_owner.go','development_x_manual_pilot_owner_windows.go');
+  if(!['x-owner-port','x-retained-manual','x-retained-capture'].includes(mode))throw new Error('standalone_stage_mode_invalid');
+  if(!capture)files.push('development_x_manual_pilot_owner.go','development_x_manual_pilot_owner_windows.go');
 }
 const manifest = { schema: 'aku.native-manual-chrome.staging.v1', copied: [], extracted: [] };
 if(mode!==undefined){
@@ -77,7 +80,7 @@ if (!original.includes(declaration)) throw new Error('standalone_window_source_u
 const templatePath = path.join(project, 'scripts/auth-session-fixture/native-manual-chrome-support.go.txt');
 const template = fs.readFileSync(templatePath, 'utf8');
 const support = `${template}\n${declaration}\n\n${names.map(extract).join('\n')}`;
-fs.writeFileSync(path.join(stage, 'native_manual_chrome_support_windows.go'), support, { flag: 'wx' });
+if(!capture)fs.writeFileSync(path.join(stage, 'native_manual_chrome_support_windows.go'), support, { flag: 'wx' });
 manifest.originalProcessSourceSHA256 = hash(original);
 manifest.supportTemplateSHA256 = hash(template);
 manifest.generatedSupportSHA256 = hash(support);
@@ -107,4 +110,4 @@ if(retained){
   manifest.generatedRetainedSHA256=hash(generated);
 }
 fs.writeFileSync(path.join(task, 'staging-provenance.json'), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx' });
-process.stdout.write(JSON.stringify({ stage, files: [...files, 'native_manual_chrome_support_windows.go'] }) + '\n');
+process.stdout.write(JSON.stringify({ stage, files: capture?files:[...files, 'native_manual_chrome_support_windows.go'] }) + '\n');

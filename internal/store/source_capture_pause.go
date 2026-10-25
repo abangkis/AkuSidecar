@@ -35,7 +35,7 @@ func requireSourceCaptureAllowed(ctx context.Context, tx *sql.Tx, source domain.
 	}
 	var count int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM meta WHERE key=?`, xCapturePauseKey).Scan(&count); err != nil {
-		return err
+		return errors.New("capture pause lookup failed")
 	}
 	if count != 0 {
 		return ErrSourceCapturePaused

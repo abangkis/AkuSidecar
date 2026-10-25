@@ -4,13 +4,22 @@ import {sourceAssets} from '../../internal/collection/headless/worker/worker.mjs
 import {HeaderSafetyGuard} from './x-manual-header-safety.mjs';
 
 const fail=()=>new Error('xnp_manual_capture_rejected');
+// The private wire carries a closed reason, never page text or raw exceptions.
+export function manualCaptureRPCCode(error) {
+  if(error?.code==='challenge_required') {
+    return error.challengeCategory==='cloudflare'?'manual_capture_challenge_cloudflare'
+      :error.challengeCategory==='x_human_verification'?'manual_capture_challenge_x_human_verification'
+      :'manual_capture_challenge_unknown';
+  }
+  return 'manual_capture_rejected';
+}
 const pinsKeys=['ownerId','profileId','contextId','targetId','frameId','documentId'];
 const ref=v=>typeof v==='string'&&v.length>0&&v.length<=512&&!/[\u0000-\u001f\u007f]/u.test(v);
 const exact=(v,keys)=>{if(!v||![Object.prototype,null].includes(Object.getPrototypeOf(v))||Reflect.ownKeys(v).length!==keys.length||Reflect.ownKeys(v).some(k=>!keys.includes(k)||!Object.hasOwn(Object.getOwnPropertyDescriptor(v,k),'value')))throw fail();};
 export function validateManualCaptureRequest(request,now=Date.now()) {
   exact(request,['correlation','pins','deadlineMS','payload']);exact(request.pins,pinsKeys);
   if(!ref(request.correlation)||!pinsKeys.every(k=>ref(request.pins[k]))||!Number.isSafeInteger(request.deadlineMS)||request.deadlineMS<=now||request.deadlineMS>now+60000)throw fail();
-  const allowed=['pageUrl','scrolls','maxBlocksPerSnapshot','sourceHydrationTimeoutMs'];
+  const allowed=['pageUrl','scrolls','maxBlocksPerSnapshot','sourceHydrationTimeoutMs','scrollFraction','scrollSettleMs'];
   if(!request.payload||![Object.prototype,null].includes(Object.getPrototypeOf(request.payload))||Object.keys(request.payload).some(k=>!allowed.includes(k)))throw fail();
   const left=request.deadlineMS-now;
   if(left<1000)throw fail();

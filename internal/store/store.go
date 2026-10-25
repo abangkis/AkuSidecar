@@ -1187,14 +1187,14 @@ func (s *Store) claimCommandWithBehavior(ctx context.Context, runID, bridgeID, c
 	if err := requireSourceCaptureAllowed(ctx, tx, captureSource); err != nil {
 		return nil, err
 	}
-	if allowed, err := s.captureBehaviorAllowed(ctx, tx, captureSource, policy); err != nil || !allowed {
-		return nil, err
-	}
 	gate, err := s.captureCommandClaimGate(ctx, tx, runID)
 	if err != nil || gate.paused || gate.protected && !gate.allowed {
 		return nil, err
 	}
 	if err := rejectManualPilotRun(ctx, tx, runID); err != nil {
+		return nil, err
+	}
+	if allowed, err := s.captureBehaviorAllowed(ctx, tx, captureSource, policy); err != nil || !allowed {
 		return nil, err
 	}
 	var claimed int
@@ -1621,7 +1621,7 @@ func (s *Store) ResumableReasoningRunIDs(ctx context.Context) ([]string, error) 
 }
 
 func (s *Store) FailCommand(ctx context.Context, commandID, runID string, failure domain.Failure) (bool, error) {
-	now := domain.Now()
+	now := s.Now().UTC().Format(time.RFC3339Nano)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
