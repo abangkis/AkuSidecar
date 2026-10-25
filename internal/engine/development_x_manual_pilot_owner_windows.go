@@ -184,7 +184,13 @@ func (b *xManualPilotWindowsBackend) rpc(ctx context.Context, role, op string, f
 	// Only this fixed role protocol bypasses rpcMu. Both roles must enter the
 	// initial identity rendezvous together on a shared Node. Writes and replies
 	// retain the existing bridge's per-message correlation and pipe locks.
-	if err := r.bridge.rpcRoundTrip(ctx, op, input, out); err != nil {
+	progressCount := 0
+	if err := r.bridge.rpcRoundTripObserved(ctx, op, input, out, func(raw []byte) {
+		if progressCount < 32 {
+			progressCount++
+			nativePilotTimingProgress(ctx, role, raw)
+		}
+	}); err != nil {
 		if op == "manual_capture" {
 			switch err.Error() {
 			case "manual_capture_challenge_cloudflare", "manual_capture_challenge_x_human_verification", "manual_capture_challenge_unknown":

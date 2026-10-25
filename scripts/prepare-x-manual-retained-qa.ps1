@@ -56,7 +56,7 @@ try{
   $sources=@($stage.files | ForEach-Object {Join-Path $stage.stage $_})
   & go test -c -tags 'auth_session_dev auth_session_fixture' -o $exe @sources 2>&1 | Tee-Object -FilePath $log -Append
   if($LASTEXITCODE -ne 0){throw 'Retained QA standalone compilation failed.'}
-  & $exe '-test.run=^TestXManual(CaptureRetainedQA|PilotRetained(QA|SeedDiagnostics|SeedNodeDiagnostic|StartupDiagnostic|TraceCodes))$' '-test.timeout=15s' '-test.v' 2>&1 | Tee-Object -FilePath $log -Append
+  & $exe '-test.run=^TestXManual(CaptureRetainedQA|PilotRetained(QA|SeedDiagnostics|SeedNodeDiagnostic|StartupDiagnostic|TimingProgress|TraceCodes))$' '-test.timeout=15s' '-test.v' 2>&1 | Tee-Object -FilePath $log -Append
   if($LASTEXITCODE -ne 0){throw 'Default-off entry rejection failed.'}
   $provenance=Get-Content -LiteralPath (Join-Path $root 'staging-provenance.json') -Raw | ConvertFrom-Json
   $paths=@($provenance.copied.source)+@($provenance.extracted.source)+@($provenance.nodeSources.source)+@($provenance.captureSourceAssets.source)+@('scripts/auth-session-fixture/x-manual-retained-setup.mjs','scripts/auth-session-fixture/x-retained-source-qualification-driver.mjs','scripts/prepare-x-manual-retained-qa.ps1')

@@ -558,6 +558,78 @@ func (p *xManualInitialOfflineBackend) cleanup(ctx context.Context, role, handle
 	return p.transport.cleanup(ctx, role, handle, preserve)
 }
 
+func TestXManualPilotRetainedTimingProgress(t *testing.T) {
+	project, node := os.Getenv("AKU_NATIVE_MANUAL_PROJECT_ROOT"), os.Getenv("AKU_CHROME_FIXTURE_NODE")
+	if !filepath.IsAbs(project) || !filepath.IsAbs(node) {
+		t.Skip("accountless timing bridge requires helper")
+	}
+	const script = `import {pathToFileURL} from 'node:url';import {createInterface} from 'node:readline';
+const {createStartupTiming}=await import(pathToFileURL(process.argv[1]));
+const {startupFailure}=await import(pathToFileURL(process.argv[2]));
+console.log(JSON.stringify({ready:true}));
+for await(const line of createInterface({input:process.stdin})){
+ const q=JSON.parse(line),report=result=>console.log(JSON.stringify({event:'manual_startup_progress',id:q.id,result}));
+ if(q.op==='manual_acquire'){
+  const timing=createStartupTiming(report);timing.step('settings_wait');
+  timing.failure(startupFailure(q.role,'settings','source_unavailable'));
+ }else console.log(JSON.stringify({id:q.id,ok:true,result:{closed:true}}));
+}`
+	cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(project, "scripts/auth-session-fixture/x-manual-startup-timing.mjs"), filepath.Join(project, "scripts/auth-session-fixture/x-manual-startup-diagnostic.mjs"))
+	cmd.Stderr = io.Discard
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal("offline output unavailable")
+	}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal("offline input unavailable")
+	}
+	if cmd.Start() != nil {
+		t.Fatal("offline Node unavailable")
+	}
+	b := &chromeFixtureBridge{cmd: cmd, stdin: stdin, pending: map[int64]chan chromeFixtureReply{}, owners: map[int]*chromeFixtureProcess{}, closed: make(chan struct{}), nodeWaited: make(chan struct{})}
+	ready := make(chan error, 1)
+	go b.readOutput(stdout, ready)
+	t.Cleanup(func() {
+		_ = stdin.Close()
+		select {
+		case <-b.nodeWaited:
+		case <-time.After(3 * time.Second):
+			_ = cmd.Process.Kill()
+			<-b.nodeWaited
+		}
+	})
+	select {
+	case err = <-ready:
+		if err != nil {
+			t.Fatal("offline handshake failed")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("offline handshake timed out")
+	}
+	ledger := &nativePilotTiming{started: time.Now(), now: time.Now}
+	ctx, cancel := context.WithTimeout(context.WithValue(context.Background(), nativePilotTimingKey{}, ledger), 200*time.Millisecond)
+	defer cancel()
+	done := nativePilotTimed(ctx, "reader", "acquire_rpc")
+	backend := &xManualPilotWindowsBackend{roles: map[string]xManualPilotWindowsRole{"reader": {bridge: b, protocolOwner: 1}}}
+	err = backend.rpc(ctx, "reader", "manual_acquire", nil, nil)
+	done()
+	detail := nativePilotTimingFailure(ctx, err, "pair", "joint")
+	snapshot := ledger.freeze()
+	if detail.role != "reader" || detail.phase != "settings" || detail.reason != "source_unavailable" {
+		t.Fatalf("progress cause lost at deadline: %v", detail)
+	}
+	if snapshot.roles[0].nodeOperation != nativePilotTimingIndex("settings_wait") || snapshot.roles[0].operation != nativePilotTimingIndex("acquire_rpc") {
+		t.Fatal("pending operation lost")
+	}
+	b.mu.Lock()
+	pending, observers := len(b.pending), len(b.progress)
+	b.mu.Unlock()
+	if pending != 0 || observers != 0 {
+		t.Fatal("expired RPC kept observers")
+	}
+}
+
 func TestXManualPilotRetainedStartupDiagnostic(t *testing.T) {
 	for _, role := range []string{"reader", "collector", "peer-first", "trace-reader", "trace-collector", "trace-ambiguous", "trace-peer-first", "trace-priority", "trace-priority-collector", "trace-budget", "trace-unbound", "trace-response", "trace-metadata", "trace-completion", "trace-context-priority", "trace-guard-peer-first", "trace-budget-candidate", "trace-candidate-budget", "trace-redirect", "trace-reused", "trace-redirect-peer-first"} {
 		t.Run(role, func(t *testing.T) {

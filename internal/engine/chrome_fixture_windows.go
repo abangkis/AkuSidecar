@@ -65,6 +65,7 @@ type chromeFixtureBridge struct {
 	mu            sync.Mutex
 	nextID        int64
 	pending       map[int64]chan chromeFixtureReply
+	progress      map[int64]func([]byte)
 	owners        map[int]*chromeFixtureProcess
 	exitsEarly    map[int]struct{}
 	closed        chan struct{}
@@ -409,6 +410,18 @@ func (b *chromeFixtureBridge) readOutput(stdout io.Reader, ready chan<- error) {
 			b.handleChromeExit(message.Owner)
 			continue
 		}
+		if message.Event == "manual_startup_progress" {
+			b.mu.Lock()
+			observe := b.progress[message.ID]
+			if b.pending[message.ID] == nil {
+				observe = nil
+			}
+			b.mu.Unlock()
+			if observe != nil && len(message.Result) <= 512 {
+				observe(message.Result)
+			}
+			continue
+		}
 		if message.ID == 0 {
 			continue
 		}
@@ -523,6 +536,9 @@ func (b *chromeFixtureBridge) rpc(ctx context.Context, op string, fields map[str
 // alongside those controls. Correlation, pipe writes and cancellation retain
 // the same locks and pending-response handling in both paths.
 func (b *chromeFixtureBridge) rpcRoundTrip(ctx context.Context, op string, fields map[string]any, out any) error {
+	return b.rpcRoundTripObserved(ctx, op, fields, out, nil)
+}
+func (b *chromeFixtureBridge) rpcRoundTripObserved(ctx context.Context, op string, fields map[string]any, out any, observe func([]byte)) error {
 	if b.isClosed() {
 		return errors.New("fixture bridge is closed")
 	}
@@ -538,7 +554,14 @@ func (b *chromeFixtureBridge) rpcRoundTrip(ctx context.Context, op string, field
 	response := make(chan chromeFixtureReply, 1)
 	b.mu.Lock()
 	b.pending[id] = response
+	if observe != nil {
+		if b.progress == nil {
+			b.progress = make(map[int64]func([]byte))
+		}
+		b.progress[id] = observe
+	}
 	b.mu.Unlock()
+	defer func() { b.mu.Lock(); delete(b.progress, id); b.mu.Unlock() }()
 	b.writeMu.Lock()
 	_, err = b.stdin.Write(append(encoded, '\n'))
 	b.writeMu.Unlock()

@@ -6,9 +6,12 @@ package engine
 // Store authority. No native startup producer is registered here. Startup
 // sampling does not establish fresh identity or session continuity afterward.
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"sync"
@@ -119,11 +122,243 @@ type nativePilotDiagnostic struct {
 	StorePermit      bool   `json:"storePermit"`
 }
 
+// Diagnostic-only monotonic clock. No observation, policy clock or deadline is
+// derived from this ledger. Fixed slots bound memory and exclude private data.
+var nativePilotTimingOps = [...]string{"idle", "os_snapshot", "inspect_rpc", "inventory_rpc", "acquire_rpc", "wire_decode", "identity", "rendezvous", "settings_wait", "cleanup", "root_restore", "complete"}
+
+type nativePilotTimingKey struct{}
+type nativePilotRoleTiming struct {
+	op, nodeOp            int
+	started, nodeReceived time.Time
+	nodeMS                int64
+	sequence              uint64
+	totals                [len(nativePilotTimingOps)]time.Duration
+}
+type nativePilotTimingRoleSnapshot struct {
+	operation, nodeOperation int
+	activeMS, nodeMS         int64
+	totals                   [len(nativePilotTimingOps)]int64
+}
+type nativePilotTimingSnapshot struct {
+	elapsedMS int64
+	roles     [2]nativePilotTimingRoleSnapshot
+}
+type nativePilotTiming struct {
+	mu      sync.Mutex
+	now     func() time.Time
+	started time.Time
+	roles   [2]nativePilotRoleTiming
+	first   *nativePilotInitialDetail
+	frozen  *nativePilotTimingSnapshot
+}
+
+func nativePilotTimingIndex(value string) int {
+	for i, op := range nativePilotTimingOps {
+		if op == value {
+			return i
+		}
+	}
+	return 0
+}
+func nativePilotTimingRole(role string) int {
+	if role == "reader" {
+		return 0
+	}
+	if role == "collector" {
+		return 1
+	}
+	return -1
+}
+func nativePilotTimingMS(d time.Duration) int64 {
+	if d < 0 {
+		return 0
+	}
+	if d > nativePilotLife {
+		return 60000
+	}
+	return d.Milliseconds()
+}
+func nativePilotTimingOf(ctx context.Context) *nativePilotTiming {
+	if ctx == nil {
+		return nil
+	}
+	v, _ := ctx.Value(nativePilotTimingKey{}).(*nativePilotTiming)
+	return v
+}
+func nativePilotTimed(ctx context.Context, role, op string) func() {
+	l, i, slot := nativePilotTimingOf(ctx), nativePilotTimingRole(role), nativePilotTimingIndex(op)
+	if l == nil || i < 0 || slot == 0 || ctx.Err() != nil {
+		return func() {}
+	}
+	l.mu.Lock()
+	if l.frozen != nil {
+		l.mu.Unlock()
+		return func() {}
+	}
+	r := &l.roles[i]
+	r.sequence++
+	seq := r.sequence
+	r.op = slot
+	r.started = l.now()
+	r.nodeOp = 0
+	r.nodeMS = 0
+	l.mu.Unlock()
+	return func() {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		r := &l.roles[i]
+		if l.frozen == nil && ctx.Err() == nil && r.sequence == seq && r.op == slot {
+			r.totals[slot] += l.now().Sub(r.started)
+			r.op = 0
+		}
+	}
+}
+func nativePilotTimingFailure(ctx context.Context, err error, role, phase string) nativePilotInitialDetail {
+	d := nativePilotInitialOf(err, role, phase)
+	l := nativePilotTimingOf(ctx)
+	if l == nil {
+		return d
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.first == nil {
+		if l.frozen != nil {
+			return d
+		}
+		copy := d
+		copy.timing = nil
+		l.first = &copy
+	}
+	return *l.first
+}
+
+// A progress event is correlated to one pending private RPC. It is evidence of
+// progress only; it cannot produce account proof or authorize a capture.
+func nativePilotTimingProgress(ctx context.Context, role string, raw []byte) {
+	l, i := nativePilotTimingOf(ctx), nativePilotTimingRole(role)
+	if l == nil || i < 0 || len(raw) > 512 || ctx.Err() != nil {
+		return
+	}
+	var p struct {
+		Operation string `json:"operation"`
+		ElapsedMS int64  `json:"elapsedMS"`
+		Cause     string `json:"cause"`
+	}
+	// Unknown/duplicate fields are rejected by the private transport decoder.
+	if !nativePilotProgressDecode(raw, &p) || p.ElapsedMS < 0 || p.ElapsedMS > 60000 {
+		return
+	}
+	op := nativePilotTimingIndex(p.Operation)
+	if op == 0 {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.frozen != nil {
+		return
+	}
+	r := &l.roles[i]
+	if r.op == 0 {
+		return
+	}
+	r.nodeOp = op
+	r.nodeMS = p.ElapsedMS
+	r.nodeReceived = l.now()
+	if p.Cause != "" && l.first == nil {
+		if d, ok := nativePilotInitialCode(p.Cause); ok && (d.role == role || d.role == "pair" || d.peer && nativePilotTimingRole(d.role) >= 0) {
+			d.timing = nil
+			l.first = &d
+		}
+	}
+}
+func nativePilotProgressDecode(raw []byte, out any) bool {
+	d := json.NewDecoder(bytes.NewReader(raw))
+	token, err := d.Token()
+	if err != nil || token != json.Delim('{') {
+		return false
+	}
+	seen := map[string]bool{}
+	for d.More() {
+		t, e := d.Token()
+		key, ok := t.(string)
+		if e != nil || !ok || seen[key] || (key != "operation" && key != "elapsedMS" && key != "cause") {
+			return false
+		}
+		seen[key] = true
+		var value json.RawMessage
+		if d.Decode(&value) != nil || bytes.Equal(value, []byte("null")) {
+			return false
+		}
+	}
+	if t, e := d.Token(); e != nil || t != json.Delim('}') || len(seen) != 3 {
+		return false
+	}
+	if _, e := d.Token(); e != io.EOF {
+		return false
+	}
+	return json.Unmarshal(raw, out) == nil
+}
+func (l *nativePilotTiming) freeze() *nativePilotTimingSnapshot {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.frozen != nil {
+		return l.frozen
+	}
+	now := l.now()
+	s := &nativePilotTimingSnapshot{elapsedMS: nativePilotTimingMS(now.Sub(l.started))}
+	for i, r := range l.roles {
+		v := &s.roles[i]
+		v.operation = r.op
+		v.nodeOperation = r.nodeOp
+		if r.op != 0 {
+			v.activeMS = nativePilotTimingMS(now.Sub(r.started))
+			r.totals[r.op] += now.Sub(r.started)
+		}
+		if r.nodeOp != 0 {
+			v.nodeMS = nativePilotTimingMS(time.Duration(r.nodeMS)*time.Millisecond + now.Sub(r.nodeReceived))
+		}
+		for j, total := range r.totals {
+			v.totals[j] = nativePilotTimingMS(total)
+		}
+	}
+	l.frozen = s
+	return s
+}
+func (s nativePilotTimingSnapshot) String() string {
+	bound := func(ms int64) int64 {
+		if ms < 0 {
+			return 0
+		}
+		if ms > 60000 {
+			return 60000
+		}
+		return ms
+	}
+	name := func(i int) string {
+		if i < 0 || i >= len(nativePilotTimingOps) {
+			return "unknown"
+		}
+		return nativePilotTimingOps[i]
+	}
+	out := fmt.Sprintf(" elapsed_ms=%d", bound(s.elapsedMS))
+	for i, role := range []string{"reader", "collector"} {
+		r := s.roles[i]
+		out += fmt.Sprintf(" %s_active=%s %s_active_ms=%d %s_node=%s %s_node_age_ms=%d", role, name(r.operation), role, bound(r.activeMS), role, name(r.nodeOperation), role, bound(r.nodeMS))
+		for j, ms := range r.totals {
+			if ms > 0 {
+				out += fmt.Sprintf(" %s_%s_ms=%d", role, name(j), bound(ms))
+			}
+		}
+	}
+	return out
+}
+
 // Private detail only. It never changes public Reason, eligibility or permits.
 type nativePilotInitialDetail struct {
 	role, phase, reason string
 	peer                bool
 	trace               *nativePilotInitialTrace
+	timing              *nativePilotTimingSnapshot
 }
 type nativePilotInitialTrace struct{ firstCause, terminal, early, handoff, cookie, extra, guardTrigger, guardProvenance, guardCondition, guardEpoch, guardDiskCache, guardServiceWorker, guardPrefetchCache, guardRequestFrame, guardHeaderReason, inspectStage, inspectCondition string }
 
@@ -231,6 +466,9 @@ func (d nativePilotInitialDetail) String() string {
 	value := fmt.Sprintf("role=%s phase=%s reason=%s kind=%s", d.role, d.phase, d.reason, map[bool]string{false: "primary", true: "peer"}[d.peer])
 	if d.trace != nil {
 		value += " " + d.trace.String()
+	}
+	if d.timing != nil {
+		value += d.timing.String()
 	}
 	return value
 }
@@ -517,6 +755,25 @@ func (a *nativePilotAdapter) initialEvidence(ctx context.Context) (*nativePilotV
 	// Bound real callback time independently of the injected policy clock.
 	probeCtx, cancel := context.WithTimeout(ctx, deadline.Sub(started))
 	defer cancel()
+	timing := &nativePilotTiming{now: time.Now, started: time.Now()}
+	probeCtx = context.WithValue(probeCtx, nativePilotTimingKey{}, timing)
+	defer func() {
+		snapshot := timing.freeze()
+		timing.mu.Lock()
+		first := timing.first
+		timing.mu.Unlock()
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		if a.stopped {
+			if first != nil {
+				a.initial = *first
+			}
+			if a.initial.role == "" {
+				a.initial = nativePilotInitialOf(probeCtx.Err(), "pair", "joint")
+			}
+			a.initial.timing = snapshot
+		}
+	}()
 	reason = a.ownerReason(probeCtx)
 	sampleExpires := a.attemptDeadline()
 	requests := make(map[nativePilotRequestKey]bool)

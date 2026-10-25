@@ -162,6 +162,8 @@ func xManualPilotDecode(raw []byte, out any) error {
 	return nil
 }
 func (p *xManualPilotOwnerPorts) core(ctx context.Context, role string) (nativePilotOwner, error) {
+	done := nativePilotTimed(ctx, role, "os_snapshot")
+	defer done()
 	o, err := p.backend.snapshot(ctx, role)
 	selected := p.cfg.pilot.binding.reader
 	if role == "collector" {
@@ -179,6 +181,16 @@ func (p *xManualPilotOwnerPorts) core(ctx context.Context, role string) (nativeP
 		return nativePilotOwner{}, errors.New("x-owner-os-unavailable")
 	}
 	return o, nil
+}
+func (p *xManualPilotOwnerPorts) timedRPC(ctx context.Context, role, op string, fields map[string]any, out any) error {
+	stage := map[string]string{"manual_inspect": "inspect_rpc", "manual_inventory": "inventory_rpc", "manual_acquire": "acquire_rpc"}[op]
+	done := nativePilotTimed(ctx, role, stage)
+	defer done()
+	err := p.backend.rpc(ctx, role, op, fields, out)
+	if err != nil {
+		nativePilotTimingFailure(ctx, err, role, "acquire_rpc")
+	}
+	return err
 }
 func xManualPilotBind(core nativePilotOwner, pins xManualPilotPins) (nativePilotOwner, error) {
 	if pins.OwnerID != core.owner || pins.ProfileID != core.profile {
@@ -311,7 +323,7 @@ func (p *xManualPilotOwnerPorts) inspectPhase(ctx context.Context, prepared nati
 		return fail("go_core_before", "os_snapshot")
 	}
 	var raw json.RawMessage
-	if err := p.backend.rpc(ctx, prepared.owner.role, "manual_inspect", nil, &raw); err != nil {
+	if err := p.timedRPC(ctx, prepared.owner.role, "manual_inspect", nil, &raw); err != nil {
 		clear(raw)
 		// The transport's branded Node diagnostic owns the originating predicate.
 		// Arbitrary RPC error text never enters the private closed diagnostic.
@@ -392,7 +404,7 @@ func (p *xManualPilotOwnerPorts) acquire(ctx context.Context, prepared nativePil
 	}
 	defer clear(request)
 	var raw json.RawMessage
-	if err := p.backend.rpc(ctx, prepared.owner.role, "manual_acquire", map[string]any{"handle": prepared.handle, "request": json.RawMessage(request)}, &raw); err != nil {
+	if err := p.timedRPC(ctx, prepared.owner.role, "manual_acquire", map[string]any{"handle": prepared.handle, "request": json.RawMessage(request)}, &raw); err != nil {
 		clear(raw)
 		return nil, nativePilotInitialWrap(err, prepared.owner.role, "acquire_rpc")
 	}
@@ -413,7 +425,7 @@ func (p *xManualPilotOwnerPorts) state(ctx context.Context) (nativePilotBrokerSt
 		}
 	}
 	var raw json.RawMessage
-	if p.backend.rpc(ctx, "reader", "manual_inventory", nil, &raw) != nil {
+	if p.timedRPC(ctx, "reader", "manual_inventory", nil, &raw) != nil {
 		return nativePilotBrokerState{}, errors.New("x-owner-inventory-unavailable")
 	}
 	defer clear(raw)

@@ -51,6 +51,28 @@ the retained reader profile was preserved. No retry was performed. Evidence:
 
 ## Acceptance scenario
 
+Startup diagnostics now retain a frozen, bounded snapshot for both roles when
+admission fails: total local elapsed time, the active Go operation and its age,
+cumulative Go operation durations, and the last reported Node stage. Node stages
+include identity, rendezvous, settings wait, cleanup and root-control restoration.
+Node stage age combines its reported duration with local time since reception;
+it is not a synchronized cross-process timestamp or proof of the current browser
+state. Missing progress stays idle/unknown rather than blaming a browser.
+
+Private progress uses the existing pending RPC correlation, at most 32 records
+per RPC, each at most 512 bytes. Only closed operation/cause categories and
+bounded milliseconds are accepted. It carries no cookie, account ID, page body,
+URL or document pins, and it cannot authorize a result. Late events and events
+for completed RPCs are ignored. The first observed failure is retained across a
+subsequent deadline; an unattributed timeout remains pair-scoped. Frozen timing
+cannot be rewritten by late callbacks or cleanup.
+
+The two-second startup deadline and 60-second attempt ceiling are unchanged.
+The latest native failure remains the failed attempt recorded above; offline
+timing/transport tests do not establish its missing historical operation timing.
+The six preflight fixture regressions now register their synthetic root-control
+session before exercising guard binding, so they reach their intended predicates.
+
 The capture scenario reuses the existing retained-profile lease and startup
 recipe exactly once. It opens an additional reader window, captures one bounded
 round through the existing X worker, commits to a newly created QA database,

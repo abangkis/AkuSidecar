@@ -132,10 +132,10 @@ func (s *nativePilotStartupSource) observe(ctx context.Context, c nativePilotCha
 	}
 	outputs := make(chan output, 2)
 	record := func(err error, role, phase string) error {
-		typed := nativePilotInitialWrap(err, role, phase)
+		detail := nativePilotTimingFailure(ctx, err, role, phase)
 		s.mu.Lock()
 		if s.initial.role == "" {
-			s.initial = typed.(*nativePilotInitialError).detail
+			s.initial = detail
 		}
 		first := s.initial
 		s.mu.Unlock()
@@ -146,7 +146,9 @@ func (s *nativePilotStartupSource) observe(ctx context.Context, c nativePilotCha
 			raw, err := s.cfg.capture(group, nativePilotCaptureChallenge{challenge: ch, correlation: correlation})
 			var receipt nativePilotReceipt
 			if err == nil && group.Err() == nil {
+				finishDecode := nativePilotTimed(group, ch.role, "wire_decode")
 				receipt, err = decodeNativePilotStartup(raw, ch, correlation)
+				finishDecode()
 			} else if err == nil {
 				err = group.Err()
 			}

@@ -143,6 +143,88 @@ func TestNativePilotStartupCanceledGuard(t *testing.T) {
 		t.Fatal("post-output deadline replaced observed primary")
 	}
 }
+
+func TestNativePilotStartupTimingFrozenFirstCause(t *testing.T) {
+	f := newTestNativePilotFixture()
+	entered := make(chan struct{}, 2)
+	left := make(chan struct{}, 2)
+	testNativeStartupSource(t, f, func(ctx context.Context, ch nativePilotCaptureChallenge) ([]byte, error) {
+		defer func() { left <- struct{}{} }()
+		done := nativePilotTimed(ctx, ch.challenge.role, "acquire_rpc")
+		defer done()
+		if ch.challenge.role == "reader" {
+			nativePilotTimingProgress(ctx, "reader", []byte(`{"operation":"settings_wait","elapsedMS":12,"cause":"manual_initial_reader_settings_source_unavailable_primary"}`))
+		} else {
+			nativePilotTimingProgress(ctx, "collector", []byte(`{"operation":"rendezvous","elapsedMS":3,"cause":""}`))
+		}
+		entered <- struct{}{}
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	a := f.adapter(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { a.initialEvidence(ctx); close(done) }()
+	<-entered
+	<-entered
+	cancel()
+	<-done
+	<-left
+	<-left
+	d := a.initial
+	if d.role != "reader" || d.phase != "settings" || d.reason != "source_unavailable" || d.timing == nil {
+		t.Fatalf("lost first closed failure: %v", d)
+	}
+	if d.timing.roles[0].operation != nativePilotTimingIndex("acquire_rpc") || d.timing.roles[1].nodeOperation != nativePilotTimingIndex("rendezvous") {
+		t.Fatalf("lost pending roles: %v", d)
+	}
+}
+
+func TestNativePilotStartupTimingBoundsAndIsolation(t *testing.T) {
+	now := time.Unix(100, 0)
+	ledger := &nativePilotTiming{started: now, now: func() time.Time { return now }}
+	ctx := context.WithValue(context.Background(), nativePilotTimingKey{}, ledger)
+	readerDone := nativePilotTimed(ctx, "reader", "inspect_rpc")
+	now = now.Add(20 * time.Millisecond)
+	readerDone()
+	collectorDone := nativePilotTimed(ctx, "collector", "acquire_rpc")
+	for _, raw := range []string{
+		`{"operation":"PRIVATE","elapsedMS":0,"cause":""}`,
+		`{"operation":"identity","operation":"cleanup","elapsedMS":0,"cause":""}`,
+		`{"operation":"identity","elapsedMS":-1,"cause":""}`,
+		`{"operation":"identity","elapsedMS":60001,"cause":""}`,
+		`{"operation":"identity","elapsedMS":null,"cause":""}`,
+		`{"operation":"identity","elapsedMS":0,"cause":"","secret":"PRIVATE"}`,
+	} {
+		nativePilotTimingProgress(ctx, "collector", []byte(raw))
+	}
+	if ledger.roles[1].nodeOp != 0 {
+		t.Fatal("malformed diagnostic accepted")
+	}
+	nativePilotTimingProgress(ctx, "collector", []byte(`{"operation":"settings_wait","elapsedMS":7,"cause":"manual_initial_reader_identity_unavailable_primary"}`))
+	if ledger.first != nil {
+		t.Fatal("cross-role cause accepted")
+	}
+	nativePilotTimingProgress(ctx, "collector", []byte(`{"operation":"settings_wait","elapsedMS":7,"cause":"manual_initial_reader_identity_unavailable_peer"}`))
+	if ledger.first == nil || ledger.first.role != "reader" || !ledger.first.peer {
+		t.Fatal("branded peer-first origin lost")
+	}
+	now = now.Add(30 * time.Millisecond)
+	snapshot := *ledger.freeze()
+	collectorDone()
+	nativePilotTimingProgress(ctx, "collector", []byte(`{"operation":"cleanup","elapsedMS":2,"cause":""}`))
+	now = now.Add(time.Minute)
+	if *ledger.freeze() != snapshot {
+		t.Fatal("frozen timeout mutated")
+	}
+	if snapshot.roles[0].totals[nativePilotTimingIndex("inspect_rpc")] != 20 || snapshot.roles[1].activeMS != 30 {
+		t.Fatal("role durations mixed")
+	}
+	if strings.Contains(snapshot.String(), "PRIVATE") {
+		t.Fatal("diagnostic leaked data")
+	}
+}
 func testNativeStartupSource(t *testing.T, f *testNativePilotFixture, capture nativePilotCapture) *nativePilotStartupSource {
 	t.Helper()
 	if capture == nil {

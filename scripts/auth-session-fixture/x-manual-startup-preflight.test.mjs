@@ -5,6 +5,7 @@ import {createManualStartupOwner} from './x-manual-startup-owner.mjs';
 import {ManualStartupCookieGuard} from './x-manual-startup-cookie-guard.mjs';
 import {createManualV2BoundObservation} from './x-qa-bound-observation.mjs';
 import {startupFailure, startupFailureLatch, startupDiagnostic, requireBoundStartup} from './x-manual-startup-diagnostic.mjs';
+import {registerFreshStartupSession} from './x-manual-root-controls.mjs';
 
 // Exercise the actual collector path with an accountless transport. It cannot
 // spawn a browser, access a profile, transfer cookies or publish real evidence.
@@ -45,6 +46,7 @@ function fixture(fault, diagnostics = startupFailureLatch()) {
   const current = {manualStartupSelected: true, shortFeasibility: {
     transport, sessionId: 'private-session', targetId: 'private-target', manualCookieGuard: guard,
   }};
+  registerFreshStartupSession(current.shortFeasibility,'private-session','collector');
   const owner = createManualStartupOwner({role: 'collector', diagnostics, run: async sink => {
     try {
       const result = await collectorShortCheckpoint(current, undefined, sink.onPrivateStartup, sink.beforeIdentityRead, failure,

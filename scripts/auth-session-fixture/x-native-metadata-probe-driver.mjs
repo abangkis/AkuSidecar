@@ -1,4 +1,5 @@
 import {registerFreshStartupSession,startupRootControls,allowsStartupControl,mustRetireStartupOwner,markStartupControlAttempt} from './x-manual-root-controls.mjs';
+import {createStartupTiming} from './x-manual-startup-timing.mjs';
 // Opt-in, headful X QA. Default modes export metadata only. The fixed
 // account-settings mode may read one completed response body and immediately
 // project it to value-free shape diagnostics before resolving the CDP promise.
@@ -1690,7 +1691,7 @@ async function qualifyBoundObservation(message, cookieWriteScope = false) {
   return boundCheckpoint(current, cookieWriteScope);
 }
 
-async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, afterIdentity, beforeIdentityRead,initialFailure, observationFactory = (...args) => new QABoundObservation(...args)) {
+async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, afterIdentity, beforeIdentityRead,initialFailure, observationFactory = (...args) => new QABoundObservation(...args), progress=()=>{}) {
   current.earlyRunning = true;
   const bound = current.bound = { running: true, sampling: false, binder: null, networkDisabled: false };
   const controls=current.manualStartupSelected?startupRootControls(current,send,'reader'):null;
@@ -1710,6 +1711,8 @@ async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, 
       send: async (method, params, purpose) => {
         if(method==='Page.reload' && current.manualStartupSelected)bound.binder.armManualReload(oldLoader);
         let result;
+        if(method==='Debugger.evaluateOnCallFrame')progress('identity');
+        if(['Runtime.disable','Debugger.disable','Debugger.removeBreakpoint'].includes(method))progress('cleanup');
         try{result=await send(method,params,current.sessionId,purpose);}
         catch(error){throw initialFailure?initialFailure(error,method==='Debugger.evaluateOnCallFrame'?'identity':['Runtime.disable','Debugger.disable','Debugger.removeBreakpoint'].includes(method)?'cleanup':'prepare'):error;}
         if(method==='Page.getFrameTree' && current.manualStartupSelected) {
@@ -1722,6 +1725,7 @@ async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, 
         return result;
       },
       beforeRuntimeDisable: async () => {
+        progress('settings_wait');
         // Finish this one document's request before disabling context-loss
         // observation. No second reload, negative control or cookie inspection.
         let timer;
@@ -1738,7 +1742,7 @@ async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, 
     await send('Network.disable', {}, current.sessionId);
     bound.networkDisabled = true;
     const observation = continuousObservation ?? await bound.binder.finish(early.cleanupVerified && !handoff.handoffRejected);
-    if(controls)await controls.restore();
+    if(controls){progress('root_restore');await controls.restore();}
     return writes ? finishQACookieWriteScope(observation, writes.finish()) : observation;
   } finally {
     bound.sampling = false;
@@ -1800,7 +1804,7 @@ async function closeShortCollector(current) {
   return disposed && s.closed;
 }
 
-export async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup, beforeIdentityRead,initialFailure, observationFactory = (...args) => new QABoundObservation(...args)) {
+export async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup, beforeIdentityRead,initialFailure, observationFactory = (...args) => new QABoundObservation(...args), progress=()=>{}) {
   const s = current.shortFeasibility;
   // Classify at origin, before the owner-level identity fallback. Never inspect
   // transport exception text or overwrite an already branded first cause.
@@ -1864,6 +1868,8 @@ export async function collectorShortCheckpoint(current, afterIdentity, onPrivate
     if (method === 'Debugger.evaluateOnCallFrame' && !isEarlyBootstrapCallFrameRead(params, capture, true)) throw probeError('qa_short_collector_invalid');
     if (method === 'Debugger.removeBreakpoint' && !(purpose === 'normal_remove' ? capture.handoff.breakpoints.has(params.breakpointId) : params.breakpointId === instrumentationId)) throw probeError('qa_short_collector_invalid');
     let result;
+    if(method==='Debugger.evaluateOnCallFrame')progress('identity');
+    if(['Runtime.disable','Debugger.disable','Debugger.removeBreakpoint'].includes(method))progress('cleanup');
     try{result=await s.transport.send(method,params,s.sessionId,r=>{if(purpose==='manual_root_control'&&(!isObject(r)||Reflect.ownKeys(r).length!==0))throw probeError('manual_root_control_ack');return project(method,r);});}
     catch(error){throw initialFailure?initialFailure(error,method==='Debugger.evaluateOnCallFrame'?'identity':['Runtime.disable','Debugger.disable','Debugger.removeBreakpoint'].includes(method)?'cleanup':method.startsWith('Network.')?'settings':'prepare'):error;}
     if(method==='Page.getFrameTree' && binder && current.manualStartupSelected) {
@@ -1897,6 +1903,7 @@ export async function collectorShortCheckpoint(current, afterIdentity, onPrivate
     if(controls)await controls.apply();else await command('Network.setCacheDisabled', { cacheDisabled: true });
     capture = new BootstrapHandoffCapture({ boundIdentity: true, send: command,
       beforeIdentityRead: contextId => beforeIdentityRead?.(binder.startupPins(contextId)), beforeRuntimeDisable: async () => {
+      progress('settings_wait');
       let timer;
       try { await Promise.race([binder.done, new Promise(resolve => { timer = setTimeout(resolve, 2500); })]); }
       finally { clearTimeout(timer); sampling = false; }
@@ -1908,7 +1915,7 @@ export async function collectorShortCheckpoint(current, afterIdentity, onPrivate
     await command('Network.disable');
     networkDisabled = true;
     const observation = continuousObservation ?? await binder.finish(early.cleanupVerified && !rejected);
-    if(controls)await controls.restore();
+    if(controls){progress('root_restore');await controls.restore();}
     return { checkpoint: shortQACheckpoint(observation), ...privateResult };
   } finally {
     sampling = false; unsubscribe();s.manualCookieUnsubscribe?.();
@@ -1933,27 +1940,32 @@ export function createOwnedManualStartupOwners(message,diagnostics=startupFailur
   if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !manualStartupStateReady(current)) throw probeError('manual_startup_unavailable');
   const rendezvous = new QACheckpointRendezvous();
   const owner = role => createManualStartupOwner({role,diagnostics,requireFreshness:true,run: async sink => {
+    const progress=op=>current.manualTiming?.[role]?.step(op);
     if (sink.signal?.aborted) throw probeError('manual_startup_unavailable');
     const abort = () => rendezvous.cancel();
     sink.signal?.addEventListener('abort', abort, { once: true });
-    const failure=(error,phase,reason='unavailable')=>diagnostics.record(error,role,phase,reason);
+    const failure=(error,phase,reason='unavailable')=>{
+      const cause=diagnostics.record(error,role,phase,reason);
+      current.manualTiming?.[role]?.failure(cause);
+      return cause;
+    };
     const manualObservation=(...args)=>createManualV2BoundObservation(...args,(reason,trace)=>{
-      diagnostics.record(startupFailure(role,'bound_finish',reason,false,undefined,trace),role,'bound_finish',reason);
+      failure(startupFailure(role,'bound_finish',reason,false,undefined,trace),'bound_finish',reason);
     },role==='reader'?current.manualCookieGuard:collector.manualCookieGuard,
     {role,cacheControl:(role==='reader'?current:collector).manualFreshnessCacheControl});
-    const together=async()=>{try{await rendezvous.arrive(role);}catch{throw diagnostics.record(startupFailure('pair','rendezvous','deadline'),'pair','rendezvous');}};
+    const together=async()=>{progress('rendezvous');try{await rendezvous.arrive(role);}catch{throw diagnostics.record(startupFailure('pair','rendezvous','deadline'),'pair','rendezvous');}};
     try {
       let observation;
       if (role === 'reader') {
         current.gate.beginObservation(); current.earlyAttempted = true;
         observation=await boundCheckpoint(current, false, { deferCookieMutation: false, onPrivateResult: () => {},
-          onPrivateStartup: sink.onPrivateStartup },together,sink.beforeIdentityRead,failure,manualObservation);
+          onPrivateStartup: sink.onPrivateStartup },together,sink.beforeIdentityRead,failure,manualObservation,progress);
       }else{
-        const result=await collectorShortCheckpoint(current,together,sink.onPrivateStartup,sink.beforeIdentityRead,failure,manualObservation);
+        const result=await collectorShortCheckpoint(current,together,sink.onPrivateStartup,sink.beforeIdentityRead,failure,manualObservation,progress);
         observation=result?.checkpoint?.observation;
       }
       requireBoundStartup(observation,role,diagnostics);
-    }catch(error){const cause=failure(error,'identity');rendezvous.cancel();throw cause;
+    }catch(error){const cause=failure(error,'identity');current.manualTiming?.[role]?.failure(cause);rendezvous.cancel();throw cause;
     } finally { sink.signal?.removeEventListener('abort', abort); }
   } });
   return Object.freeze({ reader: owner('reader'), collector: owner('collector') });
@@ -2039,7 +2051,14 @@ export async function executeManualOwnerRPC(message) {
       });
     }catch{current.manualStartupSelected=false;throw probeError('manual_owner_unavailable');}
   }
-  const result=await current.manualStartupPort.execute(message);
+  const measured=['manual_acquire','manual_inspect','manual_inventory'].includes(message.op);
+  const timing=measured?createStartupTiming(result=>emit({event:'manual_startup_progress',id:message.id,result})):null;
+  current.manualTiming??={};
+  if(timing){current.manualTiming[message.role]=timing;timing.step(message.op==='manual_inspect'?'inspect_rpc':message.op==='manual_inventory'?'inventory_rpc':'acquire_rpc');}
+  let result;
+  try{result=await current.manualStartupPort.execute(message);timing?.step('complete');}
+  catch(error){timing?.failure(error);throw error;}
+  finally{timing?.finish();if(current.manualTiming[message.role]===timing)delete current.manualTiming[message.role];}
   if(message.op==='manual_acquire'){
     current.manualAcquired??=new Set();current.manualAcquired.add(message.role);
   }
