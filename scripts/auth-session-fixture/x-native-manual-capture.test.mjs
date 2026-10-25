@@ -1,12 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
-import {captureNativeXTarget,validateManualCaptureRequest,manualCaptureRPCCode,manualCaptureRPCDiagnostic,manualCaptureDiagnostic,manualCaptureFailure} from './x-native-manual-capture.mjs';
+import {captureNativeXTarget,validateManualCaptureRequest,manualCaptureRPCCode,manualCaptureRPCDiagnostic,manualCaptureDiagnostic,manualCaptureFailure,MANUAL_CAPTURE_COMMAND_TIMEOUT_MS} from './x-native-manual-capture.mjs';
 import {executeManualReply} from './x-native-metadata-probe-driver.mjs';
 import {syntheticCaptureTransport,syntheticCapturePort} from './x-native-manual-capture-fixture.mjs';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 const bridgePath=fileURLToPath(new URL('../../../AkuBridge',import.meta.url));
 const pins={ownerId:'4102',profileId:'synthetic-collector',contextId:'proof-context',targetId:'proof-target',frameId:'proof-frame',documentId:'proof-document'};
 const request=()=>({correlation:'synthetic-capture',pins,deadlineMS:Date.now()+10000,payload:{scrolls:0,maxBlocksPerSnapshot:2}});
+
+test('capture authorization remains capped at one minute',()=>{
+  assert.equal(MANUAL_CAPTURE_COMMAND_TIMEOUT_MS,MANUAL_TIMING.captureCommandMS);
+  const now=100000,valid={...request(),deadlineMS:now+MANUAL_TIMING.attemptAuthorizationMaxMS};
+  assert.doesNotThrow(()=>validateManualCaptureRequest(valid,now));
+  assert.throws(()=>validateManualCaptureRequest({...valid,deadlineMS:now+MANUAL_TIMING.attemptAuthorizationMaxMS+1},now));
+});
 
 test('capture wire retains only closed challenge categories and a separate bounded result capacity',async()=>{
   for(const category of ['cloudflare','x_human_verification','PRIVATE_COOKIE']){

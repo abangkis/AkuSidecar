@@ -1,6 +1,7 @@
 // One-shot private QA setup. Diagnostics contain only closed categories; the
 // success DTO remains private enrollment metadata, never an evidence receipt.
 import {performance} from 'node:perf_hooks';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 import {startupDiagnostic,startupRPCCode} from './x-manual-startup-diagnostic.mjs';
 export const MANUAL_SEED_PHASES=Object.freeze(['preconditions','owner_before','frame_before','enrollment_evaluate','enrollment_project','enrollment_cleanup','frame_after','cookie_read','cookie_select','seed_write','owner_after']);
 export const MANUAL_SEED_REASONS=Object.freeze(['disabled','replay','unavailable','rejected','candidate_absent','bootstrap_missing','bootstrap_invalid','wrong_page','inspection_failed','document_changed','ownership_changed','deadline','clock_regressed']);
@@ -41,7 +42,7 @@ export function createRetainedManualSetup({enabled=false,transferAllowed=false,o
   return async()=>{
     if(used)throw manualSeedFailure('preconditions','replay',write);used=true;
     let phase='owner_before',start,last,selected=null,successful=false,writePending=false,firstFailure;
-    const tick=()=>{const t=now();if(!Number.isFinite(start)||!Number.isFinite(t)||t<last)throw manualSeedFailure(phase,'clock_regressed',write);if(t-start>=60000)throw manualSeedFailure(phase,'deadline',write);last=t;};
+    const tick=()=>{const t=now();if(!Number.isFinite(start)||!Number.isFinite(t)||t<last)throw manualSeedFailure(phase,'clock_regressed',write);if(t-start>=MANUAL_TIMING.attemptAuthorizationMaxMS)throw manualSeedFailure(phase,'deadline',write);last=t;};
     try{
       start=last=now();tick();const actual=checkedOwnership(await ownership());tick();
       phase='enrollment_evaluate';const accountId=await readEnrollment();tick();

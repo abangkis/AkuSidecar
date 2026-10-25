@@ -8,6 +8,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,13 +23,85 @@ const (
 	nativePilotContract = "aku.x.dev-pilot.manual-startup.v2"
 	// Startup work and sample freshness are independent bounds. Ownership and
 	// transport may take longer; every sample must still be fresh at publication.
-	nativePilotAge                   = 2 * time.Second
-	nativePilotStartup               = 6 * time.Second
-	nativePilotLife                  = 60 * time.Second
 	nativePilotSettingsURL           = "https://api.x.com/1.1/account/settings.json"
 	nativePilotSettingsQualification = "api_v1.cookie-auth-rejection.2026-10-20"
 	nativePilotStartupIdentity       = "bootstrap-current-self.startup.v1"
 )
+
+//go:embed x-manual-timing-policy.json
+var nativePilotTimingPolicyJSON []byte
+
+// One immutable startup policy is shared with Node. It is a source asset, not a
+// runtime opt-in or a grant to transfer sessions for longer than authorized.
+var nativePilotTimingPolicy = func() map[string]int64 {
+	policy, err := decodeNativePilotTimingPolicy(nativePilotTimingPolicyJSON)
+	if err != nil {
+		panic("manual timing policy invalid")
+	}
+	return policy
+}()
+var (
+	nativePilotAge                   = time.Duration(nativePilotTimingPolicy["evidenceMaxAgeMS"]) * time.Millisecond
+	nativePilotStartup               = time.Duration(nativePilotTimingPolicy["startupTotalMS"]) * time.Millisecond
+	nativePilotLife                  = time.Duration(nativePilotTimingPolicy["attemptAuthorizationMaxMS"]) * time.Millisecond
+	nativePilotCleanup               = time.Duration(nativePilotTimingPolicy["ownerCleanupMS"]) * time.Millisecond
+	nativePilotCaptureCleanupTimeout = time.Duration(nativePilotTimingPolicy["captureCleanupMS"]) * time.Millisecond
+)
+
+func decodeNativePilotTimingPolicy(raw []byte) (map[string]int64, error) {
+	bad := errors.New("manual timing policy invalid")
+	if len(raw) == 0 || len(raw) > 4096 {
+		return nil, bad
+	}
+	d := json.NewDecoder(bytes.NewReader(raw))
+	if token, err := d.Token(); err != nil || token != json.Delim('{') {
+		return nil, bad
+	}
+	values := map[string]json.RawMessage{}
+	for d.More() {
+		token, err := d.Token()
+		key, ok := token.(string)
+		if err != nil || !ok || values[key] != nil {
+			return nil, bad
+		}
+		var value json.RawMessage
+		if d.Decode(&value) != nil {
+			return nil, bad
+		}
+		values[key] = value
+	}
+	if token, err := d.Token(); err != nil || token != json.Delim('}') {
+		return nil, bad
+	}
+	if _, err := d.Token(); err != io.EOF {
+		return nil, bad
+	}
+	keys := []string{"startupTotalMS", "evidenceMaxAgeMS", "cdpCommandMS", "earlyCommandMS", "bootstrapObservationMS", "bootstrapEvaluationMS", "rendezvousMS", "settingsFallbackMS", "collectorHomeReadyMS", "collectorExitMS", "ownerCleanupMS", "captureCleanupMS", "captureCommandMS", "attemptAuthorizationMaxMS"}
+	if len(values) != len(keys)+1 {
+		return nil, bad
+	}
+	var schema string
+	if json.Unmarshal(values["schema"], &schema) != nil || schema != "aku.x.manual-timing.v1" {
+		return nil, bad
+	}
+	result := map[string]int64{}
+	for _, key := range keys {
+		var v int64
+		if json.Unmarshal(values[key], &v) != nil || v <= 0 || v > 600000 {
+			return nil, bad
+		}
+		result[key] = v
+	}
+	if result["attemptAuthorizationMaxMS"] != 60000 || result["startupTotalMS"] > result["attemptAuthorizationMaxMS"] || result["earlyCommandMS"] <= result["cdpCommandMS"] || result["bootstrapEvaluationMS"] > result["cdpCommandMS"] {
+		return nil, bad
+	}
+	for _, key := range []string{"evidenceMaxAgeMS", "cdpCommandMS", "earlyCommandMS", "bootstrapObservationMS", "bootstrapEvaluationMS", "rendezvousMS", "settingsFallbackMS", "collectorExitMS", "ownerCleanupMS", "captureCleanupMS", "captureCommandMS"} {
+		if result[key] > result["startupTotalMS"] {
+			return nil, bad
+		}
+	}
+	return result, nil
+}
 
 // Private pins are actual source references, never synthetic IDs or revisions.
 type nativePilotOwner struct {
@@ -137,16 +210,26 @@ type nativePilotRoleTiming struct {
 	nodeMS                int64
 	sequence              uint64
 	totals                [len(nativePilotTimingOps)]time.Duration
+	nodeTotals            [len(nativePilotTimingOps)]time.Duration
 }
 type nativePilotTimingRoleSnapshot struct {
 	operation, nodeOperation int
 	settingsWait             int
 	activeMS, nodeMS         int64
 	totals                   [len(nativePilotTimingOps)]int64
+	nodeTotals               [len(nativePilotTimingOps)]int64
+}
+type nativePilotFlowTiming struct {
+	role, stage, condition                          string
+	elapsedMS, remainingMS                          int64
+	hasSamples                                      bool
+	identityAgeMS, settingsAgeMS, sampleRemainingMS int64
 }
 type nativePilotTimingSnapshot struct {
 	elapsedMS int64
 	roles     [2]nativePilotTimingRoleSnapshot
+	flow      [24]nativePilotFlowTiming
+	flowCount int
 }
 type nativePilotTiming struct {
 	mu      sync.Mutex
@@ -155,6 +238,54 @@ type nativePilotTiming struct {
 	roles   [2]nativePilotRoleTiming
 	first   *nativePilotInitialDetail
 	frozen  *nativePilotTimingSnapshot
+	flow    []nativePilotFlowTiming
+}
+
+// Durations and closed categories only. Diagnostic state cannot grant authority
+// or replace the separately latched first operational error.
+func nativePilotFlowTrace(ctx context.Context, role, stage, condition string, at, deadline time.Time, receipt *nativePilotReceipt) {
+	l := nativePilotTimingOf(ctx)
+	if l == nil {
+		return
+	}
+	allowed := func(value string, values ...string) bool {
+		for _, known := range values {
+			if value == known {
+				return true
+			}
+		}
+		return false
+	}
+	if !allowed(role, "reader", "collector", "pair") || !allowed(stage, "startup_enter", "owners_before_enter", "owners_before_exit", "receipt_enter", "receipt_exit", "identity_check", "settings_check", "owners_after_enter", "owners_after_exit", "publication") || !allowed(condition, "start", "received", "accepted", "rejected", "source_error", "owner_error", "receipt_invalid", "timestamp_before_start", "timestamp_future", "validity_order", "source_expired", "age_expired", "startup_deadline", "sample_horizon_expired") {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.frozen != nil || len(l.flow) >= 24 {
+		return
+	}
+	bound := func(d time.Duration) int64 {
+		if d > nativePilotLife {
+			d = nativePilotLife
+		}
+		if d < -nativePilotLife {
+			d = -nativePilotLife
+		}
+		return d.Milliseconds()
+	}
+	e := nativePilotFlowTiming{role: role, stage: stage, condition: condition, elapsedMS: nativePilotTimingMS(l.now().Sub(l.started)), remainingMS: bound(deadline.Sub(at))}
+	if receipt != nil {
+		e.hasSamples = true
+		e.identityAgeMS, e.settingsAgeMS = bound(at.Sub(receipt.identity.observed)), bound(at.Sub(receipt.settings.observed))
+		until := receipt.identity.observed.Add(nativePilotAge)
+		for _, end := range []time.Time{receipt.identity.validUntil, receipt.settings.validUntil, receipt.settings.observed.Add(nativePilotAge)} {
+			if end.Before(until) {
+				until = end
+			}
+		}
+		e.sampleRemainingMS = bound(until.Sub(at))
+	}
+	l.flow = append(l.flow, e)
 }
 
 func nativePilotTimingIndex(value string) int {
@@ -179,7 +310,7 @@ func nativePilotTimingMS(d time.Duration) int64 {
 		return 0
 	}
 	if d > nativePilotLife {
-		return 60000
+		return nativePilotLife.Milliseconds()
 	}
 	return d.Milliseconds()
 }
@@ -252,7 +383,7 @@ func nativePilotTimingProgress(ctx context.Context, role string, raw []byte) {
 		SettingsWait *string `json:"settingsWait"`
 	}
 	// Unknown/duplicate fields are rejected by the private transport decoder.
-	if !nativePilotProgressDecode(raw, &p) || p.ElapsedMS < 0 || p.ElapsedMS > 60000 {
+	if !nativePilotProgressDecode(raw, &p) || p.ElapsedMS < 0 || p.ElapsedMS > nativePilotLife.Milliseconds() {
 		return
 	}
 	op := nativePilotTimingIndex(p.Operation)
@@ -286,6 +417,9 @@ func nativePilotTimingProgress(ctx context.Context, role string, raw []byte) {
 		r.settingsWait = settingsWait
 	}
 	r.nodeMS = p.ElapsedMS
+	if duration := time.Duration(p.ElapsedMS) * time.Millisecond; duration > r.nodeTotals[op] {
+		r.nodeTotals[op] = duration
+	}
 	r.nodeReceived = l.now()
 	if p.Cause != "" && l.first == nil {
 		if d, ok := nativePilotInitialCode(p.Cause); ok && (d.role == role || d.role == "pair" || d.peer && nativePilotTimingRole(d.role) >= 0) {
@@ -328,7 +462,8 @@ func (l *nativePilotTiming) freeze() *nativePilotTimingSnapshot {
 		return l.frozen
 	}
 	now := l.now()
-	s := &nativePilotTimingSnapshot{elapsedMS: nativePilotTimingMS(now.Sub(l.started))}
+	s := &nativePilotTimingSnapshot{elapsedMS: nativePilotTimingMS(now.Sub(l.started)), flowCount: len(l.flow)}
+	copy(s.flow[:], l.flow)
 	for i, r := range l.roles {
 		v := &s.roles[i]
 		v.operation = r.op
@@ -343,6 +478,7 @@ func (l *nativePilotTiming) freeze() *nativePilotTimingSnapshot {
 		}
 		for j, total := range r.totals {
 			v.totals[j] = nativePilotTimingMS(total)
+			v.nodeTotals[j] = nativePilotTimingMS(r.nodeTotals[j])
 		}
 	}
 	l.frozen = s
@@ -353,8 +489,8 @@ func (s nativePilotTimingSnapshot) String() string {
 		if ms < 0 {
 			return 0
 		}
-		if ms > 60000 {
-			return 60000
+		if ms > nativePilotLife.Milliseconds() {
+			return nativePilotLife.Milliseconds()
 		}
 		return ms
 	}
@@ -376,6 +512,18 @@ func (s nativePilotTimingSnapshot) String() string {
 				out += fmt.Sprintf(" %s_%s_ms=%d", role, name(j), bound(ms))
 			}
 		}
+		for j, ms := range r.nodeTotals {
+			if ms > 0 {
+				out += fmt.Sprintf(" %s_node_%s_max_ms=%d", role, name(j), bound(ms))
+			}
+		}
+	}
+	for i, e := range s.flow[:s.flowCount] {
+		out += fmt.Sprintf(" flow_%d=(role=%s stage=%s condition=%s elapsed_ms=%d startup_remaining_ms=%d", i, e.role, e.stage, e.condition, e.elapsedMS, e.remainingMS)
+		if e.hasSamples {
+			out += fmt.Sprintf(" identity_age_ms=%d settings_age_ms=%d sample_remaining_ms=%d", e.identityAgeMS, e.settingsAgeMS, e.sampleRemainingMS)
+		}
+		out += ")"
 	}
 	return out
 }
@@ -621,6 +769,7 @@ type nativePilotAdapter struct {
 	busy, attempted, stopped bool
 	reason                   string
 	initial                  nativePilotInitialDetail
+	startupTiming            *nativePilotTimingSnapshot
 	current                  *nativePilotVector
 	seen                     map[nativePilotRequestKey]bool
 }
@@ -801,6 +950,7 @@ func (a *nativePilotAdapter) initialEvidence(ctx context.Context) (*nativePilotV
 	defer cancel()
 	timing := &nativePilotTiming{now: time.Now, started: time.Now()}
 	probeCtx = context.WithValue(probeCtx, nativePilotTimingKey{}, timing)
+	nativePilotFlowTrace(probeCtx, "pair", "startup_enter", "start", started, deadline, nil)
 	defer func() {
 		snapshot := timing.freeze()
 		timing.mu.Lock()
@@ -808,6 +958,7 @@ func (a *nativePilotAdapter) initialEvidence(ctx context.Context) (*nativePilotV
 		timing.mu.Unlock()
 		a.mu.Lock()
 		defer a.mu.Unlock()
+		a.startupTiming = snapshot
 		if a.stopped {
 			if first != nil {
 				a.initial = *first
@@ -818,16 +969,26 @@ func (a *nativePilotAdapter) initialEvidence(ctx context.Context) (*nativePilotV
 			a.initial.timing = snapshot
 		}
 	}()
+	nativePilotFlowTrace(probeCtx, "pair", "owners_before_enter", "start", a.ports.now(), deadline, nil)
 	reason = a.ownerReason(probeCtx)
+	ownerOutcome := "accepted"
+	if reason != "" {
+		ownerOutcome = "owner_error"
+	}
+	nativePilotFlowTrace(probeCtx, "pair", "owners_before_exit", ownerOutcome, a.ports.now(), deadline, nil)
 	sampleExpires := a.attemptDeadline()
+	limitingRole := "pair"
+	var limitingReceipt *nativePilotReceipt
 	requests := make(map[nativePilotRequestKey]bool)
 	for _, owner := range []nativePilotOwner{a.cfg.binding.reader, a.cfg.binding.collector} {
 		if reason != "" {
 			break
 		}
 		c := nativePilotChallenge{seal: a.seal, vector: version, role: owner.role, binding: a.cfg.binding, owner: owner, started: started.Round(0)}
+		nativePilotFlowTrace(probeCtx, owner.role, "receipt_enter", "start", a.ports.now(), deadline, nil)
 		receipt, err := a.ports.source.observe(probeCtx, c)
 		if err != nil {
+			nativePilotFlowTrace(probeCtx, owner.role, "receipt_exit", "source_error", a.ports.now(), deadline, nil)
 			a.mu.Lock()
 			if a.initial.role == "" {
 				a.initial = nativePilotInitialOf(err, "unknown", "acquire_rpc")
@@ -838,6 +999,7 @@ func (a *nativePilotAdapter) initialEvidence(ctx context.Context) (*nativePilotV
 		}
 		a.mu.Lock()
 		now, invalid := a.checkLocked(probeCtx)
+		nativePilotFlowTrace(probeCtx, owner.role, "receipt_exit", "received", now, deadline, &receipt)
 		if invalid != "" {
 			reason = invalid
 		} else if !now.Before(deadline) {
@@ -845,13 +1007,28 @@ func (a *nativePilotAdapter) initialEvidence(ctx context.Context) (*nativePilotV
 		}
 		if reason == "" {
 			for i, response := range []nativePilotResponse{receipt.identity, receipt.settings} {
-				if failure := a.validateResponse(c, response, i == 0, now, requests); failure != "" {
+				failure := a.validateResponse(c, response, i == 0, now, requests)
+				stage, condition := "identity_check", "accepted"
+				if i != 0 {
+					stage = "settings_check"
+				}
+				if failure != "" {
+					condition = "receipt_invalid"
+					if temporal := nativePilotSampleTimeFailure(c, response, now); temporal != "" {
+						condition = temporal
+					}
+				}
+				nativePilotFlowTrace(probeCtx, owner.role, stage, condition, now, deadline, &receipt)
+				if failure != "" {
 					reason = failure
 					break
 				}
 				for _, limit := range []time.Time{response.validUntil.Round(0), response.observed.Round(0).Add(nativePilotAge)} {
 					if limit.Before(sampleExpires) {
 						sampleExpires = limit
+						limitingRole = owner.role
+						copy := receipt
+						limitingReceipt = &copy
 					}
 				}
 			}
@@ -863,7 +1040,13 @@ func (a *nativePilotAdapter) initialEvidence(ctx context.Context) (*nativePilotV
 		// receipt. Recheck the whole pair once before publication, rather than
 		// repeating native inspection between already-buffered receipts. Each
 		// owner port still checks its own scope before and after acquisition.
+		nativePilotFlowTrace(probeCtx, "pair", "owners_after_enter", "start", a.ports.now(), deadline, nil)
 		reason = a.ownerReason(probeCtx)
+		ownerOutcome = "accepted"
+		if reason != "" {
+			ownerOutcome = "owner_error"
+		}
+		nativePilotFlowTrace(probeCtx, "pair", "owners_after_exit", ownerOutcome, a.ports.now(), deadline, nil)
 	}
 	if reason == "" && a.ports.source.provenance() != provenance {
 		reason = "source-unavailable"
@@ -874,9 +1057,17 @@ func (a *nativePilotAdapter) initialEvidence(ctx context.Context) (*nativePilotV
 	if invalid != "" {
 		reason = invalid
 	}
-	if reason == "" && (!now.Before(deadline) || !now.Round(0).Before(sampleExpires)) {
-		reason = "evidence-expired"
+	publication := "accepted"
+	if reason == "" {
+		if !now.Before(deadline) {
+			reason, publication = "evidence-expired", "startup_deadline"
+		} else if !now.Round(0).Before(sampleExpires) {
+			reason, publication = "evidence-expired", "sample_horizon_expired"
+		}
+	} else {
+		publication = "rejected"
 	}
+	nativePilotFlowTrace(probeCtx, limitingRole, "publication", publication, now, deadline, limitingReceipt)
 	if reason != "" {
 		return nil, a.stopLocked(reason)
 	}
@@ -888,6 +1079,25 @@ func (a *nativePilotAdapter) initialEvidence(ctx context.Context) (*nativePilotV
 	return a.current, nativePilotResult("startup-validated", provenance)
 }
 
+func nativePilotSampleTimeFailure(c nativePilotChallenge, r nativePilotResponse, now time.Time) string {
+	observed, until, wall := r.observed.Round(0), r.validUntil.Round(0), now.Round(0)
+	if observed.Before(c.started) {
+		return "timestamp_before_start"
+	}
+	if observed.After(wall) {
+		return "timestamp_future"
+	}
+	if !until.After(observed) {
+		return "validity_order"
+	}
+	if !wall.Before(observed.Add(nativePilotAge)) {
+		return "age_expired"
+	}
+	if !wall.Before(until) {
+		return "source_expired"
+	}
+	return ""
+}
 func (a *nativePilotAdapter) validateResponse(c nativePilotChallenge, r nativePilotResponse, identity bool, now time.Time, requests map[nativePilotRequestKey]bool) string {
 	if r.challenge != c || !nativePilotRef(r.request, 512) || !r.fresh || !r.direct || !r.wellFormed || !r.clockValid || r.elapsed < 0 || r.elapsed >= nativePilotStartup {
 		return "evidence-invalid"
@@ -897,8 +1107,7 @@ func (a *nativePilotAdapter) validateResponse(c nativePilotChallenge, r nativePi
 		return "request-replayed"
 	}
 	requests[key] = true
-	observed, until, wall := r.observed.Round(0), r.validUntil.Round(0), now.Round(0)
-	if observed.Before(c.started) || observed.After(wall) || !until.After(observed) || !wall.Before(until) || !wall.Before(observed.Add(nativePilotAge)) {
+	if nativePilotSampleTimeFailure(c, r, now) != "" {
 		return "evidence-expired"
 	}
 	if identity {

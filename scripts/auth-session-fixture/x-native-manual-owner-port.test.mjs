@@ -6,11 +6,12 @@ import {offlineStartupOwner} from './x-manual-startup-offline-fixture.mjs';
 import {createManualStartupOwner} from './x-manual-startup-owner.mjs';
 import {startupDiagnostic,startupRPCCode,startupFailure} from './x-manual-startup-diagnostic.mjs';
 import {manualOwnerSnapshot} from './x-native-metadata-probe-driver.mjs';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 
 let id=0;
 const command=(op,role='reader',extra={})=>({id:++id,op,owner:1,role,...extra});
 async function prepared(port){return Promise.all(['reader','collector'].map(role=>port.execute(command('manual_prepare',role))));}
-const acquire=(port,role,ready)=>port.execute(command('manual_acquire',role,{handle:ready.handle,startupBudgetMS:2000,request:{challenge:'c'.repeat(48),role,...ready.pins}}));
+const acquire=(port,role,ready)=>port.execute(command('manual_acquire',role,{handle:ready.handle,startupBudgetMS:MANUAL_TIMING.evidenceMaxAgeMS,request:{challenge:'c'.repeat(48),role,...ready.pins}}));
 
 for(const role of ['reader','collector'])for(const [fault,stage,condition]of [
   ['actor','node_actor','command_failed'],['shape','node_reply','reply_invalid'],
@@ -50,8 +51,8 @@ for(const role of ['reader','collector'])for(const [fault,stage,condition]of [
 test('the private acquire route validates and forwards only a bounded startup wait hint', async () => {
   const base=command('manual_acquire','reader',{handle:'h',startupBudgetMS:75,request:{challenge:'c'.repeat(48),role:'reader',...offlineStartupOwner('reader')}});
   assert.equal(manualOwnerOperation(base).startupBudgetMS,75);
-  assert.equal(manualOwnerOperation({...base,startupBudgetMS:6000}).startupBudgetMS,6000);
-  for(const startupBudgetMS of [undefined,null,0,-1,0.5,6001,'75',Infinity]){
+  assert.equal(manualOwnerOperation({...base,startupBudgetMS:MANUAL_TIMING.startupTotalMS}).startupBudgetMS,MANUAL_TIMING.startupTotalMS);
+  for(const startupBudgetMS of [undefined,null,0,-1,0.5,MANUAL_TIMING.startupTotalMS+1,'75',Infinity]){
     assert.throws(()=>manualOwnerOperation({...base,startupBudgetMS}),/manual_owner_unavailable/);
   }
   let received;

@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {captureIsolated,validateCapture} from '../../internal/collection/headless/worker/capture.mjs';
 import {sourceAssets} from '../../internal/collection/headless/worker/worker.mjs';
 import {HeaderSafetyGuard} from './x-manual-header-safety.mjs';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 
 const fail=()=>new Error('xnp_manual_capture_rejected');
 export const CAPTURE_STAGES=Object.freeze(['unknown','admission','behavior','coordinator','owner_before','payload','transport','assets','target_create','target_attach','observer','navigation','evaluation','worker','coverage','serialization','wire','observation','owner_after','cleanup']);
@@ -43,12 +44,13 @@ export function manualCaptureRPCDiagnostic(error) {
   return d?Object.freeze({schema:'aku.capture-diagnostic.v1',...d}):undefined;
 }
 const pinsKeys=['ownerId','profileId','contextId','targetId','frameId','documentId'];
+export const MANUAL_CAPTURE_COMMAND_TIMEOUT_MS=MANUAL_TIMING.captureCommandMS;
 const ref=v=>typeof v==='string'&&v.length>0&&v.length<=512&&!/[\u0000-\u001f\u007f]/u.test(v);
 const exact=(v,keys)=>{if(!v||![Object.prototype,null].includes(Object.getPrototypeOf(v))||Reflect.ownKeys(v).length!==keys.length||Reflect.ownKeys(v).some(k=>!keys.includes(k)||!Object.hasOwn(Object.getOwnPropertyDescriptor(v,k),'value')))throw fail();};
 export function validateManualCaptureRequest(request,now=Date.now()) {
   try {
   exact(request,['correlation','pins','deadlineMS','payload']);exact(request.pins,pinsKeys);
-  if(!ref(request.correlation)||!pinsKeys.every(k=>ref(request.pins[k]))||!Number.isSafeInteger(request.deadlineMS)||request.deadlineMS<=now||request.deadlineMS>now+60000)throw fail();
+  if(!ref(request.correlation)||!pinsKeys.every(k=>ref(request.pins[k]))||!Number.isSafeInteger(request.deadlineMS)||request.deadlineMS<=now||request.deadlineMS>now+MANUAL_TIMING.attemptAuthorizationMaxMS)throw fail();
   const allowed=['pageUrl','scrolls','maxBlocksPerSnapshot','sourceHydrationTimeoutMs','scrollFraction','scrollSettleMs'];
   if(!request.payload||![Object.prototype,null].includes(Object.getPrototypeOf(request.payload))||Object.keys(request.payload).some(k=>!allowed.includes(k)))throw fail();
   const left=request.deadlineMS-now;
@@ -109,7 +111,7 @@ export async function captureNativeXTarget({request,bridgePath,command,subscribe
       if(raw.method==='Target.targetDestroyed'&&raw.params?.targetId===target&&!closed)reject('target_lost');
     });
     await command('Network.enable',{maxTotalBufferSize:1000000,maxResourceBufferSize:100000,maxPostDataSize:0},session);
-    const send=async(method,params={},timeoutMs=1500)=>{
+    const send=async(method,params={},timeoutMs=MANUAL_CAPTURE_COMMAND_TIMEOUT_MS)=>{
       const at=method==='Page.navigate'?'navigation':'evaluation';
       if(expired()||closed)throw first??manualCaptureFailure(null,at,signal?.aborted?'canceled':unsafe?'scope_lost':'deadline');
       if(!['Page.navigate','Runtime.evaluate','Page.addScriptToEvaluateOnNewDocument','Input.dispatchMouseEvent'].includes(method))throw manualCaptureFailure(null,at,'method_rejected');

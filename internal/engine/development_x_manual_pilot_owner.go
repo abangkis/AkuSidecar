@@ -234,7 +234,7 @@ func xManualPilotBind(core nativePilotOwner, pins xManualPilotPins) (nativePilot
 	return core, nil
 }
 func (p *xManualPilotOwnerPorts) cleanup(role, handle string, preserve bool) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), nativePilotCleanup)
 	defer cancel()
 	if p.backend.cleanup(ctx, role, handle, preserve && role == "reader") != nil {
 		return errors.New("x-owner-cleanup-uncertain")

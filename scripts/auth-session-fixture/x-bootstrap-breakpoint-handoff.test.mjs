@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import { BootstrapHandoffCapture, BootstrapBreakpointHandoff } from './x-bootstrap-breakpoint-handoff.mjs';
 import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, validateBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
 import { QA_BOUND_BOOTSTRAP_EXPRESSION, projectBoundBootstrap } from './x-qa-bound-observation.mjs';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 
 function fixture(fault, boundIdentity = false, beforeIdentityRead = async () => {}) {
   let capture;
@@ -66,7 +67,7 @@ function fixture(fault, boundIdentity = false, beforeIdentityRead = async () => 
         assert.equal(capture.canReadCallFrame(params.callFrameId), true);
         assert.equal(params.expression, boundIdentity ? QA_BOUND_BOOTSTRAP_EXPRESSION : BOOTSTRAP_CURRENT_SELF_EXPRESSION);
         assert.equal(params.throwOnSideEffect, true);
-        assert.equal(params.timeout, 1500);
+        assert.equal(params.timeout, MANUAL_TIMING.bootstrapEvaluationMS);
         assert.equal(params.returnByValue, true);
         assert.equal(params.silent, true);
         assert.equal(params.includeCommandLineAPI, false);

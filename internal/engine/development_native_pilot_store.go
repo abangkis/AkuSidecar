@@ -107,7 +107,7 @@ func (l *nativePilotStoreRuntime) close() {
 	l.mu.Unlock()
 	if p != nil {
 		// Revoke closes the atomic permit first, before waiting for SQLite.
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), nativePilotCleanup)
 		defer cancel()
 		_, _ = l.engine.store.RevokeManualPilot(ctx, p, l.revokeID)
 	}

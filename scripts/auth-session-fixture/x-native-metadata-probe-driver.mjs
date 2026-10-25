@@ -39,6 +39,7 @@ import { createRetainedManualSetup, manualSeedFailure, manualSeedDiagnosticCode 
 import { ManualEnrollmentCapture } from './x-manual-enrollment-capture.mjs';
 import { ManualStartupObservation } from './x-manual-startup-cookie-guard.mjs';
 import {startupFailure,startupFailureLatch,startupRPCCode,requireBoundStartup,startupInspectionFailure,startupPrepareFailure} from './x-manual-startup-diagnostic.mjs';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -60,7 +61,7 @@ const MAX_ENCODED_BYTES = 100_000_000;
 const OBSERVATION_MS = 20_000;
 const MAX_TOTAL_NETWORK_BUFFER_BYTES = 1_000_000;
 const MAX_RESOURCE_NETWORK_BUFFER_BYTES = 100_000;
-const COMMAND_TIMEOUT_MS = 4_000;
+const COMMAND_TIMEOUT_MS = MANUAL_TIMING.cdpCommandMS;
 const CACHE_KEYS = Object.freeze(['servedFromCache', 'fromDiskCache', 'fromServiceWorker', 'fromPrefetchCache']);
 const SAFE_GRAPHQL_OPERATIONS = new Set([
   'Account', 'CurrentUser', 'HomeLatestTimeline', 'HomeTimeline', 'UserByRestId',
@@ -838,7 +839,7 @@ export function isEarlyBootstrapCallFrameRead(params, capture, boundIdentity = f
   return isObject(params) && Object.keys(params).length === keys.length &&
     Object.keys(params).every(key => keys.includes(key)) && capture?.canReadCallFrame(params.callFrameId) === true &&
     params.expression === (boundIdentity ? QA_BOUND_BOOTSTRAP_EXPRESSION : BOOTSTRAP_CURRENT_SELF_EXPRESSION) && params.returnByValue === true &&
-    params.throwOnSideEffect === true && params.timeout === 1500 && params.silent === true &&
+    params.throwOnSideEffect === true && params.timeout === MANUAL_TIMING.bootstrapEvaluationMS && params.silent === true &&
     params.includeCommandLineAPI === false && params.generatePreview === false;
 }
 
@@ -947,7 +948,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
         params.returnByValue !== true || params.awaitPromise !== false || params.userGesture !== false || sessionId !== active?.sessionId ||
         bootstrap && (driverMode !== 'retained_bootstrap' ||
           (!active?.bootstrapAttempted || !active.gate.loginVisible || active.earlyRunning) ||
-          active.gate.observationStarted || params.throwOnSideEffect !== true || params.timeout !== 1500) ||
+          active.gate.observationStarted || params.throwOnSideEffect !== true || params.timeout !== MANUAL_TIMING.bootstrapEvaluationMS) ||
         !bootstrap && (params.expression !== ACCOUNT_READY_EXPRESSION || active?.earlyRunning)) return Promise.reject(probeError('runtime_expression_not_authorized'));
     if (bootstrap) projectionKind = 'bootstrap_current_self';
   }
@@ -1392,7 +1393,7 @@ async function bootstrapCurrentSelf(message) {
       current.earlyAttempted && (!current.earlyCleanupVerified || !current.earlyHandoffAccepted)) throw probeError('bootstrap_gate_closed');
   current.bootstrapAttempted = true;
   return send('Runtime.evaluate', { expression: BOOTSTRAP_CURRENT_SELF_EXPRESSION, returnByValue: true,
-    awaitPromise: false, userGesture: false, throwOnSideEffect: true, timeout: 1500 }, current.sessionId);
+    awaitPromise: false, userGesture: false, throwOnSideEffect: true, timeout: MANUAL_TIMING.bootstrapEvaluationMS }, current.sessionId);
 }
 
 async function earlyBootstrapCurrentSelf(message) {
@@ -1740,7 +1741,7 @@ async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, 
             if (result?.status !== 'complete') throw startupFailure('reader','settings','source_unavailable');
           }
           else if (current.manualStartupSelected) throw probeError('manual_startup_budget_invalid');
-          else await Promise.race([bound.binder.done, new Promise(resolve => { timer = setTimeout(resolve, 2500); })]);
+          else await Promise.race([bound.binder.done, new Promise(resolve => { timer = setTimeout(resolve, MANUAL_TIMING.settingsFallbackMS); })]);
         }
         catch(error) { throw initialFailure ? initialFailure(error, 'settings') : error; }
         finally { clearTimeout(timer); bound.sampling = false; }
@@ -1831,7 +1832,7 @@ export async function collectorShortCheckpoint(current, afterIdentity, onPrivate
         return { acknowledged: true };
       });
     } catch (error) { throw failure(error, 'navigation'); }
-    const until = Date.now() + 15000;
+    const until = Date.now() + MANUAL_TIMING.collectorHomeReadyMS;
     let ready = false;
     while (!ready && Date.now() < until) {
       try {
@@ -1927,7 +1928,7 @@ export async function collectorShortCheckpoint(current, afterIdentity, onPrivate
           if (result?.status !== 'complete') throw startupFailure('collector','settings','source_unavailable');
         }
         else if (current.manualStartupSelected) throw probeError('manual_startup_budget_invalid');
-        else await Promise.race([binder.done, new Promise(resolve => { timer = setTimeout(resolve, 2500); })]);
+        else await Promise.race([binder.done, new Promise(resolve => { timer = setTimeout(resolve, MANUAL_TIMING.settingsFallbackMS); })]);
       }
       catch(error) { throw initialFailure ? initialFailure(error, 'settings') : error; }
       finally { clearTimeout(timer); sampling = false; }
@@ -1963,7 +1964,7 @@ export function createOwnedManualStartupOwners(message,diagnostics=startupFailur
   if (process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED !== '1') throw probeError('manual_startup_disabled');
   const current = requireOwner(message), collector = current.shortFeasibility;
   if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !manualStartupStateReady(current)) throw probeError('manual_startup_unavailable');
-  const rendezvous = new QACheckpointRendezvous();
+  const rendezvous = new QACheckpointRendezvous(MANUAL_TIMING.rendezvousMS);
   const owner = role => createManualStartupOwner({role,diagnostics,requireFreshness:true,run: async sink => {
     let released=false;
     const beforeIdentity=async pins=>{await sink.beforeIdentityRead(pins);released=true;};

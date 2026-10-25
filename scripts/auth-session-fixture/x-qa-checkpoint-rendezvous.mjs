@@ -1,6 +1,10 @@
 // Private QA timing only. Never transports identity, credentials or page data.
 export class QACheckpointRendezvous {
-  #state = 'not_started'; #arrivals = new Set(); #waiters = []; #timer;
+  #state = 'not_started'; #arrivals = new Set(); #waiters = []; #timer; #waitLimitMS;
+  constructor(waitLimitMS = 1000) {
+    if (!Number.isSafeInteger(waitLimitMS) || waitLimitMS < 1 || waitLimitMS > 60000) throw new Error('qa_rendezvous_closed');
+    this.#waitLimitMS = waitLimitMS;
+  }
   arrive(role) {
     if (!['reader', 'collector'].includes(role) || this.#arrivals.has(role) ||
         !['not_started', 'waiting'].includes(this.#state)) return Promise.reject(new Error('qa_rendezvous_closed'));
@@ -12,7 +16,7 @@ export class QACheckpointRendezvous {
       this.#waiters = [];
     } else {
       this.#state = 'waiting';
-      this.#timer = setTimeout(() => this.#reject('timed_out'), 1000);
+      this.#timer = setTimeout(() => this.#reject('timed_out'), this.#waitLimitMS);
     }
     return result;
   }
@@ -24,7 +28,7 @@ export class QACheckpointRendezvous {
   cancel() { if (this.#state === 'waiting') this.#reject('aborted'); }
   snapshot() {
     return Object.freeze({ schema: 'aku.x.qa-checkpoint-rendezvous.v1', state: this.#state,
-      arrivals: this.#arrivals.size, waitLimitMS: 1000, canAuthorize: false });
+      arrivals: this.#arrivals.size, waitLimitMS: this.#waitLimitMS, canAuthorize: false });
   }
 }
 

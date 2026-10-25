@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { EarlyBootstrapCapture } from './x-early-bootstrap-capture.mjs';
 import { inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 
 const ROOT_FRAME = 'root-frame';
 const CHILD_FRAME = 'child-frame';
@@ -183,7 +184,7 @@ test('requires the top paused script to be bound to the new root default context
               scriptId: scenario === 'missing_top' ? null : 'bound-script' });
           }
           if (method === 'Debugger.resume') {
-            clock = 5000;
+            clock = MANUAL_TIMING.bootstrapObservationMS;
             current.observe({ type: 'contexts_cleared' });
           }
         },

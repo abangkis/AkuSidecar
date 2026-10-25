@@ -5,6 +5,7 @@ import {offlineFirstCausePair,awaitOfflineWallTick} from './x-manual-startup-fir
 import {offlineStartupOwner} from './x-manual-startup-offline-fixture.mjs';
 import {createManualV2BoundObservation} from './x-qa-bound-observation.mjs';
 import {inspectBootstrapCurrentSelf} from './x-bootstrap-current-self.mjs';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 const q=(op,role,extra={})=>({id:1,owner:1,op,role,...extra});
 test('offline diagnostic clock waits past a same-ms challenge and accepts an already advanced real tick',async()=>{
   for(const ticks of [[1000,1000,1000,1001],[1000,1001]]){
@@ -22,7 +23,7 @@ async function run(fault,role){
   const f=offlineFirstCausePair({fault,faultRole:role});
   const ready=await Promise.all(['reader','collector'].map(r=>f.port.execute(q('manual_prepare',r))));
   let failure;
-  try{await f.port.execute(q('manual_acquire',role,{handle:ready[role==='reader'?0:1].handle,startupBudgetMS:2000,request:{challenge:'b'.repeat(48),role,...offlineStartupOwner(role)}}));}catch(error){failure=error;}
+  try{await f.port.execute(q('manual_acquire',role,{handle:ready[role==='reader'?0:1].handle,startupBudgetMS:MANUAL_TIMING.evidenceMaxAgeMS,request:{challenge:'b'.repeat(48),role,...offlineStartupOwner(role)}}));}catch(error){failure=error;}
   assert.ok(failure);
   await Promise.all(['reader','collector'].map(r=>f.port.execute(q('manual_abort',r,{handle:null,preserveReader:r==='reader'}))));
   return {f,d:startupDiagnostic(failure),failure};

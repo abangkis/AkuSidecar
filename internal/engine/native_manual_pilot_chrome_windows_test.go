@@ -331,7 +331,7 @@ func nativeManualChromeWireStage(raw []byte, ch nativePilotCaptureChallenge) str
 		}
 		numbers[key] = n
 	}
-	if numbers["elapsedMS"] >= 2000 {
+	if numbers["elapsedMS"] >= float64(nativePilotStartup.Milliseconds()) {
 		return "wire-elapsed"
 	}
 	convert := func(ms float64) (time.Time, bool) {
@@ -400,7 +400,7 @@ func nativeManualChromeTimeFlags(raw []byte, ch nativePilotCaptureChallenge) (be
 		return time.Unix(int64(sec), int64(fraction*1e9)).UTC()
 	}
 	identity, settings, now := convert(sample.Identity), convert(sample.Settings), time.Now().UTC()
-	return identity.Before(ch.challenge.started), settings.Before(identity), identity.After(now) || settings.After(now), sample.Elapsed >= 2000
+	return identity.Before(ch.challenge.started), settings.Before(identity), identity.After(now) || settings.After(now), sample.Elapsed >= float64(nativePilotStartup.Milliseconds())
 }
 
 func TestNativeManualPilotChrome(t *testing.T) {

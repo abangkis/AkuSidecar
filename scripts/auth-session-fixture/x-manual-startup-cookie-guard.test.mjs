@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 import { ManualStartupCookieGuard } from './x-manual-startup-cookie-guard.mjs';
 import { QABoundObservation, createManualV2BoundObservation } from './x-qa-bound-observation.mjs';
 import { inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
@@ -222,7 +223,7 @@ test('outside diagnostics cannot supply or repair identity/login, lifecycle, fre
     if (fault === 'cache') s.emit('Network.requestServedFromCache', {requestId: 'settings'});
     if (fault === 'owner') s.emit('Page.loadEventFired', {}, {...s.scope, owner: 2});
     if (fault === 'context') s.emit('Runtime.executionContextDestroyed', {executionContextId: 7});
-    if (fault === 'stale') s.time(6000);
+    if (fault === 'stale') s.time(MANUAL_TIMING.evidenceMaxAgeMS);
     // Later ordinary traffic cannot clear a previous secure-path rejection.
     outsideCookie(s, {id: 'later'});
     const r = await s.binder.finish(fault !== 'cleanup');
@@ -284,7 +285,7 @@ test('an other-cookie diagnostic never bypasses login, cleanup, freshness or own
   for (const fault of ['login', 'cleanup', 'stale', 'owner']) {
     const s = sample(); s.document(); s.identity(); s.request(); s.response('other', { 'Set-Cookie': 'lang=en; Path=/' });
     if (fault === 'owner') s.emit('Page.loadEventFired', {}, { ...s.scope, owner: 2 });
-    if (fault === 'stale') s.time(6000);
+    if (fault === 'stale') s.time(MANUAL_TIMING.evidenceMaxAgeMS);
     s.settings(fault === 'login' ? 401 : 200);
     const r = await s.binder.finish(fault !== 'cleanup');
     assert.notEqual(r.diagnostic, 'bound'); assert.equal(s.published(), 0);

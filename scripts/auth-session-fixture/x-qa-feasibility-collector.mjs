@@ -3,6 +3,7 @@ import { lstat, mkdir, realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {captureNativeXTarget} from './x-native-manual-capture.mjs';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(MODULE_DIR, '..', '..');
@@ -10,8 +11,8 @@ const QA_ROOT = join(PROJECT_ROOT, 'runtime', 'qa', 'auth-session-sidecar');
 const PROFILE_NAME = 'derived-headless';
 const ROOT_NAME = /^run-x-qa-source-[0-9a-f]{32}$/;
 const MAX_PENDING = 32;
-const COMMAND_TIMEOUT_MS = 4000;
-const EXIT_TIMEOUT_MS = 5000;
+const COMMAND_TIMEOUT_MS = MANUAL_TIMING.cdpCommandMS;
+const EXIT_TIMEOUT_MS = MANUAL_TIMING.collectorExitMS;
 const MAX_COOKIE_BYTES = 8 * 1024;
 const MAX_COOKIE_ARRAY_BYTES = 16 * 1024;
 const MAX_FIXED_EXPRESSION_CHARS = 16 * 1024;
@@ -169,7 +170,7 @@ function commandParams(method, params, sessionId, allowedExpressions, cookieSeed
     if (Object.hasOwn(row, 'awaitPromise') && typeof row.awaitPromise !== 'boolean') return null;
     if (Object.hasOwn(row, 'userGesture') && row.userGesture !== false) return null;
     if (Object.hasOwn(row, 'throwOnSideEffect') && row.throwOnSideEffect !== true) return null;
-    if (Object.hasOwn(row, 'timeout') && row.timeout !== 1500) return null;
+    if (Object.hasOwn(row, 'timeout') && row.timeout !== MANUAL_TIMING.bootstrapEvaluationMS) return null;
     if (Object.hasOwn(row, 'disableBreaks') && row.disableBreaks !== true) return null;
     if (Object.hasOwn(row, 'silent') && typeof row.silent !== 'boolean') return null;
     if (Object.hasOwn(row, 'includeCommandLineAPI') && row.includeCommandLineAPI !== false) return null;
@@ -205,7 +206,7 @@ function commandParams(method, params, sessionId, allowedExpressions, cookieSeed
     if (!row || !safeIdentifier(row.callFrameId) || !allowedExpressions.has(row.expression)) return null;
     if (Object.hasOwn(row, 'returnByValue') && typeof row.returnByValue !== 'boolean') return null;
     if (Object.hasOwn(row, 'throwOnSideEffect') && row.throwOnSideEffect !== true) return null;
-    if (Object.hasOwn(row, 'timeout') && row.timeout !== 1500) return null;
+    if (Object.hasOwn(row, 'timeout') && row.timeout !== MANUAL_TIMING.bootstrapEvaluationMS) return null;
     if (Object.hasOwn(row, 'silent') && typeof row.silent !== 'boolean') return null;
     if (Object.hasOwn(row, 'includeCommandLineAPI') && row.includeCommandLineAPI !== false) return null;
     if (Object.hasOwn(row, 'generatePreview') && row.generatePreview !== false) return null;
@@ -576,7 +577,7 @@ export function createQAFeasibilityCollector({
         if (!pending.has(id)) return;
         pending.delete(id);
         rejectResponse(fixedError('qa_command_timeout'));
-      }, Math.max(1,Math.min(60000,timeoutMs)));
+      }, Math.max(1,Math.min(MANUAL_TIMING.attemptAuthorizationMaxMS,timeoutMs)));
       pending.set(id, { sessionId, project, resolve: resolveResponse, reject: rejectResponse, timer });
       try {
         child.stdio[3].write(wire, (error) => {

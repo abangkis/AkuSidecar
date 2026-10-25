@@ -4,6 +4,7 @@ import {performance} from 'node:perf_hooks';
 import {BootstrapHandoffCapture} from './x-bootstrap-breakpoint-handoff.mjs';
 import {QA_BOUND_BOOTSTRAP_EXPRESSION,projectBoundBootstrap} from './x-qa-bound-observation.mjs';
 import {manualSeedFailure,manualSeedDiagnostic} from './x-manual-retained-setup.mjs';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 const ref=v=>typeof v==='string'&&v.length>0&&Buffer.byteLength(v)<=512&&!/[\u0000-\u001f\u007f]/u.test(v);
 const exact=(v,keys)=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length===keys.length&&Object.keys(v).every(k=>keys.includes(k));
 const home=v=>v==='https://x.com/home';
@@ -41,7 +42,7 @@ export class ManualEnrollmentCapture {
     const t=this.#now();
     if(!Number.isFinite(this.#started)||!Number.isFinite(this.#last)||!Number.isFinite(t)||t<this.#last){this.#failure??=manualSeedFailure('enrollment_evaluate','clock_regressed');throw this.#failure;}
     this.#last=t;
-    if(t-this.#started>=60000){this.#failure??=manualSeedFailure('enrollment_evaluate','deadline');throw this.#failure;}
+    if(t-this.#started>=MANUAL_TIMING.attemptAuthorizationMaxMS){this.#failure??=manualSeedFailure('enrollment_evaluate','deadline');throw this.#failure;}
     if(this.#failure)throw this.#failure;
   }
   async #owner(){
@@ -70,7 +71,7 @@ export class ManualEnrollmentCapture {
     if(method==='Debugger.setInstrumentationBreakpoint')return this.#state==='capturing'&&JSON.stringify(params)==='{"instrumentation":"beforeScriptExecution"}';
     if(method==='Debugger.setBreakpoint')return exact(params,['location'])&&this.#capture.handoff.canInstall(params.location);
     if(method==='Debugger.removeBreakpoint')return exact(params,['breakpointId'])&&(params.breakpointId===this.#instrumentation||this.#capture.handoff.breakpoints.has(params.breakpointId));
-    if(method==='Debugger.evaluateOnCallFrame')return this.#state==='capturing'&&this.#capture.canReadCallFrame(params.callFrameId)&&JSON.stringify(params)===JSON.stringify({callFrameId:params.callFrameId,expression:QA_BOUND_BOOTSTRAP_EXPRESSION,returnByValue:true,throwOnSideEffect:true,timeout:1500,silent:true,includeCommandLineAPI:false,generatePreview:false});
+    if(method==='Debugger.evaluateOnCallFrame')return this.#state==='capturing'&&this.#capture.canReadCallFrame(params.callFrameId)&&JSON.stringify(params)===JSON.stringify({callFrameId:params.callFrameId,expression:QA_BOUND_BOOTSTRAP_EXPRESSION,returnByValue:true,throwOnSideEffect:true,timeout:MANUAL_TIMING.bootstrapEvaluationMS,silent:true,includeCommandLineAPI:false,generatePreview:false});
     return false;
   }
   project(method,result){

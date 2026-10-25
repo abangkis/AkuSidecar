@@ -126,10 +126,11 @@ func TestXManualPilotOwnerPrepareNodeDiagnostic(t *testing.T) {
 		project = filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
 	}
 	const source = `import {STARTUP_TRACE,startupPrepareFailure,startupRPCCode} from './scripts/auth-session-fixture/x-manual-startup-diagnostic.mjs';
+import {MANUAL_TIMING} from './scripts/auth-session-fixture/x-manual-timing-policy.mjs';
 const rows=[];
 for(const stage of STARTUP_TRACE.prepareStage)for(const condition of STARTUP_TRACE.prepareCondition)
  rows.push({stage,condition,code:startupRPCCode(startupPrepareFailure(null,'reader',stage,condition))});
-console.log(JSON.stringify(rows));`
+console.log(JSON.stringify({rows,policy:MANUAL_TIMING}));`
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, node, "--input-type=module", "--eval", source)
@@ -139,11 +140,23 @@ console.log(JSON.stringify(rows));`
 		t.Fatal("offline diagnostic catalog emission failed")
 	}
 	defer clear(raw)
-	var rows []struct{ Stage, Condition, Code string }
-	if len(raw) > 256*1024 || json.Unmarshal(raw, &rows) != nil || len(rows) != len(nativePilotTraceCatalogs[17])*len(nativePilotTraceCatalogs[18]) {
+	var payload struct {
+		Rows   []struct{ Stage, Condition, Code string }
+		Policy map[string]json.RawMessage
+	}
+	if len(raw) > 256*1024 || json.Unmarshal(raw, &payload) != nil || len(payload.Rows) != len(nativePilotTraceCatalogs[17])*len(nativePilotTraceCatalogs[18]) {
 		t.Fatal("Node diagnostic catalog shape disagrees")
 	}
-	for _, row := range rows {
+	if len(payload.Policy) != len(nativePilotTimingPolicy)+1 {
+		t.Fatal("Node-Go timing policy keys disagreed")
+	}
+	for key, want := range nativePilotTimingPolicy {
+		var got int64
+		if json.Unmarshal(payload.Policy[key], &got) != nil || got != want {
+			t.Fatal("Node-Go timing policy drifted")
+		}
+	}
+	for _, row := range payload.Rows {
 		d, ok := nativePilotInitialCode(row.Code)
 		if !ok || d.trace == nil || d.role != "reader" || d.phase != "prepare" || d.trace.firstCause != "preparation" || d.trace.prepareStage != row.Stage || d.trace.prepareCondition != row.Condition {
 			t.Fatal("Node-Go V9 preparation diagnostic disagrees")

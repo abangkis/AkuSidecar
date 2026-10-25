@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createStartupWaitBudget } from './x-manual-startup-wait-budget.mjs';
 import { startupDiagnostic, startupFailure } from './x-manual-startup-diagnostic.mjs';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 
 function fixture(milliseconds = 100) {
   let clock = 0, timer, cleared = 0;
@@ -26,16 +27,23 @@ test('settings waits use the remaining acquisition budget and never reset it', a
   assert.equal(f.cleared(), 2);
 });
 
-test('six-second startup waits preserve the remaining budget after two seconds', async () => {
-  const f = fixture(6000);
-  f.at(2500);
+test('the full startup budget preserves its deadline while shorter caller budgets stay short', async () => {
+  const f = fixture(MANUAL_TIMING.startupTotalMS);
+  f.at(MANUAL_TIMING.startupTotalMS / 2);
   await f.budget.wait(Promise.resolve());
-  assert.equal(f.timer().delay, 3500);
-  f.at(5999);
+  assert.equal(f.timer().delay, MANUAL_TIMING.startupTotalMS / 2);
+  f.at(MANUAL_TIMING.startupTotalMS - 1);
   await f.budget.wait(Promise.resolve());
   assert.equal(f.timer().delay, 1);
-  f.at(6000);
+  f.at(MANUAL_TIMING.startupTotalMS);
   await assert.rejects(f.budget.wait(Promise.resolve()), error => startupDiagnostic(error).reason === 'deadline');
+
+  const shorter = fixture(MANUAL_TIMING.evidenceMaxAgeMS);
+  shorter.at(1000);
+  await shorter.budget.wait(Promise.resolve());
+  assert.equal(shorter.timer().delay, MANUAL_TIMING.evidenceMaxAgeMS - 1000);
+  shorter.at(MANUAL_TIMING.evidenceMaxAgeMS);
+  await assert.rejects(shorter.budget.wait(Promise.resolve()), error => startupDiagnostic(error).reason === 'deadline');
 });
 
 test('a stalled settings source fails at the remaining deadline with no successful fallback', async () => {
@@ -72,7 +80,7 @@ test('cancellation and the original source failure survive wait cleanup', async 
 });
 
 test('invalid or enlarged private budgets are rejected', () => {
-  for (const milliseconds of [undefined, null, 0, -1, 0.5, 6001, Infinity, '100']) {
+  for (const milliseconds of [undefined, null, 0, -1, 0.5, MANUAL_TIMING.startupTotalMS + 1, Infinity, '100']) {
     assert.throws(() => createStartupWaitBudget(milliseconds, { role: 'reader' }), /budget_invalid/);
   }
 });

@@ -387,6 +387,7 @@ func runXManualRetainedQA(t *testing.T, capture func(context.Context, xManualRet
 	if !d.ManualEligible || d.OfflineValidated || d.CanAuthorize || d.NativeQualified || d.StorePermit {
 		t.Fatalf("manual-retained-initial-rejected reason=%s detail=(%s)", d.Reason, broker.initialDiagnostic())
 	}
+	t.Log("manual-retained-startup-trace" + broker.startupTrace())
 	if capture != nil {
 		capture(ctx, xManualRetainedReady{broker: broker, ports: ports, reader: reader, collector: collector, root: caseRoot})
 		return

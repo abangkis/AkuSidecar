@@ -18,6 +18,7 @@ import { BOOTSTRAP_CURRENT_SELF_EXPRESSION } from './x-bootstrap-current-self.mj
 import { EarlyBootstrapCapture } from './x-early-bootstrap-capture.mjs';
 import { inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
 import {manualSeedFailure} from './x-manual-retained-setup.mjs';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 
 test('actual asynchronous seed reply preserves its command after ingress release and suppresses spoofed codes',async()=>{
   for(const branded of [true,false]){
@@ -68,7 +69,7 @@ test('native handoff diagnostics export only fixed counters and keep partial cov
 test('paused evaluation accepts only the fixed by-value side-effect-checked expression and active call frame', () => {
   const capture = { canReadCallFrame: id => id === 'active-call' };
   const params = { callFrameId: 'active-call', expression: BOOTSTRAP_CURRENT_SELF_EXPRESSION,
-    returnByValue: true, throwOnSideEffect: true, timeout: 1500, silent: true,
+    returnByValue: true, throwOnSideEffect: true, timeout: MANUAL_TIMING.bootstrapEvaluationMS, silent: true,
     includeCommandLineAPI: false, generatePreview: false };
   assert.equal(isEarlyBootstrapCallFrameRead(params, capture), true);
   for (const change of [{ callFrameId: 'other-call' }, { expression: 'globalThis' }, { returnByValue: false },

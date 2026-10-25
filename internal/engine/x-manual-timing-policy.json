@@ -1,0 +1,17 @@
+{
+  "schema": "aku.x.manual-timing.v1",
+  "startupTotalMS": 18000,
+  "evidenceMaxAgeMS": 6000,
+  "cdpCommandMS": 12000,
+  "earlyCommandMS": 12600,
+  "bootstrapObservationMS": 15000,
+  "bootstrapEvaluationMS": 4500,
+  "rendezvousMS": 3000,
+  "settingsFallbackMS": 7500,
+  "collectorHomeReadyMS": 45000,
+  "collectorExitMS": 15000,
+  "ownerCleanupMS": 6000,
+  "captureCleanupMS": 3000,
+  "captureCommandMS": 4500,
+  "attemptAuthorizationMaxMS": 60000
+}

@@ -76,6 +76,21 @@ func (b *nativePilotBroker) noteInitial(err error, role, phase string) {
 		b.initial = nativePilotInitialOf(err, role, phase)
 	}
 }
+func (b *nativePilotBroker) startupTrace() string {
+	b.mu.Lock()
+	c := b.controller
+	b.mu.Unlock()
+	if c == nil {
+		return "unavailable"
+	}
+	c.adapter.mu.Lock()
+	snapshot := c.adapter.startupTiming
+	c.adapter.mu.Unlock()
+	if snapshot == nil {
+		return "unavailable"
+	}
+	return snapshot.String()
+}
 func (b *nativePilotBroker) initialDiagnostic() nativePilotInitialDetail {
 	b.detailMu.Lock()
 	detail := b.initial
@@ -210,7 +225,7 @@ func (b *nativePilotBroker) abortPrepared(p nativePilotPreparedRole, preserve bo
 	if p.handle == "" {
 		return true
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), nativePilotCleanup)
 	defer cancel()
 	if b.ports.abort(ctx, p, preserve && p.owner.role == "reader") != nil {
 		b.mu.Lock()
@@ -229,7 +244,7 @@ func (b *nativePilotBroker) stop(reason string) nativePilotDiagnostic {
 		if done != nil {
 			select {
 			case <-done:
-			case <-time.After(2 * time.Second):
+			case <-time.After(nativePilotCleanup):
 				b.mu.Lock()
 				b.cleanupFailed = true
 				b.reason = "cleanup-uncertain"
@@ -259,7 +274,7 @@ func (b *nativePilotBroker) stop(reason string) nativePilotDiagnostic {
 	if onStop != nil {
 		onStop()
 	}
-	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), nativePilotCleanup)
 	defer cancel()
 	var cleanup sync.WaitGroup
 	for _, p := range prepared {

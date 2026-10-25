@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { QACheckpointRendezvous, synchronizedQAReport } from './x-qa-checkpoint-rendezvous.mjs';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 
 test('both distinct roles must arrive before either private paused checkpoint continues', async () => {
   const r = new QACheckpointRendezvous(); let resumed = false;
@@ -10,6 +11,14 @@ test('both distinct roles must arrive before either private paused checkpoint co
   await Promise.all([reader, r.arrive('collector')]); assert.equal(resumed, true);
   assert.deepEqual(r.snapshot(), { schema: 'aku.x.qa-checkpoint-rendezvous.v1', state: 'released', arrivals: 2, waitLimitMS: 1000, canAuthorize: false });
   await assert.rejects(r.arrive('collector'), /qa_rendezvous_closed/);
+});
+test('manual startup can use its centralized rendezvous window while the historical default stays fixed', async () => {
+  const r = new QACheckpointRendezvous(MANUAL_TIMING.rendezvousMS);
+  const pending = r.arrive('reader');
+  assert.equal(r.snapshot().waitLimitMS, MANUAL_TIMING.rendezvousMS);
+  r.cancel();
+  await assert.rejects(pending, /qa_rendezvous_closed/);
+  assert.equal(new QACheckpointRendezvous().snapshot().waitLimitMS, 1000);
 });
 test('one missing role times out with fixed diagnostics and cannot join later', async () => {
   const r = new QACheckpointRendezvous();

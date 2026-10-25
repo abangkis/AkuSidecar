@@ -1,15 +1,16 @@
 import { validateBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 
 const RESULT_SCHEMA = 'aku.x.early-bootstrap-capture.v1';
-const OBSERVATION_MS = 5000;
+const OBSERVATION_MS = MANUAL_TIMING.bootstrapObservationMS;
 const MAX_PAUSES = 64;
 const MAX_SCRIPT_BINDINGS = 64;
 const MAX_QUEUED_PAUSES = 64;
 const MAX_OVERFLOW_RESUMES = 8;
 const MAX_CLEANUP_RESUMES = 4;
-// The driver owns the four-second transport deadline. Do not abandon a command
-// before that deadline and race a still-pending enable against its cleanup.
-const COMMAND_TIMEOUT_MS = 4200;
+// Let the driver's CDP command deadline settle before racing cleanup against a
+// still-pending enable.
+const COMMAND_TIMEOUT_MS = MANUAL_TIMING.earlyCommandMS;
 const FRAME_ID_MAX_LENGTH = 256;
 const STOP_REASONS = new Set([
   'captured',

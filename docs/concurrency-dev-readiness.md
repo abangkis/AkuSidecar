@@ -8,14 +8,93 @@ roadmap are evidence, not a new list of prerequisites.
 - Manual, X-only attempt, at most 60 seconds from the original attempt start.
 - Strict account/login evidence for both owners at startup; identity renewal and
   complete refresh/rotation qualification remain deferred.
-- Startup acquisition/publication has a six-second deadline. Every identity and
-  login sample must still be less than two seconds old at final acceptance.
+- Startup acquisition/publication has an 18-second deadline. Every identity and
+  login sample must still be less than six seconds old at final acceptance.
   Both bounds are clipped by the original attempt's remaining time.
 - Separate reader and collector profiles, with owned process-tree cleanup.
 - Auto Update stays enabled. Source admission arbitrates work; it must not change
   the global scheduling preference.
 
 ## Current implementation
+
+### Central timing policy and flow trace (2026-10-25)
+
+`internal/engine/x-manual-timing-policy.json` is the single source of timeout
+values for this manual startup lane. Go embeds it; Node reads the same asset.
+Both reject duplicate/unknown keys, missing or invalid values, inconsistent
+local envelopes, and an enlarged transfer-authorization ceiling. Staging copies
+and fingerprints the JSON so a prepared executable and Node cannot silently
+use different policies. A source change requires rebuilding/preparing again;
+there is no hot reload, runtime opt-in or automatic retry.
+
+The approved tuning multiplies operational timeouts by three:
+
+| Bound | Previous | Current |
+| --- | ---: | ---: |
+| Shared startup acquisition/publication | 6 s | 18 s |
+| Maximum age of each identity/login sample | 2 s | 6 s |
+| CDP command | 4 s | 12 s |
+| Early command wrapper | 4.2 s | 12.6 s |
+| Bootstrap observation | 5 s | 15 s |
+| Fixed bootstrap evaluation | 1.5 s | 4.5 s |
+| Manual reader/collector rendezvous | 1 s | 3 s |
+| Settings fallback in shared QA recipe | 2.5 s | 7.5 s |
+| Collector page readiness before acquisition | 15 s | 45 s |
+| Collector exit | 5 s | 15 s |
+| Owner/Store-revoke cleanup | 2 s | 6 s |
+| Capture command / capture cancellation cleanup | 1.5 / 1 s | 4.5 / 3 s |
+
+The 60-second pilot/transfer authorization ceiling is a separate permission
+bound and remains unchanged. Historical probe observation windows, polling
+cadence, test-runner limits and unrelated production collection are outside
+this startup timeout tuning. No existing enrollment or session evidence is
+reused or granted a new lifetime by changing this file.
+
+The original six-second total is incompatible with the enlarged local command
+envelopes (12 and 12.6 seconds) and observation envelope (15 seconds); the
+configured shared total is therefore 18 seconds. Reader and collector execute
+in parallel under that one original Go deadline. Settings receives only its
+remaining wait budget; returning a buffered peer receipt or entering the final
+ownership check cannot reset the deadline. Shorter caller/attempt limits still
+win. Local timeout maxima are not additive latency estimates: a worst-case
+series can exhaust the shared deadline and must reject. Cleanup has its own
+bounded retirement budget after admission stops, rather than extending startup
+or granting more collection time. No offline test establishes native wall time.
+
+The bounded private flow trace records entry/exit of ownership checks, receipt
+delivery, each role's identity/settings validation and final publication.
+Each relevant checkpoint includes elapsed duration, remaining startup time,
+both sample ages and the remaining sample-validity horizon, without absolute
+timestamps or account/process/profile/request values. Time rejection categories
+distinguish samples predating the challenge, future timestamps, invalid validity
+order, source expiry, age expiry and expiry at publication. The trace is kept
+on both successful and rejected startup. Completed Node phase reports remain
+available as per-phase maximum durations after the active operation becomes
+idle; they must not be summed with enclosing RPC durations. At most 24 Go flow
+checkpoints and the existing bounded Node progress records are retained.
+Operational first-cause diagnostics remain separately immutable.
+
+Offline validation passed the canonical startup, owner, broker and native
+capture composition helpers. Their Node suites passed 79, 193, 57, and 59/36
+cases respectively (overlapping suites, not additive unique coverage). The Go
+suites cover policy rejection/parity, receipt age at delivery/publication,
+future timestamps, original shorter attempt limits, completed Node phase
+retention, parallel owner admission and synthetic Engine/Store capture/results.
+Four build-tag gates and the staged Windows/retained entry compilation passed.
+A synthetic replay with 2,684 ms of post-sample work is accepted under the new
+six-second age limit; exact six-second age and 18-second startup boundaries
+still reject. These are simulated clocks, not a new native X measurement.
+The retained setup's eight accountless tests also pass with the centralized
+authorization cap. Owned temporary build/database roots were removed.
+
+Evidence under `runtime/qa/auth-session-sidecar/`:
+`native-manual-startup-7b5eaae6e67e41068702e8a3f68c98d2.log.txt`,
+`x-manual-owner-5ce7e6b22bd94d0a8508b1524f1bdd8f.log.txt`,
+`native-manual-broker-8fa00c37b66e45d585857356e3e6bff6.log.txt`, and
+`x-manual-native-capture-88f33be194b546e58d4035078b90fcac.log.txt`.
+No retained-profile read, browser launch, X request or session transfer was
+performed for this tuning. Main login/runtime, Auto Update and user database
+were unchanged. No commit, push or runtime activation is included.
 
 ### Preparation diagnostics (2026-10-25)
 
@@ -54,7 +133,7 @@ transfer, user database/runtime, login or Auto Update setting was accessed.
 No native run was repeated; the latest historical prepare failure below still
 has no recorded internal predicate and cannot be retrospectively classified.
 
-### Timing policy update (2026-10-25)
+### Earlier timing policy update (2026-10-25, superseded)
 
 The approved timing change separates startup work from evidence age. The private
 Go adapter gives the complete initial acquisition (ownership checks, transport,
@@ -424,7 +503,7 @@ The optimization applies to initial/final pair checks and subsequent guarded
 uses. Per-role pre/post-acquire inspections remain mandatory. Existing generic
 ports retain their original path only when no combined callback is installed;
 a failed installed callback never falls back. Account receipt validation still
-applies, using the six-second startup/two-second freshness policy above and the
+applies, using the current shared startup/freshness policy above and the
 original 60-second attempt ceiling.
 
 Offline evidence: `test-native-manual-pilot-broker.ps1` passed 53 Node and eight
@@ -499,18 +578,18 @@ checks before and after acquisition remain mandatory, and the final publication
 still checks cancellation, source provenance, evidence expiry and policy state.
 
 After the pre-acquisition inspection, Go sends a private integer wait hint
-(`startupBudgetMS`, 1 through 6,000 ms), rounded down from the remaining context
+(`startupBudgetMS`, 1 through the configured 18,000 ms), rounded down from the remaining context
 deadline. Each Node owner spends that single monotonic budget across identity,
 rendezvous and settings waiting; a settings wait cannot reset it. The manual
 startup route rejects a missing/invalid hint instead of using the standalone
-QA recipe's 2,500 ms wait. Go remains authoritative over the entire six-second
+QA recipe's configured fallback wait. Go remains authoritative over the entire configured
 startup, including transport, cleanup and final ownership checks. The hint
 cannot extend it or authorize evidence; receipt/account/document guards and
 the 60-second attempt ceiling are unchanged.
 
 Implementation validation was offline/accountless. The subsequent single native
 acceptance is recorded above and still fails; these changes do not establish
-that native startup fits within the current six-second deadline.
+that native startup fits within the configured deadline.
 
 Offline evidence: `test-native-manual-pilot-startup.ps1` passed 55 Node tests,
 30 top-level Go tests and both development Engine build variants (log
@@ -575,15 +654,12 @@ profile/database/build root only after Job/lease cleanup is verified.
 ## Remaining activation work
 
 1. Obtain native capture acceptance using the prepared QA scenario. Do not reopen
-   deferred identity renewal merely to expand this bounded pilot. Initial native
-   startup and reader opening passed in the previous attempt, which then failed
-   at capture. The latest attempt stopped
-   earlier at reader PREPARE and did not enter capture. Closed capture diagnostics
-   pass offline validation and are published. Investigate reader preparation
-   offline, keeping its primary failure separate from cleanup status, before a
-   separately authorized one-shot native acceptance attempt.
-   Another real transfer needs fresh one-shot authorization. Keep account guards,
-   the six-second startup/two-second freshness policy and 60-second attempt cap.
+   deferred identity renewal merely to expand this bounded pilot. The latest
+   native attempt passed prepare but rejected initial admission on evidence
+   expiry under the earlier six-second/two-second policy. The new 18-second
+   startup/six-second freshness policy and bounded checkpoint/age trace have
+   offline validation only. Another real transfer needs fresh one-shot
+   authorization; preserve strict account guards and the 60-second attempt cap.
 2. Promote the owned Windows/profile lifecycle from QA-only construction into a
    development provider, with explicit opt-in, status, stop and source-route
    arbitration. The current native Windows owner remains dual-tag/fixture scoped;

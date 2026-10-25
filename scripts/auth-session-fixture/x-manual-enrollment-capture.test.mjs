@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import {ManualEnrollmentCapture} from './x-manual-enrollment-capture.mjs';
 import {projectCDPEvent,manualStartupStateReady} from './x-native-metadata-probe-driver.mjs';
 import {createRetainedManualSetup,manualSeedDiagnostic} from './x-manual-retained-setup.mjs';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 const ID='1908123456789012345';
 function fixture(fault){
   const scope={pid:1,profileId:'offline-profile',targetId:'offline-target',sessionId:'offline-main'};
@@ -60,7 +61,7 @@ function fixture(fault){
     }
     if(method==='Debugger.evaluateOnCallFrame'){
       evaluations++;
-      assert.equal(phase,'normal');assert.equal(params.throwOnSideEffect,true);assert.equal(params.timeout,1500);
+      assert.equal(phase,'normal');assert.equal(params.throwOnSideEffect,true);assert.equal(params.timeout,MANUAL_TIMING.bootstrapEvaluationMS);
       assert.equal(actor.command('Runtime.evaluate',{expression:params.expression},sessionId),false);
       assert.equal(actor.command(method,{...params,throwOnSideEffect:false},sessionId),false);
       assert.equal(actor.command(method,{...params,callFrameId:'foreign-call'},sessionId),false);
@@ -77,7 +78,7 @@ function fixture(fault){
     return actor.project(method,{});
   };
   actor=new ManualEnrollmentCapture({scope,send,projectEvent:projectCDPEvent,now:()=>clock,snapshot:async()=>{
-    if(fault==='deadline')clock=60000;
+    if(fault==='deadline')clock=MANUAL_TIMING.attemptAuthorizationMaxMS;
     return{...scope,alive};
   }});
   return {actor,scope,startup,observer,frame,emit,operations,context,counts:()=>({evaluations,reloads,closed}),loseOwner:()=>{alive=false;}};

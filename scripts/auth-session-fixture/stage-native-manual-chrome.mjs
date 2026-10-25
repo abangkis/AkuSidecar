@@ -32,7 +32,7 @@ if(mode!==undefined){
   manifest.nodeSources=['x-native-manual-owner-port.mjs','x-native-manual-owner-port.test.mjs','x-native-manual-owner-offline.mjs','x-native-metadata-probe-driver.mjs',
     'x-native-manual-capture.mjs','x-native-manual-capture.test.mjs',
     'x-qa-feasibility-collector.mjs','x-manual-startup-owner.mjs','x-manual-startup-owner.test.mjs',
-    'x-manual-startup-source.mjs','x-manual-startup-limits.mjs','x-manual-startup-offline-fixture.mjs',
+    'x-manual-startup-source.mjs','x-manual-timing-policy.mjs','x-manual-startup-limits.mjs','x-manual-startup-offline-fixture.mjs',
     'x-manual-header-safety.mjs','x-manual-root-document.mjs','x-manual-root-source-policy.mjs','x-manual-root-controls.mjs','x-manual-root-controls.test.mjs',
     'x-identity-freshness-ledger.mjs','x-identity-freshness-ledger.test.mjs',
     'x-manual-enrollment-capture.mjs','x-manual-enrollment-capture.test.mjs',
@@ -57,6 +57,12 @@ if(mode!==undefined){
     source:path.relative(project,asset.path).replaceAll('\\','/'),sha256:asset.sha256,
   }));
 }
+// Embed the same policy bytes that the Node reader uses; Go-only staging must
+// not silently fall back to a second copy or omit the policy asset.
+const timingPolicySource = 'internal/engine/x-manual-timing-policy.json';
+const timingPolicyBytes = fs.readFileSync(path.join(project, timingPolicySource));
+fs.writeFileSync(path.join(stage, 'x-manual-timing-policy.json'), timingPolicyBytes, {flag:'wx'});
+manifest.copied.push({source:timingPolicySource,sha256:hash(timingPolicyBytes)});
 for (const file of files) {
   const relative = `internal/engine/${file}`, bytes = fs.readFileSync(path.join(project, relative));
   fs.writeFileSync(path.join(stage, file), bytes, { flag: 'wx' });

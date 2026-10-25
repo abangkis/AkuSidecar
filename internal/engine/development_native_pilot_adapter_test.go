@@ -346,10 +346,10 @@ func TestNativePilotStartupAndSampleFreshnessAreIndependent(t *testing.T) {
 		prepare, final time.Duration
 		valid          bool
 	}{
-		{"slow-startup-fresh-samples", 3 * time.Second, 1999 * time.Millisecond, true},
-		{"stale-at-final-ownership", 3 * time.Second, 2 * time.Second, false},
-		{"startup-last-instant", 5998 * time.Millisecond, time.Millisecond, true},
-		{"startup-exact-limit", 5999 * time.Millisecond, time.Millisecond, false},
+		{"slow-startup-fresh-samples", nativePilotAge / 2, nativePilotAge - time.Millisecond, true},
+		{"stale-at-final-ownership", nativePilotAge / 2, nativePilotAge, false},
+		{"startup-last-instant", nativePilotStartup - 2*time.Millisecond, time.Millisecond, true},
+		{"startup-exact-limit", nativePilotStartup - time.Millisecond, time.Millisecond, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newTestNativePilotFixture()
@@ -381,7 +381,7 @@ func TestNativePilotStartupAndSampleFreshnessAreIndependent(t *testing.T) {
 	}
 }
 
-func TestNativePilotSixSecondStartupCannotExtendEarlierAttemptLimit(t *testing.T) {
+func TestNativePilotConfiguredStartupCannotExtendEarlierAttemptLimit(t *testing.T) {
 	f := newTestNativePilotFixture()
 	f.cfg.attemptStarted = f.now.Add(-57 * time.Second)
 	f.cfg.attemptValidUntil = f.now.Add(2 * time.Second)
@@ -398,6 +398,115 @@ func TestNativePilotSixSecondStartupCannotExtendEarlierAttemptLimit(t *testing.T
 	v, d := a.initialEvidence(context.Background())
 	if v != nil || d.Reason != "attempt-expired" || d.OfflineValidated {
 		t.Fatal("startup extended the earlier attempt limit")
+	}
+}
+
+func TestNativePilotSharedTimingPolicy(t *testing.T) {
+	baseline := map[string]int64{"startupTotalMS": 6000, "evidenceMaxAgeMS": 2000, "cdpCommandMS": 4000, "earlyCommandMS": 4200, "bootstrapObservationMS": 5000, "bootstrapEvaluationMS": 1500, "rendezvousMS": 1000, "settingsFallbackMS": 2500, "collectorHomeReadyMS": 15000, "collectorExitMS": 5000, "ownerCleanupMS": 2000, "captureCleanupMS": 1000, "captureCommandMS": 1500}
+	for key, old := range baseline {
+		if nativePilotTimingPolicy[key] != old*3 {
+			t.Fatal("operational timeout was not scaled exactly threefold")
+		}
+	}
+	if nativePilotLife != 60*time.Second || nativePilotStartup != 18*time.Second || nativePilotAge != 6*time.Second {
+		t.Fatal("startup and authorization ceilings disagreed")
+	}
+	// Parallel/nested command envelopes share one original startup deadline;
+	// they are not summed into fresh allowances for successive stages.
+	if nativePilotTimingPolicy["earlyCommandMS"] <= 6000 || nativePilotTimingPolicy["earlyCommandMS"] > nativePilotStartup.Milliseconds() {
+		t.Fatal("original six-second total was not revalidated")
+	}
+	for _, fault := range []string{"unknown", "duplicate", "negative", "fraction", "null", "missing", "short-total", "early-race", "authorization"} {
+		t.Run(fault, func(t *testing.T) {
+			var values map[string]any
+			if json.Unmarshal(nativePilotTimingPolicyJSON, &values) != nil {
+				t.Fatal("policy fixture invalid")
+			}
+			switch fault {
+			case "unknown":
+				values["PRIVATE_TOKEN"] = 1
+			case "negative":
+				values["evidenceMaxAgeMS"] = -1
+			case "fraction":
+				values["evidenceMaxAgeMS"] = 1.5
+			case "null":
+				values["evidenceMaxAgeMS"] = nil
+			case "missing":
+				delete(values, "ownerCleanupMS")
+			case "short-total":
+				values["startupTotalMS"] = 6000
+			case "early-race":
+				values["earlyCommandMS"] = values["cdpCommandMS"]
+			case "authorization":
+				values["attemptAuthorizationMaxMS"] = 180000
+			}
+			raw, _ := json.Marshal(values)
+			if fault == "duplicate" {
+				raw = append([]byte(`{"startupTotalMS":18000,`), raw[1:]...)
+			}
+			if _, err := decodeNativePilotTimingPolicy(raw); err == nil || strings.Contains(err.Error(), "PRIVATE") {
+				t.Fatal("unsafe or inconsistent policy accepted/leaked")
+			}
+		})
+	}
+}
+
+func TestNativePilotFlowTimingAndScaledFreshness(t *testing.T) {
+	for _, age := range []time.Duration{2684 * time.Millisecond, nativePilotAge - time.Millisecond, nativePilotAge} {
+		f := newTestNativePilotFixture()
+		prior, checks := f.ports.owners, 0
+		f.ports.owners = func(ctx context.Context) (nativePilotState, error) {
+			checks++
+			if checks == 2 {
+				f.advance(age)
+			}
+			return prior(ctx)
+		}
+		a := f.adapter(t)
+		v, d := a.initialEvidence(context.Background())
+		if (v != nil) != (age < nativePilotAge) {
+			t.Fatal("configured freshness boundary disagreed")
+		}
+		if a.startupTiming == nil || a.startupTiming.flowCount < 10 {
+			t.Fatal("successful or failed flow lost its checkpoints")
+		}
+		trace := a.startupTiming.String()
+		for _, key := range []string{"stage=receipt_exit", "stage=identity_check", "stage=settings_check", "stage=owners_after_exit", "stage=publication", "identity_age_ms=", "sample_remaining_ms="} {
+			if !strings.Contains(trace, key) {
+				t.Fatal("entry/exit or evidence-age checkpoint missing")
+			}
+		}
+		if strings.Contains(trace, "private") || strings.Contains(trace, f.cfg.binding.account) {
+			t.Fatal("timing trace leaked identifiers")
+		}
+		if age == nativePilotAge {
+			assertNativePilotClosed(t, d, "evidence-expired")
+			if !strings.Contains(trace, "condition=sample_horizon_expired") {
+				t.Fatal("final publication expiry was not distinguished")
+			}
+		}
+	}
+	for _, future := range []bool{false, true} {
+		f := newTestNativePilotFixture()
+		f.change = func(c nativePilotChallenge, r *nativePilotReceipt) {
+			if c.role == "reader" {
+				if future {
+					r.identity.observed = r.identity.observed.Add(time.Millisecond)
+				} else {
+					f.advance(nativePilotAge)
+				}
+			}
+		}
+		a := f.adapter(t)
+		_, d := a.initialEvidence(context.Background())
+		assertNativePilotClosed(t, d, "evidence-expired")
+		want := "condition=age_expired"
+		if future {
+			want = "condition=timestamp_future"
+		}
+		if !strings.Contains(a.startupTiming.String(), "stage=identity_check "+want) {
+			t.Fatal("receipt time predicate remained opaque")
+		}
 	}
 }
 

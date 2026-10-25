@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
 import { Session } from 'node:inspector';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 
 import {
   BOOTSTRAP_CURRENT_SELF_EXPRESSION,
@@ -427,7 +428,7 @@ test('actual V8 inspector accepts populated, missing and accessor projections wi
   session.connect();
   const evaluate = () => new Promise((accept, reject) => {
     session.post('Runtime.evaluate', { expression: BOOTSTRAP_CURRENT_SELF_EXPRESSION,
-      returnByValue: true, awaitPromise: false, userGesture: false, throwOnSideEffect: true, disableBreaks: true, timeout: 1500 },
+      returnByValue: true, awaitPromise: false, userGesture: false, throwOnSideEffect: true, disableBreaks: true, timeout: MANUAL_TIMING.bootstrapEvaluationMS },
     (error, result) => {
       if (error) { reject(new Error('inspector_command_failed')); return; }
       if (Object.hasOwn(result, 'exceptionDetails')) { reject(new Error('guarded_projection_rejected')); return; }

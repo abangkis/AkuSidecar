@@ -103,7 +103,7 @@ func TestNativePilotStartupFailureDetails(t *testing.T) {
 				case "scope_mismatch":
 					m["documentId"] = "wrong"
 				case "time_invalid":
-					m["elapsedMS"] = 6000
+					m["elapsedMS"] = nativePilotStartup.Milliseconds()
 				default:
 					return []byte(`{"private":"invalid"}`), nil
 				}
@@ -274,6 +274,33 @@ func TestNativePilotStartupTimingBoundsAndIsolation(t *testing.T) {
 	}
 }
 
+func TestNativePilotStartupCompletedNodePhasesRemainVisible(t *testing.T) {
+	now := time.Unix(100, 0)
+	ledger := &nativePilotTiming{started: now, now: func() time.Time { return now }}
+	ctx := context.WithValue(context.Background(), nativePilotTimingKey{}, ledger)
+	done := nativePilotTimed(ctx, "reader", "acquire_rpc")
+	for _, raw := range []string{`{"operation":"identity","elapsedMS":5,"cause":""}`, `{"operation":"settings_wait","elapsedMS":12,"cause":""}`, `{"operation":"settings_wait","elapsedMS":8,"cause":""}`, `{"operation":"cleanup","elapsedMS":4,"cause":""}`, `{"operation":"complete","elapsedMS":0,"cause":""}`} {
+		nativePilotTimingProgress(ctx, "reader", []byte(raw))
+	}
+	done()
+	for i := 0; i < 40; i++ {
+		nativePilotFlowTrace(ctx, "pair", "publication", "accepted", now, now.Add(nativePilotStartup), nil)
+	}
+	nativePilotFlowTrace(ctx, "PRIVATE", "PRIVATE", "PRIVATE", now, now, nil)
+	snapshot := ledger.freeze()
+	if snapshot.flowCount != 24 || snapshot.roles[0].operation != 0 {
+		t.Fatal("flow trace cap or completed operation state lost")
+	}
+	for _, key := range []string{"reader_node_identity_max_ms=5", "reader_node_settings_wait_max_ms=12", "reader_node_cleanup_max_ms=4"} {
+		if !strings.Contains(snapshot.String(), key) {
+			t.Fatal("completed Node phase disappeared behind idle")
+		}
+	}
+	if ledger.first != nil || strings.Contains(snapshot.String(), "PRIVATE") {
+		t.Fatal("diagnostic invented authority/cause or leaked data")
+	}
+}
+
 func TestNativePilotStartupSettingsProgressClosed(t *testing.T) {
 	if !strings.Contains((nativePilotInitialTrace{firstCause: "settings_capture"}).String(), "domain=settings") {
 		t.Fatal("settings terminal failure escaped its diagnostic domain")
@@ -410,7 +437,7 @@ func TestNativePilotStartupStrictDecoder(t *testing.T) {
 		"long-request":        func(m map[string]any) { m["settingsRequestId"] = strings.Repeat("r", 513) },
 		"null-time":           func(m map[string]any) { m["identityObservedAtMS"] = nil },
 		"negative-elapsed":    func(m map[string]any) { m["elapsedMS"] = -1 },
-		"joint-limit":         func(m map[string]any) { m["elapsedMS"] = 6000 },
+		"joint-limit":         func(m map[string]any) { m["elapsedMS"] = nativePilotStartup.Milliseconds() },
 		"overflow-time":       func(m map[string]any) { m["identityObservedAtMS"] = 9e18 },
 		"stale-bootstrap": func(m map[string]any) {
 			m["identityObservedAtMS"] = float64(ch.started.Add(-time.Millisecond).UnixMilli())

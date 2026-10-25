@@ -6,6 +6,7 @@ import {ManualStartupCookieGuard} from './x-manual-startup-cookie-guard.mjs';
 import {createManualV2BoundObservation} from './x-qa-bound-observation.mjs';
 import {startupFailure, startupFailureLatch, startupDiagnostic, requireBoundStartup} from './x-manual-startup-diagnostic.mjs';
 import {registerFreshStartupSession} from './x-manual-root-controls.mjs';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 
 // Exercise the actual collector path with an accountless transport. It cannot
 // spawn a browser, access a profile, transfer cookies or publish real evidence.
@@ -91,7 +92,7 @@ for (const [fault, phase, reason] of [
 
 test('collector readiness expiration is a page deadline before identity or binding', async t => {
   let clockCalls = 0;
-  t.mock.method(Date, 'now', () => clockCalls++ < 2 ? 0 : 15000);
+  t.mock.method(Date, 'now', () => clockCalls++ < 2 ? 0 : MANUAL_TIMING.collectorHomeReadyMS);
   const f = fixture('readiness-deadline');
   await assert.rejects(f.owner.prepare(), error => {
     assert.deepEqual(startupDiagnostic(error), {role: 'collector', phase: 'page_ready', reason: 'deadline', peer: false});

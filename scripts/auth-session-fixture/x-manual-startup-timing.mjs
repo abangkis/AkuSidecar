@@ -1,6 +1,7 @@
 import {performance} from 'node:perf_hooks';
 import {startupDiagnostic, startupRPCCode} from './x-manual-startup-diagnostic.mjs';
 import {SETTINGS_WAIT_STATES} from './x-settings-wait-state.mjs';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 
 const OPS = new Set(['inspect_rpc','inventory_rpc','acquire_rpc','identity','rendezvous','settings_wait','cleanup','root_restore','complete']);
 // One pending RPC, at most 32 closed progress records. No pins, request IDs,
@@ -12,12 +13,13 @@ export function createStartupTiming(report, now = () => performance.now()) {
     const elapsed = now() - started;
     if (!Number.isFinite(elapsed) || elapsed < 0) return;
     count++;
-    try { report({operation, elapsedMS: Math.min(60000, Math.floor(elapsed)), cause,
+    try { report({operation, elapsedMS: Math.min(MANUAL_TIMING.attemptAuthorizationMaxMS, Math.floor(elapsed)), cause,
       ...(settingsWait === 'unknown' ? {} : {settingsWait})}); } catch { /* Diagnostics never alter admission. */ }
   };
   return Object.freeze({
     step(next, settings) {
       if (closed || !OPS.has(next)) return;
+      publish('');
       if (SETTINGS_WAIT_STATES.includes(settings)) settingsWait = settings;
       operation = next; started = now(); publish('');
     },

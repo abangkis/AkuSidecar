@@ -5,6 +5,7 @@ import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {captureNativeXTarget,manualCaptureRPCCode,manualCaptureRPCDiagnostic} from './x-native-manual-capture.mjs';
 import {createXManualOwnerPort} from './x-native-manual-owner-port.mjs';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 
 export function syntheticXDOM() {
   const permalink='https://x.com/synthetic/status/1908123456789012346';
@@ -70,7 +71,7 @@ export async function syntheticCapturePort(pins,transport,bridgePath,{inspect=va
     capture:(request,options)=>captureNativeXTarget({request,bridgePath,...options,browserContextId:'owned-context',command:transport.command.bind(transport),subscribe:transport.subscribe.bind(transport)})});
   let id=1;
   for(const role of roles)await port.execute({id:id++,op:'manual_prepare',owner:1,role});
-  for(const role of roles)await port.execute({id:id++,op:'manual_acquire',owner:1,role,handle:role+'-handle',startupBudgetMS:2000,request:{challenge:'synthetic',role,...rolePins[role]}});
+  for(const role of roles)await port.execute({id:id++,op:'manual_acquire',owner:1,role,handle:role+'-handle',startupBudgetMS:MANUAL_TIMING.evidenceMaxAgeMS,request:{challenge:'synthetic',role,...rolePins[role]}});
   return port;
 }
 

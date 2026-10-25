@@ -2,6 +2,7 @@
 import { EarlyBootstrapCapture } from './x-early-bootstrap-capture.mjs';
 import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
 import { QA_BOUND_BOOTSTRAP_EXPRESSION } from './x-qa-bound-observation.mjs';
+import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 const fail = () => new Error('bootstrap_handoff_failed');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const safeId = value => typeof value === 'string' && value.length > 0 && value.length <= 256 && !/[\u0000-\u001f\u007f]/u.test(value);
@@ -204,7 +205,7 @@ export class BootstrapHandoffCapture {
           await beforeIdentityRead(contextId);
           if (!this.capture.canRead(contextId) || !this.capture.canReadCallFrame(callFrameId) || !this.handoff.canEvaluate(callFrameId)) throw fail();
           return await send('Debugger.evaluateOnCallFrame', { callFrameId, expression: boundIdentity ? QA_BOUND_BOOTSTRAP_EXPRESSION : BOOTSTRAP_CURRENT_SELF_EXPRESSION,
-            returnByValue: true, throwOnSideEffect: true, timeout: 1500, silent: true,
+            returnByValue: true, throwOnSideEffect: true, timeout: MANUAL_TIMING.bootstrapEvaluationMS, silent: true,
             includeCommandLineAPI: false, generatePreview: false });
         } finally { await this.handoff.afterRead(callFrameId); }
       },

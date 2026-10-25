@@ -282,7 +282,7 @@ func (f *manualRuntimeFixture) run(ctx context.Context, scenario string) error {
 		// Advance past startup freshness: V2 has a fixed 60-second attempt,
 		// never the old five-second renewal loop.
 		f.mu.Lock()
-		f.now = f.now.Add(6 * time.Second)
+		f.now = f.now.Add(nativePilotAge + time.Millisecond)
 		f.mu.Unlock()
 	case "expiry":
 		f.mu.Lock()

@@ -2,13 +2,15 @@
 
 Decision: 2026-10-21. Contract: `aku.x.dev-pilot.manual-startup.v2`.
 
-Timing amendment (2026-10-25): startup acquisition/publication is bounded by six
-seconds; all four account/login samples must be less than two seconds old when
+Timing amendment (2026-10-25): startup acquisition/publication is bounded by 18
+seconds; all four account/login samples must be less than six seconds old when
 Go publishes the initial vector, after final ownership inspection. The original
 absolute 60-second attempt and any earlier caller/source/consent expiry remain
 authoritative. This supersedes earlier two-second startup/five-second sample
 age references in historical checkpoints below. Validation is offline only;
 this amendment does not authorize another transfer or main-dev activation.
+Timeouts are defined once in `internal/engine/x-manual-timing-policy.json`, shared
+by Go and Node. See the [current flow/timing checkpoint](concurrency-dev-readiness.md#central-timing-policy-and-flow-trace-2026-10-25) for the approved threefold operational timeout tuning, bounded traces and its offline validation.
 
 The next [native capture composition](x-manual-pilot-store-contract.md#prepared-native-x-capture-through-the-existing-worker-2026-10-25)
 connects the production X worker/parser to the guarded Engine/Store path through
@@ -112,8 +114,8 @@ credential transfer/native QA run.
   semantic predicate and request-local qualification
   `api_v1.cookie-auth-rejection.2026-10-20`.
 - One-use challenge and exact owner/context/document/request correlation, direct
-  fresh responses and initial samples less than two seconds old at publication.
-  Both roles' initial vector must complete in less than six seconds. Clock domains must not
+  fresh responses and initial samples less than six seconds old at publication.
+  Both roles' initial vector must complete in less than 18 seconds. Clock domains must not
   be compared as if unrelated process monotonic clocks shared an origin.
 
 ## Manual permission lifetime
@@ -121,8 +123,8 @@ credential transfer/native QA run.
 The absolute clock starts before initial acquisition or authorized seeding,
 whichever comes first. The attempt ends no later than that start plus 60 seconds
 or an explicitly earlier owner/consent/attempt limit. Initial sample freshness
-must pass at admission; its two-second freshness limit does not secretly shorten
-the selected manual window back to two seconds. Conversely, the manual window is
+must pass at admission; its six-second freshness limit does not secretly shorten
+the selected manual window back to six seconds. Conversely, the manual window is
 not a claim that account/session evidence stays fresh for 60 seconds.
 
 There is no automatic identity renewal, attempt extension, restart inheritance,
@@ -876,10 +878,10 @@ relaxing identity, inventing OS ownership or reopening renewal/parser research.
    process or handle rejects the observation. Repeated empty bootstrap reads
    remain limited to the same frozen startup context and existing pause budget.
 5. Only matching fresh account/login receipts open manual-controller admission.
-   The joint six-second startup deadline begins after both owners are ready;
+   The joint 18-second startup deadline begins after both owners are ready;
    preparation still consumes the original absolute 60-second attempt window.
-   The existing startup capture retains its shorter five-second observation and
-   command deadlines. Reader requests, dispatch, claim and result publication
+   The startup capture uses the shared policy's 15-second observation and
+   bounded command deadlines under the original remaining startup context. Reader requests, dispatch, claim and result publication
    pass through the broker and existing manual-controller fences.
 
 The driver hook is now `createOwnedManualStartupOwners`; each role exposes
@@ -892,7 +894,7 @@ native run; a Node ready handle is not an OS attestation or derivation receipt.
 
 Partial startup and invalidation cancel preparation and abort registered owners.
 The broker waits for registered and late prepare/abort acknowledgements under an
-independent two-second cleanup deadline, without holding its state lock. An
+independent six-second cleanup deadline, without holding its state lock. An
 uncooperative callback or failed cleanup yields permanent `cleanup-uncertain`;
 a late owner cannot turn it into a successful completion. Opt-out preserves the
 reader tree via the trusted owner port; parent exit requests retirement of both

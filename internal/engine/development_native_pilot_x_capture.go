@@ -100,7 +100,7 @@ func (p *xNativePilotCapture) Capture(ctx context.Context, source domain.Source,
 	call, cancel := context.WithDeadline(ctx, p.deadline)
 	defer cancel()
 	stop := context.AfterFunc(call, func() {
-		cleanup, done := context.WithTimeout(context.Background(), time.Second)
+		cleanup, done := context.WithTimeout(context.Background(), nativePilotCaptureCleanupTimeout)
 		defer done()
 		_ = p.ports.backend.rpc(cleanup, "collector", "manual_capture_cancel", map[string]any{"handle": p.prepared.handle}, nil)
 	})
