@@ -159,7 +159,38 @@ still requires a separately authorized run with these diagnostics.
 
 ### Latest native attempt
 
-Latest attempt: source commit `ad865b4`, explicitly authorized run
+Latest attempt: source commit `bc3914d`, explicitly authorized run
+`8063debc56b54e29b6c257d6740dc666` on 2026-10-25. Preparation passed 279 and
+33 Node cases, all four retained tag gates, full staged Engine compilation and
+accountless Go diagnostics. The prepared capture plan pinned 921 source files,
+the original maximum 60-second attempt and only `auth_token`/`ct0` transfer.
+
+Exactly one native execution rejected before initial admission (full test 6.57
+seconds). The private seed acknowledgement and scope checks passed; the broker
+then recorded `role=reader phase=prepare reason=unavailable kind=primary`.
+The outward terminal reason was `cleanup-uncertain`, reflecting uncertain
+cleanup during broker failure handling. The primary prepare cause remained
+separately available. This is not evidence of an account mismatch, challenge,
+cookie write, startup deadline failure or a repeated capture-stage rejection.
+The current prepare category does not establish its failed internal predicate.
+
+The capture continuation was never entered, so no capture QA database or
+observation was created. The new capture diagnostic path was not exercised by
+this native attempt. The earlier startup/reader acceptance remains historical
+evidence; this run does not qualify native capture or establish that the patch
+caused the earlier-stage failure.
+
+Final owned Job/lease cleanup was verified by the helper, despite the broker's
+earlier uncertain cleanup status. The collector/build root was removed and the
+dedicated retained reader QA profile was preserved. No retry occurred. Main
+login, user database/runtime and Auto Update were unchanged; the local dev
+configuration SHA-256 remained
+`52063D73180A8F6AB3E514D89CFAA81FB168E0B98381E58FA7FF1AE28D7AADAE`.
+Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-8063debc56b54e29b6c257d6740dc666.prepare.log.txt`
+and `runtime/qa/auth-session-sidecar/x-manual-retained-8063debc56b54e29b6c257d6740dc666.run.log.txt`.
+
+Previous attempt: source commit `ad865b4`, explicitly authorized run
 `581ff3a1757546fdbfe84afd2369bfad` on 2026-10-25. Preparation passed 279 and
 33 Node cases, all four retained tag gates, staged full Engine compilation and
 accountless Go diagnostic checks. The prepared plan pinned 918 source files,
@@ -475,10 +506,12 @@ profile/database/build root only after Job/lease cleanup is verified.
 
 1. Obtain native capture acceptance using the prepared QA scenario. Do not reopen
    deferred identity renewal merely to expand this bounded pilot. Initial native
-   startup and reader opening passed in the latest attempt; the current failure
-   is at capture. Closed behavior/Coordinator/backend substage/reason diagnostics
-   now pass offline validation. Review/commit this delta before a separately
-   authorized one-shot native acceptance attempt.
+   startup and reader opening passed in the previous attempt, which then failed
+   at capture. The latest attempt stopped
+   earlier at reader PREPARE and did not enter capture. Closed capture diagnostics
+   pass offline validation and are published. Investigate reader preparation
+   offline, keeping its primary failure separate from cleanup status, before a
+   separately authorized one-shot native acceptance attempt.
    Another real transfer needs fresh one-shot authorization. Keep account guards,
    the six-second startup/two-second freshness policy and 60-second attempt cap.
 2. Promote the owned Windows/profile lifecycle from QA-only construction into a
