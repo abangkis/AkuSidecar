@@ -17,6 +17,50 @@ roadmap are evidence, not a new list of prerequisites.
 
 ## Current implementation
 
+### Shared Windows ownership and private transport (2026-10-25)
+
+The first provider integration increment extracts reusable Windows OS facts and
+private pipe correlation from the QA bridge. Fixtures use the shared
+`internal/ownedprocess` and `internal/ownedrpc` implementations through thin
+compatibility wrappers. Fixture grants, loopback/root policy, fault injection,
+handshake and teardown ordering remain outside the shared correlation package.
+
+The Windows X owner adapter now depends on a private trusted transport/profile
+scope port and builds with `auth_session_dev` alone. It retains image/creation,
+process-parent, Job membership, physical directory, context/document and reader
+inventory checks. No ordinary-build constructor, native factory registration,
+CLI activation, public owner RPC, Store policy/schema change or saved opt-in is
+added. The existing native provider name still rejects before normal state access.
+
+This completes the shared primitive/adapter extraction, not the application
+provider. Remaining construction must supply the owned launcher, packaged
+private driver and held-profile lease, then attach X-specific routing/status/stop
+to main. See the [provider checkpoint](x-concurrency-dev-provider-design.md#extraction-checkpoint-2026-10-25).
+
+Offline acceptance `4a1e9d33007147d998fa092c6f90142b` passed twelve RPC tests,
+four Windows ownership tests, six Engine/Store capture test groups, seven actual
+accountless Node/Go diagnostic test groups, and both source-pinned staging modes.
+The ownership suite checks kill-on-Job-close using only its own hidden test
+subprocess. The symlink rejection subcase could not run without Windows symlink
+privilege; it remains unverified rather than counted as a successful alias test.
+The subprocess helper is intentionally skipped outside its private child invocation.
+Evidence:
+`runtime/qa/auth-session-sidecar/owned-browser-core-4a1e9d33007147d998fa092c6f90142b.log.txt`
+and its two staging provenance files. A delivered terminal response followed by
+EOF and a failed write with another writer queued have focused regressions.
+Correlation close is not physical process/pipe termination; that remains the
+owner's responsibility and must be proved before source/profile reuse.
+
+Main integration run `e452a73c896647ce85a01d86049cf976` passed four main build
+variants, all ten actual-main synthetic scenarios, early state-access rejection
+and Coordinator regressions. The native selector remained unavailable and
+configuration/database sentinels stayed absent. Its log is under the same QA root.
+The unchanged Node capture/parser suites also passed 80 and 36 checks in the
+Node portions of `x-manual-native-capture-ba976ee6d99749e19c691285d64463ac.log.txt`;
+the corrected Go/staging acceptance is the dedicated owned-core run above.
+No browser, retained profile, real transfer or user runtime was accessed. Owned
+synthetic databases, staging binaries and temporary build roots were removed.
+
 ### Native X capture accepted (2026-10-25)
 
 One explicitly authorized retained-QA attempt on source `5964a24` passed the
@@ -794,12 +838,14 @@ remaining work is provider integration and isolated activation validation:
 
 1. Promote the owned Windows/profile lifecycle from QA-only construction into a
    development provider, with explicit opt-in, status, stop and source-route
-   arbitration. The current native Windows owner remains dual-tag/fixture scoped;
-   a boolean alone cannot activate it safely.
+   arbitration. Shared OS/pipe primitives and the dev-tag owner adapter have been
+   extracted; the application launcher/profile lease and factory remain unwired.
+   A boolean alone cannot activate them safely.
    The [provider implementation plan](x-concurrency-dev-provider-design.md)
    maps the existing code, extraction boundary, application construction order,
-   source occupancy and stop/rollback responsibilities. It is a plan, not an
-   available runtime selector or an additional account-proof prerequisite.
+   source occupancy and stop/rollback responsibilities. Its extraction checkpoint
+   is implemented; it does not yet expose an available runtime selector or add an
+   account-proof prerequisite.
 2. Verify that provider against an isolated dev instance before separately
    approving main-dev runtime activation. Keep Auto Update enabled and preserve
    the existing main login. Rollback closes pilot admission/owners and returns

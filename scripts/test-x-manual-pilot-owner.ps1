@@ -40,7 +40,7 @@ try{
   if($mode -ne 'default'){$arguments+=@('-tags',$mode)}
   $files=@(& go @arguments './internal/engine')
   if($LASTEXITCODE -ne 0){throw 'X owner build-tag inspection failed.'}
-  if(($files -contains 'development_x_manual_pilot_owner_windows.go') -ne ($mode -eq 'auth_session_dev auth_session_fixture')){throw 'Native X owner Windows tag gate failed.'}
+  if(($files -contains 'development_x_manual_pilot_owner_windows.go') -ne $mode.Contains('auth_session_dev')){throw 'Native X owner Windows tag gate failed.'}
   if(($files -contains 'development_x_manual_pilot_owner.go') -ne $mode.Contains('auth_session_dev')){throw 'X owner core tag gate failed.'}
   Write-Output ('PASS: X owner tag gate '+$mode) | Tee-Object -FilePath $log -Append
  }

@@ -59,7 +59,7 @@ try{
   & $exe '-test.run=^TestXManual(CaptureRetainedQA|PilotRetained(QA|SeedDiagnostics|SeedNodeDiagnostic|StartupDiagnostic|TimingProgress|TraceCodes))$' '-test.timeout=15s' '-test.v' 2>&1 | Tee-Object -FilePath $log -Append
   if($LASTEXITCODE -ne 0){throw 'Default-off entry rejection failed.'}
   $provenance=Get-Content -LiteralPath (Join-Path $root 'staging-provenance.json') -Raw | ConvertFrom-Json
-  $paths=@($provenance.copied.source)+@($provenance.extracted.source)+@($provenance.nodeSources.source)+@($provenance.captureSourceAssets.source)+@('scripts/auth-session-fixture/x-manual-retained-setup.mjs','scripts/auth-session-fixture/x-retained-source-qualification-driver.mjs','scripts/prepare-x-manual-retained-qa.ps1')
+  $paths=@($provenance.copied.source)+@($provenance.extracted.source)+@($provenance.moduleDependencies.source)+@($provenance.nodeSources.source)+@($provenance.captureSourceAssets.source)+@('scripts/auth-session-fixture/x-manual-retained-setup.mjs','scripts/auth-session-fixture/x-retained-source-qualification-driver.mjs','scripts/prepare-x-manual-retained-qa.ps1')
   if($Capture){
    # Pin local Go dependencies and the complete QA/worker JS graph, including
    # newly added source files. This reads code only, never a retained profile.

@@ -12,14 +12,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
-	"unsafe"
+
+	"github.com/abangkis/AkuSidecar/internal/ownedprocess"
 
 	"golang.org/x/sys/windows"
 )
 
-type processFixtureIdentity struct { PID uint32; Created string }
+type processFixtureIdentity = ownedprocess.Identity
 type processFixtureGrant struct {
 	Nonce string
 	Parent processFixtureIdentity

@@ -28,6 +28,10 @@ if(mode!==undefined){
   if(!capture)files.push('development_x_manual_pilot_owner.go','development_x_manual_pilot_owner_windows.go');
 }
 const manifest = { schema: 'aku.native-manual-chrome.staging.v1', copied: [], extracted: [] };
+// Shared imported code must be pinned even for the named-file staging modes.
+manifest.moduleDependencies=['go.mod','go.sum',...['internal/ownedprocess','internal/ownedrpc'].flatMap(directory=>
+  fs.readdirSync(path.join(project,directory)).filter(file=>file.endsWith('.go')&&!file.endsWith('_test.go')).sort().map(file=>`${directory}/${file}`)
+)].map(source=>({source,sha256:hash(fs.readFileSync(path.join(project,source)))}));
 if(mode!==undefined){
   manifest.nodeSources=['x-native-manual-owner-port.mjs','x-native-manual-owner-port.test.mjs','x-native-manual-owner-offline.mjs','x-native-metadata-probe-driver.mjs',
     'x-native-manual-capture.mjs','x-native-manual-capture.test.mjs','x-capture-traffic-diagnostics.mjs','x-capture-traffic-diagnostics.test.mjs',
@@ -84,7 +88,7 @@ const extract = name => {
 };
 const names = ['processFixtureProcessIdentity', 'processFixtureIdentityFromHandle', 'processFixtureDirectoryID',
   'processFixtureWindowPID', 'processFixtureWindows', 'processFixtureWindowsGone', 'processFixtureWait'];
-if(retained)names.push('processFixtureFileID');
+names.push('processFixtureFileID');
 const declaration = 'var processFixtureUser = windows.NewLazySystemDLL("user32.dll")';
 if (!original.includes(declaration)) throw new Error('standalone_window_source_unavailable');
 const templatePath = path.join(project, 'scripts/auth-session-fixture/native-manual-chrome-support.go.txt');

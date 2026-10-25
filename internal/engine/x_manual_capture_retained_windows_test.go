@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/abangkis/AkuSidecar/internal/ownedrpc"
 	"io"
 	"log"
 	"os"
@@ -127,7 +128,7 @@ for await(const line of createInterface({input:process.stdin})){const q=JSON.par
 	if cmd.Start() != nil {
 		t.Fatal("offline diagnostic Node unavailable")
 	}
-	b := &chromeFixtureBridge{cmd: cmd, stdin: stdin, pending: map[int64]chan chromeFixtureReply{}, owners: map[int]*chromeFixtureProcess{}, closed: make(chan struct{}), nodeWaited: make(chan struct{})}
+	b := &chromeFixtureBridge{cmd: cmd, stdin: stdin, pipe: ownedrpc.New(stdin), owners: map[int]*chromeFixtureProcess{}, closed: make(chan struct{}), nodeWaited: make(chan struct{})}
 	ready := make(chan error, 1)
 	go b.readOutput(stdout, ready)
 	t.Cleanup(func() {
@@ -194,7 +195,7 @@ func TestXManualCaptureRetainedQA(t *testing.T) {
 		reader, collector := retainedCaptureManager(t, ready.reader), retainedCaptureManager(t, ready.collector)
 		runtime, err := e.bindXNativePilotRuntime(ctx, ready.broker, ready.ports, reader, collector, func(call context.Context, _ readerbroker.Request) error {
 			var raw json.RawMessage
-			if err := ready.reader.bridge.rpc(call, "manual_open_reader", map[string]any{"owner": ready.reader.protocolOwner}, &raw); err != nil {
+			if err := ready.reader.bridge.rpcRoundTripObserved(call, "manual_open_reader", map[string]any{"owner": ready.reader.protocolOwner}, &raw, nil); err != nil {
 				return errors.New("capture QA reader failed")
 			}
 			defer clear(raw)

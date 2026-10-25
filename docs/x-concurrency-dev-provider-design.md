@@ -1,7 +1,46 @@
 # X manual pilot: development provider integration
 
 Prepared 2026-10-25, after native capture acceptance on `5964a24`.
-Status: implementation plan; no provider registration or runtime activation.
+Status: shared ownership/transport extraction implemented; provider construction,
+application registration and runtime activation remain pending.
+
+## Extraction checkpoint (2026-10-25)
+
+`internal/ownedrpc` now owns concurrent pipe correlation, serialized writes,
+pending progress retirement and bounded diagnostic replies. The fixture bridge
+delegates to that client while retaining its own framing, handshake, safe code
+mapping, Chrome exit handling and cleanup ordering. Reserved correlation fields
+cannot be overridden; a failed/short write closes the corrupted lane. The
+correlation client does not launch a process or interpret an account proof. Its
+owner must still close/retire the actual pipe and process tree; canceling a
+pending correlation is not evidence that an external operation stopped.
+An already delivered terminal reply survives immediate EOF, so closure cannot
+hide its operational cause. Domain receipt, owner and deadline checks still
+decide whether that reply may be used.
+
+`internal/ownedprocess` now owns Windows process creation identity, physical
+directory identity, lifetime Job creation/assignment/membership/accounting and
+read-only window inventory. Existing fixture wrappers call those primitives.
+Job handles remain noninheritable and kill their children on close. Directory
+and image pins, process parent checks and full window accounting remain part of
+the native owner adapter, rather than being replaced with status flags.
+
+The Windows X owner adapter now builds with `auth_session_dev` without the
+fixture tag. Its transport and held-profile scope arrive through a private
+trusted Go port, not a concrete fixture bridge or JSON flag. The QA bridge
+implements that port with its existing QA-root policy; the application owner
+factory still needs its own lease-backed implementation. This is a compiled
+adapter, not a registered or available application provider.
+
+Named-file staging records hashes of the imported shared-package sources and
+module files. Prepared plans include those dependencies before their existing
+one-shot execution checks. No real transfer was performed for this extraction.
+
+Run `scripts/test-owned-browser-core.ps1` for the shared primitives, synthetic
+Engine/Store compatibility and actual accountless Node/Go pipe diagnostics.
+The runner compiles both owner-only and retained-capture staging modes; it never
+executes their browser/profile entry points. Main-dispatch and Coordinator
+regressions remain in `scripts/test-x-manual-runtime-integration.ps1`.
 
 The remaining increment packages the accepted manual X lane into a development
 provider. It does not create a new account verifier, controller, Store permission
@@ -28,16 +67,16 @@ flowchart TD
 
 | Responsibility | Existing implementation to reuse | Provider integration delta |
 | --- | --- | --- |
-| Process tree and private RPC | `internal/engine/chrome_fixture_windows.go`, `process_fixture_windows.go` | Extract reusable Job/handshake/transport and physical-directory identity primitives; keep fixture grants, fault hooks and loopback scenarios outside the dev provider. |
-| Native Windows ownership | `internal/engine/development_x_manual_pilot_owner_windows.go` | Replace concrete fixture bridge/root assumptions with the extracted owned transport and a trusted profile-lease port. Preserve image, creation, parent, Job, directory and complete-window checks. |
+| Process tree and private RPC | `internal/ownedprocess`, `internal/ownedrpc`, with existing fixture wrappers | Shared primitives are extracted. Supply the application launcher/handshake and profile-lease composition; keep fixture grants, fault hooks and loopback scenarios outside the dev provider. |
+| Native Windows ownership | `internal/engine/development_x_manual_pilot_owner_windows.go` | The adapter now accepts the private transport/scope port. Implement that port from the application owner, preserving image, creation, parent, Job, directory and complete-window checks. |
 | Enrollment and two-cookie derivation | Retained setup recipe and `scripts/auth-session-fixture/x-native-metadata-probe-driver.mjs` | Move the minimum reviewed owner operations behind a packaged private driver. Preserve startup-document binding, exact two-cookie manifest and one-use consent. Do not expose the full QA command set. |
 | Startup authority | `development_native_pilot_broker.go`, `development_x_manual_pilot_owner.go`, `development_native_pilot_adapter.go` | Construct existing typed ports from the owned provider. Keep source provenance private and fixed by code. |
 | Concurrent borrowing/capture | `development_native_pilot_runtime.go`, `internal/collection/manual_concurrent_session.go` | Bind the two Managers and the exact admitted collector backend; reuse reader borrow rather than exclusive replacement. |
 | Claims/results and pacing | `development_native_pilot_store.go`, `development_native_pilot_x_capture.go` | Route manually initiated X work through the existing Engine entry. Keep permit, pacing, challenge and transactional occupancy checks. |
 | App composition | `cmd/akusidecar/main.go` | Validate selection before ordinary state access, then attach the provider after Engine construction and before collection starts. The synthetic early-exit dispatcher remains a fixture. |
 
-Extraction must not merely broaden `auth_session_fixture` build constraints:
-the fixture bridge currently validates a loopback origin and a QA-specific root,
+The remaining construction must not merely broaden `auth_session_fixture`
+build constraints: the fixture bridge still validates a loopback origin and a QA-specific root,
 while its caller supplies test grants, fault hooks and retained-QA lease objects.
 Those are construction policies, not an ordinary development owner factory.
 Keep compatibility wrappers for existing fixtures so successful regression

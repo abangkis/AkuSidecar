@@ -18,8 +18,8 @@ import (
 )
 
 // Provenance belongs to a compiled trusted backend. No command or JSON field
-// selects native provenance. The native factory lives in the Windows QA file;
-// offline tests use a separate backend that always reports offline provenance.
+// selects native provenance. The Windows adapter accepts trusted ownership ports;
+// no application factory is registered. Offline backends keep offline provenance.
 type xManualPilotOwnerBackend interface {
 	provenance() nativePilotProvenance
 	now() time.Time

@@ -1,4 +1,4 @@
-//go:build windows && auth_session_dev && auth_session_fixture
+//go:build windows && auth_session_dev
 
 package engine
 
@@ -14,17 +14,30 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/abangkis/AkuSidecar/internal/ownedprocess"
+
 	"golang.org/x/sys/windows"
 )
 
-// Supplied only by the already-owned private QA setup. This does not launch a
-// process, acquire a retained lease, open a profile or transfer credentials.
+// A trusted application composition supplies an already-owned private transport.
+// The scope port validates the held profile lease; it cannot be selected by JSON.
+// This adapter launches no process, acquires no profile and transfers no session.
+type xManualPilotWindowsTransport interface {
+	isClosed() bool
+	nativeManualNodePID() uint32
+	nativeManualPaths() (string, string)
+	nativeManualScope(string, string) bool
+	nativeManualJob(func(windows.Handle) error) error
+	rpcRoundTripObserved(context.Context, string, map[string]any, any, func([]byte)) error
+	terminateOwnedTree()
+}
+
 // Each role has independent Chrome/profile pins; Node and Job may be shared.
 type xManualPilotWindowsRole struct {
 	role                             string
-	bridge                           *chromeFixtureBridge
+	bridge                           xManualPilotWindowsTransport
 	protocolOwner                    int
-	node, chrome, parent             processFixtureIdentity
+	node, chrome, parent             ownedprocess.Identity
 	chromeHandle                     windows.Handle
 	root, rootID, profile, profileID string
 	rootPin, profilePin              windows.Handle
@@ -43,8 +56,8 @@ func (*xManualPilotWindowsBackend) provenance() nativePilotProvenance {
 }
 func (*xManualPilotWindowsBackend) now() time.Time { return time.Now() }
 
-func xManualPilotWindowsImage(identity processFixtureIdentity, path string) error {
-	actual, err := processFixtureProcessIdentity(identity.PID)
+func xManualPilotWindowsImage(identity ownedprocess.Identity, path string) error {
+	actual, err := ownedprocess.ProcessIdentity(identity.PID)
 	if err != nil || actual != identity {
 		return errors.New("x-owner-process-changed")
 	}
@@ -60,7 +73,7 @@ func xManualPilotWindowsImage(identity processFixtureIdentity, path string) erro
 	}
 	resolved, err := filepath.EvalSymlinks(windows.UTF16ToString(buffer[:size]))
 	expected, expectedErr := filepath.EvalSymlinks(path)
-	if err != nil || expectedErr != nil || !samePath(resolved, expected) {
+	if err != nil || expectedErr != nil || !strings.EqualFold(filepath.Clean(resolved), filepath.Clean(expected)) {
 		return errors.New("x-owner-image-changed")
 	}
 	return nil
@@ -88,31 +101,15 @@ func xManualPilotWindowsDirectory(handle windows.Handle, path, id string) error 
 		return errors.New("x-owner-directory-unavailable")
 	}
 	pinned := fmt.Sprintf("%08x:%08x%08x:%08x%08x", info.VolumeSerialNumber, info.FileIndexHigh, info.FileIndexLow, info.CreationTime.HighDateTime, info.CreationTime.LowDateTime)
-	actual, err := processFixtureDirectoryID(path)
+	actual, err := ownedprocess.DirectoryID(path)
 	if err != nil || pinned != id || actual != id {
 		return errors.New("x-owner-directory-changed")
 	}
 	return nil
 }
 func xManualPilotWindowsScope(record xManualPilotWindowsRole) bool {
-	// The bridge's own constructor has already constrained its root to this
-	// checkout's QA parent. The collector may use a sibling owned control root.
-	parent := record.bridge.config.Root
-	for filepath.Base(parent) != "auth-session-sidecar" {
-		next := filepath.Dir(parent)
-		if next == parent {
-			return false
-		}
-		parent = next
-	}
-	if filepath.Base(filepath.Dir(parent)) != "qa" || filepath.Base(filepath.Dir(filepath.Dir(parent))) != "runtime" {
+	if record.bridge == nil || !record.bridge.nativeManualScope(record.root, record.profile) {
 		return false
-	}
-	for _, path := range []string{record.root, record.profile} {
-		rel, err := filepath.Rel(parent, path)
-		if err != nil || rel == "." || filepath.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return false
-		}
 	}
 	rel, err := filepath.Rel(record.root, record.profile)
 	return err == nil && rel != "." && !filepath.IsAbs(rel) && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
@@ -122,19 +119,20 @@ func (b *xManualPilotWindowsBackend) snapshot(ctx context.Context, role string) 
 		return nativePilotOwner{}, ctx.Err()
 	}
 	r, ok := b.roles[role]
-	if !ok || ctx == nil || ctx.Err() != nil || r.bridge == nil || r.bridge.isClosed() || r.role != role || r.protocolOwner <= 0 || r.node.PID != r.bridge.pid || r.parent.PID != uint32(os.Getpid()) || r.chromeHandle == 0 || r.generation == 0 || !xManualPilotWindowsScope(r) {
+	if !ok || ctx == nil || ctx.Err() != nil || r.bridge == nil || r.bridge.isClosed() || r.role != role || r.protocolOwner <= 0 || r.node.PID != r.bridge.nativeManualNodePID() || r.parent.PID != uint32(os.Getpid()) || r.chromeHandle == 0 || r.generation == 0 || !xManualPilotWindowsScope(r) {
 		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "windows_scope")
 	}
-	actualParent, err := processFixtureProcessIdentity(r.parent.PID)
+	actualParent, err := ownedprocess.ProcessIdentity(r.parent.PID)
 	if err != nil || actualParent != r.parent {
 		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "parent_changed")
 	}
-	identity, err := processFixtureIdentityFromHandle(r.chromeHandle)
+	identity, err := ownedprocess.IdentityFromHandle(r.chromeHandle)
 	status, waitErr := windows.WaitForSingleObject(r.chromeHandle, 0)
 	if err != nil || identity != r.chrome || waitErr != nil || status != uint32(windows.WAIT_TIMEOUT) {
 		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "chrome_changed")
 	}
-	if xManualPilotWindowsImage(r.node, r.bridge.config.NodePath) != nil || xManualPilotWindowsImage(r.chrome, r.bridge.config.ChromePath) != nil {
+	nodePath, chromePath := r.bridge.nativeManualPaths()
+	if xManualPilotWindowsImage(r.node, nodePath) != nil || xManualPilotWindowsImage(r.chrome, chromePath) != nil {
 		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "image_changed")
 	}
 	nodeParent, chromeParent, err := xManualPilotParentPair(r.node.PID, r.chrome.PID, xManualPilotWindowsProcessParents)
@@ -144,29 +142,36 @@ func (b *xManualPilotWindowsBackend) snapshot(ctx context.Context, role string) 
 	if chromeParent != r.node.PID {
 		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "chrome_parent")
 	}
-	r.bridge.jobMu.Lock()
-	job := r.bridge.job
-	for _, pid := range []uint32{r.node.PID, r.chrome.PID} {
-		h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
-		if err != nil {
-			r.bridge.jobMu.Unlock()
-			return nativePilotOwner{}, xManualPilotCoreFailure(nil, "job_unavailable")
+	var job windows.Handle
+	checked := false
+	if err := r.bridge.nativeManualJob(func(held windows.Handle) error {
+		checked = true
+		job = held
+		for _, pid := range []uint32{r.node.PID, r.chrome.PID} {
+			h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+			if err != nil {
+				return xManualPilotCoreFailure(nil, "job_unavailable")
+			}
+			member, err := ownedprocess.Membership(h, job)
+			windows.CloseHandle(h)
+			if err != nil || !member {
+				return xManualPilotCoreFailure(nil, "job_changed")
+			}
 		}
-		member, err := chromeFixtureJobMembership(h, job)
-		windows.CloseHandle(h)
-		if err != nil || !member {
-			r.bridge.jobMu.Unlock()
-			return nativePilotOwner{}, xManualPilotCoreFailure(nil, "job_changed")
-		}
+		return nil
+	}); err != nil {
+		return nativePilotOwner{}, err
 	}
-	r.bridge.jobMu.Unlock()
+	if !checked || job == 0 {
+		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "job_unavailable")
+	}
 	if xManualPilotWindowsDirectory(r.rootPin, r.root, r.rootID) != nil || xManualPilotWindowsDirectory(r.profilePin, r.profile, r.profileID) != nil {
 		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "directory_changed")
 	}
-	if role == "collector" && len(processFixtureWindows(r.chrome.PID)) != 0 {
+	if role == "collector" && len(ownedprocess.VisibleWindows(r.chrome.PID)) != 0 {
 		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "collector_not_headless")
 	}
-	return nativePilotOwner{role: role, owner: strconv.FormatUint(uint64(r.chrome.PID), 10), profile: r.profile, directory: r.profileID, image: r.bridge.config.ChromePath, creation: r.chrome.Created, job: strconv.FormatUint(uint64(job), 10), parent: strconv.FormatUint(uint64(r.parent.PID), 10) + "/" + r.parent.Created, pid: int(r.chrome.PID), generation: r.generation}, nil
+	return nativePilotOwner{role: role, owner: strconv.FormatUint(uint64(r.chrome.PID), 10), profile: r.profile, directory: r.profileID, image: chromePath, creation: r.chrome.Created, job: strconv.FormatUint(uint64(job), 10), parent: strconv.FormatUint(uint64(r.parent.PID), 10) + "/" + r.parent.Created, pid: int(r.chrome.PID), generation: r.generation}, nil
 }
 func (b *xManualPilotWindowsBackend) rpc(ctx context.Context, role, op string, fields map[string]any, out any) error {
 	r, ok := b.roles[role]
@@ -230,8 +235,8 @@ func (b *xManualPilotWindowsBackend) cleanup(ctx context.Context, role, handle s
 	return nil
 }
 
-// Default-off, private QA construction only. Provenance is fixed by this native
-// implementation, not selected from config/JSON. No caller is registered here.
+// Default-off private construction. This code fixes native provenance; no
+// config/JSON flag selects it. No application factory is registered here.
 func newXManualPilotOwnerBroker(parent context.Context, cfg xManualPilotOwnerConfig, reader, collector xManualPilotWindowsRole) (*nativePilotBroker, nativePilotDiagnostic) {
 	b, _, d := newXManualPilotOwnerCaptureBroker(parent, cfg, reader, collector)
 	return b, d

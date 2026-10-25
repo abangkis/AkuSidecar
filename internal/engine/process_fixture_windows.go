@@ -18,24 +18,20 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"time"
-	"unsafe"
 
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
 	"github.com/abangkis/AkuSidecar/internal/collection"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	"github.com/abangkis/AkuSidecar/internal/ownedprocess"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/AkuSidecar/internal/store"
 	"golang.org/x/sys/windows"
 )
 
-type processFixtureIdentity struct {
-	PID     uint32
-	Created string
-}
+type processFixtureIdentity = ownedprocess.Identity
 type processFixtureLineage struct {
 	Root, RootID, Nonce string
 	Parent              processFixtureIdentity
@@ -117,52 +113,17 @@ type processFixtureReceipt struct {
 }
 
 func processFixtureProcessIdentity(pid uint32) (processFixtureIdentity, error) {
-	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
-	if err != nil {
-		return processFixtureIdentity{}, err
-	}
-	defer windows.CloseHandle(h)
-	return processFixtureIdentityFromHandle(h)
+	return ownedprocess.ProcessIdentity(pid)
 }
 
 func processFixtureIdentityFromHandle(h windows.Handle) (processFixtureIdentity, error) {
-	var created, exited, kernel, user windows.Filetime
-	if err := windows.GetProcessTimes(h, &created, &exited, &kernel, &user); err != nil {
-		return processFixtureIdentity{}, err
-	}
-	pid, err := windows.GetProcessId(h)
-	if err != nil {
-		return processFixtureIdentity{}, err
-	}
-	return processFixtureIdentity{pid, fmt.Sprintf("%08x%08x", created.HighDateTime, created.LowDateTime)}, nil
+	return ownedprocess.IdentityFromHandle(h)
 }
+
 func processFixtureDirectoryID(path string) (string, error) {
-	info, err := os.Lstat(path)
-	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return "", errors.New("fixture directory identity unavailable")
-	}
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil || !samePath(path, resolved) {
-		return "", errors.New("fixture directory resolves elsewhere")
-	}
-	p, err := windows.UTF16PtrFromString(path)
-	if err != nil {
-		return "", err
-	}
-	h, err := windows.CreateFile(p, windows.FILE_READ_ATTRIBUTES, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
-	if err != nil {
-		return "", err
-	}
-	defer windows.CloseHandle(h)
-	var data windows.ByHandleFileInformation
-	if err = windows.GetFileInformationByHandle(h, &data); err != nil {
-		return "", err
-	}
-	if data.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-		return "", errors.New("fixture directory is a reparse point")
-	}
-	return fmt.Sprintf("%08x:%08x%08x:%08x%08x", data.VolumeSerialNumber, data.FileIndexHigh, data.FileIndexLow, data.CreationTime.HighDateTime, data.CreationTime.LowDateTime), nil
+	return ownedprocess.DirectoryID(path)
 }
+
 func processFixtureFileID(path string) (string, error) {
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
@@ -194,31 +155,17 @@ func processFixtureFileID(path string) (string, error) {
 var processFixtureUser = windows.NewLazySystemDLL("user32.dll")
 
 func processFixtureWindowPID(hwnd uintptr) uint32 {
-	var pid uint32
-	processFixtureUser.NewProc("GetWindowThreadProcessId").Call(hwnd, uintptr(unsafe.Pointer(&pid)))
-	return pid
+	return ownedprocess.WindowPID(hwnd)
 }
+
 func processFixtureWindows(pid uint32) []uintptr {
-	var result []uintptr
-	callback := syscall.NewCallback(func(hwnd, _ uintptr) uintptr {
-		visible, _, _ := processFixtureUser.NewProc("IsWindowVisible").Call(hwnd)
-		if visible != 0 && processFixtureWindowPID(hwnd) == pid {
-			result = append(result, hwnd)
-		}
-		return 1
-	})
-	processFixtureUser.NewProc("EnumWindows").Call(callback, 0)
-	return result
+	return ownedprocess.VisibleWindows(pid)
 }
+
 func processFixtureWindowsGone(handles []uintptr) bool {
-	for _, hwnd := range handles {
-		present, _, _ := processFixtureUser.NewProc("IsWindow").Call(hwnd)
-		if present != 0 {
-			return false
-		}
-	}
-	return true
+	return ownedprocess.WindowsGone(handles)
 }
+
 func validateProcessFixtureLineage(root string, g *processFixtureGrant) error {
 	parent, err := processFixtureProcessIdentity(uint32(os.Getppid()))
 	if err != nil {

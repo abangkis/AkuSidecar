@@ -15,20 +15,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
-	"unsafe"
+
+	"github.com/abangkis/AkuSidecar/internal/ownedprocess"
+	"github.com/abangkis/AkuSidecar/internal/ownedrpc"
 
 	"golang.org/x/sys/windows"
-)
-
-const (
-	chromeFixtureJobInfoBasicProcessIDList = 3
-	chromeFixtureMaxJobProcesses           = 4096
 )
 
 // Private QA reuse scope; it grants no Store or account-verifier authority.
@@ -59,13 +55,10 @@ type chromeFixtureBridge struct {
 	pid    uint32
 
 	rpcMu         sync.Mutex
-	writeMu       sync.Mutex
 	jobMu         sync.Mutex
 	termMu        sync.Mutex
 	mu            sync.Mutex
-	nextID        int64
-	pending       map[int64]chan chromeFixtureReply
-	progress      map[int64]func([]byte)
+	pipe          *ownedrpc.Client
 	owners        map[int]*chromeFixtureProcess
 	exitsEarly    map[int]struct{}
 	closed        chan struct{}
@@ -76,13 +69,6 @@ type chromeFixtureBridge struct {
 	verifiedEmpty bool
 	launchCount   atomic.Int64
 	releaseProofs atomic.Int64
-}
-
-type chromeFixtureReply struct {
-	result     json.RawMessage
-	code       string
-	diagnostic json.RawMessage
-	err        error
 }
 
 // The bridge carries bounded opaque diagnostic metadata, independently of the
@@ -169,7 +155,7 @@ func startChromeFixtureBridge(ctx context.Context, config chromeFixtureConfig) (
 		return nil, errors.New("fixture bridge did not start")
 	}
 	b := &chromeFixtureBridge{config: config, job: job, cmd: cmd, stdin: stdin, pid: uint32(cmd.Process.Pid),
-		pending: map[int64]chan chromeFixtureReply{}, owners: map[int]*chromeFixtureProcess{},
+		pipe: ownedrpc.New(stdin), owners: map[int]*chromeFixtureProcess{},
 		exitsEarly: map[int]struct{}{}, closed: make(chan struct{}), nodeWaited: make(chan struct{})}
 	ready := make(chan error, 1)
 	go b.readOutput(stdout, ready)
@@ -345,39 +331,15 @@ func samePath(a, b string) bool {
 }
 
 func newChromeFixtureJob() (windows.Handle, error) {
-	job, err := windows.CreateJobObject(nil, nil)
-	if err != nil {
-		return 0, fmt.Errorf("create Chrome fixture Job Object: %w", err)
-	}
-	info := windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION{}
-	info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-	if _, err = windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation,
-		uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info))); err != nil {
-		_ = windows.CloseHandle(job)
-		return 0, errors.New("configure Chrome fixture Job Object failed")
-	}
-	return job, nil
+	return ownedprocess.NewJob()
 }
 
 func assignChromeFixtureProcess(job windows.Handle, pid uint32) error {
-	process, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, pid)
-	if err != nil {
-		return err
-	}
-	defer windows.CloseHandle(process)
-	return windows.AssignProcessToJobObject(job, process)
+	return ownedprocess.Assign(job, pid)
 }
 
 func chromeFixtureJobMembership(process, job windows.Handle) (bool, error) {
-	if process == 0 || job == 0 {
-		return false, errors.New("fixture Job membership handles unavailable")
-	}
-	var inJob int32
-	result, _, _ := windows.NewLazySystemDLL("kernel32.dll").NewProc("IsProcessInJob").Call(uintptr(process), uintptr(job), uintptr(unsafe.Pointer(&inJob)))
-	if result == 0 {
-		return false, errors.New("fixture Job membership query unavailable")
-	}
-	return inJob != 0, nil
+	return ownedprocess.Membership(process, job)
 }
 
 func (b *chromeFixtureBridge) readOutput(stdout io.Reader, ready chan<- error) {
@@ -431,34 +393,16 @@ func (b *chromeFixtureBridge) readOutput(stdout io.Reader, ready chan<- error) {
 			continue
 		}
 		if message.Event == "manual_startup_progress" {
-			b.mu.Lock()
-			observe := b.progress[message.ID]
-			if b.pending[message.ID] == nil {
-				observe = nil
-			}
-			b.mu.Unlock()
-			if observe != nil && len(message.Result) <= 512 {
-				observe(message.Result)
-			}
+			b.pipe.Progress(message.ID, message.Result)
 			continue
 		}
 		if message.ID == 0 {
 			continue
 		}
-		b.mu.Lock()
-		response := b.pending[message.ID]
-		delete(b.pending, message.ID)
-		b.mu.Unlock()
-		if response != nil {
-			if message.OK {
-				response <- chromeFixtureReply{result: message.Result}
-			} else {
-				var diagnostic json.RawMessage
-				if len(message.Diagnostic) <= 512 {
-					diagnostic = message.Diagnostic
-				}
-				response <- chromeFixtureReply{code: safeFixtureCode(message.Code), diagnostic: diagnostic}
-			}
+		if message.OK {
+			b.pipe.Deliver(message.ID, ownedrpc.Reply{Result: message.Result})
+		} else {
+			b.pipe.Deliver(message.ID, ownedrpc.Reply{Code: safeFixtureCode(message.Code), Diagnostic: message.Diagnostic})
 		}
 	}
 	rootErr := scanner.Err()
@@ -470,11 +414,8 @@ func (b *chromeFixtureBridge) readOutput(stdout io.Reader, ready chan<- error) {
 	if !readySent {
 		ready <- rootErr
 	}
-	for id, response := range b.pending {
-		delete(b.pending, id)
-		response <- chromeFixtureReply{err: errors.New("fixture bridge exited")}
-	}
 	b.mu.Unlock()
+	b.pipe.Close()
 	b.closeOnce.Do(func() { close(b.closed) })
 	_ = b.cmd.Wait()
 	close(b.nodeWaited)
@@ -563,63 +504,35 @@ func (b *chromeFixtureBridge) rpcRoundTrip(ctx context.Context, op string, field
 	return b.rpcRoundTripObserved(ctx, op, fields, out, nil)
 }
 func (b *chromeFixtureBridge) rpcRoundTripObserved(ctx context.Context, op string, fields map[string]any, out any, observe func([]byte)) error {
-	if b.isClosed() {
+	if b.isClosed() || b.pipe == nil {
 		return errors.New("fixture bridge is closed")
 	}
-	id := atomic.AddInt64(&b.nextID, 1)
-	message := map[string]any{"id": id, "op": op}
-	for key, value := range fields {
-		message[key] = value
-	}
-	encoded, err := json.Marshal(message)
+	result, err := b.pipe.Call(ctx, op, fields, observe)
 	if err != nil {
-		return errors.New("fixture bridge request invalid")
-	}
-	response := make(chan chromeFixtureReply, 1)
-	b.mu.Lock()
-	b.pending[id] = response
-	if observe != nil {
-		if b.progress == nil {
-			b.progress = make(map[int64]func([]byte))
+		switch {
+		case errors.Is(err, ownedrpc.ErrRequest):
+			return errors.New("fixture bridge request invalid")
+		case errors.Is(err, ownedrpc.ErrWrite):
+			return errors.New("fixture bridge request failed")
+		case errors.Is(err, ownedrpc.ErrClosed):
+			return errors.New("fixture bridge exited")
+		default:
+			return err
 		}
-		b.progress[id] = observe
 	}
-	b.mu.Unlock()
-	defer func() { b.mu.Lock(); delete(b.progress, id); b.mu.Unlock() }()
-	b.writeMu.Lock()
-	_, err = b.stdin.Write(append(encoded, '\n'))
-	b.writeMu.Unlock()
-	if err != nil {
-		b.mu.Lock()
-		delete(b.pending, id)
-		b.mu.Unlock()
-		return errors.New("fixture bridge request failed")
+	if result.Code != "" {
+		return chromeFixtureFailure(result.Code, result.Diagnostic)
 	}
-	select {
-	case result := <-response:
-		if result.err != nil {
-			return result.err
-		}
-		if result.code != "" {
-			return chromeFixtureFailure(result.code, result.diagnostic)
-		}
-		if out != nil && len(result.result) > 0 {
-			if err = json.Unmarshal(result.result, out); err != nil {
-				return errors.New("fixture bridge response invalid")
-			}
-		}
-		return nil
-	case <-ctx.Done():
-		b.mu.Lock()
-		delete(b.pending, id)
-		b.mu.Unlock()
-		return ctx.Err()
-	case <-b.closed:
-		return errors.New("fixture bridge exited")
+	if out != nil && len(result.Result) > 0 && json.Unmarshal(result.Result, out) != nil {
+		return errors.New("fixture bridge response invalid")
 	}
+	return nil
 }
 
 func (b *chromeFixtureBridge) isClosed() bool {
+	if b == nil {
+		return true
+	}
 	select {
 	case <-b.closed:
 		return true
@@ -966,32 +879,7 @@ func (p *chromeFixtureProcess) verifyNaturalExit() {
 func (b *chromeFixtureBridge) jobPIDs() ([]uint32, error) {
 	b.jobMu.Lock()
 	defer b.jobMu.Unlock()
-	if b.job == 0 {
-		return nil, errors.New("fixture Job Object is unavailable")
-	}
-	const pidOffset = 8
-	size := pidOffset + chromeFixtureMaxJobProcesses*int(unsafe.Sizeof(uintptr(0)))
-	buffer := make([]byte, size)
-	var returned uint32
-	if err := windows.QueryInformationJobObject(b.job, chromeFixtureJobInfoBasicProcessIDList,
-		uintptr(unsafe.Pointer(&buffer[0])), uint32(len(buffer)), &returned); err != nil {
-		return nil, err
-	}
-	assigned := *(*uint32)(unsafe.Pointer(&buffer[0]))
-	listed := *(*uint32)(unsafe.Pointer(&buffer[4]))
-	if listed > chromeFixtureMaxJobProcesses || listed != assigned || returned < uint32(pidOffset+int(listed)*int(unsafe.Sizeof(uintptr(0)))) {
-		return nil, errors.New("fixture Job Object membership is invalid")
-	}
-	pointers := unsafe.Slice((*uintptr)(unsafe.Pointer(&buffer[pidOffset])), int(listed))
-	pids := make([]uint32, 0, len(pointers))
-	for _, pid := range pointers {
-		if pid == 0 || pid > uintptr(^uint32(0)) {
-			return nil, errors.New("fixture Job Object returned an invalid process")
-		}
-		pids = append(pids, uint32(pid))
-	}
-	sort.Slice(pids, func(i, j int) bool { return pids[i] < pids[j] })
-	return pids, nil
+	return ownedprocess.JobPIDs(b.job)
 }
 
 func (b *chromeFixtureBridge) assertBridgeOnly(ctx context.Context) error {
@@ -1107,4 +995,34 @@ func (b *chromeFixtureBridge) stopBeforeChrome() {
 		b.job = 0
 	}
 	b.jobMu.Unlock()
+}
+
+func (b *chromeFixtureBridge) nativeManualNodePID() uint32 { return b.pid }
+func (b *chromeFixtureBridge) nativeManualPaths() (string, string) {
+	return b.config.NodePath, b.config.ChromePath
+}
+func (b *chromeFixtureBridge) nativeManualJob(check func(windows.Handle) error) error {
+	b.jobMu.Lock()
+	defer b.jobMu.Unlock()
+	return check(b.job)
+}
+func (b *chromeFixtureBridge) nativeManualScope(root, profile string) bool {
+	parent := b.config.Root
+	for filepath.Base(parent) != "auth-session-sidecar" {
+		next := filepath.Dir(parent)
+		if next == parent {
+			return false
+		}
+		parent = next
+	}
+	if filepath.Base(filepath.Dir(parent)) != "qa" || filepath.Base(filepath.Dir(filepath.Dir(parent))) != "runtime" {
+		return false
+	}
+	for _, path := range []string{root, profile} {
+		rel, err := filepath.Rel(parent, path)
+		if err != nil || rel == "." || filepath.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return false
+		}
+	}
+	return true
 }

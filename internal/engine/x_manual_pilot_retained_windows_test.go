@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/abangkis/AkuSidecar/internal/ownedrpc"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -504,7 +505,7 @@ for await(const line of createInterface({input:process.stdin})){const q=JSON.par
 	if cmd.Start() != nil {
 		t.Fatal("offline diagnostic Node unavailable")
 	}
-	b := &chromeFixtureBridge{cmd: cmd, stdin: stdin, pending: map[int64]chan chromeFixtureReply{}, owners: map[int]*chromeFixtureProcess{}, closed: make(chan struct{}), nodeWaited: make(chan struct{})}
+	b := &chromeFixtureBridge{cmd: cmd, stdin: stdin, pipe: ownedrpc.New(stdin), owners: map[int]*chromeFixtureProcess{}, closed: make(chan struct{}), nodeWaited: make(chan struct{})}
 	ready := make(chan error, 1)
 	go b.readOutput(stdout, ready)
 	t.Cleanup(func() {
@@ -588,7 +589,7 @@ for await(const line of createInterface({input:process.stdin})){
 	if cmd.Start() != nil {
 		t.Fatal("offline Node unavailable")
 	}
-	b := &chromeFixtureBridge{cmd: cmd, stdin: stdin, pending: map[int64]chan chromeFixtureReply{}, owners: map[int]*chromeFixtureProcess{}, closed: make(chan struct{}), nodeWaited: make(chan struct{})}
+	b := &chromeFixtureBridge{cmd: cmd, stdin: stdin, pipe: ownedrpc.New(stdin), owners: map[int]*chromeFixtureProcess{}, closed: make(chan struct{}), nodeWaited: make(chan struct{})}
 	ready := make(chan error, 1)
 	go b.readOutput(stdout, ready)
 	t.Cleanup(func() {
@@ -626,10 +627,7 @@ for await(const line of createInterface({input:process.stdin})){
 	if detail.trace == nil || detail.trace.firstCause != "settings_capture" || !strings.Contains(snapshot.String(), "reader_settings_wait=network_failed") {
 		t.Fatal("settings terminal cause or closed prerequisite lost across Node transport")
 	}
-	b.mu.Lock()
-	pending, observers := len(b.pending), len(b.progress)
-	b.mu.Unlock()
-	if pending != 0 || observers != 0 {
+	if b.pipe.Pending() != 0 {
 		t.Fatal("expired RPC kept observers")
 	}
 }
@@ -669,7 +667,7 @@ return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!c
 			if cmd.Start() != nil {
 				t.Fatal("offline startup Node unavailable")
 			}
-			bridge := &chromeFixtureBridge{cmd: cmd, stdin: stdin, pending: map[int64]chan chromeFixtureReply{}, owners: map[int]*chromeFixtureProcess{}, closed: make(chan struct{}), nodeWaited: make(chan struct{})}
+			bridge := &chromeFixtureBridge{cmd: cmd, stdin: stdin, pipe: ownedrpc.New(stdin), owners: map[int]*chromeFixtureProcess{}, closed: make(chan struct{}), nodeWaited: make(chan struct{})}
 			ready := make(chan error, 1)
 			go bridge.readOutput(stdout, ready)
 			t.Cleanup(func() {
