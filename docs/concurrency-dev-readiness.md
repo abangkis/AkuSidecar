@@ -796,6 +796,10 @@ remaining work is provider integration and isolated activation validation:
    development provider, with explicit opt-in, status, stop and source-route
    arbitration. The current native Windows owner remains dual-tag/fixture scoped;
    a boolean alone cannot activate it safely.
+   The [provider implementation plan](x-concurrency-dev-provider-design.md)
+   maps the existing code, extraction boundary, application construction order,
+   source occupancy and stop/rollback responsibilities. It is a plan, not an
+   available runtime selector or an additional account-proof prerequisite.
 2. Verify that provider against an isolated dev instance before separately
    approving main-dev runtime activation. Keep Auto Update enabled and preserve
    the existing main login. Rollback closes pilot admission/owners and returns
