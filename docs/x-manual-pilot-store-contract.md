@@ -231,8 +231,12 @@ and public QA authority flags cannot be selected by a capture request.
 
 The startup transport retains its original fixed-expression restrictions. A
 separate private worker capability permits the operations needed for capture and
-installs header/cookie observation before navigation. Authentication-cookie writes
-or ambiguous header coverage reject capture. This capability cannot publish an
+installs header/cookie observation before navigation. Authentication-cookie
+attempts, malformed/ambiguous header inspection and lifecycle loss reject
+capture. Ordinary request-correlation metadata is separately diagnostic and
+cannot revoke the owner or suppress header inspection. See the
+[capture traffic separation](concurrency-dev-readiness.md#capture-traffic-domains-2026-10-25).
+This capability cannot publish an
 account identity receipt. Native cookie/target behavior still requires separately
 authorized QA; offline success is not native account/session qualification.
 
@@ -247,6 +251,10 @@ Observation JSON is limited to 512 KiB; the complete escaped response envelope i
 limited to 768 KiB. The Go adapter validates schema, correlation, exact pins,
 distinct capture target, observation digest and X observation before allowing the
 existing Store result transaction. Failure does not trigger another capture.
+The optional bounded `traffic` field describes ordinary network accounting only;
+partial, absent or semantically invalid telemetry cannot change those checks.
+It never supplies identity, result authority or evidence of complete session
+coverage, and it is not inserted into the observation or Store data model.
 
 Use `scripts/test-x-manual-native-capture.ps1` for the accountless Node/Go tests.
 The synthetic transport executes the actual parser/worker in a VM-backed DOM/CDP
@@ -261,8 +269,9 @@ constructor, prepare/acquire transitions and `bindXNativePilotRuntime`; it then
 executes the production parser over synthetic CDP/DOM through Node stdio. Valid
 evidence commits and completes deterministic reasoning. Wrong owner, target,
 source, digest and expiry reject the result and never recapture on replay.
-Known missing HTTP/ExtraInfo coverage is rejected; non-HTTP WebSocket events do
-not become HTTP response obligations. Live cross-target/service-worker coverage
+That historical checkpoint rejected missing generic HTTP/ExtraInfo correlation;
+the capture traffic separation above supersedes this ordinary-traffic gate.
+Non-HTTP WebSocket events do not become HTTP response obligations. Live cross-target/service-worker coverage
 remains unqualified.
 
 Post-change regression runs `e0ecaf81c6a74df2bf971188fb97225a` and

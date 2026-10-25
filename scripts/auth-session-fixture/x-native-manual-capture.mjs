@@ -3,6 +3,7 @@ import {captureIsolated,validateCapture} from '../../internal/collection/headles
 import {sourceAssets} from '../../internal/collection/headless/worker/worker.mjs';
 import {HeaderSafetyGuard} from './x-manual-header-safety.mjs';
 import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
+import {CaptureTrafficDiagnostics} from './x-capture-traffic-diagnostics.mjs';
 
 const fail=()=>new Error('xnp_manual_capture_rejected');
 export const CAPTURE_STAGES=Object.freeze(['unknown','admission','behavior','coordinator','owner_before','payload','transport','assets','target_create','target_attach','observer','navigation','evaluation','worker','coverage','serialization','wire','observation','owner_after','cleanup']);
@@ -65,12 +66,12 @@ export function validateManualCaptureRequest(request,now=Date.now()) {
 
 // A private capability on the existing owned collector pipe. No launcher, cookie
 // operation, startup navigation, or raw RPC URL/script reaches this boundary.
-export async function captureNativeXTarget({request,bridgePath,command,subscribe,browserContextId,proofSession,signal,onUnsafe=()=>{}}) {
+export async function captureNativeXTarget({request,bridgePath,command,subscribe,browserContextId,proofSession,signal,onUnsafe=()=>{},onTrafficDiagnostic=()=>{}}) {
   const payload=validateManualCaptureRequest(request);
   if(typeof command!=='function'||typeof subscribe!=='function'||!ref(browserContextId))throw manualCaptureFailure(null,'admission','invalid_request');
   let target,session,unsubscribe,guard,unsafe=false,closed=false,first=null,stage='assets',wire;
   const record=(error,at,reason)=>first??=(manualCaptureFailure(error,at,reason));
-  const requests=new Map();
+  const traffic=new CaptureTrafficDiagnostics();
   const expired=()=>signal?.aborted||Date.now()>=request.deadlineMS||unsafe;
   let closing;
   const close=async()=>{if(target&&!closed){closed=true;closing=command('Target.closeTarget',{targetId:target});}await closing;};
@@ -91,22 +92,20 @@ export async function captureNativeXTarget({request,bridgePath,command,subscribe
     await command('Page.enable',{},session);
     const frame=(await command('Page.getFrameTree',{},session)).frameTree?.frame?.id;
     if(!ref(frame))throw fail();
-    const reject=(reason='scope_lost')=>{record(null,'coverage',reason);unsafe=true;onUnsafe();abort();};
+    const reject=(reason='scope_lost')=>{
+      record(null,'coverage',reason);
+      if(unsafe)return;
+      unsafe=true;
+      try{onUnsafe();}catch{/* Local rejection remains authoritative. */}finally{abort();}
+    };
     guard=new HeaderSafetyGuard(frame,session,{onRejection:()=>reject(['cookie_candidate','cookie_ambiguous'].includes(guard.rejection())?guard.rejection():'header_guard')});guard.claim(frame,session);
     unsubscribe=subscribe(raw=>{
       if(raw.sessionId===session){
+        // Header safety always runs before ordinary accounting, even after its
+        // diagnostic capacity is exhausted. Metadata has no revocation callback.
+        try{guard.observe(raw);}catch{reject('header_guard');}
         if(['Inspector.detached','Inspector.targetCrashed'].includes(raw.method))reject('target_lost');
-        const id=raw.params?.requestId,known=requests.has(id),first=raw.method==='Network.requestWillBeSent'&&!known&&!raw.params?.redirectResponse;
-        if(typeof id==='string'&&(known||raw.method==='Network.requestWillBeSent')){
-          if(requests.size>=1280&&!known){reject('request_budget');return;}
-          if(!known)requests.set(id,{response:false,extra:false,finished:false,extraNeeded:null});
-          const record=requests.get(id);
-          if(raw.method==='Network.responseReceived'){record.response=true;record.extraNeeded=raw.params.hasExtraInfo;if(typeof record.extraNeeded!=='boolean')reject('coverage_shape');}
-          if(raw.method==='Network.responseReceivedExtraInfo')record.extra=true;
-          if(raw.method==='Network.loadingFinished'||raw.method==='Network.loadingFailed')record.finished=true;
-        }
-        if(typeof id==='string'&&!known&&['Network.responseReceived','Network.responseReceivedExtraInfo'].includes(raw.method))reject('coverage_shape');
-        guard.observe(raw,{known,first});
+        try{traffic.observe(raw);}catch{/* Diagnostics never control admission. */}
       }
       if(raw.method==='Target.targetDestroyed'&&raw.params?.targetId===target&&!closed)reject('target_lost');
     });
@@ -149,18 +148,17 @@ export async function captureNativeXTarget({request,bridgePath,command,subscribe
     try{await close();if(target)cleanup='completed';}
     catch(error){cleanup='failed';record(error,'cleanup','close_failed');}
     finally{try{unsubscribe?.();}catch(error){cleanup='failed';record(error,'cleanup','close_failed');}}
-    // A round trip is not evidence that ExtraInfo has arrived. Observed pending
-    // response/header coverage closes the result even after target retirement.
+    // Only safety/inspection or lifecycle failures reject here. Ordinary
+    // response correlation and pending traffic are a bounded partial report.
     if(guard){
       if(unsafe||guard.rejection()!=='unknown')record(null,'coverage','header_guard');
-      for(const r of requests.values()){
-        if(!r.response)record(null,'coverage','coverage_response_pending');
-        else if(!r.finished)record(null,'coverage','coverage_completion_pending');
-        else if(r.extraNeeded===null)record(null,'coverage','coverage_shape');
-        else if(r.extraNeeded&&!r.extra)record(null,'coverage','coverage_extra_pending');
-        else if(r.extra&&!r.extraNeeded)record(null,'coverage','extra_mismatch');
-      }
+      try{guard.finish();}catch(error){record(error,'coverage','header_guard');}
     }
+    let summary;
+    try{summary=traffic.finish();}catch{/* Missing telemetry is not a safety verdict. */}
+    // Diagnostic bytes cannot make an otherwise bounded result too large.
+    if(wire&&summary&&Buffer.byteLength(JSON.stringify({...wire,traffic:summary}))<=768*1024)wire.traffic=summary;
+    try{if(summary&&typeof onTrafficDiagnostic==='function')onTrafficDiagnostic(summary);}catch{/* Diagnostic sinks have no authority. */}
     if(first){const d=manualCaptureDiagnostic(first);captureDetails.set(first,Object.freeze({...d,cleanup}));}
   }
   if(first)throw first;

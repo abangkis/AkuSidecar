@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -138,6 +139,12 @@ func (b *xCaptureSyntheticBackend) rpc(ctx context.Context, role, op string, fie
 			var wire map[string]any
 			_ = json.Unmarshal(raw, &wire)
 			switch b.mode {
+			case "traffic-partial":
+				wire["traffic"] = map[string]any{"schema": "aku.capture-traffic.v1", "coverage": "partial", "conditions": []string{"orphan_extra", "extra_pending"}, "records": 1, "dropped": 0}
+			case "traffic-malformed":
+				wire["traffic"] = map[string]any{"schema": "PRIVATE", "canAuthorize": true, "stage": "PRIVATE_TOKEN"}
+			case "traffic-legacy":
+				delete(wire, "traffic")
 			case "digest":
 				wire["digest"] = "bad"
 			case "target":
@@ -165,11 +172,42 @@ func (b *xCaptureSyntheticBackend) rpc(ctx context.Context, role, op string, fie
 	return json.Unmarshal(raw, out)
 }
 
+func TestNativePilotXCaptureTrafficMetadata(t *testing.T) {
+	for _, fault := range []string{"valid", "private", "missing", "unknown", "counter", "duplicate", "null"} {
+		t.Run(fault, func(t *testing.T) {
+			values := map[string]any{"schema": "aku.capture-traffic.v1", "coverage": "partial", "conditions": []string{"orphan_extra"}, "records": 1, "dropped": 0}
+			switch fault {
+			case "private":
+				values["conditions"] = []string{"PRIVATE_COOKIE_TOKEN"}
+			case "missing":
+				delete(values, "records")
+			case "unknown":
+				values["canAuthorize"] = true
+			case "counter":
+				values["dropped"] = 65536
+			case "null":
+				values["conditions"] = nil
+			}
+			raw, _ := json.Marshal(values)
+			if fault == "duplicate" {
+				raw = append([]byte(`{"records":1,`), raw[1:]...)
+			}
+			d := decodeNativePilotCaptureTraffic(raw)
+			if (d.Schema != "") != (fault == "valid") || strings.Contains(d.String(), "PRIVATE") {
+				t.Fatal("untrusted traffic metadata was promoted or leaked")
+			}
+		})
+	}
+	if got := (nativePilotCaptureTraffic{Schema: "aku.capture-traffic.v1", Coverage: "PRIVATE"}).GoString(); strings.Contains(got, "PRIVATE") {
+		t.Fatal("private metadata escaped formatting")
+	}
+}
+
 func TestNativePilotXCaptureWorkerToStore(t *testing.T) {
 	if os.Getenv("AKU_X_NATIVE_MANUAL_CAPTURE_OFFLINE") != "1" {
 		t.Skip("explicit offline worker helper required")
 	}
-	for _, mode := range []string{"", "digest", "target", "owner", "source", "expiry", "cloudflare", "x_human_verification", "empty", "coverage", "private", "challenge_cleanup"} {
+	for _, mode := range []string{"", "traffic-partial", "traffic-malformed", "traffic-legacy", "digest", "target", "owner", "source", "expiry", "cloudflare", "x_human_verification", "empty", "coverage", "private", "challenge_cleanup"} {
 		t.Run("result-"+mode, func(t *testing.T) {
 			x := newNativeStoreFixture(t, true, func(f *manualRuntimeFixture) {
 				f.now = time.Now().Truncate(time.Second)
@@ -212,7 +250,7 @@ func TestNativePilotXCaptureWorkerToStore(t *testing.T) {
 				}
 			}
 			result := x.e.captureNativePilot(context.Background(), runtime, x.command.ID)
-			if mode != "" {
+			if mode != "" && !strings.HasPrefix(mode, "traffic-") {
 				if result.Outcome == store.Committed {
 					t.Fatal("invalid worker result committed")
 				}
@@ -254,6 +292,10 @@ func TestNativePilotXCaptureWorkerToStore(t *testing.T) {
 			}
 			if result.Outcome != store.Committed || result.PersistenceError != nil || result.DeliveryError != nil {
 				t.Fatalf("worker result %+v", result)
+			}
+			traffic := runtime.backend.(*xNativePilotCapture).trafficDiagnostic()
+			if mode == "traffic-partial" && !strings.Contains(traffic, "coverage=partial") || (mode == "traffic-malformed" || mode == "traffic-legacy") && traffic != "coverage=unavailable" || strings.Contains(traffic, "PRIVATE") {
+				t.Fatal("traffic metadata escaped diagnostics or gated a valid result")
 			}
 			if !x.e.WaitForIdle(3 * time.Second) {
 				t.Fatal("reasoning did not finish")

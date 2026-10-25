@@ -216,6 +216,9 @@ func TestXManualCaptureRetainedQA(t *testing.T) {
 			t.Fatal("capture QA reader open rejected")
 		}
 		result := e.captureNativePilot(ctx, runtime, command.ID)
+		if backend, ok := runtime.backend.(*xNativePilotCapture); ok {
+			t.Log("manual-retained-capture-traffic " + backend.trafficDiagnostic())
+		}
 		if result.Outcome != store.Committed || result.PersistenceError != nil || result.DeliveryError != nil {
 			t.Fatalf("capture QA rejected phase=%s outcome=%s detail=(%s); no retry", result.Phase, result.Outcome, result.CaptureDiagnostic)
 		}

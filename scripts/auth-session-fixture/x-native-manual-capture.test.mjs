@@ -5,9 +5,87 @@ import {captureNativeXTarget,validateManualCaptureRequest,manualCaptureRPCCode,m
 import {executeManualReply} from './x-native-metadata-probe-driver.mjs';
 import {syntheticCaptureTransport,syntheticCapturePort} from './x-native-manual-capture-fixture.mjs';
 import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
+import {CaptureTrafficDiagnostics} from './x-capture-traffic-diagnostics.mjs';
+import {HeaderSafetyGuard} from './x-manual-header-safety.mjs';
 const bridgePath=fileURLToPath(new URL('../../../AkuBridge',import.meta.url));
 const pins={ownerId:'4102',profileId:'synthetic-collector',contextId:'proof-context',targetId:'proof-target',frameId:'proof-frame',documentId:'proof-document'};
 const request=()=>({correlation:'synthetic-capture',pins,deadlineMS:Date.now()+10000,payload:{scrolls:0,maxBlocksPerSnapshot:2}});
+
+for(const mode of ['orphan-response','orphan-extra','missing-flag','invalid-flag','extra-pending','unexpected-extra','response-pending','completion-pending','network-failed','redirect-reuse','capacity'])test(`ordinary ${mode} cannot revoke the capture owner`,async()=>{
+  const transport=syntheticCaptureTransport({pendingExtra:mode==='extra-pending'});let invalidations=0,summary;
+  const subscribe=listener=>transport.subscribe(raw=>{
+    if(raw.method==='Network.requestWillBeSent'){
+      if(mode==='orphan-response')listener({sessionId:raw.sessionId,method:'Network.responseReceived',params:{requestId:'PRIVATE_ORPHAN',hasExtraInfo:false,response:{headers:{}}}});
+      if(mode==='orphan-extra'||mode==='unexpected-extra')listener({sessionId:raw.sessionId,method:'Network.responseReceivedExtraInfo',params:{requestId:mode==='orphan-extra'?'PRIVATE_ORPHAN':raw.params.requestId,headers:{}}});
+      if(mode==='capacity')for(let i=0;i<1300;i++)listener({...raw,params:{...raw.params,requestId:'PRIVATE_'+i}});
+    }
+    if(mode==='response-pending'&&raw.method==='Network.responseReceived'||mode==='completion-pending'&&raw.method==='Network.loadingFinished')return;
+    if(raw.method==='Network.responseReceived'&&['missing-flag','invalid-flag'].includes(mode)){const params={...raw.params};if(mode==='missing-flag')delete params.hasExtraInfo;else params.hasExtraInfo='PRIVATE_VALUE';listener({...raw,params});return;}
+    listener(mode==='network-failed'&&raw.method==='Network.loadingFinished'?{...raw,method:'Network.loadingFailed'}:raw);
+    if(mode==='redirect-reuse'&&raw.method==='Network.requestWillBeSent'){listener({...raw,params:{...raw.params,redirectResponse:{headers:{}}}});listener(raw);}
+  });
+  const result=await captureNativeXTarget({request:request(),bridgePath,command:transport.command.bind(transport),subscribe,browserContextId:'owned',onUnsafe:()=>{invalidations++;},onTrafficDiagnostic:value=>{summary=value;}});
+  assert.equal(invalidations,0);assert.equal(transport.closed,true);assert.equal(summary.coverage,'partial');assert.equal(result.traffic,summary);
+  assert.equal(JSON.stringify(summary).includes('PRIVATE'),false);assert.ok(JSON.parse(result.observationJSON).snapshots[0].blocks.length>0);
+});
+
+for(const kind of ['candidate','ambiguous','malformed','blocked'])test(`strict ${kind} header rejection survives ordinary diagnostic saturation and orphan correlation`,async()=>{
+  const transport=syntheticCaptureTransport();let invalidations=0;
+  const subscribe=listener=>transport.subscribe(raw=>{
+    listener(raw);
+    if(raw.method==='Network.requestWillBeSent'){
+      for(let i=0;i<17000;i++)listener({...raw,params:{...raw.params,requestId:'PRIVATE_'+i}});
+      const params={requestId:'PRIVATE_UNTRACKED',statusCode:200,headers:{}};
+      if(kind==='candidate')params.headers={'set-cookie':'auth_token=synthetic; Path=/'};
+      if(kind==='ambiguous')params.headers={'set-cookie':'auth_token=synthetic, ct0=synthetic'};
+      if(kind==='malformed')params.headers={'set-cookie':17};
+      if(kind==='blocked')params.blockedCookies=[{cookieLine:'ct0=synthetic; Path=/',blockedReasons:[]}];
+      listener({sessionId:raw.sessionId,method:'Network.responseReceivedExtraInfo',params});
+    }
+  });
+  await assert.rejects(captureNativeXTarget({request:request(),bridgePath,command:transport.command.bind(transport),subscribe,browserContextId:'owned',onUnsafe:()=>{invalidations++;}}),error=>{
+    const d=manualCaptureDiagnostic(error);assert.equal(d.stage,'coverage');assert.ok(['cookie_candidate','cookie_ambiguous','header_guard'].includes(d.reason));if(['candidate','blocked'].includes(kind))assert.equal(d.reason,'cookie_candidate');assert.equal(d.cleanup,'completed');return true;
+  });
+  assert.ok(invalidations>0);assert.equal(transport.closed,true);
+});
+
+test('diagnostic observer, finalizer and sink failures cannot turn into capture rejection',async()=>{
+  for(const method of ['observe','finish']){
+    const original=CaptureTrafficDiagnostics.prototype[method];
+    CaptureTrafficDiagnostics.prototype[method]=()=>{throw Error('PRIVATE_DIAGNOSTIC');};
+    try{
+      const transport=syntheticCaptureTransport();let invalidations=0;
+      await captureNativeXTarget({request:request(),bridgePath,command:transport.command.bind(transport),subscribe:transport.subscribe.bind(transport),browserContextId:'owned',onUnsafe:()=>{invalidations++;},onTrafficDiagnostic:()=>{throw Error('PRIVATE_SINK');}});
+      assert.equal(invalidations,0);
+    }finally{CaptureTrafficDiagnostics.prototype[method]=original;}
+  }
+});
+
+test('lifecycle loss, failed header inspection and unsafe-sink errors remain strict',async()=>{
+  for(const [mode,reason]of [['detached','target_lost'],['inspection','header_guard'],['unsafe-sink','cookie_candidate']]){
+    const original=HeaderSafetyGuard.prototype.observe,transport=syntheticCaptureTransport({cookie:mode==='unsafe-sink'});
+    if(mode==='inspection')HeaderSafetyGuard.prototype.observe=()=>{throw Error('PRIVATE_INSPECTION');};
+    try{
+      const subscribe=listener=>transport.subscribe(raw=>{listener(raw);if(mode==='detached'&&raw.method==='Network.requestWillBeSent')listener({sessionId:raw.sessionId,method:'Inspector.detached',params:{}});});
+      await assert.rejects(captureNativeXTarget({request:request(),bridgePath,command:transport.command.bind(transport),subscribe,browserContextId:'owned',onUnsafe:()=>{if(mode==='unsafe-sink')throw Error('PRIVATE_SINK');}}),error=>{
+        assert.deepEqual(manualCaptureDiagnostic(error),{stage:'coverage',reason,cleanup:'completed'});return true;
+      });
+      assert.equal(transport.closed,true);
+    }finally{HeaderSafetyGuard.prototype.observe=original;}
+  }
+});
+
+test('ordinary partial traffic survives the actual owner port and leaves inspection usable',async()=>{
+  const transport=syntheticCaptureTransport(),subscribe=transport.subscribe.bind(transport);
+  transport.subscribe=listener=>subscribe(raw=>{
+    if(raw.method==='Network.requestWillBeSent')listener({sessionId:raw.sessionId,method:'Network.responseReceivedExtraInfo',params:{requestId:'PRIVATE_ORPHAN',headers:{}}});
+    listener(raw);
+  });
+  const port=await syntheticCapturePort(pins,transport,bridgePath);
+  const result=await port.execute({id:30,op:'manual_capture',owner:1,role:'collector',handle:'collector-handle',request:request()});
+  assert.equal(result.traffic.coverage,'partial');assert.ok(result.traffic.conditions.includes('orphan_extra'));
+  const inspected=await port.execute({id:31,op:'manual_inspect',owner:1,role:'collector'});assert.equal(inspected.invalid,false);
+});
 
 test('capture authorization remains capped at one minute',()=>{
   assert.equal(MANUAL_CAPTURE_COMMAND_TIMEOUT_MS,MANUAL_TIMING.captureCommandMS);
@@ -47,7 +125,7 @@ test('owner inspection remains responsive during separate capture lane',async()=
 test('wrong scope, arbitrary scripts, expired deadline, parser failure, and cookie write fail closed',async()=>{
   for(const payload of [{script:'danger'},{pageUrl:'http://127.0.0.1/'},{source:'facebook'}])assert.throws(()=>validateManualCaptureRequest({...request(),payload}));
   assert.throws(()=>validateManualCaptureRequest({...request(),deadlineMS:Date.now()-1}));
-  for(const mode of [{parserThrow:true},{cookie:true},{pendingExtra:true},{lateCookie:true}]){
+  for(const mode of [{parserThrow:true},{cookie:true},{lateCookie:true}]){
     const transport=syntheticCaptureTransport(mode);
     await assert.rejects(captureNativeXTarget({request:request(),bridgePath,command:transport.command.bind(transport),subscribe:transport.subscribe.bind(transport),browserContextId:'owned'}));assert.equal(transport.closed,true);
   }
@@ -63,7 +141,6 @@ test('safe capture diagnostics distinguish setup, navigation, coverage and clean
   for(const [mode,wantStage,wantReason,wantCleanup] of [
     ['create','target_create','unavailable','unknown'],
     ['navigation','navigation','unavailable','completed'],
-    ['extra','coverage','coverage_extra_pending','completed'],
     ['late-cookie','coverage','cookie_candidate','completed'],
     ['cleanup','cleanup','close_failed','failed'],
     ['navigation-cleanup','navigation','unavailable','failed'],

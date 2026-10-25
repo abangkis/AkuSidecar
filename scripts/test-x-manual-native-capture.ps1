@@ -28,7 +28,7 @@ try {
     $env:AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED='0'; $env:AKU_X_NATIVE_MANUAL_OWNER_OFFLINE='0'
     $env:AKU_NATIVE_MANUAL_CHROME_FIXTURE='0'; $env:AKU_MANUAL_CHROME_STORE_ENABLED='0'; $env:AKU_X_NATIVE_MANUAL_CAPTURE_ALLOWED='0'
     Write-Output ('Offline native X capture -> Engine -> Store run: ' + $runId) | Tee-Object -FilePath $log
-    & $node --test --test-timeout=15000 scripts/auth-session-fixture/x-native-manual-capture.test.mjs scripts/auth-session-fixture/x-native-manual-owner-port.test.mjs 2>&1 | Tee-Object -FilePath $log -Append
+    & $node --test --test-timeout=15000 scripts/auth-session-fixture/x-capture-traffic-diagnostics.test.mjs scripts/auth-session-fixture/x-native-manual-capture.test.mjs scripts/auth-session-fixture/x-native-manual-owner-port.test.mjs 2>&1 | Tee-Object -FilePath $log -Append
     if ($LASTEXITCODE -ne 0) { throw 'Native capture Node offline regressions failed.' }
     & $node --test --test-timeout=15000 scripts/auth-session-fixture/x-native-metadata-probe-driver.test.mjs scripts/auth-session-fixture/x-qa-feasibility-collector.test.mjs internal/collection/headless/worker/test/worker.test.mjs internal/collection/headless/worker/test/x-capture-parity.test.mjs 2>&1 | Tee-Object -FilePath $log -Append
     if ($LASTEXITCODE -ne 0) { throw 'Existing worker/parser and private startup transport regressions failed.' }

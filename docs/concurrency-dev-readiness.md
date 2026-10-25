@@ -17,6 +17,66 @@ roadmap are evidence, not a new list of prerequisites.
 
 ## Current implementation
 
+### Capture traffic domains (2026-10-25)
+
+The native capture target now follows the same separation between observed
+header safety and ordinary request diagnostics as startup. Header inspection
+runs first for every observed event from the exact capture session. Candidate
+`auth_token`/`ct0` writes, blocked attempts, malformed/ambiguous header inspection,
+inspection exceptions and target/session loss still reject and invalidate the
+owned capture lane. They cannot be skipped by diagnostic capacity or hidden by
+an earlier ordinary correlation issue. Actual worker failure, cancellation,
+deadline, owner mismatch and cleanup failure retain the existing one-use
+fail-closed policy; no retry or new session authority is introduced.
+
+`CaptureTrafficDiagnostics` owns only ordinary request/response accounting.
+Unknown/orphan IDs, absent/nonboolean ExtraInfo flags, redirects/reused IDs,
+unfinished responses, missing/unexpected ExtraInfo, ordinary loading failure,
+record/event saturation and diagnostic observer/sink failures no longer call
+`onUnsafe`, reject a post result or revoke the collector. The report is bounded
+to 256 diagnostic records, 16,384 observed events, saturating drop counts and
+closed condition flags. It retains no URL, frame/owner/account ID, header value,
+cookie or body in exported metadata. Saturation cannot stop header inspection.
+
+The private result envelope may include an optional `traffic` report
+(`aku.capture-traffic.v1`). `complete` describes that bounded diagnostic ledger,
+not complete browser/session coverage. `partial` is also non-authoritative.
+Go validates and retains the small report separately after observation, digest,
+scope, owner and deadline checks. Missing or semantically invalid diagnostics
+become `coverage=unavailable` without accepting an invalid post or rejecting an
+otherwise valid one. Wire framing/duplicate-key integrity and global result
+bounds remain strict. Optional metadata is omitted if it would exceed the
+existing result byte limit. The retained QA entry logs this report separately
+from operational capture errors; it is not stored in observation content or
+used to select pause, admission, account proof or Store authority.
+
+Related-path audit:
+
+| Site | Decision |
+| --- | --- |
+| Capture ordinary request cap and final completion checks | Moved to diagnostic-only accounting, including orphan IDs and ExtraInfo mismatches. |
+| Capacity branch before header inspection | Removed; security inspection precedes all ordinary accounting and its early returns. |
+| Diagnostic observer, finalizer, sink or result-byte pressure | Isolated from operational success/failure; absent reports remain unavailable. |
+| Owner-port and Go revocation after actual capture failure | Retained as the selected single-use cancellation/failure policy. Ordinary telemetry now produces no such error. |
+| HeaderSafetyGuard and selected account/root proof | Already separated; kept strict inspection and pinned proof rules. |
+| Shared driver/collector dispatch | No additional concrete ordinary-diagnostic throw was established; transport/lifecycle failure remains strict. |
+| Historical controlled-refresh observer | Its nonce, origin and correlation requirements qualify a different proof; intentionally unchanged. |
+
+Offline validation passed `scripts/test-x-manual-native-capture.ps1`, including
+ordinary traffic variants, diagnostic saturation followed by cookie attempts,
+blocked/malformed headers, lifecycle and inspection failures, immutable challenge
+causes, actual production parser/worker capture and synthetic Engine/Store
+results with partial/invalid/legacy metadata. The staged Windows entry and all
+four tag gates passed. One additional focused test passed through the real
+owner port with an orphan ExtraInfo event and subsequent usable inspection.
+Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-native-capture-f3799d4da9ac4db39f256f822f377037.log.txt`.
+No retained QA, Chrome/profile launch, session transfer, login, user database or
+runtime operation ran. Auto Update and the existing local configuration remain
+unchanged. The exact event behind the historical native `coverage_shape` log
+still cannot be identified retrospectively; these regressions qualify the
+corrected mechanism offline only.
+
 ### Central timing policy and flow trace (2026-10-25)
 
 `internal/engine/x-manual-timing-policy.json` is the single source of timeout
@@ -698,8 +758,8 @@ profile/database/build root only after Job/lease cleanup is verified.
    deferred identity renewal merely to expand this bounded pilot. The latest
    native attempt passed initial admission in 2,201 ms under the 18-second
    startup/six-second sample-age policy, then rejected capture on CDP network
-   `coverage_shape`. Investigate that coverage predicate offline without
-   weakening account or session-cookie guards. Another real transfer needs
+   `coverage_shape`. Ordinary capture traffic accounting is now separated and
+   passes offline validation; it has no native acceptance run yet. Another real transfer needs
    fresh one-shot authorization; preserve the original 60-second attempt cap.
 2. Promote the owned Windows/profile lifecycle from QA-only construction into a
    development provider, with explicit opt-in, status, stop and source-route
