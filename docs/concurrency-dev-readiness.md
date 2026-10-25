@@ -17,6 +17,41 @@ roadmap are evidence, not a new list of prerequisites.
 
 ## Current implementation
 
+### Native X capture accepted (2026-10-25)
+
+One explicitly authorized retained-QA attempt on source `5964a24` passed the
+native capture scenario. Run `7ec6e926a3344597867582923101e948` completed in
+14.37 seconds, without retry. Initial account/login evidence for both owners and
+the final ownership check passed; startup publication took 2,319 ms. The oldest
+identity sample at publication was 2,163 ms old, within the six-second bound.
+
+The production X worker/parser returned nonempty posts through the owned Chrome
+collector, Engine and guarded Store path. Exactly one observation committed to
+a newly created disposable QA database. Reader window inventory stayed at two
+or more, the collector PID remained bound, and replay returned the existing
+commit without recapture. This closes the native capture acceptance gate; do not
+reopen deferred renewal or ordinary-traffic completeness as MVP prerequisites.
+
+The separate ordinary-traffic report was `coverage=partial`, with
+`orphan_extra`, `redirect`, `response_pending` and `completion_pending` across
+173 diagnostic records and zero dropped records. Those conditions no longer
+reject a valid post result. This run does not establish complete cookie-writer
+coverage or exercise a malicious cookie write; the strict negative guards retain
+their offline regression evidence.
+
+Job/lease cleanup was verified and the owned collector/database/build root was
+removed. The dedicated retained QA reader profile was preserved. No main-login,
+user-database, main-dev runtime or Auto Update change occurred; the existing local
+configuration hash and unrelated checkout changes were unchanged. The single
+transfer authorization is consumed and cannot authorize a later execution.
+
+Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-7ec6e926a3344597867582923101e948.run.log.txt`,
+with matching preparation log and provenance JSON. This proves the bounded QA
+composition, not ordinary main-dev provider registration or foreground activation.
+Opening another reader *during* native in-flight capture remains covered by the
+separate synthetic Chrome scenario, rather than claimed from this ordering.
+
 ### Capture traffic domains (2026-10-25)
 
 The native capture target now follows the same separation between observed
@@ -754,18 +789,14 @@ profile/database/build root only after Job/lease cleanup is verified.
 
 ## Remaining activation work
 
-1. Obtain native capture acceptance using the prepared QA scenario. Do not reopen
-   deferred identity renewal merely to expand this bounded pilot. The latest
-   native attempt passed initial admission in 2,201 ms under the 18-second
-   startup/six-second sample-age policy, then rejected capture on CDP network
-   `coverage_shape`. Ordinary capture traffic accounting is now separated and
-   passes offline validation; it has no native acceptance run yet. Another real transfer needs
-   fresh one-shot authorization; preserve the original 60-second attempt cap.
-2. Promote the owned Windows/profile lifecycle from QA-only construction into a
+Native capture acceptance is complete for the bounded scenario above. The
+remaining work is provider integration and isolated activation validation:
+
+1. Promote the owned Windows/profile lifecycle from QA-only construction into a
    development provider, with explicit opt-in, status, stop and source-route
    arbitration. The current native Windows owner remains dual-tag/fixture scoped;
    a boolean alone cannot activate it safely.
-3. Verify that provider against an isolated dev instance before separately
+2. Verify that provider against an isolated dev instance before separately
    approving main-dev runtime activation. Keep Auto Update enabled and preserve
    the existing main login. Rollback closes pilot admission/owners and returns
    routing to the ordinary scheduler without clearing challenge state.

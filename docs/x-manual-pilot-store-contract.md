@@ -289,3 +289,20 @@ execution through Engine/Store. A dedicated capture QA entry and fresh explicit
 one-shot authorization remain required before a live test. Logs/provenance remain
 under `runtime/qa/auth-session-sidecar/`; temporary databases, test binaries and
 preparation roots from this increment were removed.
+
+### Native retained capture acceptance (2026-10-25)
+
+Source `5964a24`, run `7ec6e926a3344597867582923101e948`, passed the explicitly
+authorized capture scenario in 14.37 seconds. Strict startup published in
+2,319 ms. The existing production X worker/parser produced nonempty posts,
+Engine committed one observation to a fresh disposable QA Store, reader windows
+and collector ownership survived, and replay did not recapture. Ordinary traffic
+reported partial diagnostics without changing the durable result or its guards.
+
+Cleanup verified the owned Jobs/lease before removing the collector, database
+and build root; the retained QA reader profile remains. No retry, user-database
+access, main-dev activation, login-main change or Auto Update change occurred.
+The one-shot transfer permission was consumed. The bounded native Engine/Store
+capture gate is now accepted; publishing an ordinary development provider is
+separate remaining integration work, not another account-evidence prerequisite.
+See the [current acceptance and limits](concurrency-dev-readiness.md#native-x-capture-accepted-2026-10-25).
