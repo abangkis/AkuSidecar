@@ -31,7 +31,7 @@ try{
  & $node --test --test-timeout=15000 @nodeTests 2>&1 | Tee-Object -FilePath $log -Append
  if($LASTEXITCODE -ne 0){throw 'X owner Node regressions failed.'}
  $core=@('development_native_pilot_adapter.go','development_native_pilot_startup.go','development_native_pilot_controller.go','development_native_pilot_broker.go',
-  'development_x_manual_pilot_owner.go','development_x_manual_pilot_owner_test.go','development_x_manual_pilot_owner_node_test.go')
+  'development_x_manual_pilot_owner.go','development_x_manual_pilot_owner_test.go','development_x_manual_pilot_pair_test.go','development_x_manual_pilot_owner_node_test.go')
  $coreFiles=@($core | ForEach-Object {Join-Path 'internal/engine' $_})
  & go test -tags auth_session_dev -run '^TestXManualPilotOwner' -count=1 -timeout=60s -v @coreFiles 2>&1 | Tee-Object -FilePath $log -Append
  if($LASTEXITCODE -ne 0){throw 'X owner standalone Go tests failed.'}

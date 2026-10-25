@@ -23,12 +23,23 @@ type nativePilotBrokerState struct {
 	readerWindows                                                               int
 	completeInventory, parentAlive, channelHealthy, invalidationsReady, optedIn bool
 }
+type nativePilotPairInspection struct {
+	state             nativePilotBrokerState
+	reader, collector nativePilotOwner
+	reason            string
+}
+
+func (nativePilotPairInspection) String() string     { return "private-native-pair-inspection" }
+func (v nativePilotPairInspection) GoString() string { return v.String() }
+
 type nativePilotBrokerPorts struct {
 	now     func() time.Time
 	prepare func(context.Context, nativePilotPrepareRequest) (nativePilotPreparedRole, error)
 	inspect func(context.Context, nativePilotPreparedRole) (nativePilotOwner, error)
-	acquire func(context.Context, nativePilotPreparedRole, nativePilotCaptureChallenge) ([]byte, error)
-	state   func(context.Context) (nativePilotBrokerState, error)
+	// Optional trusted composition; failure never falls back to the legacy path.
+	inspectPair func(context.Context, nativePilotPreparedRole, nativePilotPreparedRole) (nativePilotPairInspection, error)
+	acquire     func(context.Context, nativePilotPreparedRole, nativePilotCaptureChallenge) ([]byte, error)
+	state       func(context.Context) (nativePilotBrokerState, error)
 	// Abort must honor its bounded context and report uncertain cleanup as error.
 	// preserveReader is true only for the reader, except after parent exit.
 	abort func(context.Context, nativePilotPreparedRole, bool) error
@@ -171,23 +182,28 @@ func (b *nativePilotBroker) stateReason(ctx context.Context) (nativePilotBrokerS
 	if err != nil {
 		return s, "owner-unavailable"
 	}
+	return s, nativePilotBrokerStateReason(s, b.cfg.pilot.binding, true)
+}
+
+// Policy checks are identical for ordinary and combined reads. The preflight of
+// a combined read defers only the window count until the reader is inspected.
+func nativePilotBrokerStateReason(s nativePilotBrokerState, m nativePilotBinding, checkWindows bool) string {
 	if !s.parentAlive {
-		return s, "parent-exited"
+		return "parent-exited"
 	}
 	if !s.optedIn {
-		return s, "opted-out"
+		return "opted-out"
 	}
 	if !s.channelHealthy || !s.invalidationsReady {
-		return s, "evidence-channel-lost"
+		return "evidence-channel-lost"
 	}
-	if !s.completeInventory || s.readerWindows < 1 {
-		return s, "reader-lost"
+	if !s.completeInventory || checkWindows && s.readerWindows < 1 {
+		return "reader-lost"
 	}
-	m := b.cfg.pilot.binding
 	if s.account != m.account || s.enrollment != m.enrollment || s.pair != m.pair || s.attempt != m.attempt || s.derivation != m.derivation || s.policy != m.policy || s.consent != m.consent {
-		return s, "owner-or-policy-changed"
+		return "owner-or-policy-changed"
 	}
-	return s, ""
+	return ""
 }
 
 func (b *nativePilotBroker) abortPrepared(p nativePilotPreparedRole, preserve bool) bool {
@@ -398,19 +414,43 @@ func (b *nativePilotBroker) start(ctx context.Context) nativePilotDiagnostic {
 		return b.stop("prepare-pins-invalid")
 	}
 	owners := func(call context.Context) (nativePilotState, error) {
-		s, why := b.stateReason(call)
+		var s nativePilotBrokerState
+		var why string
+		var actual [2]nativePilotOwner
+		if b.ports.inspectPair != nil {
+			pair, err := b.ports.inspectPair(call, roles["reader"], roles["collector"])
+			s, why = pair.state, pair.reason
+			if err != nil {
+				b.noteInitial(err, "pair", "inspect_before")
+				if why == "" {
+					why = "owner-or-policy-changed"
+				}
+			} else if why == "" {
+				why = nativePilotBrokerStateReason(s, frozen, true)
+			}
+			actual = [2]nativePilotOwner{pair.reader, pair.collector}
+		} else {
+			s, why = b.stateReason(call)
+			if why == "" {
+				for i, p := range []nativePilotPreparedRole{roles["reader"], roles["collector"]} {
+					owner, err := b.ports.inspect(call, p)
+					if err != nil || owner != p.owner {
+						b.noteInitial(err, p.owner.role, "inspect_before")
+						why = "owner-or-policy-changed"
+						break
+					}
+					actual[i] = owner
+				}
+			}
+		}
+		if why == "" && (call.Err() != nil || actual[0] != frozen.reader || actual[1] != frozen.collector) {
+			why = "owner-or-policy-changed"
+		}
 		if why == "owner-unavailable" {
 			return nativePilotState{}, errors.New("owner-unavailable")
 		}
 		if why != "" {
 			return nativePilotState{binding: frozen, readerWindows: s.readerWindows, completeInventory: s.completeInventory, parentAlive: s.parentAlive, channelHealthy: s.channelHealthy, invalidationsReady: s.invalidationsReady, optedIn: s.optedIn}, nil
-		}
-		for _, p := range []nativePilotPreparedRole{roles["reader"], roles["collector"]} {
-			actual, err := b.ports.inspect(call, p)
-			if err != nil || actual != p.owner {
-				b.noteInitial(err, p.owner.role, "inspect_before")
-				return nativePilotState{binding: frozen, readerWindows: s.readerWindows, completeInventory: s.completeInventory, parentAlive: s.parentAlive, channelHealthy: s.channelHealthy, invalidationsReady: s.invalidationsReady, optedIn: s.optedIn}, nil
-			}
 		}
 		return nativePilotState{binding: frozen, readerWindows: s.readerWindows, completeInventory: true, parentAlive: true, ownersAlive: true, channelHealthy: true, invalidationsReady: true, optedIn: true}, nil
 	}

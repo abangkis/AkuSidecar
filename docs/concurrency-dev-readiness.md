@@ -121,6 +121,40 @@ the retained reader profile was preserved. No retry was performed. Evidence:
 
 ## Acceptance scenario
 
+### Combined pair ownership checkpoint
+
+The X owner port supplies a private combined checkpoint to the broker. It reads
+policy/consent before inspection, runs the complete reader and collector
+inspections in parallel, and rereads policy/consent after both finish. Each role
+keeps its OS-before/RPC/OS-after checks, exact prepared handle/document binding,
+image/creation/Job/directory validation, headless/window checks and deadline.
+The final state uses the inventory already validated by the reader inspection;
+it does not trust the policy callback's cached window count. Policy completeness,
+parent/channel/observer flags and all enrollment/attempt/session-policy pins must
+still pass. No ownership result is cached between checkpoints.
+
+The native pair checkpoint performs four OS snapshots and two inspect RPCs,
+replacing the previous six snapshots, two inspect RPCs and extra inventory RPC.
+The optimization applies to initial/final pair checks and subsequent guarded
+uses. Per-role pre/post-acquire inspections remain mandatory. Existing generic
+ports retain their original path only when no combined callback is installed;
+a failed installed callback never falls back. Account receipt validation and
+the two-second startup/60-second attempt ceilings are unchanged.
+
+Offline evidence: `test-native-manual-pilot-broker.ps1` passed 53 Node and eight
+top-level Go cases, plus both Engine builds (log
+`runtime/qa/auth-session-sidecar/native-manual-broker-dd126684e41b489681d5ca9fe7fd28f2.log.txt`).
+`test-x-manual-pilot-owner.ps1` passed 151 Node and 22 top-level Go cases, tag
+gates and staged Windows compilation (log
+`runtime/qa/auth-session-sidecar/x-manual-owner-6c53dc77e695403d9fbc8288c56cb060.log.txt`).
+The suites overlap. Focused pair tests also passed after making their late-reply
+barrier cleanup robust. They prove parallel entry, exact work counts, fresh
+inventory, policy rejection on both sides, peer cancellation, cause retention
+and rejection of late inspections/policy reads. Owned temporary roots were
+removed. No Chrome/profile/session transfer or user runtime was used; the last
+native acceptance remains the failed attempt above. Native timing improvement
+and successful capture acceptance remain unproven.
+
 ### Settings completion and wait diagnostics
 
 The direct capture and the bound observation now settle metadata completion with

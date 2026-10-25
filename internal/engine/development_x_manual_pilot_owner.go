@@ -302,7 +302,17 @@ func (p *xManualPilotOwnerPorts) prepare(ctx context.Context, req nativePilotPre
 func (p *xManualPilotOwnerPorts) inspect(ctx context.Context, prepared nativePilotPreparedRole) (nativePilotOwner, error) {
 	return p.inspectPhase(ctx, prepared, false)
 }
+
+type xManualPilotInspectionResult struct {
+	owner       nativePilotOwner
+	windowCount int
+}
+
 func (p *xManualPilotOwnerPorts) inspectPhase(ctx context.Context, prepared nativePilotPreparedRole, requirePause bool) (nativePilotOwner, error) {
+	result, err := p.inspectPhaseResult(ctx, prepared, requirePause)
+	return result.owner, err
+}
+func (p *xManualPilotOwnerPorts) inspectPhaseResult(ctx context.Context, prepared nativePilotPreparedRole, requirePause bool) (xManualPilotInspectionResult, error) {
 	p.mu.Lock()
 	stored, ok := p.prepared[prepared.owner.role]
 	acquired := p.acquired[prepared.owner.role]
@@ -311,9 +321,9 @@ func (p *xManualPilotOwnerPorts) inspectPhase(ctx context.Context, prepared nati
 	if acquired && !requirePause {
 		phase = "inspect_after"
 	}
-	fail := func(stage, condition string) (nativePilotOwner, error) {
+	fail := func(stage, condition string) (xManualPilotInspectionResult, error) {
 		trace := nativePilotInitialTrace{firstCause: "inspection", terminal: "unavailable", inspectStage: stage, inspectCondition: condition}
-		return nativePilotOwner{}, &nativePilotInitialError{(nativePilotInitialDetail{role: prepared.owner.role, phase: phase, reason: "unavailable", trace: &trace}).closed()}
+		return xManualPilotInspectionResult{}, &nativePilotInitialError{(nativePilotInitialDetail{role: prepared.owner.role, phase: phase, reason: "unavailable", trace: &trace}).closed()}
 	}
 	if !ok || stored != prepared {
 		return fail("go_stored", "handle_mismatch")
@@ -329,7 +339,7 @@ func (p *xManualPilotOwnerPorts) inspectPhase(ctx context.Context, prepared nati
 		// Arbitrary RPC error text never enters the private closed diagnostic.
 		var typed *nativePilotInitialError
 		if errors.As(err, &typed) {
-			return nativePilotOwner{}, nativePilotInitialWrap(err, prepared.owner.role, phase)
+			return xManualPilotInspectionResult{}, nativePilotInitialWrap(err, prepared.owner.role, phase)
 		}
 		return fail("go_rpc", "command_failed")
 	}
@@ -379,10 +389,87 @@ func (p *xManualPilotOwnerPorts) inspectPhase(ctx context.Context, prepared nati
 	if err != nil {
 		return fail("go_core_after", "os_snapshot")
 	}
-	if after != core {
+	if after != core || ctx.Err() != nil {
 		return fail("go_core_after", "os_changed")
 	}
-	return bound, nil
+	return xManualPilotInspectionResult{owner: bound, windowCount: *result.WindowCount}, nil
+}
+
+// One checkpoint, not an ownership cache. Both complete inspections keep their
+// OS-before/RPC/OS-after sandwich; only their independent work runs in parallel.
+func (p *xManualPilotOwnerPorts) inspectPair(ctx context.Context, reader, collector nativePilotPreparedRole) (nativePilotPairInspection, error) {
+	var pair nativePilotPairInspection
+	if ctx == nil || ctx.Err() != nil {
+		var err error
+		if ctx != nil {
+			err = ctx.Err()
+		}
+		return pair, nativePilotInitialWrap(err, "pair", "joint")
+	}
+	if reader.owner.role != "reader" || collector.owner.role != "collector" || reader.handle == "" || collector.handle == "" || reader.handle == collector.handle {
+		return pair, errors.New("x-owner-pair-invalid")
+	}
+	before, err := p.cfg.policy(ctx)
+	pair.state = before
+	if err != nil {
+		pair.reason = "owner-unavailable"
+		return pair, errors.New("x-owner-policy-unavailable")
+	}
+	if pair.reason = nativePilotBrokerStateReason(before, p.cfg.pilot.binding, false); pair.reason != "" {
+		return pair, nil
+	}
+	group, cancel := context.WithCancel(ctx)
+	defer cancel()
+	type output struct {
+		index  int
+		result xManualPilotInspectionResult
+		err    error
+	}
+	outputs := make(chan output, 2)
+	for i, prepared := range []nativePilotPreparedRole{reader, collector} {
+		go func(index int, role nativePilotPreparedRole) {
+			result, err := p.inspectPhaseResult(group, role, false)
+			if err != nil {
+				d := nativePilotTimingFailure(ctx, err, role.owner.role, "inspect_before")
+				err = &nativePilotInitialError{d}
+			}
+			outputs <- output{index, result, err}
+		}(i, prepared)
+	}
+	var inspected [2]xManualPilotInspectionResult
+	for count := 0; count < 2; count++ {
+		select {
+		case <-ctx.Done():
+			return pair, nativePilotInitialWrap(ctx.Err(), "pair", "joint")
+		case out := <-outputs:
+			if out.err != nil {
+				detail := nativePilotInitialOf(out.err, "unknown", "inspect_before")
+				if detail.role == "reader" && detail.trace != nil && detail.trace.inspectCondition == "reader_windows" {
+					pair.state.readerWindows, pair.reason = 0, "reader-lost"
+				}
+				return pair, out.err
+			}
+			inspected[out.index] = out.result
+		}
+	}
+	if ctx.Err() != nil {
+		return pair, nativePilotInitialWrap(ctx.Err(), "pair", "joint")
+	}
+	after, err := p.cfg.policy(ctx)
+	pair.state = after
+	if err != nil {
+		pair.reason = "owner-unavailable"
+		return pair, errors.New("x-owner-policy-unavailable")
+	}
+	if ctx.Err() != nil {
+		return pair, nativePilotInitialWrap(ctx.Err(), "pair", "joint")
+	}
+	// The reader inspection already checked complete bootstrap/window inventory.
+	// Policy flags and epochs are read again; they are never repaired by inventory.
+	pair.state.readerWindows = inspected[0].windowCount
+	pair.reason = nativePilotBrokerStateReason(pair.state, p.cfg.pilot.binding, true)
+	pair.reader, pair.collector = inspected[0].owner, inspected[1].owner
+	return pair, nil
 }
 
 // One enumeration supplies both parent links for this checkpoint only. Process
@@ -498,7 +585,7 @@ func newXManualPilotOwnerBrokerPorts(parent context.Context, cfg xManualPilotOwn
 		return nil, nil, nativePilotDiagnostic{Reason: "invalid-configuration"}
 	}
 	p := &xManualPilotOwnerPorts{cfg: cfg, backend: backend, prepared: map[string]nativePilotPreparedRole{}, begun: map[string]bool{}, acquired: map[string]bool{}, cleanupTokens: map[string]string{}, cleanupUnknown: map[string]bool{}}
-	ports := nativePilotBrokerPorts{now: backend.now, prepare: p.prepare, inspect: p.inspect, acquire: p.acquire, state: p.state, abort: p.abort}
+	ports := nativePilotBrokerPorts{now: backend.now, prepare: p.prepare, inspect: p.inspect, inspectPair: p.inspectPair, acquire: p.acquire, state: p.state, abort: p.abort}
 	b, d := newNativePilotBroker(parent, nativePilotBrokerConfig{enabled: true, offlineTest: backend.provenance() == nativePilotOfflineOnly, pilot: cfg.pilot}, ports)
 	return b, p, d
 }

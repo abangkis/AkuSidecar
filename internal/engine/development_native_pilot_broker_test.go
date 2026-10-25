@@ -93,6 +93,48 @@ func (x *testNativeBroker) broker(t *testing.T, parent context.Context) *nativeP
 	}
 	return b
 }
+
+func TestNativePilotBrokerCombinedPairNoFallback(t *testing.T) {
+	for _, fault := range []string{"none", "error", "binding", "policy"} {
+		t.Run(fault, func(t *testing.T) {
+			x := newTestNativeBroker()
+			originalInspect := x.ports.inspect
+			legacy, combined := 0, 0
+			x.ports.inspect = func(ctx context.Context, role nativePilotPreparedRole) (nativePilotOwner, error) {
+				legacy++
+				if legacy > 2 {
+					return nativePilotOwner{}, errors.New("legacy fallback forbidden")
+				}
+				return originalInspect(ctx, role)
+			}
+			x.ports.inspectPair = func(_ context.Context, reader, collector nativePilotPreparedRole) (nativePilotPairInspection, error) {
+				combined++
+				pair := nativePilotPairInspection{state: x.state, reader: reader.owner, collector: collector.owner}
+				switch fault {
+				case "error":
+					return pair, errors.New("PRIVATE_PAIR_FAILURE")
+				case "binding":
+					pair.collector.document = "different"
+				case "policy":
+					pair.state.consent++
+				}
+				return pair, nil
+			}
+			b := x.broker(t, nil)
+			d := b.start(context.Background())
+			if legacy != 2 || combined == 0 || d.CanAuthorize || d.ManualEligible {
+				t.Fatal("combined route was bypassed or promoted")
+			}
+			if fault == "none" {
+				if !d.OfflineValidated || combined < 3 {
+					t.Fatal("combined checks missed startup acquisition or publication")
+				}
+			} else if d.OfflineValidated {
+				t.Fatal("failed combined check fell back to an accepting route")
+			}
+		})
+	}
+}
 func startNativeBroker(t *testing.T, b *nativePilotBroker) {
 	t.Helper()
 	d := b.start(context.Background())
