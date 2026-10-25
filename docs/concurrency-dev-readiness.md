@@ -196,7 +196,40 @@ still requires a separately authorized run with these diagnostics.
 
 ### Latest native attempt
 
-Latest attempt: source commit `bc3914d`, explicitly authorized run
+Latest attempt: source commit `b110d26`, explicitly authorized run
+`6b23993bb7c740ddb58d8e80b1cc1067` on 2026-10-25. The 16 preparation-diagnostic
+files were committed/pushed as `ef565a4`; `b110d26` aligns two retained seed
+test expectations with the appended V9 fields. The first preparation stopped
+on those stale expected strings, before lease/profile access or native execution.
+After that test-only correction, preparation passed 283 and 47 Node tests,
+all four tag gates, standalone full Engine compilation and accountless retained
+seed/startup/trace diagnostics. The plan pinned 921 source files, only
+`auth_token`/`ct0` and the original maximum 60-second attempt.
+
+Exactly one native execution rejected initial admission with `evidence-expired`
+(full test 10.59 seconds). Both owners passed preparation, so this run progressed
+beyond the previous reader-prepare failure. The private diagnostic recorded
+`role=pair phase=joint reason=unavailable kind=primary elapsed_ms=2684`;
+reader/collector acquisition durations were 1,892/1,955 ms. This is not a
+six-second startup timeout. The adapter can report this terminal reason during
+receipt freshness/validity checks or its final publication check. The log does
+not distinguish which sample or which of those checks expired; do not claim
+that both account/login receipts were accepted or that final inspection alone
+caused the rejection. No initial vector was published, and the capture
+continuation never entered, so no capture QA database or observation was created.
+
+Final owned Job/lease cleanup was verified by the helper. The collector/build
+root was removed and the dedicated retained reader QA profile was preserved.
+The failed preparation-only build root was also removed after confirming that
+no execution claim or derived collector profile existed. No native retry
+occurred. Main login, user database/runtime and Auto Update were unchanged;
+the local dev configuration SHA-256 remained
+`52063D73180A8F6AB3E514D89CFAA81FB168E0B98381E58FA7FF1AE28D7AADAE`.
+Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-6b23993bb7c740ddb58d8e80b1cc1067.prepare.log.txt`
+and `runtime/qa/auth-session-sidecar/x-manual-retained-6b23993bb7c740ddb58d8e80b1cc1067.run.log.txt`.
+
+Previous attempt: source commit `bc3914d`, explicitly authorized run
 `8063debc56b54e29b6c257d6740dc666` on 2026-10-25. Preparation passed 279 and
 33 Node cases, all four retained tag gates, full staged Engine compilation and
 accountless Go diagnostics. The prepared capture plan pinned 921 source files,
