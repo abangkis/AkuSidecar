@@ -33,7 +33,33 @@ an old startup plan cannot execute capture. Preparation is not transfer approval
 
 ## Native acceptance attempt
 
-Latest attempt: source commit `20011da`, explicitly authorized run
+Latest attempt: source commit `52e1a6e` (startup correction `45adc58` plus offline
+fixture wiring), explicitly authorized run `a68c471222af4c71aab3682109348f6f` on
+2026-10-25. Preparation passed 279 and 33 Node cases, all retained tag gates,
+staged compilation and accountless diagnostic tests. The broader preparation
+first exposed a missing wait-budget callback in the in-memory driver fixture;
+that fixture now uses the same bounded wait helper, and its 72 tests pass.
+The failed preparation never launched Chrome or transferred a session.
+
+Exactly one native execution then rejected at the unchanged 2,000 ms startup
+deadline (full test 11.93 seconds). At the frozen boundary no tracked reader
+operation was active; reader cumulative acquire was 1,570 ms, OS snapshots
+198 ms, inspection RPCs 48 ms and inventory RPCs 1 ms. Collector was still in
+acquire (1,763 ms), with `settings_wait` the last reported Node stage (age
+1,575 ms), OS snapshots 150 ms and inspection RPCs 1 ms. These per-role timings
+overlap and must not be added together. They identify the settings completion
+wait as the current observed boundary, not a specific missing response, body
+projection failure or account mismatch. Reader idle alone is not proof that
+the full pair's final validation completed.
+
+The capture continuation was not entered; no QA capture database/observation
+was created. Owned Job/lease cleanup was verified and the collector/build root
+was removed; the dedicated retained reader profile was preserved. No retry,
+main-login change, main-dev activation or Auto Update change occurred. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-a68c471222af4c71aab3682109348f6f.prepare.log.txt`
+and `runtime/qa/auth-session-sidecar/x-manual-retained-a68c471222af4c71aab3682109348f6f.run.log.txt`.
+
+Previous attempt: source commit `20011da`, explicitly authorized run
 `10f3fd8b7d4d4e1f922cbb64bb02e69f` on 2026-10-25. Startup rejected at the
 unchanged joint deadline (2,000 ms; full test 9.56 seconds). At the frozen
 diagnostic boundary reader was in `inspect_rpc` for 15 ms; its cumulative
@@ -93,10 +119,9 @@ startup, including transport, cleanup and final ownership checks. The hint
 cannot extend it or authorize evidence; receipt/account/document guards and
 the 60-second attempt ceiling are unchanged.
 
-Validation is offline/accountless only. The last native acceptance remains the
-failed attempt above; these changes do not establish that native startup now
-fits within two seconds. No Chrome, retained profile or session transfer was
-executed for this correction.
+Implementation validation was offline/accountless. The subsequent single native
+acceptance is recorded above and still fails; these changes do not establish
+that native startup now fits within two seconds.
 
 Offline evidence: `test-native-manual-pilot-startup.ps1` passed 55 Node tests,
 30 top-level Go tests and both development Engine build variants (log
@@ -161,7 +186,9 @@ profile/database/build root only after Job/lease cleanup is verified.
 ## Remaining activation work
 
 1. Obtain native capture acceptance using the prepared QA scenario. Do not reopen
-   deferred identity renewal merely to expand this bounded pilot.
+   deferred identity renewal merely to expand this bounded pilot. Review the
+   collector settings-completion wait offline next; another real transfer needs
+   fresh one-shot authorization. Keep the current account guards and deadlines.
 2. Promote the owned Windows/profile lifecycle from QA-only construction into a
    development provider, with explicit opt-in, status, stop and source-route
    arbitration. The current native Windows owner remains dual-tag/fixture scoped;
