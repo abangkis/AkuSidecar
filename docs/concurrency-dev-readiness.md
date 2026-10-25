@@ -275,7 +275,48 @@ still requires a separately authorized run with these diagnostics.
 
 ### Latest native attempt
 
-Latest attempt: source commit `b110d26`, explicitly authorized run
+Latest attempt: source commit `27e0d7e`, explicitly authorized run
+`7d78bf4a93d347529f89e39b18d56d57` on 2026-10-25. All 45 centralized timing
+and bounded flow-trace files were committed/pushed before execution. Preparation
+passed 283 and 47 Node cases, four tag gates, full staged Engine compilation
+and accountless seed/startup/trace checks. The prepared plan pinned the shared
+policy asset and the original one-shot, two-cookie, maximum 60-second scope.
+
+Exactly one native execution passed startup admission in 2,201 ms, below even
+the earlier six-second total. All four reader/collector identity/login checks,
+the final pair ownership check and publication were accepted. Reader identity
+age at publication was 2,055 ms (settings age 561 ms), with 3,944 ms remaining
+on its sample horizon. This run therefore needed more than the old two-second
+sample-age allowance, while its total startup did not need the enlarged
+18-second allowance. It does not retrospectively identify the exact failing
+sample/check in earlier logs that lacked these fields.
+
+The new trace measured reader/collector settings-wait maxima of 1,478/1,746 ms,
+acquire RPC totals of 1,573/1,947 ms and final pair ownership from elapsed
+2,125 to 2,201 ms. These overlapping durations must not be summed. Both receipts
+were available at elapsed 2,125 ms; the buffered collector read took no further
+measurable whole millisecond. Completed internal phases remain visible after
+both active role operations became idle.
+
+The complete test still failed (12.60 seconds) after entering capture:
+`phase=capture outcome=rejected_no_mutation detail=(stage=coverage reason=coverage_shape cleanup=completed)`.
+This category belongs to the capture target's CDP network response/ExtraInfo
+coverage checks, not to post-content parsing or account identity. The current
+category can describe a missing/nonboolean response ExtraInfo flag, a response
+or ExtraInfo event without a tracked request, or unresolved coverage metadata;
+the log does not select an exact predicate. No result was committed. The fresh
+synthetic capture database and all owned collector/build artifacts were removed
+after helper-verified Job/lease cleanup. The retained reader QA profile was
+preserved. No retry occurred.
+
+Main login/runtime, user database and Auto Update were unchanged; the local dev
+configuration SHA-256 remained
+`52063D73180A8F6AB3E514D89CFAA81FB168E0B98381E58FA7FF1AE28D7AADAE`.
+Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-7d78bf4a93d347529f89e39b18d56d57.prepare.log.txt`
+and `runtime/qa/auth-session-sidecar/x-manual-retained-7d78bf4a93d347529f89e39b18d56d57.run.log.txt`.
+
+Previous attempt: source commit `b110d26`, explicitly authorized run
 `6b23993bb7c740ddb58d8e80b1cc1067` on 2026-10-25. The 16 preparation-diagnostic
 files were committed/pushed as `ef565a4`; `b110d26` aligns two retained seed
 test expectations with the appended V9 fields. The first preparation stopped
@@ -655,11 +696,11 @@ profile/database/build root only after Job/lease cleanup is verified.
 
 1. Obtain native capture acceptance using the prepared QA scenario. Do not reopen
    deferred identity renewal merely to expand this bounded pilot. The latest
-   native attempt passed prepare but rejected initial admission on evidence
-   expiry under the earlier six-second/two-second policy. The new 18-second
-   startup/six-second freshness policy and bounded checkpoint/age trace have
-   offline validation only. Another real transfer needs fresh one-shot
-   authorization; preserve strict account guards and the 60-second attempt cap.
+   native attempt passed initial admission in 2,201 ms under the 18-second
+   startup/six-second sample-age policy, then rejected capture on CDP network
+   `coverage_shape`. Investigate that coverage predicate offline without
+   weakening account or session-cookie guards. Another real transfer needs
+   fresh one-shot authorization; preserve the original 60-second attempt cap.
 2. Promote the owned Windows/profile lifecycle from QA-only construction into a
    development provider, with explicit opt-in, status, stop and source-route
    arbitration. The current native Windows owner remains dual-tag/fixture scoped;
