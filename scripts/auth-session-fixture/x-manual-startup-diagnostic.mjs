@@ -6,7 +6,7 @@ export const STARTUP_REASONS=Object.freeze(['unavailable','rejected','identity_u
 export const STARTUP_GUARD_CAUSES=Object.freeze(['guard_request_unbound','guard_request_budget','guard_header_classification','guard_response_correlation','guard_metadata_shape','guard_completion_missing','guard_header_budget','guard_event_budget']);
 // Append-only catalogs: V8 adds inspection predicates without raw owner data.
 export const STARTUP_TRACE=Object.freeze({
-  firstCause:Object.freeze(['unknown','cookie_candidate','cookie_ambiguous','context_lost','target_lost','navigation','owner_scope','event_cap','identity_order','identity_mismatch','settings_order','response_frame','extra_shape','extra_status','extra_missing','extra_unexpected','generic_early','stale_observation','cleanup_failed',...STARTUP_GUARD_CAUSES,'root_control','inspection']),
+  firstCause:Object.freeze(['unknown','cookie_candidate','cookie_ambiguous','context_lost','target_lost','navigation','owner_scope','event_cap','identity_order','identity_mismatch','settings_order','response_frame','extra_shape','extra_status','extra_missing','extra_unexpected','generic_early','stale_observation','cleanup_failed',...STARTUP_GUARD_CAUSES,'root_control','inspection','settings_capture']),
   terminal:Object.freeze(['unknown',...STARTUP_REASONS,'bound']),
   early:Object.freeze(['unknown','captured','deadline','script_limit','wrong_page','unexpected_pause','evaluation_failed','setup_failed']),
   handoff:Object.freeze(['unknown','accepted','rejected']),

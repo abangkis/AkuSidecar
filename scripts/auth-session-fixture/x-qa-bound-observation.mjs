@@ -76,6 +76,8 @@ export class QABoundObservation {
   #externalCookieGuard = false;
   #firstCause = 'unknown'; #hasFirst = false; #onManualFailure; #early = 'unknown'; #handoff = 'unknown';
   #needsExtra = null; #extraStatus = null; #resolveDone;
+  #waitFailure = null; #waitSettled = false; #waitReason = 'request_pending';
+  #waitListeners = new Set(); #waitLast = 'request_pending'; #detachCapture;
   #observeCookieWrites;
   #pointOptions; #requestAt = null; #networkRequest = null; #networkInterval = null;
   constructor(scope, frameId, readBody, now = () => performance.now(), observeCookieWrites = () => {}, pointOptions = { deferCookieMutation: false, onPrivateResult: () => {} }, cookiePolicy, onManualFailure, provenance, freshnessOptions) {
@@ -101,6 +103,37 @@ export class QABoundObservation {
     }
     this.capture = new QADirectCapture('a', frameId, readBody, now);
     this.done = new Promise(resolve => { this.#resolveDone = resolve; });
+    this.#detachCapture = this.capture.onStateChange(() => {
+      if (!this.#closed && this.capture.completion().status === 'failed' && !this.#failure) this.invalidate('source_unavailable', 'settings_capture');
+      this.#notifyWait();
+    });
+  }
+  settingsWaitState() {
+    if (this.#waitFailure) return this.#waitFailure;
+    if (!requestRef(this.capture.chosen)) return this.#waitReason;
+    if (this.capture.status === null) return 'response_pending';
+    if (!this.capture.completed) return 'completion_pending';
+    if (this.#needsExtra === true && this.#extraStatus === null) return 'extra_pending';
+    if (this.#needsExtra === null) return 'response_pending';
+    return {pending:'body_pending',complete:'body_complete',failed:'body_failed'}[this.capture.bodyState] ?? 'metadata_complete';
+  }
+  onSettingsWait(listener) {
+    if (typeof listener !== 'function') throw error();
+    this.#waitListeners.add(listener);
+    try { listener(this.settingsWaitState()); } catch {}
+    return () => this.#waitListeners.delete(listener);
+  }
+  #notifyWait() {
+    const state = this.settingsWaitState();
+    if (!this.#waitSettled && (this.#waitFailure || this.capture.completed &&
+        (this.#needsExtra === false || this.#needsExtra === true && this.#extraStatus !== null))) {
+      this.#waitSettled = true;
+      this.#resolveDone(Object.freeze({status:this.#waitFailure?'failed':'complete',reason:this.#waitFailure??'metadata_complete'}));
+    }
+    if (state !== this.#waitLast) {
+      this.#waitLast = state;
+      for (const listener of this.#waitListeners) { try { listener(state); } catch {} }
+    }
   }
   #tick() {
     const t = this.#now();
@@ -112,16 +145,21 @@ export class QABoundObservation {
       this.#hasFirst = true; this.#firstCause = closedStartupTrace({ firstCause: cause }).firstCause;
       // Trusted manual callback records the originating event before peers can
       // report cancellation. Callback failure never repairs this observation.
-      try { this.#onManualFailure?.(reason, { firstCause: this.#firstCause, ...this.#manualCookieGuard?.trace() }); } catch {}
+      try { this.#onManualFailure?.(reason, { firstCause: this.#firstCause, ...this.#manualCookieGuard?.trace() }, this.settingsWaitState()); } catch {}
     }
   }
   invalidate(reason = 'scope_lost', cause = 'unknown') {
+    const deferred = reason === 'observed_cookie_write' && this.#pointOptions.deferCookieMutation;
+    if (!deferred) this.#waitFailure ??= this.capture.completion().status === 'failed' ? this.capture.completion().reason : 'scope_lost';
     this.#noteCause(reason,cause);
     if (!this.#failure || this.#failure === 'observed_cookie_write' && reason !== 'observed_cookie_write') this.#failure = reason;
     if(this.#freshness)try{this.#freshness.invalidate(this.#freshness.revision,this.#freshness.generation,reason,this.#last);}catch{}
     // Only the separately gated short-QA mode can retain a source observation
     // across cookie writes. The V1 binding remains rejected and non-authorizing.
-    if (!(reason === 'observed_cookie_write' && this.#pointOptions.deferCookieMutation)) this.capture.invalidate();
+    if (!deferred) {
+      this.capture.invalidate();
+      this.#notifyWait();
+    }
   }
   earlyOutcome(stopReason, handoffRejected) {
     const trace = closedStartupTrace({ early: stopReason, handoff: handoffRejected === true ? 'rejected' : handoffRejected === false ? 'accepted' : 'unknown' });
@@ -217,6 +255,13 @@ export class QABoundObservation {
     let bypassCandidate = Boolean(this.#manualCookieGuard) && raw.method !== 'Network.requestWillBeSent' &&
       !(requestRef(this.capture.chosen) && p.requestId === this.capture.chosen);
     if (raw.method === 'Network.requestWillBeSent' && this.#manualCookieGuard) {
+      const diagnosticRequest = own(p, 'request');
+      if (!requestRef(this.capture.chosen) && diagnosticRequest && typeof diagnosticRequest === 'object' &&
+          own(diagnosticRequest, 'method') === 'GET' && qaSourceRoute(own(diagnosticRequest, 'url')) === 'api_v1') {
+        this.#waitReason = this.#identityAt === null ? 'request_before_identity' :
+          own(p, 'frameId') !== this.#frame ? 'request_frame' : own(p, 'loaderId') !== this.#loader ? 'request_document' :
+          !this.#manualCookieGuard.canSelectRequest(own(p, 'requestId')) ? 'request_history' : 'request_pending';
+      }
       // Once selected, every event on the exact ID stays strict. Other
       // requests cannot compete until their independent tuple qualifies.
       bypassCandidate = !(requestRef(this.capture.chosen) && p.requestId === this.capture.chosen) &&
@@ -236,11 +281,11 @@ export class QABoundObservation {
       else this.#extraStatus = p.statusCode;
     }
     if (!bypassCandidate) this.capture.observe(raw.method, p);
-    // Diagnose observed contradictions at event time; rejection still uses the
-    // existing finish checks, so this note does not alter capture acceptance.
+    // Known contradictions retire the metadata waiter immediately. The final
+    // account/body/cleanup checks remain mandatory before any publication.
     if (requestRef(this.capture.chosen) && p.requestId === this.capture.chosen && this.#extraStatus !== null) {
-      if (this.#needsExtra === false) this.#noteCause('scope_lost','extra_unexpected');
-      else if (this.#needsExtra === true && this.capture.status !== null && this.#extraStatus !== this.capture.status) this.#noteCause('scope_lost','extra_status');
+      if (this.#needsExtra === false) this.invalidate('scope_lost','extra_unexpected');
+      else if (this.#needsExtra === true && this.capture.status !== null && this.#extraStatus !== this.capture.status) this.invalidate('scope_lost','extra_status');
     }
     if (raw.method === 'Network.requestWillBeSent' && requestRef(this.capture.chosen) && p.requestId === this.capture.chosen && this.#requestAt === null) {
       this.#requestAt = this.#tick();
@@ -254,7 +299,7 @@ export class QABoundObservation {
         this.#networkInterval = { start: n.wallTime * 1000, end: (n.wallTime + p.timestamp - n.timestamp) * 1000 };
       }
     }
-    if (this.capture.completed && (this.#needsExtra === false || this.#needsExtra === true && this.#extraStatus !== null)) this.#resolveDone();
+    this.#notifyWait();
   }
   #extraSummary() {
     return !this.capture.matching ? 'not_selected' : this.#needsExtra === null ? 'invalid' :
@@ -274,6 +319,7 @@ export class QABoundObservation {
     if (cookieGuard && this.#manualCookieGuard.rejection()!=='unknown') this.invalidate(this.#manualCookieGuard.failureReason(),this.#manualCookieGuard.rejection());
     const t = this.#tick();
     this.#closed = true;
+    this.#detachCapture(); this.#waitListeners.clear();
     const identity = this.#id !== null && identityProjectionMatches(this.#projection);
     const login = source.diagnostic === 'http_200_unqualified' && source.status === 200 && source.matchingRequests === 1 &&
       source.responseFresh === true && source.completed && source.bodyReadAttempts === 1 && source.body?.category === 'settings_match';
@@ -289,6 +335,10 @@ export class QABoundObservation {
       Math.abs(this.#sourceAt - this.#identityAt) <= 5000 && t - Math.min(this.#identityAt, this.#sourceAt) <= 5000;
     const diagnostic = this.#failure ?? (!cleanupVerified ? 'cleanup_unverified' : !identity ? 'identity_unavailable' :
       !login ? 'source_unavailable' : !fresh ? 'stale_observation' : freshness&&!freshness.readyUnderPolicy?'scope_lost':'bound');
+    if (!this.#waitSettled) {
+      this.#waitFailure ??= this.capture.completion().reason;
+      this.#notifyWait();
+    }
     try {
       this.#pointOptions.onPrivateResult({ accountId: this.#id, start: this.#requestAt, end: this.#sourceAt, networkInterval: this.#networkInterval });
       // Only this fixed validated recipe can supply the optional private startup

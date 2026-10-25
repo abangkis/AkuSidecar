@@ -36,13 +36,32 @@ export function projectQADirectBody(result) {
 }
 
 export class QADirectCapture extends QAGuestCapture {
+  #settled = false; #listeners = new Set();
   constructor(role, frameId, readBody, now = () => performance.now()) {
     super('api_v1', frameId);
     if (!['a', 'b'].includes(role) || typeof readBody !== 'function' || typeof now !== 'function') throw new TypeError('qa_direct_scope_invalid');
     this.role = role; this.readBody = readBody; this.now = now; this.attempts = 0;
     this.consumed = false; this.body = null; this.pending = null; this.mime = false;
+    this.networkFailed = false; this.bodyState = 'unread';
     this.done = new Promise(resolve => { this.resolveDone = resolve; });
   }
+  completion() {
+    // Network metadata only. Body projection and account authority are separate.
+    return Object.freeze(this.invalid || this.closed && !this.completed
+      ? {status: 'failed', reason: this.networkFailed ? 'network_failed' : 'candidate_rejected'}
+      : {status: this.completed ? 'complete' : 'pending', reason: this.completed ? 'metadata_complete' : 'completion_pending'});
+  }
+  onStateChange(listener) {
+    if (typeof listener !== 'function') throw new TypeError('qa_direct_listener_invalid');
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
+  #publish(notify = true) {
+    const state = this.completion();
+    if (!this.#settled && state.status !== 'pending') { this.#settled = true; this.resolveDone(state); }
+    if (notify) for (const listener of this.#listeners) { try { listener(); } catch {} }
+  }
+  invalidate() { super.invalidate(); this.#publish(); }
   consumeRead(id) {
     const now = this.now();
     if (this.closed || this.invalid || this.consumed || this.attempts !== 1 || id !== this.chosen ||
@@ -53,22 +72,27 @@ export class QADirectCapture extends QAGuestCapture {
     if (this.closed) return;
     super.observe(method, params);
     if (!params || params.requestId !== this.chosen) return;
+    if (method === 'Network.loadingFailed') this.networkFailed = true;
     if (method === 'Network.responseReceived') this.mime = ['application/json', 'application/json;charset=utf-8', 'application/json; charset=utf-8'].includes(String(params.response?.mimeType).toLowerCase());
     if (method === 'Network.loadingFinished' && !this.invalid && this.matching === 1 && this.mime && this.fresh === true &&
         this.attempts === 0 && [200, 401, 403, 429].includes(this.status) && Number.isSafeInteger(params.encodedDataLength) &&
         params.encodedDataLength > 0 && params.encodedDataLength <= 16384) {
       this.attempts = 1; this.readStartedAt = this.now(); this.readDeadline = this.readStartedAt + 4000;
+      this.bodyState = 'pending';
       try {
         this.pending = Promise.resolve(this.readBody(this.chosen)).then(value => {
-          if (this.consumed && value?.schema === 'aku.x.qa-direct-body.v1') this.body = value;
-        }, () => {});
-      } catch { this.pending = Promise.resolve(); }
+          if (this.consumed && value?.schema === 'aku.x.qa-direct-body.v1') { this.body = value; this.bodyState = 'complete'; }
+          else this.bodyState = 'failed';
+          this.#publish();
+        }, () => { this.bodyState = 'failed'; this.#publish(); });
+      } catch { this.bodyState = 'failed'; this.pending = Promise.resolve(); }
     }
-    if (method === 'Network.loadingFinished' || method === 'Network.loadingFailed') this.resolveDone();
+    this.#publish();
   }
   async finish() {
     if (this.pending) await this.pending;
     const metadata = super.finish();
+    this.#publish(false);
     return Object.freeze({ ...metadata, schema: 'aku.x.qa-direct-response.v1', role: this.role,
       bodyReadAttempts: this.attempts, body: !this.invalid && this.consumed ? this.body : null });
   }

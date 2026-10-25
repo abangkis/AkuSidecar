@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -433,7 +434,7 @@ func TestXManualPilotOwnerInspectionCodeVersions(t *testing.T) {
 			for i := range parts {
 				parts[i] = "0"
 			}
-			parts[4] = strconv.Itoa(len(nativePilotTraceCatalogs[0]) - 1)
+			parts[4] = strconv.Itoa(slices.Index(nativePilotTraceCatalogs[0], "inspection"))
 			parts[4+field] = strconv.Itoa(index)
 			code := "manual_initial_v8_" + strings.Join(parts, "_")
 			d, ok := nativePilotInitialCode(code)

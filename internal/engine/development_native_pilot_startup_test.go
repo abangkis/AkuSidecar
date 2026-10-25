@@ -273,6 +273,45 @@ func TestNativePilotStartupTimingBoundsAndIsolation(t *testing.T) {
 		t.Fatal("diagnostic leaked data")
 	}
 }
+
+func TestNativePilotStartupSettingsProgressClosed(t *testing.T) {
+	if !strings.Contains((nativePilotInitialTrace{firstCause: "settings_capture"}).String(), "domain=settings") {
+		t.Fatal("settings terminal failure escaped its diagnostic domain")
+	}
+	now := time.Unix(100, 0)
+	ledger := &nativePilotTiming{started: now, now: func() time.Time { return now }}
+	ctx := context.WithValue(context.Background(), nativePilotTimingKey{}, ledger)
+	reader := nativePilotTimed(ctx, "reader", "acquire_rpc")
+	defer reader()
+	collector := nativePilotTimed(ctx, "collector", "acquire_rpc")
+	defer collector()
+	for index, state := range nativePilotSettingsWaitStates {
+		raw, _ := json.Marshal(map[string]any{"operation": "settings_wait", "elapsedMS": 10, "cause": "", "settingsWait": state})
+		nativePilotTimingProgress(ctx, "collector", raw)
+		if ledger.roles[1].settingsWait != index || ledger.roles[0].settingsWait != 0 {
+			t.Fatal("closed settings state lost or crossed roles")
+		}
+	}
+	nativePilotTimingProgress(ctx, "collector", []byte(`{"operation":"settings_wait","elapsedMS":15,"cause":"","settingsWait":"extra_pending"}`))
+	for _, invalid := range []string{
+		`{"operation":"settings_wait","elapsedMS":1,"cause":"","settingsWait":"PRIVATE_TOKEN"}`,
+		`{"operation":"settings_wait","elapsedMS":1,"cause":"","settingsWait":null}`,
+		`{"operation":"settings_wait","elapsedMS":1,"cause":"","settingsWait":4}`,
+		`{"operation":"settings_wait","elapsedMS":1,"cause":"","settingsWait":"body_pending","settingsWait":"body_complete"}`,
+		`{"operation":"settings_wait","elapsedMS":1,"settingsWait":"body_complete"}`,
+	} {
+		nativePilotTimingProgress(ctx, "collector", []byte(invalid))
+	}
+	snapshot := *ledger.freeze()
+	if !strings.Contains(snapshot.String(), "collector_settings_wait=extra_pending") || strings.Contains(snapshot.String(), "PRIVATE") {
+		t.Fatal("settings prerequisite was overwritten or leaked data")
+	}
+	nativePilotTimingProgress(ctx, "collector", []byte(`{"operation":"settings_wait","elapsedMS":2,"cause":"","settingsWait":"body_complete"}`))
+	if *ledger.freeze() != snapshot {
+		t.Fatal("late settings progress rewrote the frozen timeout")
+	}
+}
+
 func testNativeStartupSource(t *testing.T, f *testNativePilotFixture, capture nativePilotCapture) *nativePilotStartupSource {
 	t.Helper()
 	if capture == nil {

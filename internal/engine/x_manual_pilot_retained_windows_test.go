@@ -570,8 +570,8 @@ console.log(JSON.stringify({ready:true}));
 for await(const line of createInterface({input:process.stdin})){
  const q=JSON.parse(line),report=result=>console.log(JSON.stringify({event:'manual_startup_progress',id:q.id,result}));
  if(q.op==='manual_acquire'){
-  const timing=createStartupTiming(report);timing.step('settings_wait');
-  timing.failure(startupFailure(q.role,'settings','source_unavailable'));
+  const timing=createStartupTiming(report);timing.step('settings_wait','network_failed');
+  timing.failure(startupFailure(q.role,'settings','source_unavailable',false,undefined,{firstCause:'settings_capture'}));
  }else console.log(JSON.stringify({id:q.id,ok:true,result:{closed:true}}));
 }`
 	cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(project, "scripts/auth-session-fixture/x-manual-startup-timing.mjs"), filepath.Join(project, "scripts/auth-session-fixture/x-manual-startup-diagnostic.mjs"))
@@ -621,6 +621,9 @@ for await(const line of createInterface({input:process.stdin})){
 	}
 	if snapshot.roles[0].nodeOperation != nativePilotTimingIndex("settings_wait") || snapshot.roles[0].operation != nativePilotTimingIndex("acquire_rpc") {
 		t.Fatal("pending operation lost")
+	}
+	if detail.trace == nil || detail.trace.firstCause != "settings_capture" || !strings.Contains(snapshot.String(), "reader_settings_wait=network_failed") {
+		t.Fatal("settings terminal cause or closed prerequisite lost across Node transport")
 	}
 	b.mu.Lock()
 	pending, observers := len(b.pending), len(b.progress)

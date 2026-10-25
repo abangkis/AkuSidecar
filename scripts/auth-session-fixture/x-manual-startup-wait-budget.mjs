@@ -23,12 +23,13 @@ export function createStartupWaitBudget(milliseconds, { role, signal, now = () =
       let timer, onAbort;
       try {
         const left = remaining();
-        await Promise.race([promise, new Promise((resolve, reject) => {
+        const result = await Promise.race([promise, new Promise((resolve, reject) => {
           onAbort = () => reject(startupFailure(role, 'joint', 'canceled'));
           signal?.addEventListener('abort', onAbort, { once: true });
           timer = setTimer(() => reject(startupFailure(role, 'settings', 'deadline')), left);
         })]);
         remaining();
+        return result;
       } finally {
         if (timer !== undefined) clearTimer(timer);
         if (onAbort) signal?.removeEventListener('abort', onAbort);

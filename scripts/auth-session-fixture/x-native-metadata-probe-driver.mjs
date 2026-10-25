@@ -1694,6 +1694,7 @@ async function qualifyBoundObservation(message, cookieWriteScope = false) {
 async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, afterIdentity, beforeIdentityRead,initialFailure, observationFactory = (...args) => new QABoundObservation(...args), progress=()=>{}, waitForSettings) {
   current.earlyRunning = true;
   const bound = current.bound = { running: true, sampling: false, binder: null, networkDisabled: false };
+  let detachSettings = () => {};
   const controls=current.manualStartupSelected?startupRootControls(current,send,'reader'):null;
   try {
     const { frameId, loaderId: oldLoader } = await send('Page.getFrameTree', {}, current.sessionId);
@@ -1701,6 +1702,7 @@ async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, 
     bound.binder = observationFactory(boundScope(current), frameId,
       requestId => send('Network.getResponseBody', { requestId }, current.sessionId), () => performance.now(),
       writes ? (raw, phase, loader) => writes.observe(raw, phase, loader) : undefined, pointOptions);
+    detachSettings = bound.binder.onSettingsWait(state => progress(undefined, state));
     bound.sampling = true;
     if(!current.manualCookieGuard)await send('Network.enable', { maxTotalBufferSize: MAX_TOTAL_NETWORK_BUFFER_BYTES,
       maxResourceBufferSize: MAX_RESOURCE_NETWORK_BUFFER_BYTES, maxPostDataSize: 0 }, current.sessionId);
@@ -1725,12 +1727,15 @@ async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, 
         return result;
       },
       beforeRuntimeDisable: async () => {
-        progress('settings_wait');
+        progress('settings_wait', bound.binder.settingsWaitState());
         // Finish this one document's request before disabling context-loss
         // observation. No second reload, negative control or cookie inspection.
         let timer;
         try {
-          if (waitForSettings) await waitForSettings(bound.binder.done);
+          if (waitForSettings) {
+            const result = await waitForSettings(bound.binder.done);
+            if (result?.status !== 'complete') throw startupFailure('reader','settings','source_unavailable');
+          }
           else if (current.manualStartupSelected) throw probeError('manual_startup_budget_invalid');
           else await Promise.race([bound.binder.done, new Promise(resolve => { timer = setTimeout(resolve, 2500); })]);
         }
@@ -1750,6 +1755,7 @@ async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, 
     if(controls){progress('root_restore');await controls.restore();}
     return writes ? finishQACookieWriteScope(observation, writes.finish()) : observation;
   } finally {
+    detachSettings();
     bound.sampling = false;
     if (!bound.networkDisabled) await send('Network.disable', {}, current.sessionId).catch(() => { bound.binder?.invalidate('scope_lost','cleanup_failed'); });
     bound.running = false; current.earlyRunning = false; current.earlyCapture = null;
@@ -1837,6 +1843,7 @@ export async function collectorShortCheckpoint(current, afterIdentity, onPrivate
     }
   }
   let binder, capture, instrumentationId, frameId, oldLoader, sampling = false, networkDisabled = false, synchronized = false, privateResult = {};
+  let detachSettings = () => {};
   const owned = current.manualStartupSelected ? s.transport.ownership() : null;
   const scope = { owner: owned ? owned.pid : current.owner + 1, profileId: owned ? owned.profileId : 'derived-headless-owned-context', sessionId: s.sessionId, targetId: s.targetId };
   const project = (method, r) => {
@@ -1903,15 +1910,19 @@ export async function collectorShortCheckpoint(current, afterIdentity, onPrivate
       binder = observationFactory(scope, frameId, requestId => command('Network.getResponseBody', { requestId }),
         () => performance.now(), undefined, pointOptions);
     } catch (error) { throw failure(error, 'guard_bind', 'rejected'); }
+    detachSettings = binder.onSettingsWait(state => progress(undefined, state));
     sampling = true;
     if(!s.manualCookieGuard)await command('Network.enable', { maxTotalBufferSize: MAX_TOTAL_NETWORK_BUFFER_BYTES, maxResourceBufferSize: MAX_RESOURCE_NETWORK_BUFFER_BYTES, maxPostDataSize: 0 });
     if(controls)await controls.apply();else await command('Network.setCacheDisabled', { cacheDisabled: true });
     capture = new BootstrapHandoffCapture({ boundIdentity: true, send: command,
       beforeIdentityRead: contextId => beforeIdentityRead?.(binder.startupPins(contextId)), beforeRuntimeDisable: async () => {
-      progress('settings_wait');
+      progress('settings_wait', binder.settingsWaitState());
       let timer;
       try {
-        if (waitForSettings) await waitForSettings(binder.done);
+        if (waitForSettings) {
+          const result = await waitForSettings(binder.done);
+          if (result?.status !== 'complete') throw startupFailure('collector','settings','source_unavailable');
+        }
         else if (current.manualStartupSelected) throw probeError('manual_startup_budget_invalid');
         else await Promise.race([binder.done, new Promise(resolve => { timer = setTimeout(resolve, 2500); })]);
       }
@@ -1928,6 +1939,7 @@ export async function collectorShortCheckpoint(current, afterIdentity, onPrivate
     if(controls){progress('root_restore');await controls.restore();}
     return { checkpoint: shortQACheckpoint(observation), ...privateResult };
   } finally {
+    detachSettings();
     sampling = false; unsubscribe();s.manualCookieUnsubscribe?.();
     if (!networkDisabled) await command('Network.disable').catch(() => {});
   }
@@ -1950,17 +1962,21 @@ export function createOwnedManualStartupOwners(message,diagnostics=startupFailur
   if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !manualStartupStateReady(current)) throw probeError('manual_startup_unavailable');
   const rendezvous = new QACheckpointRendezvous();
   const owner = role => createManualStartupOwner({role,diagnostics,requireFreshness:true,run: async sink => {
-    const progress=op=>current.manualTiming?.[role]?.step(op);
+    const progress=(op,state)=>{
+      const timing=current.manualTiming?.[role];
+      if(op===undefined)timing?.settings(state);else timing?.step(op,state);
+    };
     if (sink.signal?.aborted) throw probeError('manual_startup_unavailable');
     const abort = () => rendezvous.cancel();
     sink.signal?.addEventListener('abort', abort, { once: true });
-    const failure=(error,phase,reason='unavailable')=>{
+    const failure=(error,phase,reason='unavailable',state)=>{
       const cause=diagnostics.record(error,role,phase,reason);
-      current.manualTiming?.[role]?.failure(cause);
+      current.manualTiming?.[role]?.failure(cause,state);
       return cause;
     };
-    const manualObservation=(...args)=>createManualV2BoundObservation(...args,(reason,trace)=>{
-      failure(startupFailure(role,'bound_finish',reason,false,undefined,trace),'bound_finish',reason);
+    const manualObservation=(...args)=>createManualV2BoundObservation(...args,(reason,trace,state)=>{
+      const phase=reason==='source_unavailable'?'settings':'bound_finish';
+      failure(startupFailure(role,phase,reason,false,undefined,trace),phase,reason,state);
     },role==='reader'?current.manualCookieGuard:collector.manualCookieGuard,
     {role,cacheControl:(role==='reader'?current:collector).manualFreshnessCacheControl});
     const together=async()=>{progress('rendezvous');try{await rendezvous.arrive(role);}catch{throw diagnostics.record(startupFailure('pair','rendezvous','deadline'),'pair','rendezvous');}};

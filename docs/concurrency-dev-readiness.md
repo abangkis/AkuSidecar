@@ -96,6 +96,48 @@ the retained reader profile was preserved. No retry was performed. Evidence:
 
 ## Acceptance scenario
 
+### Settings completion and wait diagnostics
+
+The direct capture and the bound observation now settle metadata completion with
+closed `complete`/`failed` results. A selected `loadingFailed`, a rejected
+candidate or a scope invalidation releases the waiter as failed immediately;
+it does not wait for the joint timeout to reveal a known failure. Explicit
+finish also retires incomplete waiters without changing their source verdict.
+The manual driver rejects a failed result, retains the original cause and still
+cleans up Runtime/Debugger resources. `settings_capture` identifies a terminal
+settings-capture failure; an earlier cookie, lifecycle or other cause wins.
+
+Metadata completion still requires the selected response, loading completion and
+required ExtraInfo. It does not authorize an account or await the projected body.
+Final acceptance still validates the body, account, pinned document, freshness,
+cookie guard, cleanup and unchanged two-second/60-second deadlines.
+
+Private progress can include one optional closed `settingsWait` category:
+request pending or excluded before identity/by frame/document/history, response
+pending, loading completion pending, ExtraInfo pending, metadata complete,
+network/candidate/scope failure, or body pending/complete/failed. No request ID,
+URL, account, cookie/header value, raw body or exception text is included.
+The existing 32-record/512-byte bounds remain; category updates do not reset
+the operation age. Go rejects unknown, duplicate or malformed fields/categories,
+isolates the roles and freezes the last received category when admission fails
+or times out. The first failure carries its category in the same progress record;
+later role events cannot rewrite it. Diagnostics remain nonauthorizing and cannot
+extend the deadline.
+
+This correction has offline validation only. No new native attempt or transfer
+was performed; the last native acceptance remains the failed attempt above.
+
+Offline evidence: startup regression passed 73 Node and 31 top-level Go cases,
+plus both Engine build variants (`native-manual-startup-692ece5f29d74440a088179651d6ffd5.log.txt`).
+Owner regression passed 151 Node and 17 top-level Go cases, all tag gates and
+staged Windows compilation (`x-manual-owner-437b048a8f254004962c1fe3f226a92c.log.txt`).
+These suites overlap. An additional preparation-only transport check exercised
+the closed failure/category across Node stdio into Go
+(`x-manual-retained-8f3bb6b536b4466ebb19ed0d153671ef.prepare.log.txt`); its native
+entries skipped before profile/lease access. Evidence logs are under
+`runtime/qa/auth-session-sidecar/`. All owned temporary build/preparation roots
+were removed; no prepared transfer plan remains for this correction.
+
 ### Offline startup overhead correction
 
 The Windows owner checkpoint now resolves Node and Chrome parent links from one

@@ -39,6 +39,7 @@ if(mode!==undefined){
     'x-manual-startup-diagnostic.mjs','x-manual-startup-diagnostic.test.mjs',
     'x-manual-startup-timing.mjs','x-manual-startup-timing.test.mjs',
     'x-manual-startup-wait-budget.mjs','x-manual-startup-wait-budget.test.mjs',
+    'x-settings-wait-state.mjs','x-settings-wait.test.mjs',
     'x-qa-bound-observation.mjs','x-qa-bound-observation.test.mjs','x-qa-cookie-writes.mjs',
     'x-manual-startup-cookie-guard.mjs','x-manual-startup-cookie-guard.test.mjs',
     'x-manual-diagnostic-capacity.test.mjs',

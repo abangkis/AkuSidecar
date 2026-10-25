@@ -125,10 +125,12 @@ type nativePilotDiagnostic struct {
 // Diagnostic-only monotonic clock. No observation, policy clock or deadline is
 // derived from this ledger. Fixed slots bound memory and exclude private data.
 var nativePilotTimingOps = [...]string{"idle", "os_snapshot", "inspect_rpc", "inventory_rpc", "acquire_rpc", "wire_decode", "identity", "rendezvous", "settings_wait", "cleanup", "root_restore", "complete"}
+var nativePilotSettingsWaitStates = [...]string{"unknown", "request_pending", "request_before_identity", "request_frame", "request_document", "request_history", "response_pending", "completion_pending", "extra_pending", "metadata_complete", "network_failed", "candidate_rejected", "scope_lost", "body_pending", "body_complete", "body_failed"}
 
 type nativePilotTimingKey struct{}
 type nativePilotRoleTiming struct {
 	op, nodeOp            int
+	settingsWait          int
 	started, nodeReceived time.Time
 	nodeMS                int64
 	sequence              uint64
@@ -136,6 +138,7 @@ type nativePilotRoleTiming struct {
 }
 type nativePilotTimingRoleSnapshot struct {
 	operation, nodeOperation int
+	settingsWait             int
 	activeMS, nodeMS         int64
 	totals                   [len(nativePilotTimingOps)]int64
 }
@@ -202,6 +205,7 @@ func nativePilotTimed(ctx context.Context, role, op string) func() {
 	r.started = l.now()
 	r.nodeOp = 0
 	r.nodeMS = 0
+	r.settingsWait = 0
 	l.mu.Unlock()
 	return func() {
 		l.mu.Lock()
@@ -240,9 +244,10 @@ func nativePilotTimingProgress(ctx context.Context, role string, raw []byte) {
 		return
 	}
 	var p struct {
-		Operation string `json:"operation"`
-		ElapsedMS int64  `json:"elapsedMS"`
-		Cause     string `json:"cause"`
+		Operation    string  `json:"operation"`
+		ElapsedMS    int64   `json:"elapsedMS"`
+		Cause        string  `json:"cause"`
+		SettingsWait *string `json:"settingsWait"`
 	}
 	// Unknown/duplicate fields are rejected by the private transport decoder.
 	if !nativePilotProgressDecode(raw, &p) || p.ElapsedMS < 0 || p.ElapsedMS > 60000 {
@@ -251,6 +256,19 @@ func nativePilotTimingProgress(ctx context.Context, role string, raw []byte) {
 	op := nativePilotTimingIndex(p.Operation)
 	if op == 0 {
 		return
+	}
+	settingsWait := 0
+	if p.SettingsWait != nil {
+		settingsWait = -1
+		for j, state := range nativePilotSettingsWaitStates {
+			if state == *p.SettingsWait {
+				settingsWait = j
+				break
+			}
+		}
+		if settingsWait < 0 {
+			return
+		}
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -262,6 +280,9 @@ func nativePilotTimingProgress(ctx context.Context, role string, raw []byte) {
 		return
 	}
 	r.nodeOp = op
+	if p.SettingsWait != nil {
+		r.settingsWait = settingsWait
+	}
 	r.nodeMS = p.ElapsedMS
 	r.nodeReceived = l.now()
 	if p.Cause != "" && l.first == nil {
@@ -281,7 +302,7 @@ func nativePilotProgressDecode(raw []byte, out any) bool {
 	for d.More() {
 		t, e := d.Token()
 		key, ok := t.(string)
-		if e != nil || !ok || seen[key] || (key != "operation" && key != "elapsedMS" && key != "cause") {
+		if e != nil || !ok || seen[key] || (key != "operation" && key != "elapsedMS" && key != "cause" && key != "settingsWait") {
 			return false
 		}
 		seen[key] = true
@@ -290,7 +311,7 @@ func nativePilotProgressDecode(raw []byte, out any) bool {
 			return false
 		}
 	}
-	if t, e := d.Token(); e != nil || t != json.Delim('}') || len(seen) != 3 {
+	if t, e := d.Token(); e != nil || t != json.Delim('}') || !seen["operation"] || !seen["elapsedMS"] || !seen["cause"] || len(seen) < 3 || len(seen) > 4 {
 		return false
 	}
 	if _, e := d.Token(); e != io.EOF {
@@ -310,6 +331,7 @@ func (l *nativePilotTiming) freeze() *nativePilotTimingSnapshot {
 		v := &s.roles[i]
 		v.operation = r.op
 		v.nodeOperation = r.nodeOp
+		v.settingsWait = r.settingsWait
 		if r.op != 0 {
 			v.activeMS = nativePilotTimingMS(now.Sub(r.started))
 			r.totals[r.op] += now.Sub(r.started)
@@ -344,6 +366,9 @@ func (s nativePilotTimingSnapshot) String() string {
 	for i, role := range []string{"reader", "collector"} {
 		r := s.roles[i]
 		out += fmt.Sprintf(" %s_active=%s %s_active_ms=%d %s_node=%s %s_node_age_ms=%d", role, name(r.operation), role, bound(r.activeMS), role, name(r.nodeOperation), role, bound(r.nodeMS))
+		if r.settingsWait > 0 && r.settingsWait < len(nativePilotSettingsWaitStates) {
+			out += fmt.Sprintf(" %s_settings_wait=%s", role, nativePilotSettingsWaitStates[r.settingsWait])
+		}
 		for j, ms := range r.totals {
 			if ms > 0 {
 				out += fmt.Sprintf(" %s_%s_ms=%d", role, name(j), bound(ms))
@@ -364,7 +389,7 @@ type nativePilotInitialTrace struct{ firstCause, terminal, early, handoff, cooki
 
 // Append-only V2 catalogs with the V3-V8 fields; order matches STARTUP_TRACE in Node.
 var nativePilotTraceCatalogs = [][]string{
-	{"unknown", "cookie_candidate", "cookie_ambiguous", "context_lost", "target_lost", "navigation", "owner_scope", "event_cap", "identity_order", "identity_mismatch", "settings_order", "response_frame", "extra_shape", "extra_status", "extra_missing", "extra_unexpected", "generic_early", "stale_observation", "cleanup_failed", "guard_request_unbound", "guard_request_budget", "guard_header_classification", "guard_response_correlation", "guard_metadata_shape", "guard_completion_missing", "guard_header_budget", "guard_event_budget", "root_control", "inspection"},
+	{"unknown", "cookie_candidate", "cookie_ambiguous", "context_lost", "target_lost", "navigation", "owner_scope", "event_cap", "identity_order", "identity_mismatch", "settings_order", "response_frame", "extra_shape", "extra_status", "extra_missing", "extra_unexpected", "generic_early", "stale_observation", "cleanup_failed", "guard_request_unbound", "guard_request_budget", "guard_header_classification", "guard_response_correlation", "guard_metadata_shape", "guard_completion_missing", "guard_header_budget", "guard_event_budget", "root_control", "inspection", "settings_capture"},
 	{"unknown", "unavailable", "rejected", "identity_unavailable", "source_unavailable", "stale_observation", "cleanup_unverified", "scope_lost", "observed_cookie_write", "deadline", "canceled", "replay", "sample_missing", "sample_duplicate", "invalid_shape", "scope_mismatch", "time_invalid", "bound"},
 	{"unknown", "captured", "deadline", "script_limit", "wrong_page", "unexpected_pause", "evaluation_failed", "setup_failed"},
 	{"unknown", "accepted", "rejected"},
@@ -426,7 +451,7 @@ func (v nativePilotInitialTrace) String() string {
 		return result + " domain=lifecycle"
 	case "identity_order", "identity_mismatch", "stale_observation":
 		return result + " domain=identity"
-	case "settings_order", "response_frame", "extra_shape", "extra_status", "extra_missing", "extra_unexpected":
+	case "settings_order", "response_frame", "extra_shape", "extra_status", "extra_missing", "extra_unexpected", "settings_capture":
 		return result + " domain=settings"
 	case "cleanup_failed":
 		return result + " domain=cleanup"

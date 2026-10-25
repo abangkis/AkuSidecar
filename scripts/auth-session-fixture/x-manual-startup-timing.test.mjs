@@ -2,6 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createStartupTiming} from './x-manual-startup-timing.mjs';
 import {startupFailure} from './x-manual-startup-diagnostic.mjs';
+import {SETTINGS_WAIT_STATES} from './x-settings-wait-state.mjs';
+
+test('settings prerequisites use closed categories without resetting phase age',()=>{
+  let now=100;const output=[],t=createStartupTiming(value=>output.push(value),()=>now);
+  t.step('settings_wait','response_pending');now+=20;t.settings('completion_pending');now+=30;t.settings('extra_pending');
+  assert.equal(output.at(-1).elapsedMS,50);assert.equal(output.at(-1).settingsWait,'extra_pending');
+  const count=output.length;t.settings('PRIVATE_COOKIE_TOKEN');t.settings({get value(){throw Error('PRIVATE');}});
+  assert.equal(output.length,count);
+  t.failure(startupFailure('collector','settings','source_unavailable'));t.settings('body_complete');
+  assert.equal(output.at(-1).settingsWait,'extra_pending');
+  assert.ok(output.every(value=>SETTINGS_WAIT_STATES.includes(value.settingsWait)));
+  assert.equal(JSON.stringify(output).includes('PRIVATE'),false);
+});
 
 test('role-local progress reports only closed operations and monotonic durations',()=>{
   let now=100;const reader=[],collector=[];

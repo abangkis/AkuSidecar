@@ -64,3 +64,8 @@ test('invalid or enlarged private budgets are rejected', () => {
     assert.throws(() => createStartupWaitBudget(milliseconds, { role: 'reader' }), /budget_invalid/);
   }
 });
+
+test('bounded waits preserve a failed terminal result instead of converting it to completion', async () => {
+  const f = fixture(), result = Object.freeze({status:'failed',reason:'network_failed'});
+  assert.equal(await f.budget.wait(Promise.resolve(result)), result);
+});
