@@ -17,7 +17,7 @@ roadmap are evidence, not a new list of prerequisites.
 
 ## Current implementation
 
-### Timing policy update (2026-10-25, offline)
+### Timing policy update (2026-10-25)
 
 The approved timing change separates startup work from evidence age. The private
 Go adapter gives the complete initial acquisition (ownership checks, transport,
@@ -36,8 +36,9 @@ attempt start plus at most 60 seconds, rather than at sample expiry. No renewal,
 retry, cookie-guard relaxation, Store policy or runtime activation is introduced.
 
 Earlier two-second startup and five-second sample-age references on this page
-describe the previous timing policy. The historical native runs below are
-unchanged; no native run has yet qualified the six-second policy.
+describe the previous timing policy. The latest native attempt below passed
+initial startup admission under the new timing policy but failed at capture;
+the historical failed-startup records remain unchanged.
 
 Offline validation passed: `test-native-manual-pilot-startup.ps1` (76 Node and
 33 top-level Go tests, four tag gates, both Engine builds),
@@ -78,7 +79,41 @@ an old startup plan cannot execute capture. Preparation is not transfer approval
 
 ## Native acceptance attempt
 
-Latest attempt: source commit `94d8e2f`, explicitly authorized run
+Latest attempt: source commit `ad865b4`, explicitly authorized run
+`581ff3a1757546fdbfe84afd2369bfad` on 2026-10-25. Preparation passed 279 and
+33 Node cases, all four retained tag gates, staged full Engine compilation and
+accountless Go diagnostic checks. The prepared plan pinned 918 source files,
+only `auth_token`/`ct0`, and the original maximum 60-second attempt.
+
+Exactly one native execution passed initial broker startup admission, entered
+the capture continuation, created its disposable QA database and opened the
+native reader. Runtime binding, dispatch, durable Store claim and pre-capture
+owner validation also passed, as established by the reached `capture` phase.
+The strict account/login receipts were therefore accepted within the separated
+six-second startup/two-second final sample-age policy in this attempt. No second
+login was requested. No precise startup duration or general timing reliability
+claim is available from this log.
+
+The complete test still failed (12.26 seconds) with
+`phase=capture outcome=rejected_no_mutation`. This phase contains both behavior
+admission and Coordinator/backend capture. The test logs neither the retained
+error nor a safe substage/category, so it does not establish whether pacing,
+ownership, request validation, the worker, a challenge, cancellation or another
+backend predicate caused rejection. Do not infer the cause from the generic
+outcome. The phase did not reach result validation or result commit;
+`rejected_no_mutation` is not a claim that the earlier durable claim did not
+mutate the disposable QA database.
+
+Owned Job/lease cleanup was verified. The collector/database/build root was
+removed, and the dedicated retained reader profile was preserved. No retry or
+main-dev activation occurred. Main login, user database/runtime and Auto Update
+were unchanged; the local dev configuration SHA-256 remained
+`52063D73180A8F6AB3E514D89CFAA81FB168E0B98381E58FA7FF1AE28D7AADAE`.
+Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-581ff3a1757546fdbfe84afd2369bfad.prepare.log.txt`
+and `runtime/qa/auth-session-sidecar/x-manual-retained-581ff3a1757546fdbfe84afd2369bfad.run.log.txt`.
+
+Previous attempt: source commit `94d8e2f`, explicitly authorized run
 `90d1b8373b2d4f548eb3a99c3c4da2ac` on 2026-10-25. Preparation passed 279 and
 33 Node cases, retained tag gates, staged compilation and accountless diagnostic
 checks. Exactly one native execution rejected at the unchanged 2,000 ms joint
@@ -359,10 +394,12 @@ profile/database/build root only after Job/lease cleanup is verified.
 ## Remaining activation work
 
 1. Obtain native capture acceptance using the prepared QA scenario. Do not reopen
-   deferred identity renewal merely to expand this bounded pilot. Review the
-   next authorized attempt should evaluate the separated six-second startup and
-   two-second final sample freshness policy. Another real transfer needs fresh
-   one-shot authorization. Keep account guards and the 60-second attempt cap.
+   deferred identity renewal merely to expand this bounded pilot. Initial native
+   startup and reader opening passed in the latest attempt; the current failure
+   is at capture. Review the existing behavior/Coordinator/backend failure paths
+   offline and add closed substage/reason reporting before another native run.
+   Another real transfer needs fresh one-shot authorization. Keep account guards,
+   the six-second startup/two-second freshness policy and 60-second attempt cap.
 2. Promote the owned Windows/profile lifecycle from QA-only construction into a
    development provider, with explicit opt-in, status, stop and source-route
    arbitration. The current native Windows owner remains dual-tag/fixture scoped;
