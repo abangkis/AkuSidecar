@@ -26,6 +26,18 @@ test('settings waits use the remaining acquisition budget and never reset it', a
   assert.equal(f.cleared(), 2);
 });
 
+test('six-second startup waits preserve the remaining budget after two seconds', async () => {
+  const f = fixture(6000);
+  f.at(2500);
+  await f.budget.wait(Promise.resolve());
+  assert.equal(f.timer().delay, 3500);
+  f.at(5999);
+  await f.budget.wait(Promise.resolve());
+  assert.equal(f.timer().delay, 1);
+  f.at(6000);
+  await assert.rejects(f.budget.wait(Promise.resolve()), error => startupDiagnostic(error).reason === 'deadline');
+});
+
 test('a stalled settings source fails at the remaining deadline with no successful fallback', async () => {
   const f = fixture(); f.at(80);
   const pending = f.budget.wait(new Promise(() => {}));
@@ -60,7 +72,7 @@ test('cancellation and the original source failure survive wait cleanup', async 
 });
 
 test('invalid or enlarged private budgets are rejected', () => {
-  for (const milliseconds of [undefined, null, 0, -1, 0.5, 2001, Infinity, '100']) {
+  for (const milliseconds of [undefined, null, 0, -1, 0.5, 6001, Infinity, '100']) {
     assert.throws(() => createStartupWaitBudget(milliseconds, { role: 'reader' }), /budget_invalid/);
   }
 });

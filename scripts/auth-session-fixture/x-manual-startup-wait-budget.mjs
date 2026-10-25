@@ -1,10 +1,11 @@
 import { performance } from 'node:perf_hooks';
 import { startupFailure } from './x-manual-startup-diagnostic.mjs';
+import { MANUAL_STARTUP_MAX_MS } from './x-manual-startup-limits.mjs';
 
 // Private wait hint only. Go retains the authoritative joint deadline across
 // transport, evidence validation and the final ownership inspection.
 export function createStartupWaitBudget(milliseconds, { role, signal, now = () => performance.now(), setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
-  if (!Number.isSafeInteger(milliseconds) || milliseconds < 1 || milliseconds > 2000 ||
+  if (!Number.isSafeInteger(milliseconds) || milliseconds < 1 || milliseconds > MANUAL_STARTUP_MAX_MS ||
       !['reader', 'collector'].includes(role)) throw new Error('manual_startup_budget_invalid');
   const start = now();
   if (!Number.isFinite(start) || start < 0) throw new Error('manual_startup_budget_invalid');

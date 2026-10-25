@@ -2,6 +2,14 @@
 
 Decision: 2026-10-21. Contract: `aku.x.dev-pilot.manual-startup.v2`.
 
+Timing amendment (2026-10-25): startup acquisition/publication is bounded by six
+seconds; all four account/login samples must be less than two seconds old when
+Go publishes the initial vector, after final ownership inspection. The original
+absolute 60-second attempt and any earlier caller/source/consent expiry remain
+authoritative. This supersedes earlier two-second startup/five-second sample
+age references in historical checkpoints below. Validation is offline only;
+this amendment does not authorize another transfer or main-dev activation.
+
 The next [native capture composition](x-manual-pilot-store-contract.md#prepared-native-x-capture-through-the-existing-worker-2026-10-25)
 connects the production X worker/parser to the guarded Engine/Store path through
 the same private startup owner ports. Its current validation is accountless and
@@ -104,8 +112,8 @@ credential transfer/native QA run.
   semantic predicate and request-local qualification
   `api_v1.cookie-auth-rejection.2026-10-20`.
 - One-use challenge and exact owner/context/document/request correlation, direct
-  fresh responses and initial samples no older than five seconds. Both roles'
-  initial vector must complete in less than two seconds. Clock domains must not
+  fresh responses and initial samples less than two seconds old at publication.
+  Both roles' initial vector must complete in less than six seconds. Clock domains must not
   be compared as if unrelated process monotonic clocks shared an origin.
 
 ## Manual permission lifetime
@@ -113,8 +121,8 @@ credential transfer/native QA run.
 The absolute clock starts before initial acquisition or authorized seeding,
 whichever comes first. The attempt ends no later than that start plus 60 seconds
 or an explicitly earlier owner/consent/attempt limit. Initial sample freshness
-must pass at admission; its five-second timestamp does not secretly shorten the
-selected manual window back to five seconds. Conversely, the manual window is
+must pass at admission; its two-second freshness limit does not secretly shorten
+the selected manual window back to two seconds. Conversely, the manual window is
 not a claim that account/session evidence stays fresh for 60 seconds.
 
 There is no automatic identity renewal, attempt extension, restart inheritance,
@@ -868,7 +876,7 @@ relaxing identity, inventing OS ownership or reopening renewal/parser research.
    process or handle rejects the observation. Repeated empty bootstrap reads
    remain limited to the same frozen startup context and existing pause budget.
 5. Only matching fresh account/login receipts open manual-controller admission.
-   The joint two-second evidence deadline begins after both owners are ready;
+   The joint six-second startup deadline begins after both owners are ready;
    preparation still consumes the original absolute 60-second attempt window.
    The existing startup capture retains its shorter five-second observation and
    command deadlines. Reader requests, dispatch, claim and result publication

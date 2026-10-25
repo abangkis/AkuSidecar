@@ -2,6 +2,7 @@
 // owner backend; this module cannot grant it through a request or JSON flag.
 import {startupFailureLatch,startupInspectionFailure} from './x-manual-startup-diagnostic.mjs';
 import {validateManualCaptureRequest} from './x-native-manual-capture.mjs';
+import {MANUAL_STARTUP_MAX_MS} from './x-manual-startup-limits.mjs';
 const roles=['reader','collector'];
 const pinKeys=['ownerId','profileId','contextId','targetId','frameId','documentId'];
 const requestKeys=['challenge','role',...pinKeys];
@@ -23,7 +24,7 @@ export function manualOwnerOperation(value) {
   if('handle' in value&&!(value.op==='manual_abort'&&value.handle===null)&&!ref(value.handle))throw failure();
   if(value.op==='manual_abort'&&(typeof value.preserveReader!=='boolean'||value.role==='collector'&&value.preserveReader))throw failure();
   if(value.op==='manual_acquire'){
-    if(!Number.isSafeInteger(value.startupBudgetMS)||value.startupBudgetMS<1||value.startupBudgetMS>2000)throw failure();
+    if(!Number.isSafeInteger(value.startupBudgetMS)||value.startupBudgetMS<1||value.startupBudgetMS>MANUAL_STARTUP_MAX_MS)throw failure();
     exact(value.request,requestKeys);
     if(!requestKeys.every(k=>ref(value.request[k]))||value.request.role!==value.role)throw failure();
   }

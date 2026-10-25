@@ -252,7 +252,7 @@ func decodeNativePilotStartup(raw []byte, ch nativePilotChallenge, correlation s
 	if wire.challenge != correlation || wire.role != ch.role || wire.ownerId != o.owner || wire.profileId != o.profile || wire.contextId != o.context || wire.targetId != o.target || wire.frameId != o.frame || wire.documentId != o.document {
 		return empty, &nativePilotInitialError{nativePilotInitialDetail{role: ch.role, phase: "wire_decode", reason: "scope_mismatch"}}
 	}
-	if wire.elapsedMS >= float64(nativePilotJoint/time.Millisecond) {
+	if wire.elapsedMS >= float64(nativePilotStartup/time.Millisecond) {
 		return empty, &nativePilotInitialError{nativePilotInitialDetail{role: ch.role, phase: "wire_decode", reason: "time_invalid"}}
 	}
 	if wire.schema != nativePilotStartupWireSchema || !nativePilotAccount(wire.accountId) || wire.qualification != nativePilotSettingsQualification || wire.identityRequestId == wire.settingsRequestId {

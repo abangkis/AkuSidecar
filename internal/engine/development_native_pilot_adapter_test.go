@@ -298,10 +298,10 @@ func TestNativePilotReceiptBindingAndFreshness(t *testing.T) {
 			r.settings.clockValid = false
 		}},
 		{"source-elapsed", "evidence-invalid", func(_ *testNativePilotFixture, _ nativePilotChallenge, r *nativePilotReceipt) {
-			r.settings.elapsed = nativePilotJoint
+			r.settings.elapsed = nativePilotStartup
 		}},
 		{"exact-joint", "joint-deadline-exceeded", func(f *testNativePilotFixture, _ nativePilotChallenge, _ *nativePilotReceipt) {
-			f.advance(nativePilotJoint)
+			f.advance(nativePilotStartup)
 		}},
 		{"clock-rollback", "clock-regressed", func(f *testNativePilotFixture, _ nativePilotChallenge, _ *nativePilotReceipt) {
 			f.advance(-time.Nanosecond)
@@ -335,6 +335,69 @@ func TestNativePilotEarlierSampleDeadlinePublication(t *testing.T) {
 	assertNativePilotClosed(t, d, "evidence-expired")
 	if v != nil {
 		t.Fatal("late pair publication accepted")
+	}
+}
+
+// Policy-clock advances exercise the boundaries without slow wall-clock sleeps.
+// The first owner checkpoint is startup overhead; the second is publication.
+func TestNativePilotStartupAndSampleFreshnessAreIndependent(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		prepare, final time.Duration
+		valid          bool
+	}{
+		{"slow-startup-fresh-samples", 3 * time.Second, 1999 * time.Millisecond, true},
+		{"stale-at-final-ownership", 3 * time.Second, 2 * time.Second, false},
+		{"startup-last-instant", 5998 * time.Millisecond, time.Millisecond, true},
+		{"startup-exact-limit", 5999 * time.Millisecond, time.Millisecond, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newTestNativePilotFixture()
+			previous, checks := f.ports.owners, 0
+			f.ports.owners = func(ctx context.Context) (nativePilotState, error) {
+				checks++
+				if checks == 1 {
+					f.advance(tc.prepare)
+				} else {
+					f.advance(tc.final)
+				}
+				return previous(ctx)
+			}
+			// A source elapsed duration may exceed the sample freshness limit.
+			// Its observed timestamps still come from the fresh fixture read.
+			f.change = func(_ nativePilotChallenge, r *nativePilotReceipt) {
+				r.identity.elapsed, r.settings.elapsed = tc.prepare, tc.prepare
+			}
+			a := f.adapter(t)
+			v, d := a.initialEvidence(context.Background())
+			if tc.valid {
+				if v == nil || !d.OfflineValidated || !v.expires.Equal(f.cfg.attemptStarted.Add(60*time.Second)) {
+					t.Fatal("fresh samples rejected or startup renewed the attempt clock")
+				}
+			} else if v != nil || d.OfflineValidated || a.current != nil || !a.stopped {
+				t.Fatal("startup or sample freshness fence bypassed")
+			}
+		})
+	}
+}
+
+func TestNativePilotSixSecondStartupCannotExtendEarlierAttemptLimit(t *testing.T) {
+	f := newTestNativePilotFixture()
+	f.cfg.attemptStarted = f.now.Add(-57 * time.Second)
+	f.cfg.attemptValidUntil = f.now.Add(2 * time.Second)
+	previous := f.ports.owners
+	f.ports.owners = func(ctx context.Context) (nativePilotState, error) {
+		deadline, ok := ctx.Deadline()
+		if !ok || time.Until(deadline) > 2*time.Second {
+			t.Fatal("startup exceeded the shorter explicit attempt limit")
+		}
+		f.advance(2 * time.Second)
+		return previous(ctx)
+	}
+	a := f.adapter(t)
+	v, d := a.initialEvidence(context.Background())
+	if v != nil || d.Reason != "attempt-expired" || d.OfflineValidated {
+		t.Fatal("startup extended the earlier attempt limit")
 	}
 }
 

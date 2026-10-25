@@ -54,14 +54,14 @@ func TestXManualPilotOwnerParentPairSingleSnapshot(t *testing.T) {
 }
 
 func TestXManualPilotOwnerStartupBudget(t *testing.T) {
-	if ms, err := xManualPilotStartupBudget(context.Background()); err != nil || ms != 2000 {
+	if ms, err := xManualPilotStartupBudget(context.Background()); err != nil || ms != 6000 {
 		t.Fatal("missing parent deadline enlarged the joint limit")
 	}
-	for _, limit := range []time.Duration{150 * time.Millisecond, 5 * time.Second} {
+	for _, limit := range []time.Duration{150 * time.Millisecond, 5 * time.Second, 9 * time.Second} {
 		ctx, cancel := context.WithTimeout(context.Background(), limit)
 		ms, err := xManualPilotStartupBudget(ctx)
 		cancel()
-		if err != nil || ms <= 0 || ms > limit.Milliseconds() || ms > 2000 {
+		if err != nil || ms <= 0 || ms > limit.Milliseconds() || ms > 6000 {
 			t.Fatal("private wait hint exceeded the shared remaining deadline")
 		}
 	}
@@ -163,7 +163,7 @@ func (f *testXManualOwnerBackend) rpc(ctx context.Context, role, op string, fiel
 		return testXManualReply(out, value)
 	case "manual_acquire":
 		budget, ok := fields["startupBudgetMS"].(int64)
-		if !ok || budget < 1 || budget > nativePilotJoint.Milliseconds() {
+		if !ok || budget < 1 || budget > nativePilotStartup.Milliseconds() {
 			f.mu.Unlock()
 			return errors.New("private-startup-budget-invalid")
 		}

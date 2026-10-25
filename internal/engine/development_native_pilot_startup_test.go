@@ -47,7 +47,7 @@ func TestNativePilotStartupFinalOwnershipStillFencesPublication(t *testing.T) {
 				checks++
 				if checks == 2 {
 					if lateDeadline {
-						f.advance(nativePilotJoint)
+						f.advance(nativePilotStartup)
 					} else {
 						f.mu.Lock()
 						f.state.binding.collector.document = "changed-after-both-receipts"
@@ -103,7 +103,7 @@ func TestNativePilotStartupFailureDetails(t *testing.T) {
 				case "scope_mismatch":
 					m["documentId"] = "wrong"
 				case "time_invalid":
-					m["elapsedMS"] = 2000
+					m["elapsedMS"] = 6000
 				default:
 					return []byte(`{"private":"invalid"}`), nil
 				}
@@ -410,7 +410,7 @@ func TestNativePilotStartupStrictDecoder(t *testing.T) {
 		"long-request":        func(m map[string]any) { m["settingsRequestId"] = strings.Repeat("r", 513) },
 		"null-time":           func(m map[string]any) { m["identityObservedAtMS"] = nil },
 		"negative-elapsed":    func(m map[string]any) { m["elapsedMS"] = -1 },
-		"joint-limit":         func(m map[string]any) { m["elapsedMS"] = 2000 },
+		"joint-limit":         func(m map[string]any) { m["elapsedMS"] = 6000 },
 		"overflow-time":       func(m map[string]any) { m["identityObservedAtMS"] = 9e18 },
 		"stale-bootstrap": func(m map[string]any) {
 			m["identityObservedAtMS"] = float64(ch.started.Add(-time.Millisecond).UnixMilli())
@@ -468,7 +468,7 @@ func TestNativePilotStartupPairFailureAndReplay(t *testing.T) {
 						f.state.binding.collector.creation = "replacement-process"
 						f.mu.Unlock()
 					case "joint-timeout":
-						f.advance(nativePilotJoint)
+						f.advance(nativePilotStartup)
 					case "canceled":
 						cancel()
 					}

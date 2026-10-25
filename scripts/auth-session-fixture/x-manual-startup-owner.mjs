@@ -6,6 +6,7 @@ import { createManualStartupCapture } from './x-manual-startup-source.mjs';
 import {startupFailureLatch} from './x-manual-startup-diagnostic.mjs';
 import {consumeFreshnessPublication} from './x-identity-freshness-ledger.mjs';
 import {createStartupWaitBudget} from './x-manual-startup-wait-budget.mjs';
+import {MANUAL_STARTUP_MAX_MS} from './x-manual-startup-limits.mjs';
 
 const FIELDS = ['ownerId', 'profileId', 'contextId', 'targetId', 'frameId', 'documentId'];
 const unavailable = () => new Error('manual_startup_owner_unavailable');
@@ -85,7 +86,7 @@ export function createManualStartupOwner({ run, role='unknown',diagnostics=start
       catch(error) { const failure=diagnostics.record(error,role,'prepare','unavailable','manual_startup_owner_unavailable');close();throw failure; }
       finally { detach(); }
     },
-    async acquire(token, request, signal, startupBudgetMS = 2000) {
+    async acquire(token, request, signal, startupBudgetMS = MANUAL_STARTUP_MAX_MS) {
       if (token !== handle || state !== 'ready') { close(); throw unavailable(); }
       const detach = attach(signal);
       try {

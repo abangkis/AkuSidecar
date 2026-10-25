@@ -19,9 +19,11 @@ import (
 )
 
 const (
-	nativePilotContract              = "aku.x.dev-pilot.manual-startup.v2"
-	nativePilotAge                   = 5 * time.Second
-	nativePilotJoint                 = 2 * time.Second
+	nativePilotContract = "aku.x.dev-pilot.manual-startup.v2"
+	// Startup work and sample freshness are independent bounds. Ownership and
+	// transport may take longer; every sample must still be fresh at publication.
+	nativePilotAge                   = 2 * time.Second
+	nativePilotStartup               = 6 * time.Second
 	nativePilotLife                  = 60 * time.Second
 	nativePilotSettingsURL           = "https://api.x.com/1.1/account/settings.json"
 	nativePilotSettingsQualification = "api_v1.cookie-auth-rejection.2026-10-20"
@@ -773,7 +775,7 @@ func (a *nativePilotAdapter) initialEvidence(ctx context.Context) (*nativePilotV
 		defer a.mu.Unlock()
 		return nil, a.stopLocked("identity-unavailable")
 	}
-	deadline := started.Add(nativePilotJoint)
+	deadline := started.Add(nativePilotStartup)
 	if absolute := a.attemptDeadline(); absolute.Before(deadline) {
 		deadline = absolute
 	}
@@ -870,7 +872,7 @@ func (a *nativePilotAdapter) initialEvidence(ctx context.Context) (*nativePilotV
 }
 
 func (a *nativePilotAdapter) validateResponse(c nativePilotChallenge, r nativePilotResponse, identity bool, now time.Time, requests map[nativePilotRequestKey]bool) string {
-	if r.challenge != c || !nativePilotRef(r.request, 512) || !r.fresh || !r.direct || !r.wellFormed || !r.clockValid || r.elapsed < 0 || r.elapsed >= nativePilotJoint {
+	if r.challenge != c || !nativePilotRef(r.request, 512) || !r.fresh || !r.direct || !r.wellFormed || !r.clockValid || r.elapsed < 0 || r.elapsed >= nativePilotStartup {
 		return "evidence-invalid"
 	}
 	key := nativePilotRequestKey{owner: c.owner, request: r.request}

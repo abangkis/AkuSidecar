@@ -498,7 +498,7 @@ func xManualPilotStartupBudget(ctx context.Context) (int64, error) {
 	if ctx == nil || ctx.Err() != nil {
 		return 0, errors.New("x-owner-startup-deadline")
 	}
-	remaining := nativePilotJoint
+	remaining := nativePilotStartup
 	if deadline, ok := ctx.Deadline(); ok {
 		if left := time.Until(deadline); left < remaining {
 			remaining = left

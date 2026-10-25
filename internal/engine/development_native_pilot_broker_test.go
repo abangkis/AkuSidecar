@@ -393,7 +393,7 @@ func TestNativePilotBrokerOriginalClockAndAdmissionFences(t *testing.T) {
 				original := x.ports.acquire
 				var once sync.Once
 				x.ports.acquire = func(ctx context.Context, p nativePilotPreparedRole, c nativePilotCaptureChallenge) ([]byte, error) {
-					once.Do(func() { x.f.advance(nativePilotJoint) })
+					once.Do(func() { x.f.advance(nativePilotStartup) })
 					return original(ctx, p, c)
 				}
 			}

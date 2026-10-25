@@ -5,6 +5,7 @@
 import { performance } from 'node:perf_hooks';
 import { QA_BOUND_QUALIFICATION } from './x-qa-bound-observation.mjs';
 import { startupFailure,preserveStartup } from './x-manual-startup-diagnostic.mjs';
+import { MANUAL_STARTUP_MAX_MS, MANUAL_STARTUP_EVIDENCE_MAX_AGE_MS } from './x-manual-startup-limits.mjs';
 
 export const MANUAL_STARTUP_SCHEMA = 'aku.x.manual-startup-receipt.v1';
 const REQUEST = ['challenge', 'role', 'ownerId', 'profileId', 'contextId', 'targetId', 'frameId', 'documentId'];
@@ -48,7 +49,7 @@ export function createManualStartupCapture({ run, role='unknown', diagnostics, n
         const value = now();
         if(signal?.aborted)reject('joint','canceled');
         if (!Number.isFinite(value) || value < last)reject('wire_decode','time_invalid');
-        if(value-start>=2000)reject('joint','deadline');
+        if(value-start>=MANUAL_STARTUP_MAX_MS)reject('joint','deadline');
         last = value;
         return value;
       };
@@ -61,6 +62,9 @@ export function createManualStartupCapture({ run, role='unknown', diagnostics, n
       if(!sample)reject('bound_finish','sample_missing');
       if(REQUEST.filter(k=>!['challenge','role'].includes(k)).some(k=>sample[k]!==request[k]))reject('wire_decode','scope_mismatch');
       if(!Number.isFinite(sample.identityAt)||!Number.isFinite(sample.settingsAt)||sample.identityAt<start||sample.settingsAt<sample.identityAt||sample.settingsAt>end)reject('wire_decode','time_invalid');
+      // Go rechecks all four samples after the final pair ownership inspection.
+      // Reject already-stale local samples here without extending their age.
+      if(end-sample.identityAt>=MANUAL_STARTUP_EVIDENCE_MAX_AGE_MS||end-sample.settingsAt>=MANUAL_STARTUP_EVIDENCE_MAX_AGE_MS)reject('bound_finish','stale_observation');
       if (!sample || invalid || typeof sample.accountId !== 'string' || !/^[1-9][0-9]{0,19}$/.test(sample.accountId) ||
           !SAMPLE.filter(k => !['identityAt', 'settingsAt'].includes(k)).every(k => ref(sample[k])) ||
           REQUEST.filter(k => !['challenge', 'role'].includes(k)).some(k => sample[k] !== request[k]) ||

@@ -15,7 +15,8 @@ const acquire=(port,role,ready)=>port.execute(command('manual_acquire',role,{han
 test('the private acquire route validates and forwards only a bounded startup wait hint', async () => {
   const base=command('manual_acquire','reader',{handle:'h',startupBudgetMS:75,request:{challenge:'c'.repeat(48),role:'reader',...offlineStartupOwner('reader')}});
   assert.equal(manualOwnerOperation(base).startupBudgetMS,75);
-  for(const startupBudgetMS of [undefined,null,0,-1,0.5,2001,'75',Infinity]){
+  assert.equal(manualOwnerOperation({...base,startupBudgetMS:6000}).startupBudgetMS,6000);
+  for(const startupBudgetMS of [undefined,null,0,-1,0.5,6001,'75',Infinity]){
     assert.throws(()=>manualOwnerOperation({...base,startupBudgetMS}),/manual_owner_unavailable/);
   }
   let received;

@@ -2,9 +2,41 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createManualStartupCapture, MANUAL_STARTUP_SCHEMA } from './x-manual-startup-source.mjs';
 import { offlineStartupCapture, offlineStartupOwner, runOfflineStartupRecipe } from './x-manual-startup-offline-fixture.mjs';
+import { startupDiagnostic } from './x-manual-startup-diagnostic.mjs';
 
 const request = (role = 'reader') => ({ challenge: '0123456789abcdef'.repeat(3), role, ...offlineStartupOwner(role) });
 const decode = wire => { try { return JSON.parse(wire.toString('utf8')); } finally { wire.fill(0); } };
+
+test('startup may exceed two seconds only while samples remain fresh at publication', async () => {
+  for (const age of [1999, 2000]) {
+    let clock = 0;
+    const capture = createManualStartupCapture({now: () => clock, wallNow: () => 10000,
+      run: async (input, sink) => {
+        clock = 3000;
+        await runOfflineStartupRecipe(input, sink, {now: () => clock});
+        clock += age;
+      }});
+    if (age === 1999) {
+      const result = decode(await capture(request()));
+      assert.equal(result.elapsedMS, 4999);
+      assert.equal(result.identityObservedAtMS, 13000);
+      assert.equal(result.settingsObservedAtMS, 13000);
+    } else {
+      await assert.rejects(capture(request()), error => startupDiagnostic(error)?.reason === 'stale_observation');
+    }
+  }
+});
+
+test('fresh samples at the exact six-second startup limit are still rejected', async () => {
+  let clock = 0;
+  const capture = createManualStartupCapture({now: () => clock, wallNow: () => 10000,
+    run: async (input, sink) => {
+      clock = 5999;
+      await runOfflineStartupRecipe(input, sink, {now: () => clock});
+      clock = 6000;
+    }});
+  await assert.rejects(capture(request()), error => startupDiagnostic(error)?.reason === 'deadline');
+});
 
 test('actual fixed bootstrap/body recipe supplies both private role receipts without changing QA reports', async () => {
   for (const role of ['reader', 'collector']) {
@@ -17,7 +49,7 @@ test('actual fixed bootstrap/body recipe supplies both private role receipts wit
     assert.equal(result.qualification, 'api_v1.cookie-auth-rejection.2026-10-20');
     assert.equal(Object.keys(result).length, 16);
     assert.ok(result.identityObservedAtMS <= result.settingsObservedAtMS);
-    assert.ok(result.elapsedMS < 2000);
+    assert.ok(result.elapsedMS < 6000);
     await assert.rejects(capture(input), /manual_startup_unavailable/);
     let privateSample;
     const report = await runOfflineStartupRecipe(input, { onPrivateStartup: s => { privateSample = s; } });
@@ -54,7 +86,7 @@ test('deadline, rollback and cancellation fence late callback completion', async
     const capture = createManualStartupCapture({ now: () => time, wallNow: () => 10000,
       run: async (input, sink) => {
         await runOfflineStartupRecipe(input, sink, { now: () => time });
-        if (scenario === 'deadline') time += 2000;
+        if (scenario === 'deadline') time += 6000;
         if (scenario === 'rollback') time--;
         if (scenario === 'cancel') abort.abort();
       } });
