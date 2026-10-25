@@ -33,7 +33,32 @@ an old startup plan cannot execute capture. Preparation is not transfer approval
 
 ## Native acceptance attempt
 
-Latest attempt: source commit `52e1a6e` (startup correction `45adc58` plus offline
+Latest attempt: source commit `fbf9aae`, explicitly authorized run
+`8364848408cb47879bd7b83bf9590471` on 2026-10-25. Preparation passed 279 and
+33 Node cases, retained tag gates, staged compilation and accountless diagnostic
+checks. Exactly one native execution then rejected at the unchanged 2,000 ms
+joint startup deadline (full test 10.59 seconds).
+
+Collector's acquire RPC had returned; it was in the subsequent ownership inspect
+RPC for 6 ms when the frozen boundary was taken. Collector cumulative acquire
+was 1,763 ms, OS snapshots 157 ms and inspection RPCs 8 ms. Reader had no tracked
+operation active; its acquire totaled 1,505 ms, OS snapshots 180 ms, inspection
+RPCs 6 ms and inventory RPCs 1 ms. Per-role times overlap and are not additive.
+The owner port enters this inspection only after a successful acquire RPC, but
+Go wire decoding and final pair acceptance still follow; no full account/startup
+acceptance is claimed. The previous `settings_wait` boundary was not active in
+this attempt. No settings category remains on that role's new inspection RPC,
+because per-RPC timing resets it deliberately.
+
+The capture continuation was not entered, so no QA capture database/observation
+was created. Owned Job/lease cleanup was verified, the collector/build root was
+removed and the dedicated retained reader profile was preserved. No retry or
+main-dev activation occurred. The main login and Auto Update were unchanged;
+the local dev configuration SHA-256 also remained unchanged. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-8364848408cb47879bd7b83bf9590471.prepare.log.txt`
+and `runtime/qa/auth-session-sidecar/x-manual-retained-8364848408cb47879bd7b83bf9590471.run.log.txt`.
+
+Previous attempt: source commit `52e1a6e` (startup correction `45adc58` plus offline
 fixture wiring), explicitly authorized run `a68c471222af4c71aab3682109348f6f` on
 2026-10-25. Preparation passed 279 and 33 Node cases, all retained tag gates,
 staged compilation and accountless diagnostic tests. The broader preparation
@@ -124,8 +149,9 @@ or times out. The first failure carries its category in the same progress record
 later role events cannot rewrite it. Diagnostics remain nonauthorizing and cannot
 extend the deadline.
 
-This correction has offline validation only. No new native attempt or transfer
-was performed; the last native acceptance remains the failed attempt above.
+Implementation validation was offline. The subsequent one-shot native attempt
+is recorded above and remains a failed acceptance; it reached the ownership
+inspection after acquire instead of stopping in the settings wait.
 
 Offline evidence: startup regression passed 73 Node and 31 top-level Go cases,
 plus both Engine build variants (`native-manual-startup-692ece5f29d74440a088179651d6ffd5.log.txt`).
@@ -229,7 +255,7 @@ profile/database/build root only after Job/lease cleanup is verified.
 
 1. Obtain native capture acceptance using the prepared QA scenario. Do not reopen
    deferred identity renewal merely to expand this bounded pilot. Review the
-   collector settings-completion wait offline next; another real transfer needs
+   remaining startup costs through the final ownership checks offline next; another real transfer needs
    fresh one-shot authorization. Keep the current account guards and deadlines.
 2. Promote the owned Windows/profile lifecycle from QA-only construction into a
    development provider, with explicit opt-in, status, stop and source-route
