@@ -79,6 +79,86 @@ an old startup plan cannot execute capture. Preparation is not transfer approval
 
 ## Native acceptance attempt
 
+### Offline capture rejection investigation (2026-10-25)
+
+The latest native log below cannot establish the failed capture predicate. The
+previous code collapsed local adapter predicates, Node setup/worker errors and
+transport errors into generic rejection; the retained QA entry printed only
+the broad Engine phase/outcome. Node's final response/header coverage check or
+cleanup exception could also replace an earlier worker/challenge error. These
+are confirmed observability defects, not proof of the native rejection's cause.
+
+The private capture path now carries closed `stage`, `reason` and `cleanup`
+diagnostics. Engine behavior admission and Coordinator fallback are distinct
+from backend owner/payload/transport checks, Node target setup, navigation,
+evaluation, worker login/challenge/empty-evidence errors, response/header
+coverage, wire/digest/observation validation and final ownership. Unknown errors
+stay coarse; no arbitrary error message is promoted into a diagnostic. The QA
+entry prints only these sanitized fields, never its raw persistence error.
+
+Node uses private WeakMap branding. Operational failure codes and observational
+metadata are now independent: the correlated failure reply carries its existing
+`code` plus an optional `diagnostic` envelope with schema
+`aku.capture-diagnostic.v1`, `stage`, `reason` and `cleanup`. The generic fixture
+bridge only carries a bounded opaque payload (at most 512 bytes); the capture
+adapter validates its version, exact unique fields, string types and closed
+catalogs. Unknown/malformed metadata is ignored without changing the operational
+failure. A diagnostic claiming challenge cannot create challenge/pause authority;
+a contradictory diagnostic cannot change a challenge's independently decoded
+category. The old `manual_capture_detail_<stage>__<reason>__<cleanup>` code reader
+remains for compatibility, but new producers no longer encode diagnostics there.
+
+The Go error wrapper keeps the domain-owned operational cause independently
+discoverable through `errors.As`, alongside its safe diagnostic. Challenge plus
+failed cleanup therefore retains both the normal persistent challenge handling
+and `cleanup=failed` through Node, bridge, Windows RPC adapter and cached Store
+result. A later pause-persistence error may remain the operational error but
+cannot replace the stored capture diagnostic. Seed/startup reply behavior and
+the existing code sanitizer are unchanged.
+
+Inspection failure and proven mismatch are also distinct. Go reports an
+unavailable/canceled/deadline inspection before considering owner comparison;
+the zero/unknown result of a failed inspection cannot become `owner_changed`.
+Node uses trusted inspection-condition evidence to distinguish confirmed pinned
+mismatch from a failed snapshot. Rejection and revocation rules remain the same.
+These are local implementations of reusable separation and evidence principles;
+no shared library, OTel exporter, AG migration or product-wide schema is added.
+
+Terminal primary failure wins over cleanup/coverage errors; cleanup status is
+reported separately. `cleanup=completed` means the capture target's CDP close
+command completed, not proof of Windows Job/lease or profile retirement. Actual
+owned-process cleanup remains the existing separate QA gate. Capture cleanup
+awaits a previously started close instead of dispatching another close. Errors
+that the existing worker treats as transient retain their original in-process
+classification; a recovered transient does not become a fatal diagnostic.
+
+No cookie/token value, page text, URL, account/owner/request identifier, local
+path or raw exception is included in these diagnostics. Startup freshness,
+attempt deadlines, guards, result admission, retry rules and Store policies are
+unchanged. No browser, retained profile, X request, transfer, user database,
+main runtime or Auto Update preference was accessed for this investigation.
+
+Offline validation: `scripts/test-x-manual-native-capture.ps1` passed 44 capture/
+owner Node tests and 36 worker/parser/transport Node tests; five top-level Go
+tests include 12 Engine/Store integration subcases and ten inspection-classifier
+subcases. The retained native entry compiled through the canonical staging
+helper. Its separate Windows sanitizer test and accountless Node-to-Go stdio
+test passed; the latter uses the actual Node encoder, bridge reader and Windows
+RPC error adapter without OS ownership assertions, Chrome or a profile. All
+four build-tag gates passed. Covered failures include setup/navigation, pending
+ExtraInfo, late cookie writes, first challenge plus failed cleanup, cancellation,
+invalid wire/digest/source, malformed/contradictory sidebands, metadata that cannot
+manufacture operational authority, unknown private errors, replayed diagnostics and
+unchanged transient context recovery. Only synthetic databases and fake CDP/DOM
+were used. Owned temporary roots were removed.
+
+Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-native-capture-d4831f08908a4a20905f6dc4ec01fc28.log.txt`.
+No native attempt was repeated; identifying the latest real capture failure
+still requires a separately authorized run with these diagnostics.
+
+### Latest native attempt
+
 Latest attempt: source commit `ad865b4`, explicitly authorized run
 `581ff3a1757546fdbfe84afd2369bfad` on 2026-10-25. Preparation passed 279 and
 33 Node cases, all four retained tag gates, staged full Engine compilation and
@@ -396,8 +476,9 @@ profile/database/build root only after Job/lease cleanup is verified.
 1. Obtain native capture acceptance using the prepared QA scenario. Do not reopen
    deferred identity renewal merely to expand this bounded pilot. Initial native
    startup and reader opening passed in the latest attempt; the current failure
-   is at capture. Review the existing behavior/Coordinator/backend failure paths
-   offline and add closed substage/reason reporting before another native run.
+   is at capture. Closed behavior/Coordinator/backend substage/reason diagnostics
+   now pass offline validation. Review/commit this delta before a separately
+   authorized one-shot native acceptance attempt.
    Another real transfer needs fresh one-shot authorization. Keep account guards,
    the six-second startup/two-second freshness policy and 60-second attempt cap.
 2. Promote the owned Windows/profile lifecycle from QA-only construction into a

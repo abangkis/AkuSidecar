@@ -79,9 +79,28 @@ type chromeFixtureBridge struct {
 }
 
 type chromeFixtureReply struct {
-	result json.RawMessage
-	code   string
-	err    error
+	result     json.RawMessage
+	code       string
+	diagnostic json.RawMessage
+	err        error
+}
+
+// The bridge carries bounded opaque diagnostic metadata, independently of the
+// operational code. Only the domain adapter can interpret its schema/catalog.
+type chromeFixtureRPCError struct {
+	code       string
+	diagnostic json.RawMessage
+}
+
+func (e *chromeFixtureRPCError) Error() string          { return e.code }
+func (e *chromeFixtureRPCError) GoString() string       { return e.Error() }
+func (e *chromeFixtureRPCError) diagnosticJSON() []byte { return e.diagnostic }
+func chromeFixtureFailure(code string, diagnostic json.RawMessage) error {
+	code = safeFixtureCode(code)
+	if len(diagnostic) == 0 || len(diagnostic) > 512 {
+		return errors.New(code)
+	}
+	return &chromeFixtureRPCError{code: code, diagnostic: append(json.RawMessage{}, diagnostic...)}
 }
 
 type chromeFixtureProcess struct {
@@ -373,6 +392,7 @@ func (b *chromeFixtureBridge) readOutput(stdout io.Reader, ready chan<- error) {
 			ID             int64           `json:"id"`
 			OK             bool            `json:"ok"`
 			Code           string          `json:"code"`
+			Diagnostic     json.RawMessage `json:"diagnostic"`
 			Event          string          `json:"event"`
 			Owner          int             `json:"owner"`
 			Result         json.RawMessage `json:"result"`
@@ -433,7 +453,11 @@ func (b *chromeFixtureBridge) readOutput(stdout io.Reader, ready chan<- error) {
 			if message.OK {
 				response <- chromeFixtureReply{result: message.Result}
 			} else {
-				response <- chromeFixtureReply{code: safeFixtureCode(message.Code)}
+				var diagnostic json.RawMessage
+				if len(message.Diagnostic) <= 512 {
+					diagnostic = message.Diagnostic
+				}
+				response <- chromeFixtureReply{code: safeFixtureCode(message.Code), diagnostic: diagnostic}
 			}
 		}
 	}
@@ -577,7 +601,7 @@ func (b *chromeFixtureBridge) rpcRoundTripObserved(ctx context.Context, op strin
 			return result.err
 		}
 		if result.code != "" {
-			return errors.New(result.code)
+			return chromeFixtureFailure(result.code, result.diagnostic)
 		}
 		if out != nil && len(result.result) > 0 {
 			if err = json.Unmarshal(result.result, out); err != nil {

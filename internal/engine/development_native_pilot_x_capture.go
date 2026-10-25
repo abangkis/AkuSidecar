@@ -37,18 +37,24 @@ func (p *xNativePilotCapture) Capture(ctx context.Context, source domain.Source,
 			p.revoke()
 		}
 	}()
-	bad := errors.New("native X capture rejected")
+	bad := func(stage, reason string) error {
+		var err error
+		if ctx != nil {
+			err = ctx.Err()
+		}
+		return nativePilotCaptureFail(err, stage, reason)
+	}
 	if ctx == nil || source != domain.SourceX || p.ports == nil || !p.inFlight.CompareAndSwap(false, true) {
-		return domain.Observation{}, bad
+		return domain.Observation{}, bad("admission", "invalid_request")
 	}
 	defer p.inFlight.Store(false)
 	if !p.ports.backend.now().Before(p.deadline) {
-		return domain.Observation{}, bad
+		return domain.Observation{}, bad("admission", "deadline")
 	}
 	owner, err := p.ports.inspect(ctx, p.prepared)
-	if err != nil || owner != p.prepared.owner {
+	if failure := nativePilotCaptureInspectError(ctx, "owner_before", err, owner != p.prepared.owner); failure != nil {
 		started = true
-		return domain.Observation{}, bad
+		return domain.Observation{}, failure
 	}
 	projected := map[string]any{}
 	for _, key := range []string{"acquisitionRound", "round"} {
@@ -56,19 +62,19 @@ func (p *xNativePilotCapture) Capture(ctx context.Context, source domain.Source,
 			switch n := value.(type) {
 			case int:
 				if n != 1 {
-					return domain.Observation{}, bad
+					return domain.Observation{}, bad("payload", "invalid_request")
 				}
 			case float64:
 				if n != 1 {
-					return domain.Observation{}, bad
+					return domain.Observation{}, bad("payload", "invalid_request")
 				}
 			default:
-				return domain.Observation{}, bad
+				return domain.Observation{}, bad("payload", "invalid_request")
 			}
 		}
 	}
 	if value, ok := payload["continuation"]; ok && value != nil {
-		return domain.Observation{}, bad
+		return domain.Observation{}, bad("payload", "invalid_request")
 	}
 	for _, key := range []string{"pageUrl", "scrolls", "maxBlocksPerSnapshot", "sourceHydrationTimeoutMs", "scrollFraction", "scrollSettleMs"} {
 		if value, ok := payload[key]; ok {
@@ -78,14 +84,14 @@ func (p *xNativePilotCapture) Capture(ctx context.Context, source domain.Source,
 	for alias, key := range map[string]string{"maxScrolls": "scrolls", "maxPosts": "maxBlocksPerSnapshot"} {
 		if value, ok := payload[alias]; ok {
 			if _, exists := projected[key]; exists {
-				return domain.Observation{}, bad
+				return domain.Observation{}, bad("payload", "invalid_request")
 			}
 			projected[key] = value
 		}
 	}
 	for _, key := range []string{"script", "expression", "url"} {
 		if _, ok := payload[key]; ok {
-			return domain.Observation{}, bad
+			return domain.Observation{}, bad("payload", "invalid_request")
 		}
 	}
 	pins := xNativeCapturePins{OwnerID: owner.owner, ProfileID: owner.profile, ContextID: owner.context, TargetID: owner.target, FrameID: owner.frame, DocumentID: owner.document}
@@ -100,21 +106,11 @@ func (p *xNativePilotCapture) Capture(ctx context.Context, source domain.Source,
 	})
 	defer stop()
 	var raw json.RawMessage
+	defer func() { clear(raw) }()
 	started = true
 	if err := p.ports.backend.rpc(call, "collector", "manual_capture", map[string]any{"handle": p.prepared.handle, "request": request}, &raw); err != nil {
-		category := ""
-		switch err.Error() {
-		case "manual_capture_challenge_cloudflare":
-			category = "cloudflare"
-		case "manual_capture_challenge_x_human_verification":
-			category = "x_human_verification"
-		case "manual_capture_challenge_unknown":
-		default:
-			return domain.Observation{}, bad
-		}
-		return domain.Observation{}, &headless.CaptureError{Code: "challenge_required", Message: domain.XChallengeMessage, ChallengeCategory: category}
+		return domain.Observation{}, nativePilotCaptureTransportError(call, err)
 	}
-	defer clear(raw)
 	var wire struct {
 		Schema          string             `json:"schema"`
 		Correlation     string             `json:"correlation"`
@@ -124,26 +120,32 @@ func (p *xNativePilotCapture) Capture(ctx context.Context, source domain.Source,
 		Digest          string             `json:"digest"`
 	}
 	if len(raw) > 768*1024 || !xNativeCaptureJSON(raw) {
-		return domain.Observation{}, bad
+		return domain.Observation{}, bad("wire", "envelope_invalid")
 	}
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.DisallowUnknownFields()
 	if d.Decode(&wire) != nil || d.Decode(new(any)) != io.EOF || wire.Schema != "aku.x.manual-capture.v1" || wire.Correlation != correlation || wire.Pins != pins || !nativePilotRef(wire.CaptureTarget, 512) || wire.CaptureTarget == owner.target || len(wire.ObservationJSON) > 512*1024 {
-		return domain.Observation{}, bad
+		return domain.Observation{}, bad("wire", "envelope_invalid")
 	}
 	hash := sha256.Sum256([]byte(wire.ObservationJSON))
-	if hex.EncodeToString(hash[:]) != wire.Digest || !xNativeCaptureJSON([]byte(wire.ObservationJSON)) {
-		return domain.Observation{}, bad
+	if hex.EncodeToString(hash[:]) != wire.Digest {
+		return domain.Observation{}, bad("wire", "digest_mismatch")
+	}
+	if !xNativeCaptureJSON([]byte(wire.ObservationJSON)) {
+		return domain.Observation{}, bad("observation", "observation_invalid")
 	}
 	var observation domain.Observation
 	d = json.NewDecoder(bytes.NewBufferString(wire.ObservationJSON))
 	d.DisallowUnknownFields()
 	if d.Decode(&observation) != nil || d.Decode(new(any)) != io.EOF || observation.Source != domain.SourceX || validateObservation(observation) != nil {
-		return domain.Observation{}, bad
+		return domain.Observation{}, bad("observation", "observation_invalid")
 	}
 	owner, err = p.ports.inspect(call, p.prepared)
-	if err != nil || owner != p.prepared.owner || call.Err() != nil || !p.ports.backend.now().Before(p.deadline) {
-		return domain.Observation{}, bad
+	if failure := nativePilotCaptureInspectError(call, "owner_after", err, owner != p.prepared.owner); failure != nil {
+		return domain.Observation{}, failure
+	}
+	if call.Err() != nil || !p.ports.backend.now().Before(p.deadline) {
+		return domain.Observation{}, nativePilotCaptureFail(call.Err(), "owner_after", "deadline")
 	}
 	return observation, nil
 }

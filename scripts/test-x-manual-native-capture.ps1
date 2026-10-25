@@ -38,8 +38,20 @@ try {
     $sources=@($production | Where-Object { $_.Trim() -ne '' } | ForEach-Object { Join-Path $engineRoot $_ })
     $sources+=Join-Path $engineRoot 'development_native_pilot_store_test.go'
     $sources+=Join-Path $engineRoot 'development_native_pilot_x_capture_test.go'
+    $sources+=Join-Path $engineRoot 'development_native_pilot_capture_diagnostic_test.go'
     & go test -tags 'auth_session_dev auth_session_fixture' -run '^TestNativePilotXCapture' -count=1 -timeout=90s -v @sources 2>&1 | Tee-Object -FilePath $log -Append
     if ($LASTEXITCODE -ne 0) { throw 'Native capture Engine/Store synthetic integration failed.' }
+    # Compile the actual retained entry's safe failure reporting without running
+    # its browser/profile/transfer recipe or the package-wide TestMain.
+    $raw=& $node scripts/auth-session-fixture/stage-native-manual-chrome.mjs $taskRoot x-retained-capture
+    if ($LASTEXITCODE -ne 0) { throw 'Retained capture diagnostic staging failed.' }
+    $stage=$raw | ConvertFrom-Json
+    $retainedSources=@($stage.files | ForEach-Object { Join-Path $stage.stage $_ })
+    & go test -c -tags 'auth_session_dev auth_session_fixture' -o (Join-Path $taskRoot 'retained-capture-diagnostics.test.exe') @retainedSources 2>&1 | Tee-Object -FilePath $log -Append
+    if ($LASTEXITCODE -ne 0) { throw 'Retained capture diagnostic entry compilation failed.' }
+    & (Join-Path $taskRoot 'retained-capture-diagnostics.test.exe') '-test.run=^TestXManualCaptureDiagnostic(Code|Pipe)$' '-test.timeout=10s' '-test.v' 2>&1 | Tee-Object -FilePath $log -Append
+    if ($LASTEXITCODE -ne 0) { throw 'Actual bridge sanitizer/diagnostic code regression failed.' }
+    Write-Output 'PASS: retained capture entry compiled and pure diagnostic code test passed; no native execution.' | Tee-Object -FilePath $log -Append
     foreach ($mode in @('default','auth_session_dev','auth_session_fixture','auth_session_dev auth_session_fixture')) {
         $listArguments=@('list','-f','{{range .GoFiles}}{{println .}}{{end}}')
         if ($mode -ne 'default') { $listArguments+=@('-tags',$mode) }

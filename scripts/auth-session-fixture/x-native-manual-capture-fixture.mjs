@@ -3,7 +3,7 @@ import vm from 'node:vm';
 import readline from 'node:readline';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {captureNativeXTarget} from './x-native-manual-capture.mjs';
+import {captureNativeXTarget,manualCaptureRPCCode,manualCaptureRPCDiagnostic} from './x-native-manual-capture.mjs';
 import {createXManualOwnerPort} from './x-native-manual-owner-port.mjs';
 
 export function syntheticXDOM() {
@@ -61,12 +61,12 @@ export function syntheticCaptureTransport({hold,parserThrow=false,cookie=false,p
   };
 }
 
-export async function syntheticCapturePort(pins,transport,bridgePath) {
+export async function syntheticCapturePort(pins,transport,bridgePath,{inspect=value=>value}={}) {
   const roles=['reader','collector'];
   const rolePins={collector:pins,reader:{...pins,ownerId:'4101',profileId:'synthetic-reader',targetId:'proof-reader',contextId:'context-reader',frameId:'frame-reader',documentId:'document-reader'}};
   const port=createXManualOwnerPort({enabled:true,owner:1,createOwners:()=>Object.fromEntries(roles.map(role=>[role,{
     async prepare(){return{handle:role+'-handle',pins:rolePins[role]};},async acquire(){return Buffer.from('{}');},async abort(){},async cancel(){}}])),
-    snapshot:async role=>({...rolePins[role],sessionId:role+'-session',alive:true,headless:role==='collector',windowCount:role==='reader'?1:0,bootstrapCount:role==='reader'?1:0,lifecycleReady:true}),retire:async()=>{},
+    snapshot:async role=>inspect({...rolePins[role],sessionId:role+'-session',alive:true,headless:role==='collector',windowCount:role==='reader'?1:0,bootstrapCount:role==='reader'?1:0,lifecycleReady:true}),retire:async()=>{},
     capture:(request,options)=>captureNativeXTarget({request,bridgePath,...options,browserContextId:'owned-context',command:transport.command.bind(transport),subscribe:transport.subscribe.bind(transport)})});
   let id=1;
   for(const role of roles)await port.execute({id:id++,op:'manual_prepare',owner:1,role});
@@ -78,6 +78,20 @@ if(process.argv[1]&&pathToFileURL(resolve(process.argv[1])).href===import.meta.u
   if(process.env.AKU_X_NATIVE_MANUAL_CAPTURE_OFFLINE!=='1')process.exitCode=2;
   else{
     const input=readline.createInterface({input:process.stdin,crlfDelay:Infinity});let port;
-    input.on('line',line=>{void(async()=>{let message;try{message=JSON.parse(line);port??=await syntheticCapturePort(message.request.pins,syntheticCaptureTransport(),resolve(process.env.AKU_NATIVE_MANUAL_PROJECT_ROOT,'..','AkuBridge'));const result=await port.execute(message);process.stdout.write(JSON.stringify({id:message.id,ok:true,result})+'\n');}catch{process.stdout.write(JSON.stringify({id:message?.id??0,ok:false,error:'synthetic_capture_rejected'})+'\n');}})();});
+    input.on('line',line=>{void(async()=>{let message;try{
+      message=JSON.parse(line);
+      const transport=syntheticCaptureTransport();
+      if(process.env.AKU_X_NATIVE_MANUAL_CAPTURE_FAULT==='challenge_cleanup'){
+        const command=transport.command.bind(transport);
+        transport.command=async(method,...args)=>{
+          if(method==='Page.navigate')throw Object.assign(Error('synthetic challenge'),{code:'challenge_required',challengeCategory:'cloudflare'});
+          const result=await command(method,...args);
+          if(method==='Target.closeTarget')throw Error('synthetic cleanup failure');
+          return result;
+        };
+      }
+      port??=await syntheticCapturePort(message.request.pins,transport,resolve(process.env.AKU_NATIVE_MANUAL_PROJECT_ROOT,'..','AkuBridge'));
+      const result=await port.execute(message);process.stdout.write(JSON.stringify({id:message.id,ok:true,result})+'\n');
+    }catch(error){process.stdout.write(JSON.stringify({id:message?.id??0,ok:false,code:manualCaptureRPCCode(error),diagnostic:manualCaptureRPCDiagnostic(error)})+'\n');}})();});
   }
 }

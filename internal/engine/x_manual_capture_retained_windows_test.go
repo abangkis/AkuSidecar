@@ -9,11 +9,13 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
+	"github.com/abangkis/AkuSidecar/internal/collection/headless"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
@@ -77,6 +79,88 @@ func retainedCaptureManager(t *testing.T, role xManualPilotWindowsRole) *capture
 	return manager
 }
 
+// Pure transport-code regression; no Chrome, profile, lease or transfer setup.
+func TestXManualCaptureDiagnosticCode(t *testing.T) {
+	for _, stage := range nativePilotCaptureStages {
+		for _, reason := range nativePilotCaptureReasons {
+			for _, cleanup := range nativePilotCaptureCleanup {
+				code := "manual_capture_detail_" + stage + "__" + reason + "__" + cleanup
+				if safeFixtureCode(code) != code {
+					t.Fatal("capture detail lost in bridge sanitizer")
+				}
+				if d, ok := nativePilotCaptureRPCDetail(safeFixtureCode(code)); !ok || d != (nativePilotCaptureDiagnostic{stage, reason, cleanup}) {
+					t.Fatal("capture detail lost in private transport decoder")
+				}
+			}
+		}
+	}
+}
+
+// Actual Node encoder -> correlated stdio reader -> Windows RPC adapter. Only
+// transport is exercised: no OS ownership assertion, Chrome, profile or seed.
+func TestXManualCaptureDiagnosticPipe(t *testing.T) {
+	project, node := os.Getenv("AKU_NATIVE_MANUAL_PROJECT_ROOT"), os.Getenv("AKU_CHROME_FIXTURE_NODE")
+	if project == "" || node == "" {
+		t.Skip("canonical offline helper required")
+	}
+	const script = `
+import {pathToFileURL} from 'node:url'; import {createInterface} from 'node:readline';
+const {executeManualReply}=await import(pathToFileURL(process.argv[1]));
+const {syntheticCapturePort,syntheticCaptureTransport}=await import(pathToFileURL(process.argv[2]));
+const transport=syntheticCaptureTransport(), command=transport.command.bind(transport);
+transport.command=async(method,...args)=>{if(method==='Page.navigate')throw Object.assign(Error('PRIVATE'),{code:'challenge_required',challengeCategory:'cloudflare'});const value=await command(method,...args);if(method==='Target.closeTarget')throw Error('PRIVATE');return value;};
+const pins={ownerId:'4102',profileId:'synthetic-collector',contextId:'proof-context',targetId:'proof-target',frameId:'proof-frame',documentId:'proof-document'};
+const port=await syntheticCapturePort(pins,transport,process.argv[3]);
+console.log(JSON.stringify({ready:true}));
+for await(const line of createInterface({input:process.stdin})){const q=JSON.parse(line);await executeManualReply(q,()=>port.execute(q),(id,result,code,_limit,diagnostic)=>console.log(JSON.stringify({id,ok:!code,...(code?{code,diagnostic}:{result})})));}
+`
+	cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(project, "scripts", "auth-session-fixture", "x-native-metadata-probe-driver.mjs"), filepath.Join(project, "scripts", "auth-session-fixture", "x-native-manual-capture-fixture.mjs"), filepath.Join(project, "..", "AkuBridge"))
+	cmd.Stderr = io.Discard
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal("offline diagnostic pipe unavailable")
+	}
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal("offline diagnostic input unavailable")
+	}
+	if cmd.Start() != nil {
+		t.Fatal("offline diagnostic Node unavailable")
+	}
+	b := &chromeFixtureBridge{cmd: cmd, stdin: stdin, pending: map[int64]chan chromeFixtureReply{}, owners: map[int]*chromeFixtureProcess{}, closed: make(chan struct{}), nodeWaited: make(chan struct{})}
+	ready := make(chan error, 1)
+	go b.readOutput(stdout, ready)
+	t.Cleanup(func() {
+		_ = stdin.Close()
+		select {
+		case <-b.nodeWaited:
+		case <-time.After(3 * time.Second):
+			_ = cmd.Process.Kill()
+			<-b.nodeWaited
+		}
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	select {
+	case err = <-ready:
+		if err != nil {
+			t.Fatal("offline diagnostic handshake failed")
+		}
+	case <-ctx.Done():
+		t.Fatal("offline diagnostic handshake timeout")
+	}
+	pins := map[string]string{"ownerId": "4102", "profileId": "synthetic-collector", "contextId": "proof-context", "targetId": "proof-target", "frameId": "proof-frame", "documentId": "proof-document"}
+	backend := &xManualPilotWindowsBackend{roles: map[string]xManualPilotWindowsRole{"collector": {role: "collector", bridge: b, protocolOwner: 1}}}
+	err = backend.rpc(ctx, "collector", "manual_capture", map[string]any{"handle": "collector-handle", "request": map[string]any{"correlation": "synthetic-capture", "pins": pins, "deadlineMS": time.Now().Add(4 * time.Second).UnixMilli(), "payload": map[string]any{"scrolls": 0}}}, nil)
+	var challenge *headless.CaptureError
+	if !errors.As(err, &challenge) || challenge.ChallengeCategory != "cloudflare" {
+		t.Fatal("operational challenge lost in actual pipe")
+	}
+	if d := nativePilotCaptureDetail(err, "unknown", "unknown"); d.stage != "worker" || d.reason != "challenge_cloudflare" || d.cleanup != "failed" {
+		t.Fatalf("actual pipe lost independent diagnostic: %s", d)
+	}
+}
+
 func TestXManualCaptureRetainedQA(t *testing.T) {
 	if os.Getenv("AKU_X_NATIVE_MANUAL_CAPTURE_ALLOWED") != "1" {
 		t.Skip("capture QA requires explicit prepared capture authorization")
@@ -133,7 +217,7 @@ func TestXManualCaptureRetainedQA(t *testing.T) {
 		}
 		result := e.captureNativePilot(ctx, runtime, command.ID)
 		if result.Outcome != store.Committed || result.PersistenceError != nil || result.DeliveryError != nil {
-			t.Fatalf("capture QA rejected phase=%s outcome=%s; no retry", result.Phase, result.Outcome)
+			t.Fatalf("capture QA rejected phase=%s outcome=%s detail=(%s); no retry", result.Phase, result.Outcome, result.CaptureDiagnostic)
 		}
 		observations, err := s.Observations(ctx, command.RunID)
 		if err != nil || len(observations) != 1 {

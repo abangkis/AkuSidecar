@@ -34,7 +34,7 @@ import { QA_LIVE_SELF_EXPRESSION, projectQALiveSelf } from './x-qa-live-self.mjs
 import { QALiveSelfTransport, finishQALiveSelf, qaLiveSelfCommand } from './x-qa-live-self-transport.mjs';
 import { createManualStartupOwner } from './x-manual-startup-owner.mjs';
 import { createXManualOwnerPort, manualOwnerOperation } from './x-native-manual-owner-port.mjs';
-import { manualCaptureRPCCode } from './x-native-manual-capture.mjs';
+import { manualCaptureRPCCode, manualCaptureRPCDiagnostic } from './x-native-manual-capture.mjs';
 import { createRetainedManualSetup, manualSeedFailure, manualSeedDiagnosticCode } from './x-manual-retained-setup.mjs';
 import { ManualEnrollmentCapture } from './x-manual-enrollment-capture.mjs';
 import { ManualStartupObservation } from './x-manual-startup-cookie-guard.mjs';
@@ -781,9 +781,9 @@ function emit(value, maxBytes = MAX_CONTROL_LINE_BYTES) {
   process.stdout.write(bytes);
 }
 
-function emitReply(id, result = undefined, code = undefined, maxBytes = MAX_CONTROL_LINE_BYTES) {
+function emitReply(id, result = undefined, code = undefined, maxBytes = MAX_CONTROL_LINE_BYTES, diagnostic = undefined) {
   if (!Number.isSafeInteger(id) || id <= 0) return;
-  if (code) emit({ id, ok: false, code });
+  if (code) emit({ id, ok: false, code, ...(diagnostic?{diagnostic}:{}) });
   else emit({ id, ok: true, result }, maxBytes);
 }
 
@@ -808,7 +808,10 @@ export async function executeManualReply(message,executeCommand=execute,reply=em
   try{
     result=await executeCommand(message);
     reply(id,Buffer.isBuffer(result)?parseStrictJSON(result.toString('utf8'),{maxJSONDepth:4,maxJSONTokens:96}):result,undefined,message.op==='manual_capture'?800*1024:MAX_CONTROL_LINE_BYTES);
-  }catch(error){reply(id,undefined,seed?manualSeedRPCCode(error):message.op==='manual_capture'?manualCaptureRPCCode(error):startupRPCCode(error));}
+  }catch(error){
+    if(message.op==='manual_capture')reply(id,undefined,manualCaptureRPCCode(error),undefined,manualCaptureRPCDiagnostic(error));
+    else reply(id,undefined,seed?manualSeedRPCCode(error):startupRPCCode(error));
+  }
   finally{if(Buffer.isBuffer(result))result.fill(0);}
 }
 

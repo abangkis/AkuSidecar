@@ -1,7 +1,7 @@
 // Private, default-off QA transport. OS provenance belongs to the compiled Go
 // owner backend; this module cannot grant it through a request or JSON flag.
-import {startupFailureLatch,startupInspectionFailure} from './x-manual-startup-diagnostic.mjs';
-import {validateManualCaptureRequest} from './x-native-manual-capture.mjs';
+import {startupFailureLatch,startupInspectionFailure,startupDiagnostic} from './x-manual-startup-diagnostic.mjs';
+import {validateManualCaptureRequest,manualCaptureFailure} from './x-native-manual-capture.mjs';
 import {MANUAL_STARTUP_MAX_MS} from './x-manual-startup-limits.mjs';
 const roles=['reader','collector'];
 const pinKeys=['ownerId','profileId','contextId','targetId','frameId','documentId'];
@@ -103,7 +103,7 @@ export function createXManualOwnerPort({enabled=false,owner,createOwners,snapsho
         })();
         return s.cleanup;
       }
-      if(failed||s.closed||s.invalid)throw diagnostics.record(null,role,message.op==='manual_prepare'?'prepare':'acquire_rpc','rejected','xnp_manual_owner_unavailable');
+      if(failed||s.closed||s.invalid)throw message.op==='manual_capture'?manualCaptureFailure(null,'admission','invalidated'):diagnostics.record(null,role,message.op==='manual_prepare'?'prepare':'acquire_rpc','rejected','xnp_manual_owner_unavailable');
       if(message.op==='manual_inventory'){
         const value=await checked(role);
         return {windowCount:value.windowCount,bootstrapCount:value.bootstrapCount};
@@ -124,18 +124,25 @@ export function createXManualOwnerPort({enabled=false,owner,createOwners,snapsho
       }
       if(!s.pins)throw failure();
       if(message.op==='manual_capture'){
-        if(typeof capture!=='function'||s.captureCancel||!roles.every(r=>state[r].acquired)||message.handle!==s.handle||pinKeys.some(k=>message.request.pins[k]!==s.pins[k]))throw failure();
+        if(typeof capture!=='function'||s.captureCancel||!roles.every(r=>state[r].acquired)||message.handle!==s.handle||pinKeys.some(k=>message.request.pins[k]!==s.pins[k]))throw manualCaptureFailure(null,'admission','invalid_request');
         s.captureSeen??=new Set();
-        if(s.captureSeen.size>=32||s.captureSeen.has(message.request.correlation)||s.captureDeadline&&message.request.deadlineMS>s.captureDeadline)throw failure();
+        if(s.captureSeen.size>=32||s.captureSeen.has(message.request.correlation)||s.captureDeadline&&message.request.deadlineMS>s.captureDeadline)throw manualCaptureFailure(null,'admission','replay');
         s.captureSeen.add(message.request.correlation);s.captureDeadline=message.request.deadlineMS;
         s.captureCancel=new AbortController();
+        let stage='owner_before';
         try{
           await checked(role,true,'inspect_after');
+          stage='worker';
           const result=await capture(message.request,{signal:s.captureCancel.signal,proofSession:s.session,onUnsafe:()=>invalidate(role)});
+          stage='owner_after';
           await checked(role,true,'inspect_after');
           if(failed||s.invalid||s.closed||s.captureCancel.signal.aborted)throw failure();
           return result;
-        }catch(error){invalidate(role);throw error;}
+        }catch(error){
+          const condition=startupDiagnostic(error)?.trace?.inspectCondition;
+          const mismatch=stage!=='worker'&&['owner_mismatch','profile_mismatch','target_mismatch','session_mismatch','frame_mismatch','document_mismatch','context_mismatch'].includes(condition);
+          const first=manualCaptureFailure(error,stage,mismatch?'owner_changed':'unavailable');invalidate(role);throw first;
+        }
         finally{s.captureCancel=null;}
       }
       if(message.op==='manual_inspect'){

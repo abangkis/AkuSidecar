@@ -92,6 +92,16 @@ func (b *xCaptureSyntheticBackend) rpc(ctx context.Context, role, op string, fie
 		}
 	} else if op == "manual_capture" {
 		b.calls.Add(1)
+		if b.mode == "empty" || b.mode == "coverage" || b.mode == "private" {
+			code := "manual_capture_detail_worker__empty_unverified__completed"
+			if b.mode == "coverage" {
+				code = "manual_capture_detail_coverage__coverage_extra_pending__failed"
+			}
+			if b.mode == "private" {
+				code = "PRIVATE_COOKIE_BODY_AND_URL"
+			}
+			return nativePilotCaptureTransportError(ctx, errors.New(code))
+		}
 		if b.mode == "cloudflare" || b.mode == "x_human_verification" {
 			return errors.New("manual_capture_challenge_" + b.mode)
 		}
@@ -103,20 +113,28 @@ func (b *xCaptureSyntheticBackend) rpc(ctx context.Context, role, op string, fie
 		input, _ := json.Marshal(message)
 		cmd := exec.CommandContext(ctx, node, filepath.Join(project, "scripts", "auth-session-fixture", "x-native-manual-capture-fixture.mjs"))
 		cmd.Stdin = bytes.NewReader(append(input, '\n'))
+		if b.mode == "challenge_cleanup" {
+			cmd.Env = append(os.Environ(), "AKU_X_NATIVE_MANUAL_CAPTURE_FAULT=challenge_cleanup")
+		}
 		stdout, err := cmd.Output()
 		if err != nil {
 			return errors.New("synthetic Node capture failed")
 		}
 		var reply struct {
-			ID     int             `json:"id"`
-			OK     bool            `json:"ok"`
-			Result json.RawMessage `json:"result"`
+			ID         int             `json:"id"`
+			OK         bool            `json:"ok"`
+			Result     json.RawMessage `json:"result"`
+			Code       string          `json:"code"`
+			Diagnostic json.RawMessage `json:"diagnostic"`
 		}
-		if json.Unmarshal(stdout, &reply) != nil || !reply.OK {
+		if json.Unmarshal(stdout, &reply) != nil {
 			return errors.New("synthetic Node result rejected")
 		}
+		if !reply.OK {
+			return nativePilotCaptureTransportError(ctx, chromeFixtureFailure(reply.Code, reply.Diagnostic))
+		}
 		raw = reply.Result
-		if b.mode != "" {
+		if b.mode != "" && b.mode != "challenge_cleanup" {
 			var wire map[string]any
 			_ = json.Unmarshal(raw, &wire)
 			switch b.mode {
@@ -151,7 +169,7 @@ func TestNativePilotXCaptureWorkerToStore(t *testing.T) {
 	if os.Getenv("AKU_X_NATIVE_MANUAL_CAPTURE_OFFLINE") != "1" {
 		t.Skip("explicit offline worker helper required")
 	}
-	for _, mode := range []string{"", "digest", "target", "owner", "source", "expiry", "cloudflare", "x_human_verification"} {
+	for _, mode := range []string{"", "digest", "target", "owner", "source", "expiry", "cloudflare", "x_human_verification", "empty", "coverage", "private", "challenge_cleanup"} {
 		t.Run("result-"+mode, func(t *testing.T) {
 			x := newNativeStoreFixture(t, true, func(f *manualRuntimeFixture) {
 				f.now = time.Now().Truncate(time.Second)
@@ -198,14 +216,37 @@ func TestNativePilotXCaptureWorkerToStore(t *testing.T) {
 				if result.Outcome == store.Committed {
 					t.Fatal("invalid worker result committed")
 				}
+				want := map[string]nativePilotCaptureDiagnostic{
+					"digest":               {"wire", "digest_mismatch", "unknown"},
+					"target":               {"wire", "envelope_invalid", "unknown"},
+					"owner":                {"wire", "envelope_invalid", "unknown"},
+					"source":               {"observation", "observation_invalid", "unknown"},
+					"expiry":               {"owner_after", "deadline", "unknown"},
+					"cloudflare":           {"worker", "challenge_cloudflare", "unknown"},
+					"x_human_verification": {"worker", "challenge_x_human_verification", "unknown"},
+					"empty":                {"worker", "empty_unverified", "completed"},
+					"coverage":             {"coverage", "coverage_extra_pending", "failed"},
+					"private":              {"transport", "unavailable", "unknown"},
+					"challenge_cleanup":    {"worker", "challenge_cloudflare", "failed"},
+				}[mode]
+				if result.CaptureDiagnostic != want {
+					t.Fatalf("capture diagnostic mismatch: got %s want %s", result.CaptureDiagnostic, want)
+				}
 				x.count(t, 0)
-				x.e.captureNativePilot(context.Background(), runtime, x.command.ID)
+				replay := x.e.captureNativePilot(context.Background(), runtime, x.command.ID)
+				if replay.CaptureDiagnostic != result.CaptureDiagnostic {
+					t.Fatal("replay lost first capture cause")
+				}
 				if backend.calls.Load() != 1 {
 					t.Fatal("invalid result recaptured")
 				}
-				if mode == "cloudflare" || mode == "x_human_verification" {
+				if mode == "cloudflare" || mode == "x_human_verification" || mode == "challenge_cleanup" {
+					category := mode
+					if mode == "challenge_cleanup" {
+						category = "cloudflare"
+					}
 					pause, err := x.s.SourceCapturePause(context.Background())
-					if err != nil || pause == nil || pause.Category != mode {
+					if err != nil || pause == nil || pause.Category != category {
 						t.Fatal("native challenge did not reach persistent pause")
 					}
 				}

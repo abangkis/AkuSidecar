@@ -20,6 +20,7 @@ const mode=process.argv[3];
 const capture=mode==='x-retained-capture';
 const retained=mode==='x-retained-manual'||capture;
 const files = capture ? execFileSync('go',['list','-tags','auth_session_dev auth_session_fixture','-f','{{range .GoFiles}}{{println .}}{{end}}','./internal/engine'],{cwd:project,encoding:'utf8'}).trim().split(/\r?\n/u).concat(['x_manual_pilot_retained_windows_test.go','x_manual_capture_retained_windows_test.go']) : ['chrome_fixture_windows.go', 'development_native_pilot_adapter.go',
+  'development_native_pilot_capture_diagnostic.go',
   'development_native_pilot_startup.go', 'development_native_pilot_controller.go',
   'development_native_pilot_broker.go', retained?'x_manual_pilot_retained_windows_test.go':'native_manual_pilot_chrome_windows_test.go'];
 if(mode!==undefined){

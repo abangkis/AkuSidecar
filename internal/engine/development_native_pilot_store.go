@@ -59,6 +59,7 @@ type nativePilotStoreResult struct {
 	Outcome                         store.ManualPilotOutcome
 	ClaimOutcome                    store.ManualPilotOutcome
 	Phase                           string // Closed local stage; never derived from peer text.
+	CaptureDiagnostic               nativePilotCaptureDiagnostic
 	Run                             domain.Run
 	PersistenceError, DeliveryError error
 }
@@ -258,12 +259,20 @@ func (e *Engine) captureNativePilotOnce(ctx context.Context, l *nativePilotStore
 	out.Phase = "capture"
 	work, done, err := e.beginCaptureBehavior(ctx, domain.SourceX)
 	if err != nil {
+		reason := "unavailable"
+		if errors.Is(err, store.ErrSourceCapturePaused) {
+			reason = "source_paused"
+		}
+		out.CaptureDiagnostic = nativePilotCaptureDetail(err, "behavior", reason)
 		l.close()
 		return fail(err)
 	}
 	defer done()
 	observation, err := r.coordinator.Capture(work, domain.SourceX, claim.Command.Payload)
 	if err != nil {
+		// Record the capture cause before challenge-pause persistence or revocation
+		// can produce a different error. The diagnostic does not change outcomes.
+		out.CaptureDiagnostic = nativePilotCaptureDetail(err, "coordinator", "unavailable")
 		var challenge *headless.CaptureError
 		if errors.As(err, &challenge) && domain.IsAccessChallenge(challenge.Code) {
 			e.captureBehaviorMu.Lock()
