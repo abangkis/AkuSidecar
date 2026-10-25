@@ -33,7 +33,31 @@ an old startup plan cannot execute capture. Preparation is not transfer approval
 
 ## Native acceptance attempt
 
-Latest attempt: source commit `fbf9aae`, explicitly authorized run
+Latest attempt: source commit `94d8e2f`, explicitly authorized run
+`90d1b8373b2d4f548eb3a99c3c4da2ac` on 2026-10-25. Preparation passed 279 and
+33 Node cases, retained tag gates, staged compilation and accountless diagnostic
+checks. Exactly one native execution rejected at the unchanged 2,000 ms joint
+startup deadline (full test 11.10 seconds).
+
+At the frozen boundary collector was in an OS ownership snapshot for 4 ms;
+its acquire RPC had accumulated 1,866 ms, OS snapshots 130 ms and inspect RPCs
+2 ms. Reader had no tracked operation active, with acquire 1,698 ms, OS snapshots
+171 ms and inspect RPCs 13 ms. These per-role totals overlap and are not additive.
+The snapshot is an ownership boundary after the collector acquire RPC, but
+does not identify whether its remaining OS work is the role's local post-check
+or a later pair check. Full Go receipt/pair acceptance is not established.
+No specific cookie, account or settings rejection was recorded. A single
+uncontrolled attempt does not establish the timing effect of parallelization.
+
+The capture continuation was not entered; no QA capture database/observation
+was created. Owned Job/lease cleanup was verified, the collector/build root was
+removed and the dedicated retained reader profile was preserved. No retry or
+main-dev activation occurred. Main login and Auto Update were unchanged; the
+local dev configuration SHA-256 remained unchanged. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-90d1b8373b2d4f548eb3a99c3c4da2ac.prepare.log.txt`
+and `runtime/qa/auth-session-sidecar/x-manual-retained-90d1b8373b2d4f548eb3a99c3c4da2ac.run.log.txt`.
+
+Previous attempt: source commit `fbf9aae`, explicitly authorized run
 `8364848408cb47879bd7b83bf9590471` on 2026-10-25. Preparation passed 279 and
 33 Node cases, retained tag gates, staged compilation and accountless diagnostic
 checks. Exactly one native execution then rejected at the unchanged 2,000 ms
@@ -151,9 +175,10 @@ The suites overlap. Focused pair tests also passed after making their late-reply
 barrier cleanup robust. They prove parallel entry, exact work counts, fresh
 inventory, policy rejection on both sides, peer cancellation, cause retention
 and rejection of late inspections/policy reads. Owned temporary roots were
-removed. No Chrome/profile/session transfer or user runtime was used; the last
-native acceptance remains the failed attempt above. Native timing improvement
-and successful capture acceptance remain unproven.
+removed. Implementation validation used no Chrome/profile/session transfer or
+user runtime. The subsequent single native attempt is recorded above and still
+fails. Native timing improvement and successful capture acceptance remain
+unproven.
 
 ### Settings completion and wait diagnostics
 
@@ -289,7 +314,8 @@ profile/database/build root only after Job/lease cleanup is verified.
 
 1. Obtain native capture acceptance using the prepared QA scenario. Do not reopen
    deferred identity renewal merely to expand this bounded pilot. Review the
-   remaining startup costs through the final ownership checks offline next; another real transfer needs
+   native acquire costs alongside the remaining ownership checks offline next;
+   another real transfer needs
    fresh one-shot authorization. Keep the current account guards and deadlines.
 2. Promote the owned Windows/profile lifecycle from QA-only construction into a
    development provider, with explicit opt-in, status, stop and source-route
