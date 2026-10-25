@@ -22,7 +22,7 @@ async function run(fault,role){
   const f=offlineFirstCausePair({fault,faultRole:role});
   const ready=await Promise.all(['reader','collector'].map(r=>f.port.execute(q('manual_prepare',r))));
   let failure;
-  try{await f.port.execute(q('manual_acquire',role,{handle:ready[role==='reader'?0:1].handle,request:{challenge:'b'.repeat(48),role,...offlineStartupOwner(role)}}));}catch(error){failure=error;}
+  try{await f.port.execute(q('manual_acquire',role,{handle:ready[role==='reader'?0:1].handle,startupBudgetMS:2000,request:{challenge:'b'.repeat(48),role,...offlineStartupOwner(role)}}));}catch(error){failure=error;}
   assert.ok(failure);
   await Promise.all(['reader','collector'].map(r=>f.port.execute(q('manual_abort',r,{handle:null,preserveReader:r==='reader'}))));
   return {f,d:startupDiagnostic(failure),failure};

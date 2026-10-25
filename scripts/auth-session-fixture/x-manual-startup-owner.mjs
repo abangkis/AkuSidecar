@@ -5,6 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { createManualStartupCapture } from './x-manual-startup-source.mjs';
 import {startupFailureLatch} from './x-manual-startup-diagnostic.mjs';
 import {consumeFreshnessPublication} from './x-identity-freshness-ledger.mjs';
+import {createStartupWaitBudget} from './x-manual-startup-wait-budget.mjs';
 
 const FIELDS = ['ownerId', 'profileId', 'contextId', 'targetId', 'frameId', 'documentId'];
 const unavailable = () => new Error('manual_startup_owner_unavailable');
@@ -33,7 +34,7 @@ export function createManualStartupOwner({ run, role='unknown',diagnostics=start
   if (typeof run !== 'function'||typeof requireFreshness!=='boolean') throw unavailable();
   const ready = deferred(), release = deferred(), abort = new AbortController();
   const handle = randomBytes(24).toString('hex');
-  let state = 'new', actual = null, running = null, sink = null;
+  let state = 'new', actual = null, running = null, sink = null, waitBudget = null;
   const close = () => {
     state = 'closed'; abort.abort(); ready.reject(unavailable()); release.reject(unavailable());
   };
@@ -60,6 +61,10 @@ export function createManualStartupOwner({ run, role='unknown',diagnostics=start
       const detach = attach(signal);
       state = 'preparing';
       running = Promise.resolve().then(() => run({ signal: abort.signal,
+        waitForSettings: promise => {
+          if (!waitBudget || state !== 'acquiring') throw unavailable();
+          return waitBudget.wait(promise);
+        },
         beforeIdentityRead: async value => {
           const observed = pins(value);
           if (state === 'preparing') { actual = observed; state = 'ready'; ready.resolve(); }
@@ -80,10 +85,13 @@ export function createManualStartupOwner({ run, role='unknown',diagnostics=start
       catch(error) { const failure=diagnostics.record(error,role,'prepare','unavailable','manual_startup_owner_unavailable');close();throw failure; }
       finally { detach(); }
     },
-    async acquire(token, request, signal) {
+    async acquire(token, request, signal, startupBudgetMS = 2000) {
       if (token !== handle || state !== 'ready') { close(); throw unavailable(); }
       const detach = attach(signal);
-      try { return await capture(request, signal); }
+      try {
+        waitBudget = createStartupWaitBudget(startupBudgetMS, { role: request.role, signal: abort.signal });
+        return await capture(request, signal);
+      }
       catch(error) { const failure=diagnostics.record(error,role,'acquire_rpc','unavailable','manual_startup_owner_unavailable');close();throw failure; }
       finally { sink = null; detach(); }
     },

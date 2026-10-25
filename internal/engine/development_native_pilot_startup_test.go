@@ -17,6 +17,54 @@ import (
 // The existing invented-native fixture is reused without modifying its accepted
 // tests. Every capture here is explicitly offline; it echoes invented scope to
 // exercise wire transport, not real startup document acquisition choreography.
+func TestNativePilotStartupOwnershipCheckpoints(t *testing.T) {
+	f := newTestNativePilotFixture()
+	var captures atomic.Int32
+	testNativeStartupSource(t, f, func(_ context.Context, ch nativePilotCaptureChallenge) ([]byte, error) {
+		captures.Add(1)
+		return marshalNativeStartupWire(ch)
+	})
+	previous := f.ports.owners
+	var checks []int32
+	f.ports.owners = func(ctx context.Context) (nativePilotState, error) {
+		checks = append(checks, captures.Load())
+		return previous(ctx)
+	}
+	a := f.adapter(t)
+	initialNativePilotOffline(t, a)
+	if len(checks) != 2 || checks[0] != 0 || checks[1] != 2 {
+		t.Fatalf("expected a fresh pair check before acquisition and after both receipts, got %v", checks)
+	}
+}
+
+func TestNativePilotStartupFinalOwnershipStillFencesPublication(t *testing.T) {
+	for _, lateDeadline := range []bool{false, true} {
+		t.Run(fmt.Sprint(lateDeadline), func(t *testing.T) {
+			f := newTestNativePilotFixture()
+			previous := f.ports.owners
+			checks := 0
+			f.ports.owners = func(ctx context.Context) (nativePilotState, error) {
+				checks++
+				if checks == 2 {
+					if lateDeadline {
+						f.advance(nativePilotJoint)
+					} else {
+						f.mu.Lock()
+						f.state.binding.collector.document = "changed-after-both-receipts"
+						f.mu.Unlock()
+					}
+				}
+				return previous(ctx)
+			}
+			a := f.adapter(t)
+			v, d := a.initialEvidence(context.Background())
+			if v != nil || a.current != nil || d.OfflineValidated || checks != 2 {
+				t.Fatal("final ownership or deadline fence bypassed")
+			}
+		})
+	}
+}
+
 func testNativeStartupWire(c nativePilotCaptureChallenge) map[string]any {
 	o := c.challenge.owner
 	at := float64(c.challenge.started.UnixMilli())

@@ -25,7 +25,8 @@ try{
  $env:AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED='0';$env:AKU_X_NATIVE_MANUAL_OWNER_OFFLINE='0'
  Write-Output ('Offline X manual owner run: '+$runId) | Tee-Object -FilePath $log
  $nodeTests=@('scripts/auth-session-fixture/x-native-manual-owner-port.test.mjs','scripts/auth-session-fixture/x-native-metadata-probe-driver.test.mjs',
-  'scripts/auth-session-fixture/x-manual-startup-owner.test.mjs','scripts/auth-session-fixture/x-qa-feasibility-collector.test.mjs')
+  'scripts/auth-session-fixture/x-manual-startup-owner.test.mjs','scripts/auth-session-fixture/x-qa-feasibility-collector.test.mjs',
+  'scripts/auth-session-fixture/x-manual-startup-first-cause.test.mjs','scripts/auth-session-fixture/x-native-manual-capture.test.mjs')
  & $node --test --test-timeout=15000 @nodeTests 2>&1 | Tee-Object -FilePath $log -Append
  if($LASTEXITCODE -ne 0){throw 'X owner Node regressions failed.'}
  $core=@('development_native_pilot_adapter.go','development_native_pilot_startup.go','development_native_pilot_controller.go','development_native_pilot_broker.go',

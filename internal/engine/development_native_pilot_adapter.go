@@ -792,10 +792,6 @@ func (a *nativePilotAdapter) initialEvidence(ctx context.Context) (*nativePilotV
 			reason = "source-unavailable"
 			break
 		}
-		if drift := a.ownerReason(probeCtx); drift != "" {
-			reason = drift
-			break
-		}
 		a.mu.Lock()
 		now, invalid := a.checkLocked(probeCtx)
 		if invalid != "" {
@@ -819,6 +815,10 @@ func (a *nativePilotAdapter) initialEvidence(ctx context.Context) (*nativePilotV
 		a.mu.Unlock()
 	}
 	if reason == "" {
+		// The composed source acquires both roles together and buffers the second
+		// receipt. Recheck the whole pair once before publication, rather than
+		// repeating native inspection between already-buffered receipts. Each
+		// owner port still checks its own scope before and after acquisition.
 		reason = a.ownerReason(probeCtx)
 	}
 	if reason == "" && a.ports.source.provenance() != provenance {

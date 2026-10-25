@@ -33,6 +33,25 @@ an old startup plan cannot execute capture. Preparation is not transfer approval
 
 ## Native acceptance attempt
 
+Latest attempt: source commit `20011da`, explicitly authorized run
+`10f3fd8b7d4d4e1f922cbb64bb02e69f` on 2026-10-25. Startup rejected at the
+unchanged joint deadline (2,000 ms; full test 9.56 seconds). At the frozen
+diagnostic boundary reader was in `inspect_rpc` for 15 ms; its cumulative
+`acquire_rpc` time was 1,733 ms, OS snapshots 174 ms and inspection RPCs 19 ms.
+Collector recorded 1,606 ms in acquire, 201 ms in OS snapshots and 2 ms in
+inspection RPCs; no tracked operation was active for it at the boundary.
+Idle does not establish that collector validation had finished.
+
+The measured boundary is a reader inspection after acquisition, not a new
+cookie/challenge rejection. Acquisition consumed most of the shared window;
+these aggregate counters do not locate its internal longest suboperation.
+No capture continuation, QA database or observation was created. Owned cleanup
+was verified, the collector/build root was removed, and the retained QA reader
+profile was preserved. No retry or main-dev activation occurred. Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-retained-10f3fd8b7d4d4e1f922cbb64bb02e69f.run.log.txt`.
+
+Earlier attempt, before timing diagnostics:
+
 One explicitly authorized attempt ran on 2026-10-25, run
 `f5eec35fe324475f8584e5553d3e927e`. Seed acknowledgement and scope validation
 completed; startup admission then rejected with
@@ -50,6 +69,43 @@ the retained reader profile was preserved. No retry was performed. Evidence:
 `runtime/qa/auth-session-sidecar/x-manual-retained-f5eec35fe324475f8584e5553d3e927e.run.log.txt`.
 
 ## Acceptance scenario
+
+### Offline startup overhead correction
+
+The Windows owner checkpoint now resolves Node and Chrome parent links from one
+process-list snapshot. This snapshot is local to that checkpoint; process
+creation, image, handle liveness, Job membership and physical directory checks
+remain in place and are repeated at later checkpoints.
+
+The adapter checks the whole pair before acquisition and once again after both
+receipts pass validation, immediately before publication. It no longer repeats
+the pair inspection between the composed source's buffered receipts. Per-role
+checks before and after acquisition remain mandatory, and the final publication
+still checks cancellation, source provenance, evidence expiry and policy state.
+
+After the pre-acquisition inspection, Go sends a private integer wait hint
+(`startupBudgetMS`, 1 through 2,000 ms), rounded down from the remaining context
+deadline. Each Node owner spends that single monotonic budget across identity,
+rendezvous and settings waiting; a settings wait cannot reset it. The manual
+startup route rejects a missing/invalid hint instead of using the standalone
+QA recipe's 2,500 ms wait. Go remains authoritative over the entire two-second
+startup, including transport, cleanup and final ownership checks. The hint
+cannot extend it or authorize evidence; receipt/account/document guards and
+the 60-second attempt ceiling are unchanged.
+
+Validation is offline/accountless only. The last native acceptance remains the
+failed attempt above; these changes do not establish that native startup now
+fits within two seconds. No Chrome, retained profile or session transfer was
+executed for this correction.
+
+Offline evidence: `test-native-manual-pilot-startup.ps1` passed 55 Node tests,
+30 top-level Go tests and both development Engine build variants (log
+`runtime/qa/auth-session-sidecar/native-manual-startup-a17b9c92619a4b1fa0432342578b81d7.log.txt`).
+`test-x-manual-pilot-owner.ps1` passed 79 Node tests, 17 top-level Go tests,
+all four tag gates and staged Windows backend compilation (log
+`runtime/qa/auth-session-sidecar/x-manual-owner-6a7f76c74fee45628537bf120524d1c6.log.txt`).
+The Node suites overlap; their counts are not an aggregate unique-test count.
+Both helpers verified removal of their owned temporary build roots.
 
 Startup diagnostics now retain a frozen, bounded snapshot for both roles when
 admission fails: total local elapsed time, the active Go operation and its age,
@@ -69,7 +125,7 @@ cannot be rewritten by late callbacks or cleanup.
 
 The two-second startup deadline and 60-second attempt ceiling are unchanged.
 The latest native failure remains the failed attempt recorded above; offline
-timing/transport tests do not establish its missing historical operation timing.
+timing/transport tests do not reconstruct unrecorded internal operation timing.
 The six preflight fixture regressions now register their synthetic root-control
 session before exercising guard binding, so they reach their intended predicates.
 

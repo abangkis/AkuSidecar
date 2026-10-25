@@ -2,9 +2,28 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createManualStartupOwner } from './x-manual-startup-owner.mjs';
 import { offlineStartupOwnerActor, offlineStartupOwner, runOfflineStartupRecipe } from './x-manual-startup-offline-fixture.mjs';
+import { startupDiagnostic } from './x-manual-startup-diagnostic.mjs';
 
 const request = (role, pins) => ({ challenge: 'b'.repeat(48), role, ...pins });
 const decode = buffer => { try { return JSON.parse(buffer.toString('utf8')); } finally { buffer.fill(0); } };
+
+test('a prepared owner bounds its settings wait to the supplied acquisition remainder', async () => {
+  for (const role of ['reader','collector']) {
+    let published=false;
+    const owner=createManualStartupOwner({role,run:async sink=>{
+      await sink.beforeIdentityRead(offlineStartupOwner(role));
+      await sink.waitForSettings(new Promise(()=>{}));
+      published=true;
+    }});
+    const ready=await owner.prepare();
+    await assert.rejects(owner.acquire(ready.handle,request(role,ready.pins),undefined,15),error=>{
+      const d=startupDiagnostic(error);
+      return d.role===role&&d.phase==='settings'&&d.reason==='deadline';
+    });
+    assert.equal(published,false);
+    await owner.abort(ready.handle);
+  }
+});
 
 test('both roles prepare actual startup pins before any identity acquisition, then release the same document', async () => {
   let identityReads = 0;

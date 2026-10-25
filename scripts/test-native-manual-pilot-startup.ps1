@@ -29,7 +29,7 @@ try {
     $env:GOWORK = 'off'; $env:GOPROXY = 'off'; $env:GOSUMDB = 'off'
     $env:GOTOOLCHAIN = 'local'; $env:CGO_ENABLED = '0'; $env:GOFLAGS = ''
     Write-Output ('Offline native manual startup run: ' + $runId) | Tee-Object -FilePath $log
-    & node --test scripts/auth-session-fixture/x-manual-startup-source.test.mjs scripts/auth-session-fixture/x-qa-bound-observation.test.mjs scripts/auth-session-fixture/x-native-metadata-probe-driver.test.mjs scripts/auth-session-fixture/x-manual-startup-preflight.test.mjs scripts/auth-session-fixture/x-manual-startup-timing.test.mjs 2>&1 | Tee-Object -FilePath $log -Append
+    & node --test scripts/auth-session-fixture/x-manual-startup-source.test.mjs scripts/auth-session-fixture/x-qa-bound-observation.test.mjs scripts/auth-session-fixture/x-native-metadata-probe-driver.test.mjs scripts/auth-session-fixture/x-manual-startup-preflight.test.mjs scripts/auth-session-fixture/x-manual-startup-timing.test.mjs scripts/auth-session-fixture/x-manual-startup-wait-budget.test.mjs 2>&1 | Tee-Object -FilePath $log -Append
     if ($LASTEXITCODE -ne 0) { throw 'Startup Node projection regression failed.' }
     foreach ($mode in @('default', 'auth_session_dev', 'auth_session_fixture', 'auth_session_dev auth_session_fixture')) {
         $arguments = @('list', '-f', '{{range .GoFiles}}{{println .}}{{end}}{{range .TestGoFiles}}{{println .}}{{end}}')
@@ -43,8 +43,8 @@ try {
         }
         Write-Output ('PASS: startup source/test tag gate ' + $mode) | Tee-Object -FilePath $log -Append
     }
-    # Baseline tests supply invented fixtures; only new composed cases execute.
-    & go test -tags 'auth_session_dev' -run '^TestNativePilot(Startup|ManualController|Node)' -count=1 -timeout=60s -v @sources 2>&1 | Tee-Object -FilePath $log -Append
+    # All adapter and composed startup cases use invented offline fixtures.
+    & go test -tags 'auth_session_dev' -run '^TestNativePilot' -count=1 -timeout=60s -v @sources 2>&1 | Tee-Object -FilePath $log -Append
     if ($LASTEXITCODE -ne 0) { throw 'Startup-to-controller offline regression failed.' }
     foreach ($mode in @('auth_session_dev', 'auth_session_dev auth_session_fixture')) {
         & go build -tags $mode ./internal/engine 2>&1 | Tee-Object -FilePath $log -Append

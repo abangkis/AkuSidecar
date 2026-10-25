@@ -1691,7 +1691,7 @@ async function qualifyBoundObservation(message, cookieWriteScope = false) {
   return boundCheckpoint(current, cookieWriteScope);
 }
 
-async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, afterIdentity, beforeIdentityRead,initialFailure, observationFactory = (...args) => new QABoundObservation(...args), progress=()=>{}) {
+async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, afterIdentity, beforeIdentityRead,initialFailure, observationFactory = (...args) => new QABoundObservation(...args), progress=()=>{}, waitForSettings) {
   current.earlyRunning = true;
   const bound = current.bound = { running: true, sampling: false, binder: null, networkDisabled: false };
   const controls=current.manualStartupSelected?startupRootControls(current,send,'reader'):null;
@@ -1729,7 +1729,12 @@ async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, 
         // Finish this one document's request before disabling context-loss
         // observation. No second reload, negative control or cookie inspection.
         let timer;
-        try { await Promise.race([bound.binder.done, new Promise(resolve => { timer = setTimeout(resolve, 2500); })]); }
+        try {
+          if (waitForSettings) await waitForSettings(bound.binder.done);
+          else if (current.manualStartupSelected) throw probeError('manual_startup_budget_invalid');
+          else await Promise.race([bound.binder.done, new Promise(resolve => { timer = setTimeout(resolve, 2500); })]);
+        }
+        catch(error) { throw initialFailure ? initialFailure(error, 'settings') : error; }
         finally { clearTimeout(timer); bound.sampling = false; }
       },
     });
@@ -1804,7 +1809,7 @@ async function closeShortCollector(current) {
   return disposed && s.closed;
 }
 
-export async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup, beforeIdentityRead,initialFailure, observationFactory = (...args) => new QABoundObservation(...args), progress=()=>{}) {
+export async function collectorShortCheckpoint(current, afterIdentity, onPrivateStartup, beforeIdentityRead,initialFailure, observationFactory = (...args) => new QABoundObservation(...args), progress=()=>{}, waitForSettings) {
   const s = current.shortFeasibility;
   // Classify at origin, before the owner-level identity fallback. Never inspect
   // transport exception text or overwrite an already branded first cause.
@@ -1905,7 +1910,12 @@ export async function collectorShortCheckpoint(current, afterIdentity, onPrivate
       beforeIdentityRead: contextId => beforeIdentityRead?.(binder.startupPins(contextId)), beforeRuntimeDisable: async () => {
       progress('settings_wait');
       let timer;
-      try { await Promise.race([binder.done, new Promise(resolve => { timer = setTimeout(resolve, 2500); })]); }
+      try {
+        if (waitForSettings) await waitForSettings(binder.done);
+        else if (current.manualStartupSelected) throw probeError('manual_startup_budget_invalid');
+        else await Promise.race([binder.done, new Promise(resolve => { timer = setTimeout(resolve, 2500); })]);
+      }
+      catch(error) { throw initialFailure ? initialFailure(error, 'settings') : error; }
       finally { clearTimeout(timer); sampling = false; }
     } });
     const early = await capture.run();
@@ -1959,9 +1969,9 @@ export function createOwnedManualStartupOwners(message,diagnostics=startupFailur
       if (role === 'reader') {
         current.gate.beginObservation(); current.earlyAttempted = true;
         observation=await boundCheckpoint(current, false, { deferCookieMutation: false, onPrivateResult: () => {},
-          onPrivateStartup: sink.onPrivateStartup },together,sink.beforeIdentityRead,failure,manualObservation,progress);
+          onPrivateStartup: sink.onPrivateStartup },together,sink.beforeIdentityRead,failure,manualObservation,progress,sink.waitForSettings);
       }else{
-        const result=await collectorShortCheckpoint(current,together,sink.onPrivateStartup,sink.beforeIdentityRead,failure,manualObservation,progress);
+        const result=await collectorShortCheckpoint(current,together,sink.onPrivateStartup,sink.beforeIdentityRead,failure,manualObservation,progress,sink.waitForSettings);
         observation=result?.checkpoint?.observation;
       }
       requireBoundStartup(observation,role,diagnostics);

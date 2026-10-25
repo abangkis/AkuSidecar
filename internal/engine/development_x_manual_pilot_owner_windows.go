@@ -65,19 +65,19 @@ func xManualPilotWindowsImage(identity processFixtureIdentity, path string) erro
 	}
 	return nil
 }
-func xManualPilotWindowsParent(pid uint32) (uint32, error) {
+func xManualPilotWindowsProcessParents(visit func(uint32, uint32) bool) error {
 	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
-		return 0, errors.New("x-owner-parent-unavailable")
+		return errors.New("x-owner-parent-unavailable")
 	}
 	defer windows.CloseHandle(snapshot)
 	entry := windows.ProcessEntry32{Size: uint32(unsafe.Sizeof(windows.ProcessEntry32{}))}
 	for err = windows.Process32First(snapshot, &entry); err == nil; err = windows.Process32Next(snapshot, &entry) {
-		if entry.ProcessID == pid {
-			return entry.ParentProcessID, nil
+		if !visit(entry.ProcessID, entry.ParentProcessID) {
+			return nil
 		}
 	}
-	return 0, errors.New("x-owner-parent-unavailable")
+	return errors.New("x-owner-parent-unavailable")
 }
 func xManualPilotWindowsDirectory(handle windows.Handle, path, id string) error {
 	if handle == 0 || !filepath.IsAbs(path) || id == "" {
@@ -134,10 +134,11 @@ func (b *xManualPilotWindowsBackend) snapshot(ctx context.Context, role string) 
 	if xManualPilotWindowsImage(r.node, r.bridge.config.NodePath) != nil || xManualPilotWindowsImage(r.chrome, r.bridge.config.ChromePath) != nil {
 		return nativePilotOwner{}, errors.New("x-owner-image-or-creation-changed")
 	}
-	if parent, err := xManualPilotWindowsParent(r.node.PID); err != nil || parent != r.parent.PID {
+	nodeParent, chromeParent, err := xManualPilotParentPair(r.node.PID, r.chrome.PID, xManualPilotWindowsProcessParents)
+	if err != nil || nodeParent != r.parent.PID {
 		return nativePilotOwner{}, errors.New("x-owner-node-parent-changed")
 	}
-	if parent, err := xManualPilotWindowsParent(r.chrome.PID); err != nil || parent != r.node.PID {
+	if chromeParent != r.node.PID {
 		return nativePilotOwner{}, errors.New("x-owner-chrome-parent-changed")
 	}
 	r.bridge.jobMu.Lock()
@@ -176,7 +177,7 @@ func (b *xManualPilotWindowsBackend) rpc(ctx context.Context, role, op string, f
 	}
 	input := map[string]any{"owner": r.protocolOwner, "role": role}
 	for key, value := range fields {
-		if key != "handle" && key != "request" && key != "preserveReader" {
+		if key != "handle" && key != "request" && key != "preserveReader" && !(op == "manual_acquire" && key == "startupBudgetMS") {
 			return errors.New("x-owner-operation-unavailable")
 		}
 		input[key] = value

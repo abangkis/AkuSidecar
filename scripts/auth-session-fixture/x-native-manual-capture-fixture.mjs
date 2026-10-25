@@ -70,7 +70,7 @@ export async function syntheticCapturePort(pins,transport,bridgePath) {
     capture:(request,options)=>captureNativeXTarget({request,bridgePath,...options,browserContextId:'owned-context',command:transport.command.bind(transport),subscribe:transport.subscribe.bind(transport)})});
   let id=1;
   for(const role of roles)await port.execute({id:id++,op:'manual_prepare',owner:1,role});
-  for(const role of roles)await port.execute({id:id++,op:'manual_acquire',owner:1,role,handle:role+'-handle',request:{challenge:'synthetic',role,...rolePins[role]}});
+  for(const role of roles)await port.execute({id:id++,op:'manual_acquire',owner:1,role,handle:role+'-handle',startupBudgetMS:2000,request:{challenge:'synthetic',role,...rolePins[role]}});
   return port;
 }
 

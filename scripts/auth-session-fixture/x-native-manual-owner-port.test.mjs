@@ -10,7 +10,28 @@ import {manualOwnerSnapshot} from './x-native-metadata-probe-driver.mjs';
 let id=0;
 const command=(op,role='reader',extra={})=>({id:++id,op,owner:1,role,...extra});
 async function prepared(port){return Promise.all(['reader','collector'].map(role=>port.execute(command('manual_prepare',role))));}
-const acquire=(port,role,ready)=>port.execute(command('manual_acquire',role,{handle:ready.handle,request:{challenge:'c'.repeat(48),role,...ready.pins}}));
+const acquire=(port,role,ready)=>port.execute(command('manual_acquire',role,{handle:ready.handle,startupBudgetMS:2000,request:{challenge:'c'.repeat(48),role,...ready.pins}}));
+
+test('the private acquire route validates and forwards only a bounded startup wait hint', async () => {
+  const base=command('manual_acquire','reader',{handle:'h',startupBudgetMS:75,request:{challenge:'c'.repeat(48),role:'reader',...offlineStartupOwner('reader')}});
+  assert.equal(manualOwnerOperation(base).startupBudgetMS,75);
+  for(const startupBudgetMS of [undefined,null,0,-1,0.5,2001,'75',Infinity]){
+    assert.throws(()=>manualOwnerOperation({...base,startupBudgetMS}),/manual_owner_unavailable/);
+  }
+  let received;
+  const port=createXManualOwnerPort({enabled:true,owner:1,
+    createOwners:()=>Object.fromEntries(['reader','collector'].map(role=>[role,{
+      prepare:async()=>({handle:role,pins:offlineStartupOwner(role)}),
+      acquire:async(_handle,_request,_signal,budget)=>{received=budget;return Buffer.from('{}');},abort:async()=>{},cancel:async()=>{},
+    }])),
+    snapshot:async role=>({...offlineStartupOwner(role),sessionId:'offline-'+role,alive:true,lifecycleReady:true,
+      headless:role==='collector',windowCount:role==='reader'?1:0,bootstrapCount:role==='reader'?1:0}),retire:async()=>{},
+  });
+  const ready=await prepared(port);
+  (await port.execute({...base,handle:ready[0].handle})).fill(0);
+  assert.equal(received,75);
+  await Promise.all(['reader','collector'].map(role=>port.execute(command('manual_abort',role,{handle:null,preserveReader:role==='reader'}))));
+});
 test('X private owner port defaults off and rejects routes, flags, accessors and arbitrary commands',()=>{
   assert.throws(()=>createXManualOwnerPort(),/manual_owner_unavailable/);
   for(const value of [command('manual_prepare','other'),command('login'),command('manual_prepare','reader',{nativeQualified:true}),

@@ -16,6 +16,66 @@ import (
 
 // All ownership values below are invented. This compiled backend can produce
 // only offline vectors, including when a private JSON object claims otherwise.
+func TestXManualPilotOwnerParentPairSingleSnapshot(t *testing.T) {
+	for _, fault := range []string{"none", "node-missing", "chrome-missing", "snapshot-failure"} {
+		t.Run(fault, func(t *testing.T) {
+			walks := 0
+			walk := func(visit func(uint32, uint32) bool) error {
+				walks++
+				// Chrome may occur before Node in the same enumeration.
+				for _, pair := range [][2]uint32{{30, 20}, {99, 90}, {20, 10}} {
+					if fault == "node-missing" && pair[0] == 20 || fault == "chrome-missing" && pair[0] == 30 {
+						continue
+					}
+					if fault == "snapshot-failure" {
+						return errors.New("private-snapshot-error")
+					}
+					if !visit(pair[0], pair[1]) {
+						break
+					}
+				}
+				return nil
+			}
+			node, chrome, err := xManualPilotParentPair(20, 30, walk)
+			if walks != 1 || (err == nil) != (fault == "none") || err == nil && (node != 10 || chrome != 20) {
+				t.Fatal("single-snapshot parent links were missing or fabricated")
+			}
+		})
+	}
+	var generation uint32 = 10
+	walk := func(visit func(uint32, uint32) bool) error { visit(20, generation); visit(30, 20); return nil }
+	before, _, _ := xManualPilotParentPair(20, 30, walk)
+	generation = 11
+	after, _, _ := xManualPilotParentPair(20, 30, walk)
+	if before == after {
+		t.Fatal("parent snapshot was cached across checkpoints")
+	}
+}
+
+func TestXManualPilotOwnerStartupBudget(t *testing.T) {
+	if ms, err := xManualPilotStartupBudget(context.Background()); err != nil || ms != 2000 {
+		t.Fatal("missing parent deadline enlarged the joint limit")
+	}
+	for _, limit := range []time.Duration{150 * time.Millisecond, 5 * time.Second} {
+		ctx, cancel := context.WithTimeout(context.Background(), limit)
+		ms, err := xManualPilotStartupBudget(ctx)
+		cancel()
+		if err != nil || ms <= 0 || ms > limit.Milliseconds() || ms > 2000 {
+			t.Fatal("private wait hint exceeded the shared remaining deadline")
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := xManualPilotStartupBudget(ctx); err == nil {
+		t.Fatal("canceled startup received a new wait budget")
+	}
+	expired, cancelExpired := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancelExpired()
+	if _, err := xManualPilotStartupBudget(expired); err == nil {
+		t.Fatal("expired startup received a new wait budget")
+	}
+}
+
 type testXManualOwnerBackend struct {
 	mu              sync.Mutex
 	core            map[string]nativePilotOwner
@@ -29,6 +89,7 @@ type testXManualOwnerBackend struct {
 	state           nativePilotBrokerState
 	barrier         chan struct{}
 	fault           string
+	startupBudgets  map[string]int64
 }
 
 func (*testXManualOwnerBackend) provenance() nativePilotProvenance { return nativePilotOfflineOnly }
@@ -100,6 +161,15 @@ func (f *testXManualOwnerBackend) rpc(ctx context.Context, role, op string, fiel
 		f.mu.Unlock()
 		return testXManualReply(out, value)
 	case "manual_acquire":
+		budget, ok := fields["startupBudgetMS"].(int64)
+		if !ok || budget < 1 || budget > nativePilotJoint.Milliseconds() {
+			f.mu.Unlock()
+			return errors.New("private-startup-budget-invalid")
+		}
+		if f.startupBudgets == nil {
+			f.startupBudgets = make(map[string]int64)
+		}
+		f.startupBudgets[role] = budget
 		if len(f.ready) != 2 || f.acquired[role] || fields["handle"] != "held-"+role {
 			f.mu.Unlock()
 			return errors.New("private-rendezvous-invalid")
@@ -466,6 +536,23 @@ func TestXManualPilotOwnerSharedTransportFlow(t *testing.T) {
 	defer f.mu.Unlock()
 	if !f.cleaned["reader"] || f.cleaned["collector"] {
 		t.Fatal("cleanup did not preserve reader")
+	}
+}
+
+func TestXManualPilotOwnerSharedRemainingBudget(t *testing.T) {
+	cfg, f := testXManualOwnerConfig()
+	b := testXManualBroker(t, cfg, f)
+	ctx, cancel := context.WithTimeout(context.Background(), 750*time.Millisecond)
+	defer cancel()
+	d := b.start(ctx)
+	assertXManualOffline(t, d, "manual-attempt-valid")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, role := range []string{"reader", "collector"} {
+		budget := f.startupBudgets[role]
+		if budget <= 0 || budget > 750 {
+			t.Fatal("owner acquisition reset or exceeded the parent's remaining budget")
+		}
 	}
 }
 func TestXManualPilotOwnerFailuresNeverPromote(t *testing.T) {

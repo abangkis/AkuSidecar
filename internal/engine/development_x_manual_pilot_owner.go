@@ -384,6 +384,48 @@ func (p *xManualPilotOwnerPorts) inspectPhase(ctx context.Context, prepared nati
 	}
 	return bound, nil
 }
+
+// One enumeration supplies both parent links for this checkpoint only. Process
+// creation, handles, images, Job membership and directories are checked separately.
+func xManualPilotParentPair(node, chrome uint32, walk func(func(uint32, uint32) bool) error) (uint32, uint32, error) {
+	if node == 0 || chrome == 0 || node == chrome || walk == nil {
+		return 0, 0, errors.New("x-owner-parent-unavailable")
+	}
+	var nodeParent, chromeParent uint32
+	err := walk(func(pid, parent uint32) bool {
+		if pid == node {
+			nodeParent = parent
+		}
+		if pid == chrome {
+			chromeParent = parent
+		}
+		return nodeParent == 0 || chromeParent == 0
+	})
+	if err != nil || nodeParent == 0 || chromeParent == 0 {
+		return 0, 0, errors.New("x-owner-parent-unavailable")
+	}
+	return nodeParent, chromeParent, nil
+}
+
+func xManualPilotStartupBudget(ctx context.Context) (int64, error) {
+	if ctx == nil || ctx.Err() != nil {
+		return 0, errors.New("x-owner-startup-deadline")
+	}
+	remaining := nativePilotJoint
+	if deadline, ok := ctx.Deadline(); ok {
+		if left := time.Until(deadline); left < remaining {
+			remaining = left
+		}
+	}
+	// Round down: the private hint may shorten a wait, never extend Go's
+	// authoritative context deadline, including transport and final inspection.
+	ms := remaining.Milliseconds()
+	if ms <= 0 {
+		return 0, errors.New("x-owner-startup-deadline")
+	}
+	return ms, nil
+}
+
 func (p *xManualPilotOwnerPorts) acquire(ctx context.Context, prepared nativePilotPreparedRole, ch nativePilotCaptureChallenge) ([]byte, error) {
 	p.mu.Lock()
 	stored, ok := p.prepared[prepared.owner.role]
@@ -403,8 +445,12 @@ func (p *xManualPilotOwnerPorts) acquire(ctx context.Context, prepared nativePil
 		return nil, errors.New("x-owner-challenge-invalid")
 	}
 	defer clear(request)
+	budget, err := xManualPilotStartupBudget(ctx)
+	if err != nil {
+		return nil, nativePilotInitialWrap(context.DeadlineExceeded, "pair", "joint")
+	}
 	var raw json.RawMessage
-	if err := p.timedRPC(ctx, prepared.owner.role, "manual_acquire", map[string]any{"handle": prepared.handle, "request": json.RawMessage(request)}, &raw); err != nil {
+	if err := p.timedRPC(ctx, prepared.owner.role, "manual_acquire", map[string]any{"handle": prepared.handle, "request": json.RawMessage(request), "startupBudgetMS": budget}, &raw); err != nil {
 		clear(raw)
 		return nil, nativePilotInitialWrap(err, prepared.owner.role, "acquire_rpc")
 	}

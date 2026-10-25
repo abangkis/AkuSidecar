@@ -13,7 +13,7 @@ function exact(value, keys) {
   if(names.length!==keys.length||names.some(k=>!keys.includes(k)||!Object.hasOwn(descriptors[k],'value')||!descriptors[k].enumerable))throw failure();
 }
 export function manualOwnerOperation(value) {
-  const operations={manual_prepare:['id','op','owner','role'],manual_acquire:['id','op','owner','role','handle','request'],
+  const operations={manual_prepare:['id','op','owner','role'],manual_acquire:['id','op','owner','role','handle','request','startupBudgetMS'],
     manual_inspect:['id','op','owner','role'],manual_inventory:['id','op','owner','role'],
     manual_abort:['id','op','owner','role','handle','preserveReader'],manual_capture:['id','op','owner','role','handle','request'],manual_capture_cancel:['id','op','owner','role','handle']};
   const op=value&&Object.getOwnPropertyDescriptor(value,'op')?.value;
@@ -23,6 +23,7 @@ export function manualOwnerOperation(value) {
   if('handle' in value&&!(value.op==='manual_abort'&&value.handle===null)&&!ref(value.handle))throw failure();
   if(value.op==='manual_abort'&&(typeof value.preserveReader!=='boolean'||value.role==='collector'&&value.preserveReader))throw failure();
   if(value.op==='manual_acquire'){
+    if(!Number.isSafeInteger(value.startupBudgetMS)||value.startupBudgetMS<1||value.startupBudgetMS>2000)throw failure();
     exact(value.request,requestKeys);
     if(!requestKeys.every(k=>ref(value.request[k]))||value.request.role!==value.role)throw failure();
   }
@@ -146,7 +147,7 @@ export function createXManualOwnerPort({enabled=false,owner,createOwners,snapsho
         if(!roles.every(r=>state[r].pins)||s.acquired||message.handle!==s.handle||pinKeys.some(k=>message.request[k]!==s.pins[k]))throw failure();
         s.acquired=true;
         try{
-          const wire=await s.actor.acquire(s.handle,message.request);
+          const wire=await s.actor.acquire(s.handle,message.request,undefined,message.startupBudgetMS);
           if(failed||s.invalid){wire.fill(0);throw failure();}
           return wire;
         }catch(error){const cause=diagnostics.record(error,role,'acquire_rpc','unavailable','xnp_manual_owner_unavailable');invalidate(role);throw cause;}
