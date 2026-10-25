@@ -106,6 +106,51 @@ func (n *testXManualOwnerNode) cleanup(ctx context.Context, role, handle string,
 	return nil
 }
 
+// Decode the actual Node catalogs, rather than a Go reconstruction of their
+// indices. This subprocess has no driver, network, browser or profile access.
+func TestXManualPilotOwnerPrepareNodeDiagnostic(t *testing.T) {
+	node := os.Getenv("AKU_CHROME_FIXTURE_NODE")
+	if node == "" {
+		var err error
+		node, err = exec.LookPath("node")
+		if err != nil {
+			t.Fatal("offline Node unavailable")
+		}
+	}
+	project := os.Getenv("AKU_NATIVE_MANUAL_PROJECT_ROOT")
+	if project == "" {
+		_, file, _, ok := runtime.Caller(0)
+		if !ok {
+			t.Fatal("offline source path unavailable")
+		}
+		project = filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	}
+	const source = `import {STARTUP_TRACE,startupPrepareFailure,startupRPCCode} from './scripts/auth-session-fixture/x-manual-startup-diagnostic.mjs';
+const rows=[];
+for(const stage of STARTUP_TRACE.prepareStage)for(const condition of STARTUP_TRACE.prepareCondition)
+ rows.push({stage,condition,code:startupRPCCode(startupPrepareFailure(null,'reader',stage,condition))});
+console.log(JSON.stringify(rows));`
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, node, "--input-type=module", "--eval", source)
+	cmd.Dir = project
+	raw, err := cmd.Output()
+	if err != nil {
+		t.Fatal("offline diagnostic catalog emission failed")
+	}
+	defer clear(raw)
+	var rows []struct{ Stage, Condition, Code string }
+	if len(raw) > 256*1024 || json.Unmarshal(raw, &rows) != nil || len(rows) != len(nativePilotTraceCatalogs[17])*len(nativePilotTraceCatalogs[18]) {
+		t.Fatal("Node diagnostic catalog shape disagrees")
+	}
+	for _, row := range rows {
+		d, ok := nativePilotInitialCode(row.Code)
+		if !ok || d.trace == nil || d.role != "reader" || d.phase != "prepare" || d.trace.firstCause != "preparation" || d.trace.prepareStage != row.Stage || d.trace.prepareCondition != row.Condition {
+			t.Fatal("Node-Go V9 preparation diagnostic disagrees")
+		}
+	}
+}
+
 func TestXManualPilotOwnerNodeSharedProtocol(t *testing.T) {
 	node := os.Getenv("AKU_CHROME_FIXTURE_NODE")
 	if node == "" {

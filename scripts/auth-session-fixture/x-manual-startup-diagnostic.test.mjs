@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {STARTUP_ROLES,STARTUP_PHASES,STARTUP_REASONS,startupFailure,startupDiagnostic,startupRPCCode,startupFailureLatch,requireBoundStartup} from './x-manual-startup-diagnostic.mjs';
+import {STARTUP_ROLES,STARTUP_PHASES,STARTUP_REASONS,startupFailure,startupDiagnostic,startupRPCCode,startupFailureLatch,requireBoundStartup,startupPrepareFailure} from './x-manual-startup-diagnostic.mjs';
 import {createManualStartupCapture} from './x-manual-startup-source.mjs';
 import {offlineStartupOwner,runOfflineStartupRecipe} from './x-manual-startup-offline-fixture.mjs';
 import {offlineXManualOwnerPort} from './x-native-manual-owner-offline.mjs';
@@ -57,4 +57,27 @@ test('primary failure is immutable across secondary cancellation and unattribute
   const peer=latch.record(startupFailure('reader','joint','canceled'),'reader','joint');
   assert.deepEqual(startupDiagnostic(peer),{role:'collector',phase:'settings',reason:'source_unavailable',peer:true});
   assert.equal(startupDiagnostic(startupFailure('pair','joint','deadline')).role,'pair');
+});
+
+test('prepare predicates survive same-role errors, peer cancellation, cleanup and asynchronous replies',async()=>{
+  const latch=startupFailureLatch();
+  const first=latch.record(startupPrepareFailure(null,'reader','node_snapshot','command_failed'),'reader','prepare');
+  for(const error of [startupPrepareFailure(null,'reader','node_reply','reply_invalid'),startupFailure('collector','joint','canceled'),startupFailure('pair','cleanup','cleanup_unverified')]){
+    const later=latch.record(error,startupDiagnostic(error).role,'cleanup');
+    assert.deepEqual({...startupDiagnostic(later),peer:false},startupDiagnostic(first));
+  }
+  const replies=[];
+  await executeManualReply(command('manual_prepare','reader'),async()=>{throw first;},(...args)=>replies.push(args));
+  assert.equal(replies[0][2],startupRPCCode(first));assert.match(replies[0][2],/^manual_initial_v9_/);
+  assert.ok(replies[0][2].length<=80);
+  const earlier=startupFailure('collector','bound_finish','observed_cookie_write',false,undefined,{firstCause:'cookie_candidate'});
+  assert.deepEqual(startupDiagnostic(startupPrepareFailure(earlier,'reader','go_rpc','command_failed')),startupDiagnostic(earlier));
+});
+
+test('prepare diagnostics ignore exception text, spoofed fields and accessors',()=>{
+  let reads=0;
+  const raw={get message(){reads++;throw new Error('PRIVATE_TOKEN');},prepareStage:'PRIVATE_PROFILE',prepareCondition:'PRIVATE_COOKIE'};
+  const error=startupPrepareFailure(raw,'reader','PRIVATE_PROFILE','PRIVATE_COOKIE');
+  assert.equal(reads,0);assert.equal(startupDiagnostic(error).trace.prepareStage,'unknown');
+  assert.equal(startupDiagnostic(error).trace.prepareCondition,'unknown');assert.equal(JSON.stringify(startupDiagnostic(error)).includes('PRIVATE'),false);
 });

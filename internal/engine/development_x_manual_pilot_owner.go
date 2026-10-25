@@ -40,6 +40,7 @@ type xManualPilotOwnerPorts struct {
 	begun, acquired map[string]bool
 	cleanupTokens   map[string]string
 	cleanupUnknown  map[string]bool
+	prepareInitial  nativePilotInitialDetail
 }
 
 func (xManualPilotOwnerConfig) String() string     { return "private-x-manual-owner-config" }
@@ -161,6 +162,27 @@ func xManualPilotDecode(raw []byte, out any) error {
 	}
 	return nil
 }
+
+// Closed OS predicates cross the backend boundary without process/path values.
+type xManualPilotCoreError struct{ condition string }
+
+func (e *xManualPilotCoreError) Error() string { return "x-owner-os-unavailable" }
+func xManualPilotCoreFailure(err error, condition string) error {
+	var typed *nativePilotInitialError
+	var core *xManualPilotCoreError
+	if errors.As(err, &typed) || errors.As(err, &core) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	return &xManualPilotCoreError{condition}
+}
+func xManualPilotPrepareCoreFailure(err error, role, stage string) error {
+	condition := "os_snapshot"
+	var core *xManualPilotCoreError
+	if errors.As(err, &core) && core != nil {
+		condition = core.condition
+	}
+	return nativePilotPrepareFailure(err, role, stage, condition)
+}
 func (p *xManualPilotOwnerPorts) core(ctx context.Context, role string) (nativePilotOwner, error) {
 	done := nativePilotTimed(ctx, role, "os_snapshot")
 	defer done()
@@ -169,16 +191,25 @@ func (p *xManualPilotOwnerPorts) core(ctx context.Context, role string) (nativeP
 	if role == "collector" {
 		selected = p.cfg.pilot.binding.collector
 	}
-	if err != nil || o.role != role || o.pid <= 0 || o.owner != strconv.Itoa(o.pid) || o.profile != selected.profile || o.parent != selected.parent || o.generation == 0 || o.context != "" || o.target != "" || o.frame != "" || o.document != "" {
-		return nativePilotOwner{}, errors.New("x-owner-os-unavailable")
+	if err != nil {
+		return nativePilotOwner{}, xManualPilotCoreFailure(err, "os_snapshot")
+	}
+	if o.profile != selected.profile {
+		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "profile_mismatch")
+	}
+	if o.parent != selected.parent {
+		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "parent_mismatch")
+	}
+	if o.role != role || o.pid <= 0 || o.owner != strconv.Itoa(o.pid) || o.generation == 0 || o.context != "" || o.target != "" || o.frame != "" || o.document != "" {
+		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "owner_shape")
 	}
 	for _, ref := range []string{o.owner, o.profile, o.image, o.creation, o.job, o.parent} {
 		if !nativePilotRef(ref, 512) {
-			return nativePilotOwner{}, errors.New("x-owner-os-unavailable")
+			return nativePilotOwner{}, xManualPilotCoreFailure(nil, "reference_invalid")
 		}
 	}
 	if !nativePilotRef(o.directory, 4096) {
-		return nativePilotOwner{}, errors.New("x-owner-os-unavailable")
+		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "reference_invalid")
 	}
 	return o, nil
 }
@@ -212,6 +243,9 @@ func (p *xManualPilotOwnerPorts) cleanup(role, handle string, preserve bool) err
 }
 
 func (p *xManualPilotOwnerPorts) failedPrepare(core nativePilotOwner, cause error) (nativePilotPreparedRole, error) {
+	// Freeze the cause before cleanup can block while a peer reports another
+	// error. Reply order must not select the primary preparation predicate.
+	cause = p.firstPrepareFailure(cause, core.role)
 	if p.cleanup(core.role, "", true) == nil {
 		return nativePilotPreparedRole{}, nativePilotInitialWrap(cause, core.role, "prepare")
 	}
@@ -254,44 +288,77 @@ func (p *xManualPilotOwnerPorts) abort(ctx context.Context, prepared nativePilot
 	}
 	return nil
 }
-func (p *xManualPilotOwnerPorts) prepare(ctx context.Context, req nativePilotPrepareRequest) (nativePilotPreparedRole, error) {
+func (p *xManualPilotOwnerPorts) firstPrepareFailure(err error, role string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.prepareInitial.role == "" {
+		p.prepareInitial = nativePilotInitialOf(err, role, "prepare")
+	}
+	detail := p.prepareInitial
+	detail.peer = detail.peer || role != detail.role && role != "pair"
+	return &nativePilotInitialError{detail.closed()}
+}
+func (p *xManualPilotOwnerPorts) prepare(ctx context.Context, req nativePilotPrepareRequest) (prepared nativePilotPreparedRole, err error) {
+	defer func() {
+		if err != nil {
+			err = p.firstPrepareFailure(err, req.role)
+		}
+	}()
 	p.mu.Lock()
 	if p.begun[req.role] {
 		p.mu.Unlock()
-		return nativePilotPreparedRole{}, errors.New("x-owner-prepare-replayed")
+		return nativePilotPreparedRole{}, nativePilotPrepareFailure(nil, req.role, "go_admission", "replay")
 	}
 	p.begun[req.role] = true
 	p.mu.Unlock()
 	core, err := p.core(ctx, req.role)
 	if err != nil {
-		return nativePilotPreparedRole{}, err
+		return nativePilotPreparedRole{}, xManualPilotPrepareCoreFailure(err, req.role, "go_core_before")
 	}
-	if req.profile != core.profile || req.parent != core.parent || req.attempt != p.cfg.pilot.binding.attempt {
-		return nativePilotPreparedRole{}, errors.New("x-owner-request-mismatch")
+	if req.profile != core.profile {
+		return nativePilotPreparedRole{}, nativePilotPrepareFailure(nil, req.role, "go_request", "profile_mismatch")
+	}
+	if req.parent != core.parent {
+		return nativePilotPreparedRole{}, nativePilotPrepareFailure(nil, req.role, "go_request", "parent_mismatch")
+	}
+	if req.attempt != p.cfg.pilot.binding.attempt {
+		return nativePilotPreparedRole{}, nativePilotPrepareFailure(nil, req.role, "go_request", "attempt_mismatch")
 	}
 	var raw json.RawMessage
 	if err := p.backend.rpc(ctx, req.role, "manual_prepare", nil, &raw); err != nil {
-		return p.failedPrepare(core, err)
+		return p.failedPrepare(core, nativePilotPrepareFailure(err, req.role, "go_rpc", "command_failed"))
 	}
 	defer clear(raw)
 	var ready struct {
 		Handle string           `json:"handle"`
 		Pins   xManualPilotPins `json:"pins"`
 	}
-	if xManualPilotDecode(raw, &ready) != nil || !nativePilotRef(ready.Handle, 512) {
-		return p.failedPrepare(core, nil)
+	if xManualPilotDecode(raw, &ready) != nil {
+		return p.failedPrepare(core, nativePilotPrepareFailure(nil, req.role, "go_decode", "reply_invalid"))
+	}
+	if !nativePilotRef(ready.Handle, 512) {
+		return p.failedPrepare(core, nativePilotPrepareFailure(nil, req.role, "go_decode", "handle_invalid"))
 	}
 	partial := nativePilotPreparedRole{owner: core, handle: ready.Handle}
 	p.mu.Lock()
 	p.prepared[req.role] = partial
 	p.mu.Unlock()
 	after, err := p.core(ctx, req.role)
-	if err != nil || after != core {
-		return partial, errors.New("x-owner-os-changed")
+	if err != nil {
+		return partial, xManualPilotPrepareCoreFailure(err, req.role, "go_core_after")
+	}
+	if after != core {
+		return partial, nativePilotPrepareFailure(nil, req.role, "go_core_after", "os_changed")
+	}
+	if ready.Pins.OwnerID != core.owner {
+		return partial, nativePilotPrepareFailure(nil, req.role, "go_bind", "owner_mismatch")
+	}
+	if ready.Pins.ProfileID != core.profile {
+		return partial, nativePilotPrepareFailure(nil, req.role, "go_bind", "profile_mismatch")
 	}
 	bound, err := xManualPilotBind(core, ready.Pins)
 	if err != nil {
-		return partial, err
+		return partial, nativePilotPrepareFailure(err, req.role, "go_bind", "pins_invalid")
 	}
 	partial.owner = bound
 	p.mu.Lock()

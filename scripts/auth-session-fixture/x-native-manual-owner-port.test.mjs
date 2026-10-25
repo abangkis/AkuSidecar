@@ -12,6 +12,41 @@ const command=(op,role='reader',extra={})=>({id:++id,op,owner:1,role,...extra});
 async function prepared(port){return Promise.all(['reader','collector'].map(role=>port.execute(command('manual_prepare',role))));}
 const acquire=(port,role,ready)=>port.execute(command('manual_acquire',role,{handle:ready.handle,startupBudgetMS:2000,request:{challenge:'c'.repeat(48),role,...ready.pins}}));
 
+for(const role of ['reader','collector'])for(const [fault,stage,condition]of [
+  ['actor','node_actor','command_failed'],['shape','node_reply','reply_invalid'],
+  ['handle','node_reply','handle_invalid'],['pins','node_reply','pins_invalid'],
+  ['snapshot','node_snapshot','command_failed'],['validate','node_validate','lifecycle_unready'],
+  ['distinct','node_distinct','roles_not_distinct'],
+])test(`prepare ${role} ${fault} preserves its predicate through cleanup and peer rejection`,async()=>{
+  const other=role==='reader'?'collector':'reader';
+  const actors=Object.fromEntries(['reader','collector'].map(r=>[r,{
+    prepare:async()=>{
+      if(r===role&&fault==='actor')throw new Error('PRIVATE_TOKEN');
+      const pins={...offlineStartupOwner(r)};
+      if(r===role&&fault==='pins')pins.documentId='';
+      if(r===role&&fault==='distinct')pins.profileId=offlineStartupOwner(other).profileId;
+      return{handle:r===role&&fault==='handle'?'':r,pins,...(r===role&&fault==='shape'?{PRIVATE_BODY:true}:{})};
+    },abort:async()=>{throw new Error('PRIVATE_CLEANUP');},cancel:async()=>{},acquire:async()=>{},
+  }]));
+  const port=createXManualOwnerPort({enabled:true,owner:1,createOwners:()=>actors,
+    snapshot:async(r,_document,pins)=>{
+      if(r===role&&fault==='snapshot')throw new Error('PRIVATE_PROFILE');
+      return{...pins,sessionId:'offline-session-'+r,alive:true,headless:r==='collector',windowCount:r==='reader'?1:0,
+        bootstrapCount:r==='reader'?1:0,lifecycleReady:!(r===role&&fault==='validate')};
+    },retire:async()=>{},
+  });
+  if(fault==='distinct')await port.execute(command('manual_prepare',other));
+  let first;
+  await assert.rejects(port.execute(command('manual_prepare',role)),error=>{
+    first=startupDiagnostic(error);assert.equal(first.role,role);assert.equal(first.phase,'prepare');
+    assert.equal(first.trace.firstCause,'preparation');assert.equal(first.trace.prepareStage,stage);assert.equal(first.trace.prepareCondition,condition);
+    assert.equal(JSON.stringify(first).includes('PRIVATE'),false);return true;
+  });
+  await assert.rejects(port.execute(command('manual_inspect',other)),error=>{
+    assert.deepEqual({...startupDiagnostic(error),peer:false},first);return true;
+  });
+});
+
 test('the private acquire route validates and forwards only a bounded startup wait hint', async () => {
   const base=command('manual_acquire','reader',{handle:'h',startupBudgetMS:75,request:{challenge:'c'.repeat(48),role:'reader',...offlineStartupOwner('reader')}});
   assert.equal(manualOwnerOperation(base).startupBudgetMS,75);
@@ -167,7 +202,7 @@ test('context loss during an awaited snapshot survives a subsequently valid snap
   await Promise.all(['reader','collector'].map(role=>port.execute(command('manual_abort',role,{handle:null,preserveReader:role==='reader'}))));
 });
 
-function snapshotFixture(failMethod,role='reader'){
+function snapshotFixture(failMethod,role='reader',phase='inspect_before'){
   const current={pid:1,profileId:'PRIVATE_PROFILE',targetId:'PRIVATE_TARGET',sessionId:'startup-session'},
     collector={targetId:'PRIVATE_COLLECTOR_TARGET',sessionId:'collector-startup'};
   const calls=[];
@@ -184,15 +219,15 @@ function snapshotFixture(failMethod,role='reader'){
     return{acknowledged:true};
   };
   collector.transport={ownership:()=>({pid:2,profileId:'PRIVATE_COLLECTOR_PROFILE',alive:true}),send};
-  return{calls,current,collector,read:()=>manualOwnerSnapshot({current,collector,role,document:true,pins:{frameId:'frame'},phase:'inspect_before',readerSend:send,readerAlive:()=>true})};
+  return{calls,current,collector,read:()=>manualOwnerSnapshot({current,collector,role,document:true,pins:{frameId:'frame'},phase,readerSend:send,readerAlive:()=>true})};
 }
 for(const [method,stage]of [['Target.attachToTarget','snapshot_attach'],['Page.enable','snapshot_page'],['Runtime.enable','snapshot_runtime'],
   ['Page.getFrameTree','snapshot_frame'],['Target.getTargets','snapshot_inventory'],['Browser.getWindowForTarget','snapshot_inventory']]){
   test(`real snapshot path identifies ${method} without exporting transport error`,async()=>{
-    for(const role of method==='Target.getTargets'||method==='Browser.getWindowForTarget'?['reader']:['reader','collector']){
-      await assert.rejects(snapshotFixture(method,role).read(),error=>{
-        const d=startupDiagnostic(error);assert.equal(d.role,role);assert.equal(d.phase,'inspect_before');assert.equal(d.trace.inspectStage,stage);
-        assert.equal(d.trace.inspectCondition,'command_failed');assert.equal(JSON.stringify(d).includes('PRIVATE'),false);return true;
+    for(const role of method==='Target.getTargets'||method==='Browser.getWindowForTarget'?['reader']:['reader','collector'])for(const phase of ['prepare','inspect_before']){
+      await assert.rejects(snapshotFixture(method,role,phase).read(),error=>{
+        const d=startupDiagnostic(error);assert.equal(d.role,role);assert.equal(d.phase,phase);assert.equal(d.trace[phase==='prepare'?'prepareStage':'inspectStage'],stage);
+        assert.equal(d.trace[phase==='prepare'?'prepareCondition':'inspectCondition'],'command_failed');assert.equal(JSON.stringify(d).includes('PRIVATE'),false);return true;
       });
     }
   });

@@ -118,28 +118,31 @@ func xManualPilotWindowsScope(record xManualPilotWindowsRole) bool {
 	return err == nil && rel != "." && !filepath.IsAbs(rel) && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 func (b *xManualPilotWindowsBackend) snapshot(ctx context.Context, role string) (nativePilotOwner, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nativePilotOwner{}, ctx.Err()
+	}
 	r, ok := b.roles[role]
 	if !ok || ctx == nil || ctx.Err() != nil || r.bridge == nil || r.bridge.isClosed() || r.role != role || r.protocolOwner <= 0 || r.node.PID != r.bridge.pid || r.parent.PID != uint32(os.Getpid()) || r.chromeHandle == 0 || r.generation == 0 || !xManualPilotWindowsScope(r) {
-		return nativePilotOwner{}, errors.New("x-owner-windows-unavailable")
+		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "windows_scope")
 	}
 	actualParent, err := processFixtureProcessIdentity(r.parent.PID)
 	if err != nil || actualParent != r.parent {
-		return nativePilotOwner{}, errors.New("x-owner-parent-changed")
+		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "parent_changed")
 	}
 	identity, err := processFixtureIdentityFromHandle(r.chromeHandle)
 	status, waitErr := windows.WaitForSingleObject(r.chromeHandle, 0)
 	if err != nil || identity != r.chrome || waitErr != nil || status != uint32(windows.WAIT_TIMEOUT) {
-		return nativePilotOwner{}, errors.New("x-owner-chrome-changed")
+		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "chrome_changed")
 	}
 	if xManualPilotWindowsImage(r.node, r.bridge.config.NodePath) != nil || xManualPilotWindowsImage(r.chrome, r.bridge.config.ChromePath) != nil {
-		return nativePilotOwner{}, errors.New("x-owner-image-or-creation-changed")
+		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "image_changed")
 	}
 	nodeParent, chromeParent, err := xManualPilotParentPair(r.node.PID, r.chrome.PID, xManualPilotWindowsProcessParents)
 	if err != nil || nodeParent != r.parent.PID {
-		return nativePilotOwner{}, errors.New("x-owner-node-parent-changed")
+		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "node_parent")
 	}
 	if chromeParent != r.node.PID {
-		return nativePilotOwner{}, errors.New("x-owner-chrome-parent-changed")
+		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "chrome_parent")
 	}
 	r.bridge.jobMu.Lock()
 	job := r.bridge.job
@@ -147,21 +150,21 @@ func (b *xManualPilotWindowsBackend) snapshot(ctx context.Context, role string) 
 		h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
 		if err != nil {
 			r.bridge.jobMu.Unlock()
-			return nativePilotOwner{}, errors.New("x-owner-job-unavailable")
+			return nativePilotOwner{}, xManualPilotCoreFailure(nil, "job_unavailable")
 		}
 		member, err := chromeFixtureJobMembership(h, job)
 		windows.CloseHandle(h)
 		if err != nil || !member {
 			r.bridge.jobMu.Unlock()
-			return nativePilotOwner{}, errors.New("x-owner-job-changed")
+			return nativePilotOwner{}, xManualPilotCoreFailure(nil, "job_changed")
 		}
 	}
 	r.bridge.jobMu.Unlock()
 	if xManualPilotWindowsDirectory(r.rootPin, r.root, r.rootID) != nil || xManualPilotWindowsDirectory(r.profilePin, r.profile, r.profileID) != nil {
-		return nativePilotOwner{}, errors.New("x-owner-physical-directory-changed")
+		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "directory_changed")
 	}
 	if role == "collector" && len(processFixtureWindows(r.chrome.PID)) != 0 {
-		return nativePilotOwner{}, errors.New("x-owner-collector-not-headless")
+		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "collector_not_headless")
 	}
 	return nativePilotOwner{role: role, owner: strconv.FormatUint(uint64(r.chrome.PID), 10), profile: r.profile, directory: r.profileID, image: r.bridge.config.ChromePath, creation: r.chrome.Created, job: strconv.FormatUint(uint64(job), 10), parent: strconv.FormatUint(uint64(r.parent.PID), 10) + "/" + r.parent.Created, pid: int(r.chrome.PID), generation: r.generation}, nil
 }
@@ -200,6 +203,9 @@ func (b *xManualPilotWindowsBackend) rpc(ctx context.Context, role, op string, f
 		}
 		if ctx.Err() != nil {
 			return nativePilotInitialWrap(ctx.Err(), "pair", "joint")
+		}
+		if op == "manual_prepare" {
+			return nativePilotPrepareFailure(nil, role, "go_rpc", "command_failed")
 		}
 		return nativePilotInitialWrap(nil, "unknown", "acquire_rpc")
 	}

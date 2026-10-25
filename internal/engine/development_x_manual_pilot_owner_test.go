@@ -416,10 +416,10 @@ func TestXManualPilotOwnerInspectBrokerPreservesEarlierCause(t *testing.T) {
 }
 
 func TestXManualPilotOwnerInspectionCodeVersions(t *testing.T) {
-	for _, version := range []struct{ number, count int }{{2, 6}, {3, 8}, {4, 10}, {5, 13}, {6, 14}, {7, 15}, {8, 17}} {
+	for _, version := range []struct{ number, count int }{{2, 6}, {3, 8}, {4, 10}, {5, 13}, {6, 14}, {7, 15}, {8, 17}, {9, 19}} {
 		code := fmt.Sprintf("manual_initial_v%d", version.number) + strings.Repeat("_0", 4+version.count)
 		detail, ok := nativePilotInitialCode(code)
-		if !ok || detail.trace == nil || detail.trace.inspectStage != "unknown" || detail.trace.inspectCondition != "unknown" {
+		if !ok || detail.trace == nil || detail.trace.inspectStage != "unknown" || detail.trace.inspectCondition != "unknown" || detail.trace.prepareStage != "unknown" || detail.trace.prepareCondition != "unknown" {
 			t.Fatalf("V%d compatibility/defaults lost", version.number)
 		}
 		for _, bad := range []string{code[:strings.LastIndex(code, "_")], code + "_0", strings.TrimSuffix(code, "_0") + "_99", strings.TrimSuffix(code, "_0") + "_00", strings.Replace(code, "_0_", "_+0_", 1), code + strings.Repeat("0", 80)} {
@@ -617,12 +617,216 @@ func TestXManualPilotOwnerExpiredBeforeAcquisition(t *testing.T) {
 	}
 }
 
+func TestXManualPilotOwnerPreparePredicates(t *testing.T) {
+	tests := []struct{ fault, stage, condition string }{
+		{"replay", "go_admission", "replay"},
+		{"snapshot", "go_core_before", "os_snapshot"},
+		{"core-shape", "go_core_before", "owner_shape"},
+		{"core-reference", "go_core_before", "reference_invalid"},
+		{"core-profile", "go_core_before", "profile_mismatch"},
+		{"request-profile", "go_request", "profile_mismatch"},
+		{"request-parent", "go_request", "parent_mismatch"},
+		{"request-attempt", "go_request", "attempt_mismatch"},
+		{"rpc", "go_rpc", "command_failed"},
+		{"decode", "go_decode", "reply_invalid"},
+		{"handle", "go_decode", "handle_invalid"},
+		{"after-error", "go_core_after", "directory_changed"},
+		{"after-change", "go_core_after", "os_changed"},
+		{"bind-owner", "go_bind", "owner_mismatch"},
+		{"bind-profile", "go_bind", "profile_mismatch"},
+		{"bind-pins", "go_bind", "pins_invalid"},
+	}
+	for _, role := range []string{"reader", "collector"} {
+		for _, test := range tests {
+			t.Run(role+"/"+test.fault, func(t *testing.T) {
+				cfg, f := testXManualOwnerConfig()
+				// Reject the first cleanup too: it must never replace the prepare cause.
+				f.fault = "prepare-cleanup-uncertain"
+				calls := 0
+				backend := &testXManualInspectBackend{testXManualOwnerBackend: f}
+				backend.snapshotHook = func(ctx context.Context, selected string) (nativePilotOwner, error) {
+					calls++
+					o, err := f.snapshot(ctx, selected)
+					if test.fault == "snapshot" {
+						return o, errors.New("PRIVATE_TOKEN")
+					}
+					if calls == 1 {
+						switch test.fault {
+						case "core-shape":
+							o.owner = "PRIVATE_OWNER"
+						case "core-reference":
+							o.directory = ""
+						case "core-profile":
+							o.profile = "PRIVATE_PROFILE"
+						}
+					} else {
+						if test.fault == "after-error" {
+							return o, xManualPilotCoreFailure(nil, "directory_changed")
+						}
+						if test.fault == "after-change" {
+							o.creation = "PRIVATE_CREATION"
+						}
+					}
+					return o, err
+				}
+				backend.rpcHook = func(ctx context.Context, selected, op string, fields map[string]any, out any) error {
+					if op != "manual_prepare" {
+						return f.rpc(ctx, selected, op, fields, out)
+					}
+					if test.fault == "rpc" {
+						return errors.New("PRIVATE_TOKEN auth_token=PRIVATE_COOKIE")
+					}
+					pins := map[string]any{}
+					for k, v := range f.pins[selected] {
+						pins[k] = v
+					}
+					value := map[string]any{"handle": "offline-handle", "pins": pins}
+					switch test.fault {
+					case "decode":
+						value["PRIVATE_FIELD"] = "PRIVATE_BODY"
+					case "handle":
+						value["handle"] = ""
+					case "bind-owner":
+						pins["ownerId"] = "PRIVATE_OWNER"
+					case "bind-profile":
+						pins["profileId"] = "PRIVATE_PROFILE"
+					case "bind-pins":
+						pins["documentId"] = ""
+					}
+					return testXManualReply(out, value)
+				}
+				p := &xManualPilotOwnerPorts{cfg: cfg, backend: backend, prepared: map[string]nativePilotPreparedRole{}, begun: map[string]bool{}, acquired: map[string]bool{}, cleanupTokens: map[string]string{}, cleanupUnknown: map[string]bool{}}
+				q := nativePilotPrepareRequest{role: role, profile: f.core[role].profile, parent: f.core[role].parent, attempt: cfg.pilot.binding.attempt}
+				switch test.fault {
+				case "replay":
+					p.begun[role] = true
+				case "request-profile":
+					q.profile = "PRIVATE_PROFILE"
+				case "request-parent":
+					q.parent = "PRIVATE_PARENT"
+				case "request-attempt":
+					q.attempt = "PRIVATE_ATTEMPT"
+				}
+				_, err := p.prepare(context.Background(), q)
+				if err == nil {
+					t.Fatal("invalid prepare admitted")
+				}
+				d := nativePilotInitialOf(err, "unknown", "acquire_rpc")
+				if d.role != role || d.phase != "prepare" || d.reason != "unavailable" || d.trace == nil || d.trace.firstCause != "preparation" || d.trace.prepareStage != test.stage || d.trace.prepareCondition != test.condition {
+					t.Fatalf("prepare predicate lost: %s", d)
+				}
+				if strings.Contains(fmt.Sprintf("%v %#v", d, d), "PRIVATE") {
+					t.Fatal("prepare diagnostic leaked input")
+				}
+				b := &nativePilotBroker{}
+				b.noteInitial(err, role, "prepare")
+				b.noteInitial(context.Canceled, "pair", "joint")
+				b.noteInitial(errors.New("PRIVATE_CLEANUP"), role, "cleanup")
+				if b.initialDiagnostic().String() != d.String() {
+					t.Fatal("secondary failure replaced prepare origin")
+				}
+			})
+		}
+	}
+}
+
+type testXManualPrepareCleanupBackend struct {
+	*testXManualInspectBackend
+	entered, release chan struct{}
+}
+
+func (f *testXManualPrepareCleanupBackend) cleanup(ctx context.Context, role, _ string, _ bool) error {
+	if role == "reader" {
+		close(f.entered)
+		select {
+		case <-f.release:
+		case <-ctx.Done():
+		}
+		return errors.New("PRIVATE_CLEANUP")
+	}
+	return nil
+}
+func TestXManualPilotOwnerPreparePeerReplyBeforeCleanup(t *testing.T) {
+	cfg, f := testXManualOwnerConfig()
+	backend := &testXManualPrepareCleanupBackend{testXManualInspectBackend: &testXManualInspectBackend{testXManualOwnerBackend: f, snapshotHook: f.snapshot}, entered: make(chan struct{}), release: make(chan struct{})}
+	backend.rpcHook = func(ctx context.Context, role, op string, fields map[string]any, out any) error {
+		if role == "collector" {
+			return errors.New("PRIVATE_PEER")
+		}
+		return testXManualReply(out, map[string]any{"PRIVATE_BODY": true})
+	}
+	p := &xManualPilotOwnerPorts{cfg: cfg, backend: backend, prepared: map[string]nativePilotPreparedRole{}, begun: map[string]bool{}, acquired: map[string]bool{}, cleanupTokens: map[string]string{}, cleanupUnknown: map[string]bool{}}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	start := func(role string) error {
+		_, err := p.prepare(ctx, nativePilotPrepareRequest{role: role, profile: f.core[role].profile, parent: f.core[role].parent, attempt: cfg.pilot.binding.attempt})
+		return err
+	}
+	reader := make(chan error, 1)
+	go func() { reader <- start("reader") }()
+	select {
+	case <-backend.entered:
+	case <-ctx.Done():
+		t.Fatal("reader did not enter cleanup")
+	}
+	peer := start("collector")
+	close(backend.release)
+	var primary error
+	select {
+	case primary = <-reader:
+	case <-ctx.Done():
+		t.Fatal("reader prepare did not return")
+	}
+	for _, err := range []error{peer, primary} {
+		d := nativePilotInitialOf(err, "unknown", "acquire_rpc")
+		if d.role != "reader" || d.trace == nil || d.trace.prepareStage != "go_decode" || d.trace.prepareCondition != "reply_invalid" {
+			t.Fatal("cleanup delay allowed a later peer to replace the cause")
+		}
+	}
+	if !nativePilotInitialOf(peer, "collector", "prepare").peer || nativePilotInitialOf(primary, "reader", "prepare").peer {
+		t.Fatal("peer delivery lost origin attribution")
+	}
+}
+
+func TestXManualPilotOwnerPrepareCodeAndOrigin(t *testing.T) {
+	for field := 17; field < 19; field++ {
+		for index, value := range nativePilotTraceCatalogs[field] {
+			parts := make([]string, 23)
+			for i := range parts {
+				parts[i] = "0"
+			}
+			parts[4] = strconv.Itoa(slices.Index(nativePilotTraceCatalogs[0], "preparation"))
+			parts[4+field] = strconv.Itoa(index)
+			code := "manual_initial_v9_" + strings.Join(parts, "_")
+			d, ok := nativePilotInitialCode(code)
+			if !ok || len(code) > 80 || d.trace.values()[field] != value || !strings.Contains(d.String(), "domain=preparation") {
+				t.Fatal("V9 preparation catalog failed")
+			}
+		}
+	}
+	unsafe := nativePilotPrepareFailure(errors.New("PRIVATE_TOKEN"), "reader", "PRIVATE_STAGE", "PRIVATE_CONDITION")
+	if strings.Contains(unsafe.Error(), "PRIVATE") {
+		t.Fatal("untrusted prepare values escaped")
+	}
+	for _, cause := range []error{context.Canceled, context.DeadlineExceeded, nativePilotInitialWrap(nil, "collector", "settings")} {
+		before := nativePilotInitialOf(cause, "reader", "prepare")
+		after := nativePilotInitialOf(nativePilotPrepareFailure(cause, "reader", "go_rpc", "command_failed"), "reader", "prepare")
+		if before.String() != after.String() {
+			t.Fatal("prepare replaced earlier cause or joint deadline")
+		}
+	}
+}
+
 func TestXManualPilotOwnerPrepareCleanupUncertain(t *testing.T) {
 	cfg, f := testXManualOwnerConfig()
 	f.fault = "prepare-cleanup-uncertain"
 	b := testXManualBroker(t, cfg, f)
 	d := b.start(context.Background())
 	assertXManualOffline(t, d, "cleanup-uncertain")
+	origin := b.initialDiagnostic()
+	if origin.trace == nil || origin.phase != "prepare" || origin.trace.prepareStage != "go_decode" || origin.trace.prepareCondition != "reply_invalid" {
+		t.Fatal("cleanup uncertainty replaced prepare decode cause")
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.ops["manual_acquire"] != 0 || f.cleanupCalls["reader"] < 2 && f.cleanupCalls["collector"] < 2 {

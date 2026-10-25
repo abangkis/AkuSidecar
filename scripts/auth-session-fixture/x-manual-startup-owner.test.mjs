@@ -88,6 +88,26 @@ test('cancelled prepare, early completion and private errors produce only closed
   }
 });
 
+for(const role of ['reader','collector'])test(`prepare ${role} distinguishes missing ready, runner failure and invalid pins`,async()=>{
+  const {startupDiagnostic,startupFailure,startupFailureLatch}=await import('./x-manual-startup-diagnostic.mjs');
+  for(const [stage,condition,run]of [
+    ['actor_runner','ready_missing',async()=>{}],
+    ['actor_runner','command_failed',async()=>{throw new Error('PRIVATE_TOKEN');}],
+    ['actor_pins','pins_invalid',async sink=>{await sink.beforeIdentityRead({PRIVATE_PROFILE:'PRIVATE_BODY'});}],
+  ]){
+    const diagnostics=startupFailureLatch(),owner=createManualStartupOwner({role,diagnostics,run});
+    let first;
+    await assert.rejects(owner.prepare(),error=>{
+      first=startupDiagnostic(error);assert.equal(first.role,role);assert.equal(first.phase,'prepare');
+      assert.equal(first.trace.prepareStage,stage);assert.equal(first.trace.prepareCondition,condition);
+      assert.equal(JSON.stringify(first).includes('PRIVATE'),false);return true;
+    });
+    await owner.cancel();
+    const later=diagnostics.record(startupFailure('pair','cleanup','cleanup_unverified'),'pair','cleanup');
+    assert.deepEqual({...startupDiagnostic(later),peer:false},first);
+  }
+});
+
 test('normal-pause owner may retry empty bootstrap only in the same frozen scope', async () => {
   let calls = 0;
   const owner = createManualStartupOwner({ run: sink => runOfflineStartupRecipe({ role: 'reader' }, sink, {

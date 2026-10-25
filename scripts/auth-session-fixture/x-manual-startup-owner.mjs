@@ -3,7 +3,7 @@
 // acquire challenge releases that same pause; no navigation/rebinding is allowed.
 import { randomBytes } from 'node:crypto';
 import { createManualStartupCapture } from './x-manual-startup-source.mjs';
-import {startupFailureLatch} from './x-manual-startup-diagnostic.mjs';
+import {startupFailureLatch,startupPrepareFailure} from './x-manual-startup-diagnostic.mjs';
 import {consumeFreshnessPublication} from './x-identity-freshness-ledger.mjs';
 import {createStartupWaitBudget} from './x-manual-startup-wait-budget.mjs';
 import {MANUAL_STARTUP_MAX_MS} from './x-manual-startup-limits.mjs';
@@ -58,8 +58,10 @@ export function createManualStartupOwner({ run, role='unknown',diagnostics=start
   } });
   return Object.freeze({
     async prepare(signal) {
-      if (state !== 'new') throw unavailable();
-      const detach = attach(signal);
+      if (state !== 'new') throw diagnostics.record(startupPrepareFailure(null,role,'actor_entry','state_invalid'),role,'prepare','unavailable','manual_startup_owner_unavailable');
+      let detach;
+      try { detach = attach(signal); }
+      catch(error) { throw diagnostics.record(startupPrepareFailure(error,role,'actor_entry','state_invalid'),role,'prepare','unavailable','manual_startup_owner_unavailable'); }
       state = 'preparing';
       running = Promise.resolve().then(() => run({ signal: abort.signal,
         waitForSettings: promise => {
@@ -67,7 +69,9 @@ export function createManualStartupOwner({ run, role='unknown',diagnostics=start
           return waitBudget.wait(promise);
         },
         beforeIdentityRead: async value => {
-          const observed = pins(value);
+          let observed;
+          try { observed = pins(value); }
+          catch(error) { throw state==='preparing'?startupPrepareFailure(error,role,'actor_pins','pins_invalid'):error; }
           if (state === 'preparing') { actual = observed; state = 'ready'; ready.resolve(); }
           else if (state !== 'acquiring' || FIELDS.some(k => actual[k] !== observed[k])) throw unavailable();
           await release.promise;
@@ -79,11 +83,11 @@ export function createManualStartupOwner({ run, role='unknown',diagnostics=start
           sink(value);
         },
       })).then(() => {
-        if (state === 'preparing' || state === 'ready') throw unavailable();
-      }).catch(error => { const failure=diagnostics.record(error,role,state==='preparing'?'prepare':'identity','unavailable','manual_startup_owner_unavailable');close();throw failure; });
+        if (state === 'preparing' || state === 'ready') throw startupPrepareFailure(null,role,'actor_runner','ready_missing');
+      }).catch(error => { const failure=diagnostics.record(state==='preparing'?startupPrepareFailure(error,role,'actor_runner','command_failed'):error,role,state==='preparing'?'prepare':'identity','unavailable','manual_startup_owner_unavailable');close();throw failure; });
       void running.catch(() => {});
       try { await ready.promise; return Object.freeze({ handle, pins: actual }); }
-      catch(error) { const failure=diagnostics.record(error,role,'prepare','unavailable','manual_startup_owner_unavailable');close();throw failure; }
+      catch(error) { const failure=diagnostics.record(startupPrepareFailure(error,role,'actor_ready','state_invalid'),role,'prepare','unavailable','manual_startup_owner_unavailable');close();throw failure; }
       finally { detach(); }
     },
     async acquire(token, request, signal, startupBudgetMS = MANUAL_STARTUP_MAX_MS) {

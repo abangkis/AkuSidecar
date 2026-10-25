@@ -1,6 +1,6 @@
 // Private, default-off QA transport. OS provenance belongs to the compiled Go
 // owner backend; this module cannot grant it through a request or JSON flag.
-import {startupFailureLatch,startupInspectionFailure,startupDiagnostic} from './x-manual-startup-diagnostic.mjs';
+import {startupFailureLatch,startupInspectionFailure,startupPrepareFailure,startupDiagnostic} from './x-manual-startup-diagnostic.mjs';
 import {validateManualCaptureRequest,manualCaptureFailure} from './x-native-manual-capture.mjs';
 import {MANUAL_STARTUP_MAX_MS} from './x-manual-startup-limits.mjs';
 const roles=['reader','collector'];
@@ -109,18 +109,23 @@ export function createXManualOwnerPort({enabled=false,owner,createOwners,snapsho
         return {windowCount:value.windowCount,bootstrapCount:value.bootstrapCount};
       }
       if(message.op==='manual_prepare'){
-        if(s.preparing||s.pins)throw failure();s.preparing=true;
+        if(s.preparing||s.pins)throw diagnostics.record(startupPrepareFailure(null,role,'node_actor','replay'),role,'prepare');s.preparing=true;
+        let stage='node_actor';
         try{
-          const ready=await s.actor.prepare();exact(ready,['handle','pins']);exact(ready.pins,pinKeys);
-          if(!ref(ready.handle)||!pinKeys.every(k=>ref(ready.pins[k])))throw failure();
+          const ready=await s.actor.prepare();stage='node_reply';exact(ready,['handle','pins']);exact(ready.pins,pinKeys);
+          if(!ref(ready.handle))throw startupPrepareFailure(null,role,stage,'handle_invalid');
+          if(!pinKeys.every(k=>ref(ready.pins[k])))throw startupPrepareFailure(null,role,stage,'pins_invalid');
           s.pins=Object.freeze({...ready.pins});s.handle=ready.handle;
+          stage='node_snapshot';
           const value=await snapshot(role,true,s.pins);s.session=value?.sessionId;
+          stage='node_validate';
           await checked(role,true);
-          if(failed||s.closed)throw failure();
+          if(failed||s.closed)throw startupPrepareFailure(null,role,stage,'state_invalid');
+          stage='node_distinct';
           const other=state[role==='reader'?'collector':'reader'];
-          if(other.pins&&(other.pins.ownerId===s.pins.ownerId||other.pins.profileId===s.pins.profileId))throw failure();
+          if(other.pins&&(other.pins.ownerId===s.pins.ownerId||other.pins.profileId===s.pins.profileId))throw startupPrepareFailure(null,role,stage,'roles_not_distinct');
           return {handle:s.handle,pins:s.pins};
-        }catch(error){const cause=diagnostics.record(error,role,'prepare','unavailable','xnp_manual_owner_unavailable');invalidate(role);if(s.handle)await s.actor.abort(s.handle).catch(()=>{});throw cause;}
+        }catch(error){const cause=diagnostics.record(startupPrepareFailure(error,role,stage,stage==='node_reply'?'reply_invalid':'command_failed'),role,'prepare','unavailable','xnp_manual_owner_unavailable');invalidate(role);if(s.handle)await s.actor.abort(s.handle).catch(()=>{});throw cause;}
       }
       if(!s.pins)throw failure();
       if(message.op==='manual_capture'){

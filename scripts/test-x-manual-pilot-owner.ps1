@@ -27,7 +27,7 @@ try{
  $nodeTests=@('scripts/auth-session-fixture/x-native-manual-owner-port.test.mjs','scripts/auth-session-fixture/x-native-metadata-probe-driver.test.mjs',
   'scripts/auth-session-fixture/x-manual-startup-owner.test.mjs','scripts/auth-session-fixture/x-qa-feasibility-collector.test.mjs',
   'scripts/auth-session-fixture/x-manual-startup-first-cause.test.mjs','scripts/auth-session-fixture/x-native-manual-capture.test.mjs',
-  'scripts/auth-session-fixture/x-manual-network-provenance.test.mjs')
+  'scripts/auth-session-fixture/x-manual-network-provenance.test.mjs','scripts/auth-session-fixture/x-manual-startup-diagnostic.test.mjs','scripts/auth-session-fixture/x-settings-wait.test.mjs')
  & $node --test --test-timeout=15000 @nodeTests 2>&1 | Tee-Object -FilePath $log -Append
  if($LASTEXITCODE -ne 0){throw 'X owner Node regressions failed.'}
  $core=@('development_native_pilot_adapter.go','development_native_pilot_startup.go','development_native_pilot_controller.go','development_native_pilot_broker.go',

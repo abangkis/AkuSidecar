@@ -387,11 +387,11 @@ type nativePilotInitialDetail struct {
 	trace               *nativePilotInitialTrace
 	timing              *nativePilotTimingSnapshot
 }
-type nativePilotInitialTrace struct{ firstCause, terminal, early, handoff, cookie, extra, guardTrigger, guardProvenance, guardCondition, guardEpoch, guardDiskCache, guardServiceWorker, guardPrefetchCache, guardRequestFrame, guardHeaderReason, inspectStage, inspectCondition string }
+type nativePilotInitialTrace struct{ firstCause, terminal, early, handoff, cookie, extra, guardTrigger, guardProvenance, guardCondition, guardEpoch, guardDiskCache, guardServiceWorker, guardPrefetchCache, guardRequestFrame, guardHeaderReason, inspectStage, inspectCondition, prepareStage, prepareCondition string }
 
-// Append-only V2 catalogs with the V3-V8 fields; order matches STARTUP_TRACE in Node.
+// Append-only V2 catalogs with the V3-V9 fields; order matches STARTUP_TRACE in Node.
 var nativePilotTraceCatalogs = [][]string{
-	{"unknown", "cookie_candidate", "cookie_ambiguous", "context_lost", "target_lost", "navigation", "owner_scope", "event_cap", "identity_order", "identity_mismatch", "settings_order", "response_frame", "extra_shape", "extra_status", "extra_missing", "extra_unexpected", "generic_early", "stale_observation", "cleanup_failed", "guard_request_unbound", "guard_request_budget", "guard_header_classification", "guard_response_correlation", "guard_metadata_shape", "guard_completion_missing", "guard_header_budget", "guard_event_budget", "root_control", "inspection", "settings_capture"},
+	{"unknown", "cookie_candidate", "cookie_ambiguous", "context_lost", "target_lost", "navigation", "owner_scope", "event_cap", "identity_order", "identity_mismatch", "settings_order", "response_frame", "extra_shape", "extra_status", "extra_missing", "extra_unexpected", "generic_early", "stale_observation", "cleanup_failed", "guard_request_unbound", "guard_request_budget", "guard_header_classification", "guard_response_correlation", "guard_metadata_shape", "guard_completion_missing", "guard_header_budget", "guard_event_budget", "root_control", "inspection", "settings_capture", "preparation"},
 	{"unknown", "unavailable", "rejected", "identity_unavailable", "source_unavailable", "stale_observation", "cleanup_unverified", "scope_lost", "observed_cookie_write", "deadline", "canceled", "replay", "sample_missing", "sample_duplicate", "invalid_shape", "scope_mismatch", "time_invalid", "bound"},
 	{"unknown", "captured", "deadline", "script_limit", "wrong_page", "unexpected_pause", "evaluation_failed", "setup_failed"},
 	{"unknown", "accepted", "rejected"},
@@ -408,13 +408,15 @@ var nativePilotTraceCatalogs = [][]string{
 	{"unknown", "name_unknown", "syntax", "attribute_unsupported", "attribute_invalid", "scope_domain", "scope_path", "metadata_shape", "capacity"},
 	{"unknown", "node_snapshot", "node_validate", "go_stored", "go_core_before", "go_rpc", "go_decode", "go_validate", "go_bind", "go_core_after", "snapshot_attach", "snapshot_page", "snapshot_runtime", "snapshot_frame", "snapshot_inventory"},
 	{"unknown", "command_failed", "snapshot_shape", "owner_dead", "reference_invalid", "headless_mismatch", "window_count", "bootstrap_count", "reader_windows", "reader_bootstrap", "collector_windows", "owner_mismatch", "profile_mismatch", "target_mismatch", "session_mismatch", "frame_mismatch", "document_mismatch", "context_mismatch", "lifecycle_unready", "handle_mismatch", "os_snapshot", "reply_invalid", "invalid_flag", "paused_missing", "pause_required", "inventory_missing", "pins_mismatch", "os_changed"},
+	{"unknown", "go_admission", "go_core_before", "go_request", "go_rpc", "go_decode", "go_core_after", "go_bind", "node_actor", "node_reply", "node_snapshot", "node_validate", "node_distinct", "actor_entry", "actor_pins", "actor_ready", "actor_runner", "driver_setup", "snapshot_attach", "snapshot_page", "snapshot_runtime", "snapshot_frame", "snapshot_inventory"},
+	{"unknown", "replay", "os_snapshot", "owner_shape", "reference_invalid", "profile_mismatch", "parent_mismatch", "attempt_mismatch", "command_failed", "reply_invalid", "handle_invalid", "pins_invalid", "os_changed", "owner_mismatch", "state_invalid", "ready_missing", "roles_not_distinct", "snapshot_shape", "owner_dead", "headless_mismatch", "window_count", "bootstrap_count", "reader_windows", "reader_bootstrap", "collector_windows", "target_mismatch", "session_mismatch", "frame_mismatch", "document_mismatch", "context_mismatch", "lifecycle_unready", "windows_scope", "parent_changed", "chrome_changed", "image_changed", "node_parent", "chrome_parent", "job_unavailable", "job_changed", "directory_changed", "collector_not_headless"},
 }
 
-func (v nativePilotInitialTrace) values() [17]string {
-	return [17]string{v.firstCause, v.terminal, v.early, v.handoff, v.cookie, v.extra, v.guardTrigger, v.guardProvenance, v.guardCondition, v.guardEpoch, v.guardDiskCache, v.guardServiceWorker, v.guardPrefetchCache, v.guardRequestFrame, v.guardHeaderReason, v.inspectStage, v.inspectCondition}
+func (v nativePilotInitialTrace) values() [19]string {
+	return [19]string{v.firstCause, v.terminal, v.early, v.handoff, v.cookie, v.extra, v.guardTrigger, v.guardProvenance, v.guardCondition, v.guardEpoch, v.guardDiskCache, v.guardServiceWorker, v.guardPrefetchCache, v.guardRequestFrame, v.guardHeaderReason, v.inspectStage, v.inspectCondition, v.prepareStage, v.prepareCondition}
 }
-func nativePilotTraceValues(v [17]string) nativePilotInitialTrace {
-	return nativePilotInitialTrace{v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11], v[12], v[13], v[14], v[15], v[16]}
+func nativePilotTraceValues(v [19]string) nativePilotInitialTrace {
+	return nativePilotInitialTrace{v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11], v[12], v[13], v[14], v[15], v[16], v[17], v[18]}
 }
 func (v nativePilotInitialTrace) closed() nativePilotInitialTrace {
 	values := v.values()
@@ -431,7 +433,7 @@ func (v nativePilotInitialTrace) closed() nativePilotInitialTrace {
 }
 func (v nativePilotInitialTrace) String() string {
 	v = v.closed()
-	result := fmt.Sprintf("first=%s terminal=%s early=%s handoff=%s cookie=%s extra=%s trigger=%s provenance=%s condition=%s epoch=%s disk_cache=%s service_worker=%s prefetch_cache=%s request_frame=%s header_reason=%s inspect_stage=%s inspect_condition=%s", v.firstCause, v.terminal, v.early, v.handoff, v.cookie, v.extra, v.guardTrigger, v.guardProvenance, v.guardCondition, v.guardEpoch, v.guardDiskCache, v.guardServiceWorker, v.guardPrefetchCache, v.guardRequestFrame, v.guardHeaderReason, v.inspectStage, v.inspectCondition)
+	result := fmt.Sprintf("first=%s terminal=%s early=%s handoff=%s cookie=%s extra=%s trigger=%s provenance=%s condition=%s epoch=%s disk_cache=%s service_worker=%s prefetch_cache=%s request_frame=%s header_reason=%s inspect_stage=%s inspect_condition=%s prepare_stage=%s prepare_condition=%s", v.firstCause, v.terminal, v.early, v.handoff, v.cookie, v.extra, v.guardTrigger, v.guardProvenance, v.guardCondition, v.guardEpoch, v.guardDiskCache, v.guardServiceWorker, v.guardPrefetchCache, v.guardRequestFrame, v.guardHeaderReason, v.inspectStage, v.inspectCondition, v.prepareStage, v.prepareCondition)
 	if strings.HasPrefix(v.guardCondition, "root_control_") {
 		return result + " domain=control"
 	}
@@ -443,6 +445,8 @@ func (v nativePilotInitialTrace) String() string {
 		return result + " domain=root_structure"
 	}
 	switch v.firstCause {
+	case "preparation":
+		return result + " domain=preparation"
 	case "inspection":
 		return result + " domain=inspection"
 	case "cookie_candidate", "cookie_ambiguous", "guard_header_classification":
@@ -517,8 +521,19 @@ func nativePilotInitialWrap(err error, role, phase string) error {
 	}
 	return &nativePilotInitialError{(nativePilotInitialDetail{role: role, phase: phase, reason: reason}).closed()}
 }
+
+// Preparation metadata is diagnostic only. Earlier branded causes and joint
+// cancellation/deadline retain their original origin and semantics.
+func nativePilotPrepareFailure(err error, role, stage, condition string) error {
+	var typed *nativePilotInitialError
+	if errors.As(err, &typed) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nativePilotInitialWrap(err, role, "prepare")
+	}
+	trace := nativePilotInitialTrace{firstCause: "preparation", prepareStage: stage, prepareCondition: condition}
+	return &nativePilotInitialError{(nativePilotInitialDetail{role: role, phase: "prepare", reason: "unavailable", trace: &trace}).closed()}
+}
 func nativePilotInitialCode(code string) (nativePilotInitialDetail, bool) {
-	if strings.HasPrefix(code, "manual_initial_v2_") || strings.HasPrefix(code, "manual_initial_v3_") || strings.HasPrefix(code, "manual_initial_v4_") || strings.HasPrefix(code, "manual_initial_v5_") || strings.HasPrefix(code, "manual_initial_v6_") || strings.HasPrefix(code, "manual_initial_v7_") || strings.HasPrefix(code, "manual_initial_v8_") {
+	if strings.HasPrefix(code, "manual_initial_v2_") || strings.HasPrefix(code, "manual_initial_v3_") || strings.HasPrefix(code, "manual_initial_v4_") || strings.HasPrefix(code, "manual_initial_v5_") || strings.HasPrefix(code, "manual_initial_v6_") || strings.HasPrefix(code, "manual_initial_v7_") || strings.HasPrefix(code, "manual_initial_v8_") || strings.HasPrefix(code, "manual_initial_v9_") {
 		if len(code) > 80 {
 			return nativePilotInitialDetail{}, false
 		}
@@ -535,6 +550,8 @@ func nativePilotInitialCode(code string) (nativePilotInitialDetail, bool) {
 			prefix, traceCount = "manual_initial_v7_", 15
 		} else if strings.HasPrefix(code, "manual_initial_v8_") {
 			prefix, traceCount = "manual_initial_v8_", 17
+		} else if strings.HasPrefix(code, "manual_initial_v9_") {
+			prefix, traceCount = "manual_initial_v9_", 19
 		}
 		parts := strings.Split(strings.TrimPrefix(code, prefix), "_")
 		if len(parts) != 4+traceCount {
@@ -542,7 +559,7 @@ func nativePilotInitialCode(code string) (nativePilotInitialDetail, bool) {
 		}
 		catalogs := [][]string{nativePilotInitialRoles, nativePilotInitialPhases, nativePilotInitialReasons, {"primary", "peer"}}
 		catalogs = append(catalogs, nativePilotTraceCatalogs[:traceCount]...)
-		values := make([]string, 21)
+		values := make([]string, 23)
 		for i := range values {
 			values[i] = "unknown"
 		}
@@ -553,7 +570,7 @@ func nativePilotInitialCode(code string) (nativePilotInitialDetail, bool) {
 			}
 			values[i] = catalogs[i][n]
 		}
-		trace := nativePilotTraceValues([17]string{values[4], values[5], values[6], values[7], values[8], values[9], values[10], values[11], values[12], values[13], values[14], values[15], values[16], values[17], values[18], values[19], values[20]})
+		trace := nativePilotTraceValues([19]string{values[4], values[5], values[6], values[7], values[8], values[9], values[10], values[11], values[12], values[13], values[14], values[15], values[16], values[17], values[18], values[19], values[20], values[21], values[22]})
 		return nativePilotInitialDetail{role: values[0], phase: values[1], reason: values[2], peer: values[3] == "peer", trace: &trace}, true
 	}
 	if len(code) <= 96 {

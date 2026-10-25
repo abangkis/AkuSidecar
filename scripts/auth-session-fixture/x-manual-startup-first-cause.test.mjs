@@ -66,7 +66,7 @@ test('event-time first cause survives peer-first delivery without importing peer
 test('trace wire uses closed append-only canonical indices and never invokes spoofed getters',()=>{
   let reads=0;
   const unsafe=Object.defineProperty({terminal:'PRIVATE',extra:'x'.repeat(20000)},'firstCause',{get(){reads++;throw new Error('PRIVATE');}});
-  assert.deepEqual(closedStartupTrace(unsafe),{firstCause:'unknown',terminal:'unknown',early:'unknown',handoff:'unknown',cookie:'unknown',extra:'unknown',guardTrigger:'unknown',guardProvenance:'unknown',guardCondition:'unknown',guardEpoch:'unknown',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'unknown',guardHeaderReason:'unknown',inspectStage:'unknown',inspectCondition:'unknown'});
+  assert.deepEqual(closedStartupTrace(unsafe),{firstCause:'unknown',terminal:'unknown',early:'unknown',handoff:'unknown',cookie:'unknown',extra:'unknown',guardTrigger:'unknown',guardProvenance:'unknown',guardCondition:'unknown',guardEpoch:'unknown',guardDiskCache:'unknown',guardServiceWorker:'unknown',guardPrefetchCache:'unknown',guardRequestFrame:'unknown',guardHeaderReason:'unknown',inspectStage:'unknown',inspectCondition:'unknown',prepareStage:'unknown',prepareCondition:'unknown'});
   const codes=[];
   const guarded=Object.defineProperties({}, {
     guardCondition:{get(){reads++;throw new Error('PRIVATE');}},
@@ -78,15 +78,18 @@ test('trace wire uses closed append-only canonical indices and never invokes spo
     guardHeaderReason:{get(){reads++;throw new Error('PRIVATE');}},
     inspectStage:{get(){reads++;throw new Error('PRIVATE');}},
     inspectCondition:{get(){reads++;throw new Error('PRIVATE');}},
+    prepareStage:{get(){reads++;throw new Error('PRIVATE');}},
+    prepareCondition:{get(){reads++;throw new Error('PRIVATE');}},
   });
   assert.deepEqual([closedStartupTrace(guarded).guardCondition,closedStartupTrace(guarded).guardEpoch,closedStartupTrace(guarded).guardDiskCache,closedStartupTrace(guarded).guardServiceWorker,closedStartupTrace(guarded).guardPrefetchCache,closedStartupTrace(guarded).guardRequestFrame,closedStartupTrace(guarded).guardHeaderReason],['unknown','unknown','unknown','unknown','unknown','unknown','unknown']);
   assert.equal(closedStartupTrace(guarded).inspectStage,'unknown');assert.equal(closedStartupTrace(guarded).inspectCondition,'unknown');
-  assert.equal(Object.keys(STARTUP_TRACE).at(-1),'inspectCondition');
+  assert.equal(closedStartupTrace(guarded).prepareStage,'unknown');assert.equal(closedStartupTrace(guarded).prepareCondition,'unknown');
+  assert.equal(Object.keys(STARTUP_TRACE).at(-1),'prepareCondition');
   assert.deepEqual(STARTUP_TRACE.guardHeaderReason,['unknown','name_unknown','syntax','attribute_unsupported','attribute_invalid','scope_domain','scope_path','metadata_shape','capacity']);
-  for(const [key,values]of Object.entries(STARTUP_TRACE))for(const value of values){const code=startupRPCCode(startupFailure('collector','inspect_before','observed_cookie_write',true,undefined,{[key]:value}));assert.match(code,/^manual_initial_v8_(?:0|[1-9][0-9]*)(?:_(?:0|[1-9][0-9]*)){20}$/);assert.ok(code.length<=80);codes.push(code);}
+  for(const [key,values]of Object.entries(STARTUP_TRACE))for(const value of values){const code=startupRPCCode(startupFailure('collector','inspect_before','observed_cookie_write',true,undefined,{[key]:value}));assert.match(code,/^manual_initial_v9_(?:0|[1-9][0-9]*)(?:_(?:0|[1-9][0-9]*)){22}$/);assert.ok(code.length<=80);codes.push(code);}
   const maximum=Object.fromEntries(Object.entries(STARTUP_TRACE).map(([key,values])=>[key,values.at(-1)]));
   const maximumCode=startupRPCCode(startupFailure('collector','inspect_before','observed_cookie_write',true,undefined,maximum));
-  assert.match(maximumCode,/^manual_initial_v8_(?:0|[1-9][0-9]*)(?:_(?:0|[1-9][0-9]*)){20}$/);assert.ok(maximumCode.length<=80);
+  assert.match(maximumCode,/^manual_initial_v9_(?:0|[1-9][0-9]*)(?:_(?:0|[1-9][0-9]*)){22}$/);assert.ok(maximumCode.length<=80);
   const report=Object.defineProperty({},'diagnostic',{get(){reads++;return 'bound';}});
   assert.throws(()=>requireBoundStartup(report,'reader',startupFailureLatch()));assert.equal(reads,0);
   assert.equal(startupRPCCode({trace:unsafe}),'manual_initial_unknown_acquire_rpc_unavailable_primary');assert.ok(codes.length>40);

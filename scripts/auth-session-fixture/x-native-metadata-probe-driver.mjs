@@ -38,7 +38,7 @@ import { manualCaptureRPCCode, manualCaptureRPCDiagnostic } from './x-native-man
 import { createRetainedManualSetup, manualSeedFailure, manualSeedDiagnosticCode } from './x-manual-retained-setup.mjs';
 import { ManualEnrollmentCapture } from './x-manual-enrollment-capture.mjs';
 import { ManualStartupObservation } from './x-manual-startup-cookie-guard.mjs';
-import {startupFailure,startupFailureLatch,startupRPCCode,requireBoundStartup,startupInspectionFailure} from './x-manual-startup-diagnostic.mjs';
+import {startupFailure,startupFailureLatch,startupRPCCode,requireBoundStartup,startupInspectionFailure,startupPrepareFailure} from './x-manual-startup-diagnostic.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -1965,6 +1965,8 @@ export function createOwnedManualStartupOwners(message,diagnostics=startupFailur
   if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !manualStartupStateReady(current)) throw probeError('manual_startup_unavailable');
   const rendezvous = new QACheckpointRendezvous();
   const owner = role => createManualStartupOwner({role,diagnostics,requireFreshness:true,run: async sink => {
+    let released=false;
+    const beforeIdentity=async pins=>{await sink.beforeIdentityRead(pins);released=true;};
     const progress=(op,state)=>{
       const timing=current.manualTiming?.[role];
       if(op===undefined)timing?.settings(state);else timing?.step(op,state);
@@ -1973,7 +1975,7 @@ export function createOwnedManualStartupOwners(message,diagnostics=startupFailur
     const abort = () => rendezvous.cancel();
     sink.signal?.addEventListener('abort', abort, { once: true });
     const failure=(error,phase,reason='unavailable',state)=>{
-      const cause=diagnostics.record(error,role,phase,reason);
+      const cause=diagnostics.record(phase==='prepare'?startupPrepareFailure(error,role,'driver_setup','command_failed'):error,role,phase,reason);
       current.manualTiming?.[role]?.failure(cause,state);
       return cause;
     };
@@ -1988,13 +1990,13 @@ export function createOwnedManualStartupOwners(message,diagnostics=startupFailur
       if (role === 'reader') {
         current.gate.beginObservation(); current.earlyAttempted = true;
         observation=await boundCheckpoint(current, false, { deferCookieMutation: false, onPrivateResult: () => {},
-          onPrivateStartup: sink.onPrivateStartup },together,sink.beforeIdentityRead,failure,manualObservation,progress,sink.waitForSettings);
+          onPrivateStartup: sink.onPrivateStartup },together,beforeIdentity,failure,manualObservation,progress,sink.waitForSettings);
       }else{
-        const result=await collectorShortCheckpoint(current,together,sink.onPrivateStartup,sink.beforeIdentityRead,failure,manualObservation,progress,sink.waitForSettings);
+        const result=await collectorShortCheckpoint(current,together,sink.onPrivateStartup,beforeIdentity,failure,manualObservation,progress,sink.waitForSettings);
         observation=result?.checkpoint?.observation;
       }
       requireBoundStartup(observation,role,diagnostics);
-    }catch(error){const cause=failure(error,'identity');current.manualTiming?.[role]?.failure(cause);rendezvous.cancel();throw cause;
+    }catch(error){const cause=failure(error,released?'identity':'prepare');current.manualTiming?.[role]?.failure(cause);rendezvous.cancel();throw cause;
     } finally { sink.signal?.removeEventListener('abort', abort); }
   } });
   return Object.freeze({ reader: owner('reader'), collector: owner('collector') });

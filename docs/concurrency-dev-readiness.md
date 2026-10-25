@@ -17,6 +17,43 @@ roadmap are evidence, not a new list of prerequisites.
 
 ## Current implementation
 
+### Preparation diagnostics (2026-10-25)
+
+Private startup diagnostics now include closed `prepare_stage` and
+`prepare_condition` fields. Go distinguishes admission/replay, OS verification
+before preparation, request binding, RPC, reply decoding/handle validation, OS
+verification afterward and document binding. The Windows backend retains closed
+categories for process identity, parent links, Job membership and physical
+directory checks instead of collapsing every failure into OS-unavailable.
+Node distinguishes actor readiness/pins, driver setup, prepared reply shape,
+observer snapshot commands, snapshot predicates and distinct reader/collector
+ownership. These categories describe the failed check; a failed OS query alone
+does not prove that the owner actually changed.
+
+The Node encoder emits V9; Go still accepts the original closed codes and
+V2-V8, with absent preparation fields remaining `unknown`. All trace codes
+remain at most 80 bytes. Only trusted call sites select categories; exception
+text, tokens, paths, IDs and document contents cannot become diagnostic values.
+An earlier branded source/guard failure keeps its original role, phase and
+cause. Node records the cause before aborting. Go also freezes the first
+observed preparation cause before cleanup can block, so a later peer reply,
+cancellation or cleanup error cannot replace it. Cleanup uncertainty remains
+separate from that first cause. Admission, account checks, Store policy,
+deadlines and retry behavior are unchanged.
+
+Offline validation: `scripts/test-x-manual-pilot-owner.ps1` passed 192 Node
+tests, the standalone owner/pair Go suite, all four build-tag gates and Windows
+backend compilation. Regressions cover 32 Go preparation predicate cases across
+both roles, Node actor/reply/snapshot failures, a held reader cleanup with a
+later collector reply, first-cause privacy/immutability, settings-wait reporting,
+V2-V9 compatibility and actual Node-to-Go preparation catalog decoding.
+Evidence:
+`runtime/qa/auth-session-sidecar/x-manual-owner-c404684f436344af832adc4084338a7c.log.txt`.
+Owned accountless build artifacts were removed. No Chrome/profile, native
+transfer, user database/runtime, login or Auto Update setting was accessed.
+No native run was repeated; the latest historical prepare failure below still
+has no recorded internal predicate and cannot be retrospectively classified.
+
 ### Timing policy update (2026-10-25)
 
 The approved timing change separates startup work from evidence age. The private
