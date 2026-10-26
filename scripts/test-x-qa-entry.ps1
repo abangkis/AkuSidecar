@@ -46,10 +46,12 @@ try{
  & go test ./internal/store -run '^(TestStoreRecordsTheRuntimeVersionThatLastOpenedData|TestStoreRejectsDataWrittenByANewerRuntime|TestRuntimeVersionComparisonRecognizesDowngradesAndPrereleases|TestDatabaseCompatibilityClassification)$' -count=1 -timeout=60s -v 2>&1 | Tee-Object -FilePath $log -Append
  if($LASTEXITCODE -ne 0){throw 'Ordinary Store runtime-marker/compatibility regression failed.'}
  if($StoreOnly){Write-Output ('Evidence: '+$log);return}
+ & go test -tags auth_session_dev ./internal/appshell -run '^TestOwnedReaderForeground' -count=1 -timeout=30s -v 2>&1 | Tee-Object -FilePath $log -Append
+ if($LASTEXITCODE -ne 0){throw 'Accountless owned-reader foreground preparation regression failed.'}
  $production=@(& go list -tags 'auth_session_dev auth_session_fixture' -f '{{range .GoFiles}}{{println .}}{{end}}' ./internal/engine)
  if($LASTEXITCODE -ne 0){throw 'Engine source inventory failed.'}
  $sources=@($production | Where-Object {$_.Trim() -ne ''} | ForEach-Object {Join-Path $project ('internal/engine/'+$_)})
- foreach($file in @('development_x_qa_plan_windows_test.go','development_x_application_post_windows_test.go','development_x_qa_evidence_test.go','development_x_retained_profile_windows_test.go','development_x_qa_materialize_windows_test.go','x_retained_qa_profile_windows_test.go')){$sources+=Join-Path $project ('internal/engine/'+$file)}
+ foreach($file in @('development_x_qa_plan_windows_test.go','development_x_qa_cleanup_windows_test.go','development_x_application_post_windows_test.go','development_x_qa_evidence_test.go','development_x_retained_profile_windows_test.go','development_x_qa_materialize_windows_test.go','x_retained_qa_profile_windows_test.go')){$sources+=Join-Path $project ('internal/engine/'+$file)}
  & go test -tags 'auth_session_dev auth_session_fixture' -run '^(TestXQA|TestXApplicationPost|TestXRetained)' -count=1 -timeout=60s -v @sources 2>&1 | Tee-Object -FilePath $log -Append
  if($LASTEXITCODE -ne 0){throw 'Isolated QA plan/controller or post regression failed.'}
  foreach($mode in @('default','auth_session_dev','auth_session_fixture','auth_session_dev auth_session_fixture')){

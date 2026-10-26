@@ -315,6 +315,42 @@ func TestXApplicationRouteShutdownClosesEngineBeforeOwnerCleanup(t *testing.T) {
 	}
 }
 
+func TestXApplicationRouteStopCancelsReaderPreparation(t *testing.T) {
+	x := newNativeStoreFixture(t, true, nil)
+	entered := make(chan struct{})
+	result := make(chan error, 1)
+	request, cancelRequest := context.WithCancel(context.Background())
+	defer cancelRequest()
+	r := startApplicationFixture(t, x, context.Background(), func(ctx context.Context, _ readerbroker.Request, _ string) (readerbroker.NativePostPreparation, error) {
+		close(entered)
+		<-ctx.Done()
+		return readerbroker.NativePostPreparation{}, ctx.Err()
+	}, func(context.Context) error { return nil })
+	go func() {
+		_, err := r.prepareReader(request, applicationReaderRequest(), "/synthetic-marker")
+		result <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("reader preparation did not start")
+	}
+	if err := r.stop(context.Background(), "opted-out"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Fatal("stopped reader preparation accepted")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Stop left human preparation waiting")
+	}
+	if request.Err() != nil {
+		t.Fatal("internal stop canceled the caller's context")
+	}
+}
+
 func TestXApplicationRouteStartupStopTimeoutRetainsSourceUntilCleanup(t *testing.T) {
 	x := newNativeStoreFixture(t, true, nil)
 	entered, release := make(chan struct{}), make(chan struct{})

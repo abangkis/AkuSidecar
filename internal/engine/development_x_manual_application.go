@@ -345,9 +345,17 @@ func (r *xManualApplication) prepareReader(ctx context.Context, req readerbroker
 	}
 	r.mu.Lock()
 	p := r.ports
+	remaining := r.deadline.Sub(r.e.store.Now())
 	r.mu.Unlock()
+	if ctx == nil || remaining <= 0 || remaining > nativePilotLife {
+		return readerbroker.NativePostPreparation{}, errors.New("manual reader deadline unavailable")
+	}
+	call, cancel := context.WithTimeout(ctx, remaining)
+	defer cancel()
+	stop := context.AfterFunc(r.work, cancel)
+	defer stop()
 	var prepared readerbroker.NativePostPreparation
-	err := p.runtime.withReader(ctx, req, func(call context.Context) error {
+	err := p.runtime.withReader(call, req, func(call context.Context) error {
 		var err error
 		prepared, err = p.prepare(call, req, marker)
 		return err

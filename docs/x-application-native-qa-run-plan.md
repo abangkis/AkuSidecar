@@ -2,9 +2,11 @@
 
 ## Current readiness
 
-The published base is `a8bd4b53f7cd235888995a428572cff3b889f6df`. The unified
-working-tree increment closes the retained-profile composition identified by
-Astra. Native browser/session execution remains separately gated and has not run.
+The published base is `29d2d14726af9a22a9c433495c1c32a47af6202b`. One native
+trial on its reviewed source committed one observation/two post blocks, but did
+not accept reader foreground or final cleanup. The current working-tree increment
+corrects foreground preparation and controlled Close ordering offline. It has
+not executed natively; native execution remains separately gated.
 
 `scripts/prepare-x-application-qa.mjs` compiles a development-only application
 image, builds the sealed owner package and fingerprints those artifacts plus
@@ -30,13 +32,13 @@ Later code/package changes require new preparation. Preparing grants no consent.
 Historical preparation `21edfb1e39c24536bf4a997a4016878e` was review-only before
 the shared binding existed. Do not reuse it as a runtime plan.
 
-Current preparation `2bd6390be6b04ab98634ce0732e3c0b3` materialized the runtime
-plan after final source changes. Its review envelope and source/binary/driver
-pins are under `build/x-application-qa-prepared/<id>/prepared-review.json`.
-Source SHA256:
-`e9b76911d0fecee994ca07b4bb32530ffe7f69fd69f161638190604826a74b5f`.
-It reports no browser start, transfer or real retained-profile inspection. The
-runtime plan is ready for review; actual native execution is not authorized.
+Preparations `2bd6390be6b04ab98634ce0732e3c0b3` and
+`496e9789604e4d57813453e43230466f` were each consumed by one explicitly authorized
+native attempt. Never rerun them or reset their execution claims. The second
+instance/collector remains retained because application cleanup was uncertain;
+the new source correction does not retroactively upgrade its cleanup verdict.
+See [the recorded outcome](x-unified-native-qa-fb36e37b.md). Prepare a fresh package
+after the current source changes; no new native execution is authorized here.
 
 ## Shared ownership and one application journey
 
@@ -77,6 +79,18 @@ pilot status, reasoning, or individual network/render activity. Reports distingu
 The first operation/capture failure is immutable and terminates the one-shot
 CLI. Its cause remains separate from the final `qa_closed` cleanup verdict.
 
+Human waiting belongs to the existing bounded preparation phase, before the
+five-second foreground capability is issued. The exact Job/PID-owned marker is
+observed read-only and recorded as ready before waiting, preserving truthful
+capture overlap. Once foreground is observed, revalidate ownership and mint the
+short-lived capability. Reverify foreground before navigation; waiting cannot
+extend preparation, the ticket, or the original 60-second attempt.
+
+For controlled Close, Engine closes admission/work and drains broker cleanup
+and owner disposal before parent cancellation. Real parent death retains its
+immediate Job-containment path. Logical abort failure, physical disposal and
+profile release remain distinct facts; no missing process alone proves cleanup.
+
 ## Proposed one-shot operator journey after explicit authorization
 
 1. Prepare the corrected, pinned runtime plan with a fresh instance/database and
@@ -93,10 +107,13 @@ CLI. Its cause remains separate from the final `qa_closed` cleanup verdict.
    precede the one-use explicit `start` consent. Reuse the existing enrollment,
    seed, paired startup verification, Store permit and capture path. Do not
    reopen deferred identity renewal or rotation qualification.
-4. Issue one `open_post` for a reviewed canonical X post while capture is active.
-   After the marker window is visibly ready, instruct the operator to click that
-   QA window once. The existing read-only foreground check must succeed before
-   post navigation. Never automate a focus bypass or hide/close the bootstrap.
+4. Tell the operator before launch to click the marker once when visible. Issue
+   one `open_post` for a reviewed canonical X post while capture is active. The
+   owned marker becomes observable during preparation, before issuing a ticket.
+   Wait for foreground within preparation and the original attempt's remaining
+   time, then bind a fresh five-second capability, verify foreground and navigate.
+   If insufficient time remains, reject without extending any lifetime. Never
+   automate a focus bypass or hide/close the bootstrap.
 5. Collect bounded status/phase evidence and QA observation counts. Require both
    browsers' accepted startup proof, a nonempty result committed once, owned
    post navigation and observed backend-execution overlap. An `active` pilot
@@ -105,7 +122,8 @@ CLI. Its cause remains separate from the final `qa_closed` cleanup verdict.
 6. Stop on the first operational failure, challenge, invalidation or deadline.
    Preserve its first cause separately from cleanup errors. Stop revokes the
    collector while keeping the reader under Sidecar ownership; then close the
-   QA parent and verify all owned processes before releasing leases/pins.
+   QA parent through ordered Engine/broker stop and owner disposal, then cancel
+   its parent context. Verify all owned processes before releasing leases/pins.
    Preserve the retained profile; remove only disposable instance artifacts
    after their cleanup is verified. Uncertain cleanup retains the fence/root.
 

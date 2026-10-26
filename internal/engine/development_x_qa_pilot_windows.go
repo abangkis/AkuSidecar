@@ -235,12 +235,32 @@ func (q *XApplicationQAPilot) Report() XApplicationQAReport {
 }
 func (q *XApplicationQAPilot) OpenPost(ctx context.Context, request readerbroker.Request) error {
 	q.evidence.mark("reader_requested")
+	if ctx == nil {
+		return q.fail("reader_prepare", "rejected", nil)
+	}
+	q.mu.Lock()
+	r := q.runtime
+	q.mu.Unlock()
+	if r == nil {
+		return q.fail("reader_prepare", "rejected", nil)
+	}
+	r.mu.Lock()
+	remaining := r.deadline.Sub(q.state.Now())
+	r.mu.Unlock()
+	if remaining <= 0 || remaining > nativePilotLife {
+		return q.fail("reader_prepare", "deadline", nil)
+	}
+	ctx, cancel := context.WithTimeout(ctx, remaining)
+	defer cancel()
+	var ready sync.Once
+	markReady := func() { ready.Do(func() { q.evidence.mark("reader_marker_ready") }) }
+	ctx = context.WithValue(ctx, xQAMarkerReadyContextKey{}, markReady)
 	marker := "/split-reader-intent?id=" + domain.NewID("split")
 	prepared, selected, err := q.e.PrepareXManualReader(ctx, request, marker)
 	if err != nil || !selected || prepared.VerifyForeground == nil || prepared.NavigatePost == nil {
 		return q.fail("reader_prepare", "rejected", err)
 	}
-	q.evidence.mark("reader_marker_ready")
+	markReady() // Synthetic callers without a native marker observer retain their contract.
 	wait := waitXQAReaderForeground
 	if q.kit != nil {
 		wait = q.kit.foreground
@@ -321,8 +341,10 @@ func (q *XApplicationQAPilot) Close() error {
 		q.closed = true
 		q.mu.Unlock()
 		q.evidence.mark("parent_cleanup_started")
-		q.cancel()
 		q.e.Shutdown()
+		// Graceful stop uses the still-live owner pipe before parent cancellation
+		// triggers hard Job containment. Actual parent death keeps its immediate path.
+		q.cancel()
 		status := q.e.XManualStatus()
 		if status.State != "disabled" && status.Cleanup != "verified" || !q.e.WaitForIdle(nativePilotCleanup) {
 			q.closeErr = q.fail("cleanup", "uncertain", nil)

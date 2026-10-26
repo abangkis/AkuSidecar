@@ -18,6 +18,56 @@ roadmap are evidence, not a new list of prerequisites.
 
 ## Current implementation
 
+### Foreground preparation and graceful-close ordering corrected offline (2026-10-26)
+
+The current working-tree increment addresses the two reviewed ordering gaps.
+The native post preparer first observes a unique marker belonging to the exact
+reader PID in the held Job, then waits for its foreground during the existing
+preparation lifetime. This observation issues no property/capability and never
+writes foreground state. A changed, lost, ambiguous or no-longer-owned marker
+rejects. Only after foreground is observed and ownership rechecked does the
+existing binder mint its unchanged five-second, one-use capability. Preparation
+must retain enough time for that capability; the QA operation and reader borrow
+are also clipped to the original attempt's remaining time. Account/session proof
+and the 60-second attempt policy are unchanged. Stop cancels an in-flight human
+preparation wait promptly without canceling the caller's own context.
+
+`reader_marker_ready` is recorded when the owned marker is actually observed,
+before the human wait. Waiting does not erase an already observed marker/capture
+backend overlap or fabricate one if capture completed earlier. The real
+foreground verification and post navigation still run under the fresh capability.
+
+Controlled QA Close now shuts down Engine/admission/work and drains broker abort
+and owner disposal while the parent remains live. Parent cancellation follows.
+Actual external parent death still triggers the existing immediate Job closure;
+its failure path cannot manufacture successful disposal or profile release.
+Broker-abort failure remains an uncertain application result even if physical
+owner disposal succeeds; physical disposal must still be attempted so children
+cannot outlive the parent. Selector/state fencing remains on uncertain Close.
+No process-absence heuristic upgrades that verdict.
+
+`test-x-qa-entry.ps1` run `27eb2200fe344d1f9bf3c42f919d6266` passed 37 Go groups
+and 83 nested cases, four actual-main builds and both legacy compile-only modes.
+Two unchanged hardlink/alias cases were skipped because this environment denied
+link creation. New accountless regressions cover a simulated 12-second human delay before
+a fresh five-second ticket, marker/capture overlap, changed ownership, expiry,
+deadline headroom, cancellation, ordered abort/disposal, genuine abort failure,
+and external cancellation with failed disposal retaining an invented profile lease.
+The first test revision exposed a teardown-only database-close race; bounded
+capture/Engine draining corrected the fixture without changing failure assertions.
+
+Routing/Store/HTTP regression run `dc56f8e9903e4011a2e93b235d30c93e` passed 35
+groups and 35 nested cases without skips, plus four builds. Its first invocation
+could not read a shared Go cache; a process-local project cache resolved that
+environment issue without editing cache settings or helper changes from other work.
+The routing regression also covers Stop canceling blocked reader preparation.
+
+This increment has no native execution or transfer. It does not establish Windows
+foreground/native cleanup acceptance, dispose the previously retained collector,
+or authorize another native trial. Main login, user database/runtime and Auto
+Update are unchanged. The next native attempt needs a new prepared package and
+explicit one-shot authorization; consumed plans remain unusable.
+
 ### Latest unified native QA: capture persisted, reader and cleanup pending (2026-10-26)
 
 One authorized run of preparation `496e9789604e4d57813453e43230466f`, source

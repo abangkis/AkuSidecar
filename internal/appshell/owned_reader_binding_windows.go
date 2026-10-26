@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"time"
 	"unsafe"
 
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
@@ -43,6 +44,63 @@ func (b *OwnedReaderBinding) Prepare(ctx context.Context, marker string) (reader
 		return readerbroker.Target{}, nil, errors.New("owned reader marker rejected")
 	}
 	return b.containment.PrepareBrokerReader(ctx, marker)
+}
+
+// WaitForForeground observes one unique Job-owned marker without issuing a
+// property/capability or writing foreground state. Prepare must revalidate it.
+func (b *OwnedReaderBinding) WaitForForeground(ctx context.Context, marker string, ready func()) error {
+	if b == nil || b.containment == nil || !ownedReaderMarker.MatchString(marker) {
+		return errors.New("owned reader marker rejected")
+	}
+	c := b.containment
+	return waitOwnedReaderForeground(ctx, func() (uintptr, bool, error) {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		hwnd, err := c.findOwnedMarker(marker)
+		if err != nil {
+			return 0, false, err
+		}
+		foreground, _, _ := captureForeground.Call()
+		return hwnd, hwnd != 0 && foreground == hwnd, nil
+	}, ready)
+}
+
+func waitOwnedReaderForeground(ctx context.Context, probe func() (uintptr, bool, error), ready func()) error {
+	if ctx == nil || probe == nil {
+		return errors.New("owned reader wait unavailable")
+	}
+	tick := time.NewTicker(25 * time.Millisecond)
+	defer tick.Stop()
+	var selected uintptr
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		hwnd, foreground, err := probe()
+		if err != nil {
+			return errors.New("owned reader marker unavailable")
+		}
+		if selected != 0 && hwnd != selected {
+			return errors.New("owned reader marker changed")
+		}
+		if hwnd != 0 && selected == 0 {
+			selected = hwnd
+			if ready != nil {
+				ready()
+			}
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if selected != 0 && foreground {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-tick.C:
+		}
+	}
 }
 
 // Release retires only this exact property's capability. User windows survive

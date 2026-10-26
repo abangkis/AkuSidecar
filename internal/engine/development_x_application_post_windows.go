@@ -42,12 +42,13 @@ func newXApplicationPostPreparer(origin string) (xApplicationPostPreparer, error
 }
 
 type xApplicationPostPorts struct {
-	readerPID uint32
-	check     func(context.Context) error
-	call      func(context.Context, string, map[string]any, *json.RawMessage) error
-	bind      func(context.Context, string) (readerbroker.Target, func(context.Context) error, error)
-	release   func(readerbroker.Target)
-	now       func() time.Time
+	readerPID      uint32
+	check          func(context.Context) error
+	call           func(context.Context, string, map[string]any, *json.RawMessage) error
+	bind           func(context.Context, string) (readerbroker.Target, func(context.Context) error, error)
+	waitForeground func(context.Context, string, func()) error
+	release        func(readerbroker.Target)
+	now            func() time.Time
 }
 
 // This entry borrows an already pinned reader and the production HWND marker
@@ -86,7 +87,7 @@ func xApplicationPreparePost(ctx context.Context, role xManualPilotWindowsRole, 
 	binding := b.postBinding
 	b.postMu.Unlock()
 	backend := &xManualPilotWindowsBackend{roles: map[string]xManualPilotWindowsRole{"reader": role}}
-	ports := xApplicationPostPorts{readerPID: role.chrome.PID, now: time.Now, bind: binding.Prepare, release: binding.Release,
+	ports := xApplicationPostPorts{readerPID: role.chrome.PID, now: time.Now, bind: binding.Prepare, waitForeground: binding.WaitForForeground, release: binding.Release,
 		check: func(call context.Context) error { _, err := backend.snapshot(call, "reader"); return err },
 		call: func(call context.Context, op string, fields map[string]any, out *json.RawMessage) error {
 			fields["owner"] = role.protocolOwner
@@ -158,6 +159,18 @@ func prepareXApplicationPost(ctx context.Context, req readerbroker.Request, mark
 		return bad()
 	}
 	action := u.Query().Get("id")
+	if p.waitForeground != nil {
+		// Human reaction time belongs to preparation, not the five-second ticket.
+		wait, stop := context.WithDeadline(call, expires)
+		err := p.waitForeground(wait, "AkuBrowser reader "+action, func() { xQAMarkReaderReady(ctx) })
+		stop()
+		if err != nil || p.check(call) != nil || call.Err() != nil || expires.Sub(p.now()) < readerbroker.Lifetime {
+			return bad()
+		}
+		if limit, ok := call.Deadline(); ok && time.Until(limit) < readerbroker.Lifetime {
+			return bad()
+		}
+	}
 	target, verify, err := p.bind(call, "AkuBrowser reader "+action)
 	defer func() {
 		if !success && target.HWND != 0 {

@@ -170,6 +170,15 @@ func (e *xQAAttemptEvidence) cleaned(ok bool) {
 }
 
 type xQAEvidenceContextKey struct{}
+type xQAMarkerReadyContextKey struct{}
+
+func xQAMarkReaderReady(ctx context.Context) {
+	if ctx != nil {
+		if mark, ok := ctx.Value(xQAMarkerReadyContextKey{}).(func()); ok {
+			mark()
+		}
+	}
+}
 
 func withXQAEvidence(ctx context.Context, e *xQAAttemptEvidence) context.Context {
 	if e == nil {

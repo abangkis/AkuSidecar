@@ -190,3 +190,85 @@ func TestXApplicationPostRequiresSuccessfulForegroundAndRetiresFailure(t *testin
 		})
 	}
 }
+
+func TestXApplicationPostHumanWaitPrecedesFreshCapability(t *testing.T) {
+	f := &applicationPostFixture{now: time.Now(), pid: 123}
+	p := f.ports()
+	bind := p.bind
+	bound, ready := false, false
+	trace := newXQAAttemptEvidence(func() time.Time { return f.now })
+	trace.mark("capture_entered")
+	ctx := context.WithValue(context.Background(), xQAMarkerReadyContextKey{}, func() { ready = true; trace.mark("reader_marker_ready") })
+	p.waitForeground = func(ctx context.Context, marker string, mark func()) error {
+		if bound || f.verify.Load() != 0 || !strings.HasPrefix(marker, "AkuBrowser reader split_") {
+			t.Fatal("capability issued before human readiness")
+		}
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("unbounded human wait")
+		}
+		mark()
+		f.now = f.now.Add(3 * time.Second)
+		trace.mark("capture_returned")
+		f.now = f.now.Add(9 * time.Second)
+		return nil
+	}
+	p.bind = func(ctx context.Context, marker string) (readerbroker.Target, func(context.Context) error, error) {
+		if !ready {
+			t.Fatal("marker was not observable before binding")
+		}
+		bound = true
+		return bind(ctx, marker)
+	}
+	prepared, err := prepareXApplicationPost(ctx, applicationPostRequest(), applicationPostMarker(), p)
+	if err != nil || !bound || prepared.Target.Expires.Sub(f.now) != readerbroker.Lifetime {
+		t.Fatal("human delay consumed or extended short-lived capability")
+	}
+	if prepared.VerifyForeground(context.Background()) != nil || prepared.NavigatePost(context.Background()) != nil {
+		t.Fatal("fresh capability failed after human delay")
+	}
+	if trace.snapshot().Overlap != "observed" {
+		t.Fatal("delayed human action erased the actual marker/capture overlap")
+	}
+}
+
+func TestXApplicationPostWaitFailuresCannotMintCapability(t *testing.T) {
+	for _, mode := range []string{"failed", "owner_changed", "preparation_expired", "no_capability_headroom", "attempt_headroom", "canceled"} {
+		t.Run(mode, func(t *testing.T) {
+			f := &applicationPostFixture{now: time.Now(), pid: 123}
+			p := f.ports()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if mode == "attempt_headroom" {
+				var end context.CancelFunc
+				ctx, end = context.WithTimeout(ctx, 2*time.Second)
+				defer end()
+			}
+			p.bind = func(context.Context, string) (readerbroker.Target, func(context.Context) error, error) {
+				t.Fatal("unsafe wait minted capability")
+				return readerbroker.Target{}, nil, nil
+			}
+			p.waitForeground = func(_ context.Context, _ string, ready func()) error {
+				ready()
+				switch mode {
+				case "failed":
+					return errors.New("PRIVATE")
+				case "owner_changed":
+					f.changed = true
+				case "preparation_expired":
+					f.now = f.now.Add(31 * time.Second)
+				case "no_capability_headroom":
+					f.now = f.now.Add(26 * time.Second)
+				case "canceled":
+					cancel()
+				}
+				return nil
+			}
+			if _, err := prepareXApplicationPost(ctx, applicationPostRequest(), applicationPostMarker(), p); err == nil || strings.Contains(err.Error(), "PRIVATE") {
+				t.Fatal("unsafe preparation accepted or leaked")
+			}
+			if strings.Join(f.ops, ",") != "manual_prepare_post,manual_cancel_post" {
+				t.Fatal("failed preparation navigated or did not retire")
+			}
+		})
+	}
+}
