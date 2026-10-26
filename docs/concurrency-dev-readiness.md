@@ -20,8 +20,9 @@ roadmap are evidence, not a new list of prerequisites.
 ### Isolated application QA entry: synthetic acceptance (2026-10-26)
 
 The preceding 35-file driver/routing increment was reviewed and pushed as
-`e6713edd0cc0c10ebf6bc997fc7d19b2f7014d29`. The new uncommitted increment
-adds the [isolated QA entry](x-application-qa-entry.md), explicit default-off
+`e6713edd0cc0c10ebf6bc997fc7d19b2f7014d29`. The isolated QA entry increment
+is published as `9ce6a9e32ea852252170e77c19653298668727b2`. It adds the
+[isolated QA entry](x-application-qa-entry.md), explicit default-off
 selectors, pinned instance/profile/database validation and owned reader post
 preparation. The native selector is now implemented under Windows/dev tags
 after explicit source-only approval; it has **not been executed**. Ordinary
@@ -45,6 +46,13 @@ Chrome composition and captured X results through this new entry remain
 unqualified. Main login, database/runtime and Auto Update remain untouched.
 The dated sections below describe prior increments and do not override this
 source/activation distinction.
+
+The [native preparation/operator plan](x-application-native-qa-run-plan.md)
+describes this exact remaining binding and the one-shot acceptance journey.
+Preparation `21edfb1e39c24536bf4a997a4016878e` compiled the development-only
+application and sealed owner package without executing either, inspecting the
+retained profile or creating a database. Its artifact manifest deliberately
+reports `executionReady:false`; it is not an executable runtime plan.
 
 ### Packaged driver and application routing (2026-10-26)
 
