@@ -137,7 +137,7 @@ func (c *Client) Call(ctx context.Context, op string, fields map[string]any, pro
 // Deliver ignores unknown, duplicate and retired correlations. Its return is
 // local correlation accounting only. Framing/domain validation stays with callers.
 func (c *Client) Deliver(id int64, reply Reply) bool {
-	if len(reply.Diagnostic) > 512 {
+	if len(reply.Diagnostic) > 2048 {
 		reply.Diagnostic = nil
 	}
 	c.mu.Lock()

@@ -83,7 +83,7 @@ func (e *chromeFixtureRPCError) GoString() string       { return e.Error() }
 func (e *chromeFixtureRPCError) diagnosticJSON() []byte { return e.diagnostic }
 func chromeFixtureFailure(code string, diagnostic json.RawMessage) error {
 	code = safeFixtureCode(code)
-	if len(diagnostic) == 0 || len(diagnostic) > 512 {
+	if len(diagnostic) == 0 || len(diagnostic) > 2048 {
 		return errors.New(code)
 	}
 	return &chromeFixtureRPCError{code: code, diagnostic: append(json.RawMessage{}, diagnostic...)}

@@ -138,3 +138,35 @@ func TestNativePilotXCaptureDiagnosticSideband(t *testing.T) {
 		}
 	}
 }
+
+func TestNativePilotXCaptureWorkerDiagnosticValidation(t *testing.T) {
+	worker := `{"phase":"no_posts","hydrationMS":3000,"elapsedMS":3010,"sampleCount":1,"samples":[{"candidateCount":2,"rejected":2,"documentReady":true,"authenticatedUiObserved":true,"loginRequired":false,"challengeDetected":false,"rejections":{"missing_identity":1,"ambiguous_identity":0,"missing_author":1,"empty_evidence":0}}]}`
+	wrap := func(value string) error {
+		raw := json.RawMessage(`{"schema":"aku.capture-diagnostic.v1","stage":"worker","reason":"empty_unverified","cleanup":"failed","worker":` + value + `}`)
+		return nativePilotCaptureTransportError(context.Background(), chromeFixtureFailure("manual_capture_rejected", raw))
+	}
+	err := wrap(worker)
+	projected := nativePilotCaptureWorkerDetail(err)
+	v := decodeNativePilotCaptureWorker([]byte(projected))
+	if v == nil || v.Phase != "no_posts" || *v.Samples[0].Rejections.MissingAuthor != 1 || nativePilotCaptureDetail(err, "unknown", "unknown").cleanup != "failed" {
+		t.Fatal("valid bounded structural evidence lost")
+	}
+	if nativePilotCaptureWorkerDetail(nativePilotCaptureFail(err, "cleanup", "unavailable")) != projected {
+		t.Fatal("cleanup replaced first worker telemetry")
+	}
+	for _, raw := range []string{
+		strings.Replace(worker, `"phase":"no_posts"`, `"phase":"PRIVATE"`, 1),
+		strings.Replace(worker, `"hydrationMS":3000`, `"hydrationMS":null`, 1),
+		strings.Replace(worker, `"elapsedMS":3010`, `"elapsedMS":-1`, 1),
+		strings.Replace(worker, `"elapsedMS":3010`, `"elapsedMS":3010,"elapsedMS":1`, 1),
+		strings.Replace(worker, `"candidateCount":2`, `"candidateCount":"PRIVATE_TOKEN"`, 1),
+		strings.Replace(worker, `"missing_identity":1`, `"missing_identity":1,"PRIVATE_TOKEN":1`, 1),
+		strings.Replace(worker, `"sampleCount":1`, `"sampleCount":0`, 1),
+		`null`,
+	} {
+		cause := wrap(raw)
+		if nativePilotCaptureWorkerDetail(cause) != "" || nativePilotCaptureDetail(cause, "unknown", "unknown").reason != "empty_unverified" || strings.Contains(fmt.Sprint(cause), "PRIVATE") {
+			t.Fatal("invalid optional telemetry leaked or replaced operational cause")
+		}
+	}
+}

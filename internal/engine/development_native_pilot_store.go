@@ -60,6 +60,7 @@ type nativePilotStoreResult struct {
 	ClaimOutcome                    store.ManualPilotOutcome
 	Phase                           string // Closed local stage; never derived from peer text.
 	CaptureDiagnostic               nativePilotCaptureDiagnostic
+	CaptureWorker                   string // Canonical optional metadata, never stored as observation content.
 	Run                             domain.Run
 	PersistenceError, DeliveryError error
 }
@@ -276,6 +277,7 @@ func (e *Engine) captureNativePilotOnce(ctx context.Context, l *nativePilotStore
 		// Record the capture cause before challenge-pause persistence or revocation
 		// can produce a different error. The diagnostic does not change outcomes.
 		out.CaptureDiagnostic = nativePilotCaptureDetail(err, "coordinator", "unavailable")
+		out.CaptureWorker = nativePilotCaptureWorkerDetail(err)
 		var challenge *headless.CaptureError
 		if errors.As(err, &challenge) && domain.IsAccessChallenge(challenge.Code) {
 			e.captureBehaviorMu.Lock()

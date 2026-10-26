@@ -108,11 +108,25 @@ func TestProgressAndDiagnosticBounds(t *testing.T) {
 	c.Progress(q.ID+1, []byte(`{}`))
 	c.Progress(q.ID, make([]byte, 513))
 	c.Progress(q.ID, []byte(`{}`))
-	c.Deliver(q.ID, Reply{Code: "closed_reason", Diagnostic: make([]byte, 513)})
+	c.Deliver(q.ID, Reply{Code: "closed_reason", Diagnostic: make([]byte, 2049)})
 	r := receive(t, done)
 	c.Progress(q.ID, []byte(`{}`))
 	if count.Load() != 1 || r.Code != "closed_reason" || r.Diagnostic != nil || c.Pending() != 0 {
 		t.Fatal("diagnostic bounds or retirement failed")
+	}
+}
+
+func TestBoundedStructuralDiagnosticSurvivesCorrelation(t *testing.T) {
+	w, requests := captureWriter()
+	c := New(w)
+	defer c.Close()
+	done := make(chan Reply, 1)
+	go func() { r, _ := c.Call(context.Background(), "capture", nil, nil); done <- r }()
+	q := receive(t, requests)
+	c.Deliver(q.ID, Reply{Code: "closed_reason", Diagnostic: make([]byte, 2048)})
+	r := receive(t, done)
+	if r.Code != "closed_reason" || len(r.Diagnostic) != 2048 {
+		t.Fatal("bounded structural metadata lost")
 	}
 }
 

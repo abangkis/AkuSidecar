@@ -7,7 +7,7 @@ const POLICY_KEYS = Object.freeze([
   'schema', 'startupTotalMS', 'evidenceMaxAgeMS', 'cdpCommandMS', 'earlyCommandMS',
   'bootstrapObservationMS', 'bootstrapEvaluationMS', 'rendezvousMS', 'settingsFallbackMS',
   'collectorHomeReadyMS', 'collectorExitMS', 'ownerCleanupMS', 'captureCleanupMS',
-  'captureCommandMS', 'attemptAuthorizationMaxMS',
+  'captureCommandMS', 'captureHydrationMS', 'attemptAuthorizationMaxMS',
 ]);
 const TIMING_KEYS = POLICY_KEYS.slice(1);
 // Collector home readiness is a separate preflight, completed before the paired
@@ -40,6 +40,8 @@ export function parseManualTimingPolicy(source) {
       input.bootstrapEvaluationMS > input.cdpCommandMS ||
       input.evidenceMaxAgeMS > input.startupTotalMS ||
       input.startupTotalMS > input.attemptAuthorizationMaxMS ||
+      input.captureHydrationMS < 1000 || input.captureHydrationMS > 45000 ||
+      input.captureHydrationMS > input.attemptAuthorizationMaxMS ||
       input.attemptAuthorizationMaxMS !== 60000) throw invalidPolicy();
 
   return Object.freeze(Object.fromEntries(POLICY_KEYS.map(key => [key, input[key]])));

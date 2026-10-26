@@ -4,12 +4,14 @@ import {sourceAssets} from '../../internal/collection/headless/worker/worker.mjs
 import {HeaderSafetyGuard} from './x-manual-header-safety.mjs';
 import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 import {CaptureTrafficDiagnostics} from './x-capture-traffic-diagnostics.mjs';
+import {projectCaptureWorkerDiagnostic} from './x-capture-worker-diagnostic.mjs';
 
 const fail=()=>new Error('xnp_manual_capture_rejected');
 export const CAPTURE_STAGES=Object.freeze(['unknown','admission','behavior','coordinator','owner_before','payload','transport','assets','target_create','target_attach','observer','navigation','evaluation','worker','coverage','serialization','wire','observation','owner_after','cleanup']);
 export const CAPTURE_REASONS=Object.freeze(['unknown','unavailable','invalid_request','deadline','canceled','owner_changed','scope_lost','request_budget','header_guard','coverage_pending','coverage_shape','extra_mismatch','network_failed','target_lost','method_rejected','evaluation_exception','invalid_payload','navigation_failed','empty_unverified','invalid_observation','worker_not_ready','target_unavailable','worker_other','envelope_invalid','digest_mismatch','observation_invalid','close_failed','source_paused','challenge_cloudflare','challenge_x_human_verification','challenge_unknown','replay','invalidated','coverage_response_pending','coverage_completion_pending','coverage_extra_pending','cookie_candidate','cookie_ambiguous','login_required','source_unavailable']);
 export const CAPTURE_CLEANUP=Object.freeze(['unknown','completed','failed']);
 const captureDetails=new WeakMap();
+const workerDetails=new WeakMap();
 // Keep transient command errors intact inside the existing worker so its normal
 // context-recovery classification is unchanged. Only a terminal error is copied
 // to a sanitized outward error; the private weak hint contains closed enums.
@@ -42,7 +44,8 @@ export function manualCaptureRPCCode(error) {
 // cannot select challenge handling, admission, retry, or another authority.
 export function manualCaptureRPCDiagnostic(error) {
   const d=manualCaptureDiagnostic(error);
-  return d?Object.freeze({schema:'aku.capture-diagnostic.v1',...d}):undefined;
+  const worker=error&&typeof error==='object'?workerDetails.get(error):undefined;
+  return d?Object.freeze({schema:'aku.capture-diagnostic.v1',...d,...(worker?{worker}:{})}):undefined;
 }
 const pinsKeys=['ownerId','profileId','contextId','targetId','frameId','documentId'];
 export const MANUAL_CAPTURE_COMMAND_TIMEOUT_MS=MANUAL_TIMING.captureCommandMS;
@@ -54,10 +57,11 @@ export function validateManualCaptureRequest(request,now=Date.now()) {
   if(!ref(request.correlation)||!pinsKeys.every(k=>ref(request.pins[k]))||!Number.isSafeInteger(request.deadlineMS)||request.deadlineMS<=now||request.deadlineMS>now+MANUAL_TIMING.attemptAuthorizationMaxMS)throw fail();
   const allowed=['pageUrl','scrolls','maxBlocksPerSnapshot','sourceHydrationTimeoutMs','scrollFraction','scrollSettleMs'];
   if(!request.payload||![Object.prototype,null].includes(Object.getPrototypeOf(request.payload))||Object.keys(request.payload).some(k=>!allowed.includes(k)))throw fail();
+  validateCapture('x',request.payload); // Validate caller types before numeric clamping.
   const left=request.deadlineMS-now;
   if(left<1000)throw fail();
   const payload={...request.payload,acquisitionRound:1,captureTimeoutMs:Math.floor(left),scrolls:request.payload.scrolls??0,
-    sourceHydrationTimeoutMs:Math.min(request.payload.sourceHydrationTimeoutMs??1000,Math.floor(left)),
+    sourceHydrationTimeoutMs:Math.min(request.payload.sourceHydrationTimeoutMs??MANUAL_TIMING.captureHydrationMS,Math.floor(left)),
     pendingContentPolicy:'detect_only',sourceFreshnessPolicy:'preserve_frontier',sameTabMutationAllowed:false,restoreScroll:false};
   validateCapture('x',payload);
   return payload;
@@ -69,7 +73,7 @@ export function validateManualCaptureRequest(request,now=Date.now()) {
 export async function captureNativeXTarget({request,bridgePath,loadAssets=()=>sourceAssets(bridgePath,'x'),command,subscribe,browserContextId,proofSession,signal,onUnsafe=()=>{},onTrafficDiagnostic=()=>{}}) {
   const payload=validateManualCaptureRequest(request);
   if(typeof command!=='function'||typeof subscribe!=='function'||!ref(browserContextId))throw manualCaptureFailure(null,'admission','invalid_request');
-  let target,session,unsubscribe,guard,unsafe=false,closed=false,first=null,stage='assets',wire;
+  let target,session,unsubscribe,guard,unsafe=false,closed=false,first=null,stage='assets',wire,workerStartedAt;
   const record=(error,at,reason)=>first??=(manualCaptureFailure(error,at,reason));
   const traffic=new CaptureTrafficDiagnostics();
   const expired=()=>signal?.aborted||Date.now()>=request.deadlineMS||unsafe;
@@ -130,6 +134,7 @@ export async function captureNativeXTarget({request,bridgePath,loadAssets=()=>so
       if(result.exceptionDetails)throw manualCaptureFailure(null,'evaluation','evaluation_exception');return result.result?.value;
     }};
     stage='worker';
+    workerStartedAt=Date.now();
     const observation=await captureIsolated({backend:'headless_worker',forSource:async source=>{if(source!=='x')throw fail();return page;}},{x:assets},'x',payload);
     stage='coverage';
     await command('Runtime.evaluate',{expression:'void 0',returnByValue:true},session);
@@ -142,6 +147,11 @@ export async function captureNativeXTarget({request,bridgePath,loadAssets=()=>so
   } catch(error) {
     const code=data(error,'code');
     record(error,stage,signal?.aborted?'canceled':Date.now()>=request.deadlineMS||code==='capture_timeout'?'deadline':stage==='worker'?(['invalid_payload','navigation_failed','empty_unverified','invalid_observation','worker_not_ready','target_unavailable','login_required','source_unavailable'].includes(code)?code:'worker_other'):'unavailable');
+    // Project only the worker that supplied the first cause. A later cleanup,
+    // guard or transport failure cannot attach unrelated page metadata to it.
+    if(stage==='worker'&&manualCaptureDiagnostic(first)?.stage==='worker'&&manualCaptureDiagnostic(first)?.reason===code){
+      try{const worker=projectCaptureWorkerDiagnostic(error,{hydrationMS:payload.sourceHydrationTimeoutMs,elapsedMS:Math.max(0,Date.now()-workerStartedAt)});if(worker)workerDetails.set(first,worker);}catch{/* Optional telemetry never replaces the operational error. */}
+    }
   } finally {
     clearTimeout(timer);signal?.removeEventListener('abort',abort);
     let cleanup='unknown';

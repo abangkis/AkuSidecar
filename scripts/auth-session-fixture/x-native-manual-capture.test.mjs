@@ -7,9 +7,86 @@ import {syntheticCaptureTransport,syntheticCapturePort} from './x-native-manual-
 import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 import {CaptureTrafficDiagnostics} from './x-capture-traffic-diagnostics.mjs';
 import {HeaderSafetyGuard} from './x-manual-header-safety.mjs';
+import {projectCaptureWorkerDiagnostic} from './x-capture-worker-diagnostic.mjs';
+import {performance} from 'node:perf_hooks';
 const bridgePath=fileURLToPath(new URL('../../../AkuBridge',import.meta.url));
 const pins={ownerId:'4102',profileId:'synthetic-collector',contextId:'proof-context',targetId:'proof-target',frameId:'proof-frame',documentId:'proof-document'};
 const request=()=>({correlation:'synthetic-capture',pins,deadlineMS:Date.now()+10000,payload:{scrolls:0,maxBlocksPerSnapshot:2}});
+
+test('native hydration uses the shared policy and cannot extend the original authorization',()=>{
+  const now=Date.now(),q=request();q.deadlineMS=now+2000;
+  assert.equal(validateManualCaptureRequest(request()).sourceHydrationTimeoutMs,MANUAL_TIMING.captureHydrationMS);
+  const payload=validateManualCaptureRequest(q,now);
+  assert.equal(payload.sourceHydrationTimeoutMs,2000);assert.equal(payload.captureTimeoutMs,2000);
+  q.payload.sourceHydrationTimeoutMs=9000;
+  assert.equal(validateManualCaptureRequest(q,now).sourceHydrationTimeoutMs,2000);
+  q.deadlineMS=now+999;
+  assert.throws(()=>validateManualCaptureRequest(q,now));
+  q.deadlineMS=now+10000;q.payload.sourceHydrationTimeoutMs='3000';
+  assert.throws(()=>validateManualCaptureRequest(q,now));
+});
+
+test('a delayed synthetic post fails the former one-second wait and passes the configured wait',{timeout:12000},async()=>{
+  for(const hydration of [1000,undefined]){
+    const transport=syntheticCaptureTransport(),query=transport.dom.context.document.querySelectorAll;
+    const command=transport.command.bind(transport);let navigated=Infinity;
+    transport.dom.context.document.querySelectorAll=(...args)=>performance.now()-navigated<2300?[]:query(...args);
+    const send=async(method,params,...rest)=>{if(method==='Page.navigate')navigated=performance.now();return command(method,params,...rest);};
+    const q=request();if(hydration)q.payload.sourceHydrationTimeoutMs=hydration;
+    const capturing=captureNativeXTarget({request:q,bridgePath,command:send,subscribe:transport.subscribe.bind(transport),browserContextId:'owned'});
+    if(hydration)await assert.rejects(capturing,error=>{
+      const d=manualCaptureRPCDiagnostic(error);
+      assert.equal(d.reason,'empty_unverified');assert.equal(d.worker.phase,'no_posts');
+      assert.equal(d.worker.samples[0].candidateCount,0);return true;
+    });
+    else assert.equal(JSON.parse((await capturing).observationJSON).snapshots[0].blocks.length,1);
+    assert.equal(transport.closed,true);
+  }
+});
+
+test('worker candidate rejections reach the private reply despite later cleanup failure',{timeout:5000},async()=>{
+  const transport=syntheticCaptureTransport(),query=transport.dom.context.document.querySelectorAll;
+  for(const article of query('article[data-testid="tweet"]')){
+    const own=article.querySelectorAll;article.querySelectorAll=s=>s==='time'?[]:own(s);
+  }
+  const q=request();q.payload.sourceHydrationTimeoutMs=1000;
+  const command=async(method,...args)=>{const value=await transport.command(method,...args);if(method==='Target.closeTarget')throw Error('PRIVATE_CLEANUP');return value;};
+  let reply;
+  await executeManualReply({id:77,op:'manual_capture'},()=>captureNativeXTarget({request:q,bridgePath,command,subscribe:transport.subscribe.bind(transport),browserContextId:'owned'}),(...args)=>reply=args);
+  const d=reply[4];assert.equal(reply[2],'manual_capture_rejected');assert.equal(d.stage,'worker');
+  assert.equal(d.reason,'empty_unverified');assert.equal(d.cleanup,'failed');assert.equal(d.worker.phase,'no_posts');
+  assert.equal(d.worker.samples[0].rejections.missing_identity,1);
+  assert.equal(d.worker.samples[0].authenticatedUiObserved,true);
+  assert.ok(Buffer.byteLength(JSON.stringify(d))<=2048);assert.equal(JSON.stringify(reply).includes('PRIVATE'),false);
+});
+
+test('worker telemetry projects closed keys without invoking getters or retaining private evidence',()=>{
+  let reads=0;
+  const sample={candidateCount:2,rejected:1,documentReady:false,authenticatedUiObserved:true,
+    rejectionReasons:{missing_identity:1,PRIVATE_TOKEN:99},url:'PRIVATE_URL',body:'PRIVATE_BODY'};
+  Object.defineProperty(sample,'loginRequired',{get(){reads++;return true;}});
+  const error=Object.assign(Error('PRIVATE'),{code:'empty_unverified',diagnostics:{sampleCount:1,samples:[sample]}});
+  const d=projectCaptureWorkerDiagnostic(error,{hydrationMS:3000,elapsedMS:1001});
+  assert.equal(reads,0);assert.equal(d.samples[0].loginRequired,null);assert.equal(JSON.stringify(d).includes('PRIVATE'),false);
+  assert.equal(Object.isFrozen(d.samples[0].rejections),true);
+  assert.equal(projectCaptureWorkerDiagnostic(Error('PRIVATE'),{hydrationMS:3000,elapsedMS:1}),undefined);
+  const empty=Object.assign(Error(),{code:'empty_unverified',diagnostics:{sampleCount:0,samples:[]}});
+  assert.equal(projectCaptureWorkerDiagnostic(empty,{hydrationMS:3000,elapsedMS:3000}).phase,'snapshot_unavailable');
+});
+
+test('a worker with no verifiable snapshot reports a different phase from rejected candidates',{timeout:5000},async()=>{
+  const transport=syntheticCaptureTransport(),command=transport.command.bind(transport);
+  const q=request();q.payload.sourceHydrationTimeoutMs=1000;
+  const send=async(method,params,...rest)=>{
+    if(method==='Runtime.evaluate'&&params.expression.includes('XHeadlessPoC.collect()'))throw Error('Execution context was destroyed');
+    return command(method,params,...rest);
+  };
+  await assert.rejects(captureNativeXTarget({request:q,bridgePath,command:send,subscribe:transport.subscribe.bind(transport),browserContextId:'owned'}),error=>{
+    const d=manualCaptureRPCDiagnostic(error);assert.equal(d.reason,'empty_unverified');
+    assert.equal(d.worker.phase,'snapshot_unavailable');assert.equal(d.worker.sampleCount,0);assert.deepEqual(d.worker.samples,[]);return true;
+  });
+  assert.equal(transport.closed,true);
+});
 
 for(const mode of ['orphan-response','orphan-extra','missing-flag','invalid-flag','extra-pending','unexpected-extra','response-pending','completion-pending','network-failed','redirect-reuse','capacity'])test(`ordinary ${mode} cannot revoke the capture owner`,async()=>{
   const transport=syntheticCaptureTransport({pendingExtra:mode==='extra-pending'});let invalidations=0,summary;

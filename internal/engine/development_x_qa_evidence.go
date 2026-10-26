@@ -11,9 +11,10 @@ import (
 
 // QA evidence describes execution, never account/session or Store authority.
 type XApplicationQAFailure struct {
-	Stage  string `json:"stage"`
-	Reason string `json:"reason"`
-	Detail string `json:"detail,omitempty"`
+	Stage  string                              `json:"stage"`
+	Reason string                              `json:"reason"`
+	Detail string                              `json:"detail,omitempty"`
+	Worker *nativePilotCaptureWorkerDiagnostic `json:"worker,omitempty"`
 }
 type XApplicationQAStage struct {
 	Stage     string `json:"stage"`
@@ -126,6 +127,7 @@ func (e *xQAAttemptEvidence) fail(f XApplicationQAFailure) error {
 		e.mu.Lock()
 		if e.first == nil {
 			copy := f
+			copy.Worker = cloneNativePilotCaptureWorker(f.Worker)
 			e.first = &copy
 			close(e.failed)
 		}
@@ -145,6 +147,7 @@ func (e *xQAAttemptEvidence) snapshot() XApplicationQAEvidence {
 	out.Cleanup = e.cleanup
 	if e.first != nil {
 		f := *e.first
+		f.Worker = cloneNativePilotCaptureWorker(f.Worker)
 		out.FirstFailure = &f
 	}
 	if e.overlap {

@@ -76,7 +76,7 @@ func decodeNativePilotTimingPolicy(raw []byte) (map[string]int64, error) {
 	if _, err := d.Token(); err != io.EOF {
 		return nil, bad
 	}
-	keys := []string{"startupTotalMS", "evidenceMaxAgeMS", "cdpCommandMS", "earlyCommandMS", "bootstrapObservationMS", "bootstrapEvaluationMS", "rendezvousMS", "settingsFallbackMS", "collectorHomeReadyMS", "collectorExitMS", "ownerCleanupMS", "captureCleanupMS", "captureCommandMS", "attemptAuthorizationMaxMS"}
+	keys := []string{"startupTotalMS", "evidenceMaxAgeMS", "cdpCommandMS", "earlyCommandMS", "bootstrapObservationMS", "bootstrapEvaluationMS", "rendezvousMS", "settingsFallbackMS", "collectorHomeReadyMS", "collectorExitMS", "ownerCleanupMS", "captureCleanupMS", "captureCommandMS", "captureHydrationMS", "attemptAuthorizationMaxMS"}
 	if len(values) != len(keys)+1 {
 		return nil, bad
 	}
@@ -93,6 +93,9 @@ func decodeNativePilotTimingPolicy(raw []byte) (map[string]int64, error) {
 		result[key] = v
 	}
 	if result["attemptAuthorizationMaxMS"] != 60000 || result["startupTotalMS"] > result["attemptAuthorizationMaxMS"] || result["earlyCommandMS"] <= result["cdpCommandMS"] || result["bootstrapEvaluationMS"] > result["cdpCommandMS"] {
+		return nil, bad
+	}
+	if result["captureHydrationMS"] < 1000 || result["captureHydrationMS"] > 45000 || result["captureHydrationMS"] > result["attemptAuthorizationMaxMS"] {
 		return nil, bad
 	}
 	for _, key := range []string{"evidenceMaxAgeMS", "cdpCommandMS", "earlyCommandMS", "bootstrapObservationMS", "bootstrapEvaluationMS", "rendezvousMS", "settingsFallbackMS", "collectorExitMS", "ownerCleanupMS", "captureCleanupMS", "captureCommandMS"} {

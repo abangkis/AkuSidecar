@@ -114,8 +114,8 @@ func (b *xCaptureSyntheticBackend) rpc(ctx context.Context, role, op string, fie
 		input, _ := json.Marshal(message)
 		cmd := exec.CommandContext(ctx, node, filepath.Join(project, "scripts", "auth-session-fixture", "x-native-manual-capture-fixture.mjs"))
 		cmd.Stdin = bytes.NewReader(append(input, '\n'))
-		if b.mode == "challenge_cleanup" {
-			cmd.Env = append(os.Environ(), "AKU_X_NATIVE_MANUAL_CAPTURE_FAULT=challenge_cleanup")
+		if b.mode == "challenge_cleanup" || b.mode == "worker-empty" {
+			cmd.Env = append(os.Environ(), "AKU_X_NATIVE_MANUAL_CAPTURE_FAULT="+b.mode)
 		}
 		stdout, err := cmd.Output()
 		if err != nil {
@@ -207,7 +207,7 @@ func TestNativePilotXCaptureWorkerToStore(t *testing.T) {
 	if os.Getenv("AKU_X_NATIVE_MANUAL_CAPTURE_OFFLINE") != "1" {
 		t.Skip("explicit offline worker helper required")
 	}
-	for _, mode := range []string{"", "traffic-partial", "traffic-malformed", "traffic-legacy", "digest", "target", "owner", "source", "expiry", "cloudflare", "x_human_verification", "empty", "coverage", "private", "challenge_cleanup"} {
+	for _, mode := range []string{"", "traffic-partial", "traffic-malformed", "traffic-legacy", "digest", "target", "owner", "source", "expiry", "cloudflare", "x_human_verification", "empty", "coverage", "private", "challenge_cleanup", "worker-empty"} {
 		t.Run("result-"+mode, func(t *testing.T) {
 			x := newNativeStoreFixture(t, true, func(f *manualRuntimeFixture) {
 				f.now = time.Now().Truncate(time.Second)
@@ -266,6 +266,7 @@ func TestNativePilotXCaptureWorkerToStore(t *testing.T) {
 					"coverage":             {"coverage", "coverage_extra_pending", "failed"},
 					"private":              {"transport", "unavailable", "unknown"},
 					"challenge_cleanup":    {"worker", "challenge_cloudflare", "failed"},
+					"worker-empty":         {"worker", "empty_unverified", "completed"},
 				}[mode]
 				if result.CaptureDiagnostic != want {
 					t.Fatalf("capture diagnostic mismatch: got %s want %s", result.CaptureDiagnostic, want)
@@ -274,6 +275,12 @@ func TestNativePilotXCaptureWorkerToStore(t *testing.T) {
 				replay := x.e.captureNativePilot(context.Background(), runtime, x.command.ID)
 				if replay.CaptureDiagnostic != result.CaptureDiagnostic {
 					t.Fatal("replay lost first capture cause")
+				}
+				if mode == "worker-empty" {
+					worker := decodeNativePilotCaptureWorker([]byte(result.CaptureWorker))
+					if worker == nil || worker.Phase != "no_posts" || len(worker.Samples) == 0 || worker.Samples[0].CandidateCount == nil || *worker.Samples[0].CandidateCount != 0 || replay.CaptureWorker != result.CaptureWorker {
+						t.Fatal("worker telemetry lost through Node, transport, Coordinator, Store result or replay")
+					}
 				}
 				if backend.calls.Load() != 1 {
 					t.Fatal("invalid result recaptured")

@@ -402,7 +402,7 @@ func TestNativePilotConfiguredStartupCannotExtendEarlierAttemptLimit(t *testing.
 }
 
 func TestNativePilotSharedTimingPolicy(t *testing.T) {
-	baseline := map[string]int64{"startupTotalMS": 6000, "evidenceMaxAgeMS": 2000, "cdpCommandMS": 4000, "earlyCommandMS": 4200, "bootstrapObservationMS": 5000, "bootstrapEvaluationMS": 1500, "rendezvousMS": 1000, "settingsFallbackMS": 2500, "collectorHomeReadyMS": 15000, "collectorExitMS": 5000, "ownerCleanupMS": 2000, "captureCleanupMS": 1000, "captureCommandMS": 1500}
+	baseline := map[string]int64{"startupTotalMS": 6000, "evidenceMaxAgeMS": 2000, "cdpCommandMS": 4000, "earlyCommandMS": 4200, "bootstrapObservationMS": 5000, "bootstrapEvaluationMS": 1500, "rendezvousMS": 1000, "settingsFallbackMS": 2500, "collectorHomeReadyMS": 15000, "collectorExitMS": 5000, "ownerCleanupMS": 2000, "captureCleanupMS": 1000, "captureCommandMS": 1500, "captureHydrationMS": 1000}
 	for key, old := range baseline {
 		if nativePilotTimingPolicy[key] != old*3 {
 			t.Fatal("operational timeout was not scaled exactly threefold")
@@ -411,12 +411,15 @@ func TestNativePilotSharedTimingPolicy(t *testing.T) {
 	if nativePilotLife != 60*time.Second || nativePilotStartup != 18*time.Second || nativePilotAge != 6*time.Second {
 		t.Fatal("startup and authorization ceilings disagreed")
 	}
+	if nativePilotTimingPolicy["captureHydrationMS"] != 3000 {
+		t.Fatal("capture hydration default disagreed")
+	}
 	// Parallel/nested command envelopes share one original startup deadline;
 	// they are not summed into fresh allowances for successive stages.
 	if nativePilotTimingPolicy["earlyCommandMS"] <= 6000 || nativePilotTimingPolicy["earlyCommandMS"] > nativePilotStartup.Milliseconds() {
 		t.Fatal("original six-second total was not revalidated")
 	}
-	for _, fault := range []string{"unknown", "duplicate", "negative", "fraction", "null", "missing", "short-total", "early-race", "authorization"} {
+	for _, fault := range []string{"unknown", "duplicate", "negative", "fraction", "null", "missing", "short-total", "early-race", "authorization", "capture-hydration-low", "capture-hydration-high"} {
 		t.Run(fault, func(t *testing.T) {
 			var values map[string]any
 			if json.Unmarshal(nativePilotTimingPolicyJSON, &values) != nil {
@@ -439,6 +442,10 @@ func TestNativePilotSharedTimingPolicy(t *testing.T) {
 				values["earlyCommandMS"] = values["cdpCommandMS"]
 			case "authorization":
 				values["attemptAuthorizationMaxMS"] = 180000
+			case "capture-hydration-low":
+				values["captureHydrationMS"] = 999
+			case "capture-hydration-high":
+				values["captureHydrationMS"] = 45001
 			}
 			raw, _ := json.Marshal(values)
 			if fault == "duplicate" {

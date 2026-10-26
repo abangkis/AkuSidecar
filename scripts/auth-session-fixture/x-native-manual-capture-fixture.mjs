@@ -91,6 +91,7 @@ if(process.argv[1]&&pathToFileURL(resolve(process.argv[1])).href===import.meta.u
           return result;
         };
       }
+	  if(process.env.AKU_X_NATIVE_MANUAL_CAPTURE_FAULT==='worker-empty')transport.dom.context.document.querySelectorAll=()=>[];
       port??=await syntheticCapturePort(message.request.pins,transport,resolve(process.env.AKU_NATIVE_MANUAL_PROJECT_ROOT,'..','AkuBridge'));
       const result=await port.execute(message);process.stdout.write(JSON.stringify({id:message.id,ok:true,result})+'\n');
     }catch(error){process.stdout.write(JSON.stringify({id:message?.id??0,ok:false,code:manualCaptureRPCCode(error),diagnostic:manualCaptureRPCDiagnostic(error)})+'\n');}})();});

@@ -13,5 +13,6 @@
   "ownerCleanupMS": 6000,
   "captureCleanupMS": 3000,
   "captureCommandMS": 4500,
+  "captureHydrationMS": 3000,
   "attemptAuthorizationMaxMS": 60000
 }

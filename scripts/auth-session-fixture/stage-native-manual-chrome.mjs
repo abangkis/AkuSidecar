@@ -20,7 +20,7 @@ const mode=process.argv[3];
 const capture=mode==='x-retained-capture';
 const retained=mode==='x-retained-manual'||capture;
 const files = capture ? execFileSync('go',['list','-tags','auth_session_dev auth_session_fixture','-f','{{range .GoFiles}}{{println .}}{{end}}','./internal/engine'],{cwd:project,encoding:'utf8'}).trim().split(/\r?\n/u).concat(['x_manual_pilot_retained_windows_test.go','x_manual_capture_retained_windows_test.go']) : ['chrome_fixture_windows.go', 'development_native_pilot_adapter.go',
-  'development_native_pilot_capture_diagnostic.go',
+  'development_native_pilot_capture_diagnostic.go','development_native_pilot_capture_worker_diagnostic.go',
   'development_native_pilot_startup.go', 'development_native_pilot_controller.go',
   'development_native_pilot_broker.go', retained?'x_manual_pilot_retained_windows_test.go':'native_manual_pilot_chrome_windows_test.go'];
 if(mode!==undefined){
@@ -35,7 +35,7 @@ manifest.moduleDependencies=['go.mod','go.sum',...['internal/ownedprocess','inte
 )].map(source=>({source,sha256:hash(fs.readFileSync(path.join(project,source)))}));
 if(mode!==undefined){
   manifest.nodeSources=['x-native-manual-owner-port.mjs','x-native-manual-owner-port.test.mjs','x-native-manual-owner-offline.mjs','x-native-metadata-probe-driver.mjs',
-    'x-native-manual-capture.mjs','x-native-manual-capture.test.mjs','x-capture-traffic-diagnostics.mjs','x-capture-traffic-diagnostics.test.mjs',
+    'x-native-manual-capture.mjs','x-native-manual-capture.test.mjs','x-capture-worker-diagnostic.mjs','x-capture-traffic-diagnostics.mjs','x-capture-traffic-diagnostics.test.mjs',
     'x-qa-feasibility-collector.mjs','x-manual-startup-owner.mjs','x-manual-startup-owner.test.mjs',
     'x-manual-startup-source.mjs','x-manual-timing-policy.mjs','x-manual-startup-limits.mjs','x-manual-startup-offline-fixture.mjs',
     'x-manual-header-safety.mjs','x-manual-root-document.mjs','x-manual-root-source-policy.mjs','x-manual-root-controls.mjs','x-manual-root-controls.test.mjs',

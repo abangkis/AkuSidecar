@@ -206,7 +206,8 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
       if (Date.now() >= mediaSettleDeadline) break;
     }
   }
-  if (!snapshot) throw captureError('empty_unverified', 'source page produced no verifiable snapshot before the readiness deadline');
+  if (!snapshot) throw Object.assign(captureError('empty_unverified', 'source page produced no verifiable snapshot before the readiness deadline'),
+    { diagnostics: emptyCaptureDiagnostics([]) });
   if(source==='instagram' && options.explicitPageUrl && snapshot.posts.length===0) {
     snapshot=await resolveInstagramNativeTarget({page,requestedUrl,snapshot,resolver:assets?.structuredFeedResolver,deadlineAt:deadline});
   }

@@ -4,6 +4,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -57,6 +58,29 @@ func TestXQAEvidenceActualExecutionAndReaderIntervals(t *testing.T) {
 				t.Fatal("scheduled work claimed capture execution")
 			}
 		})
+	}
+}
+
+func TestXQAEvidenceCaptureWorkerSurvivesReportAndCleanup(t *testing.T) {
+	worker := `{"phase":"no_posts","hydrationMS":3000,"elapsedMS":3010,"sampleCount":1,"samples":[{"candidateCount":2,"rejected":2,"documentReady":true,"authenticatedUiObserved":true,"loginRequired":false,"challengeDetected":false,"rejections":{"missing_identity":2,"ambiguous_identity":0,"missing_author":0,"empty_evidence":0}}]}`
+	q := &XApplicationQAPilot{evidence: newXQAAttemptEvidence(time.Now)}
+	r := &xManualApplication{captureResultReady: true, captureResult: nativePilotStoreResult{CaptureDiagnostic: nativePilotCaptureDiagnostic{"worker", "empty_unverified", "failed"}, CaptureWorker: worker, PersistenceError: errors.New("PRIVATE")}}
+	if q.captureFailure(r) == nil {
+		t.Fatal("capture failure missing")
+	}
+	q.evidence.fail(xQAFailure("cleanup", "failed", nil))
+	q.evidence.cleaned(true)
+	report := q.evidence.snapshot()
+	if report.FirstFailure == nil || report.FirstFailure.Stage != "capture" || report.FirstFailure.Worker == nil || *report.FirstFailure.Worker.Samples[0].Rejections.MissingIdentity != 2 || report.Cleanup != "verified" {
+		t.Fatal("capture telemetry lost in final QA report")
+	}
+	raw, err := json.Marshal(report)
+	if err != nil || strings.Contains(string(raw), "PRIVATE") || !strings.Contains(string(raw), `"worker":{"phase":"no_posts"`) {
+		t.Fatal("report telemetry missing or private")
+	}
+	*report.FirstFailure.Worker.Samples[0].CandidateCount = 999
+	if *q.evidence.snapshot().FirstFailure.Worker.Samples[0].CandidateCount != 2 {
+		t.Fatal("mutable report changed first failure")
 	}
 }
 func TestXQAEvidenceFirstFailureAndIndependentCleanup(t *testing.T) {

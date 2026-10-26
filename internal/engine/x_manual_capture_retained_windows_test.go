@@ -100,22 +100,29 @@ func TestXManualCaptureDiagnosticCode(t *testing.T) {
 // Actual Node encoder -> correlated stdio reader -> Windows RPC adapter. Only
 // transport is exercised: no OS ownership assertion, Chrome, profile or seed.
 func TestXManualCaptureDiagnosticPipe(t *testing.T) {
+	for _, mode := range []string{"challenge", "worker-empty"} {
+		t.Run(mode, func(t *testing.T) { testXManualCaptureDiagnosticPipe(t, mode) })
+	}
+}
+func testXManualCaptureDiagnosticPipe(t *testing.T, mode string) {
 	project, node := os.Getenv("AKU_NATIVE_MANUAL_PROJECT_ROOT"), os.Getenv("AKU_CHROME_FIXTURE_NODE")
 	if project == "" || node == "" {
 		t.Skip("canonical offline helper required")
 	}
 	const script = `
 import {pathToFileURL} from 'node:url'; import {createInterface} from 'node:readline';
-const {executeManualReply}=await import(pathToFileURL(process.argv[1]));
-const {syntheticCapturePort,syntheticCaptureTransport}=await import(pathToFileURL(process.argv[2]));
+const {executeManualReply}=await import(pathToFileURL(process.argv[2]));
+const {syntheticCapturePort,syntheticCaptureTransport}=await import(pathToFileURL(process.argv[3]));
 const transport=syntheticCaptureTransport(), command=transport.command.bind(transport);
-transport.command=async(method,...args)=>{if(method==='Page.navigate')throw Object.assign(Error('PRIVATE'),{code:'challenge_required',challengeCategory:'cloudflare'});const value=await command(method,...args);if(method==='Target.closeTarget')throw Error('PRIVATE');return value;};
+if(process.argv[5]==='worker-empty')transport.dom.context.document.querySelectorAll=()=>[];
+transport.command=async(method,...args)=>{if(process.argv[5]==='challenge'&&method==='Page.navigate')throw Object.assign(Error('PRIVATE'),{code:'challenge_required',challengeCategory:'cloudflare'});const value=await command(method,...args);if(method==='Target.closeTarget')throw Error('PRIVATE');return value;};
 const pins={ownerId:'4102',profileId:'synthetic-collector',contextId:'proof-context',targetId:'proof-target',frameId:'proof-frame',documentId:'proof-document'};
-const port=await syntheticCapturePort(pins,transport,process.argv[3]);
+const port=await syntheticCapturePort(pins,transport,process.argv[4]);
 console.log(JSON.stringify({ready:true}));
 for await(const line of createInterface({input:process.stdin})){const q=JSON.parse(line);await executeManualReply(q,()=>port.execute(q),(id,result,code,_limit,diagnostic)=>console.log(JSON.stringify({id,ok:!code,...(code?{code,diagnostic}:{result})})));}
 `
-	cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(project, "scripts", "auth-session-fixture", "x-native-metadata-probe-driver.mjs"), filepath.Join(project, "scripts", "auth-session-fixture", "x-native-manual-capture-fixture.mjs"), filepath.Join(project, "..", "AkuBridge"))
+	// A sentinel argv[1] keeps imported modules' direct-CLI guards inactive.
+	cmd := exec.Command(node, "--input-type=module", "--eval", script, "offline-capture-pipe", filepath.Join(project, "scripts", "auth-session-fixture", "x-native-metadata-probe-driver.mjs"), filepath.Join(project, "scripts", "auth-session-fixture", "x-native-manual-capture-fixture.mjs"), filepath.Join(project, "..", "AkuBridge"), mode)
 	cmd.Stderr = io.Discard
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -153,6 +160,14 @@ for await(const line of createInterface({input:process.stdin})){const q=JSON.par
 	pins := map[string]string{"ownerId": "4102", "profileId": "synthetic-collector", "contextId": "proof-context", "targetId": "proof-target", "frameId": "proof-frame", "documentId": "proof-document"}
 	backend := &xManualPilotWindowsBackend{roles: map[string]xManualPilotWindowsRole{"collector": {role: "collector", bridge: b, protocolOwner: 1}}}
 	err = backend.rpc(ctx, "collector", "manual_capture", map[string]any{"handle": "collector-handle", "request": map[string]any{"correlation": "synthetic-capture", "pins": pins, "deadlineMS": time.Now().Add(4 * time.Second).UnixMilli(), "payload": map[string]any{"scrolls": 0}}}, nil)
+	t.Logf("correlated capture diagnostic: %s", nativePilotCaptureDetail(err, "unknown", "unknown"))
+	if mode == "worker-empty" {
+		worker := decodeNativePilotCaptureWorker([]byte(nativePilotCaptureWorkerDetail(err)))
+		if worker == nil || worker.Phase != "no_posts" || worker.HydrationMS != 3000 || len(worker.Samples) != 1 || worker.Samples[0].CandidateCount == nil || *worker.Samples[0].CandidateCount != 0 || nativePilotCaptureDetail(err, "unknown", "unknown").cleanup != "failed" {
+			t.Fatal("actual correlated pipe lost structural worker diagnostics or first cause")
+		}
+		return
+	}
 	var challenge *headless.CaptureError
 	if !errors.As(err, &challenge) || challenge.ChallengeCategory != "cloudflare" {
 		t.Fatal("operational challenge lost in actual pipe")
@@ -221,7 +236,7 @@ func TestXManualCaptureRetainedQA(t *testing.T) {
 			t.Log("manual-retained-capture-traffic " + backend.trafficDiagnostic())
 		}
 		if result.Outcome != store.Committed || result.PersistenceError != nil || result.DeliveryError != nil {
-			t.Fatalf("capture QA rejected phase=%s outcome=%s detail=(%s); no retry", result.Phase, result.Outcome, result.CaptureDiagnostic)
+			t.Fatalf("capture QA rejected phase=%s outcome=%s detail=(%s) worker=(%s); no retry", result.Phase, result.Outcome, result.CaptureDiagnostic, result.CaptureWorker)
 		}
 		observations, err := s.Observations(ctx, command.RunID)
 		if err != nil || len(observations) != 1 {

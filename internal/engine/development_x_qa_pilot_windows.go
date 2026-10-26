@@ -377,6 +377,7 @@ func (q *XApplicationQAPilot) captureFailure(r *xManualApplication) error {
 		if result.CaptureDiagnostic.stage != "" {
 			f.Detail = result.CaptureDiagnostic.closed().String()
 		}
+		f.Worker = decodeNativePilotCaptureWorker([]byte(result.CaptureWorker))
 		return q.evidence.fail(f)
 	}
 	if result.DeliveryError != nil {

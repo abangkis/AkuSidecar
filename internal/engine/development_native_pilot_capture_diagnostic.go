@@ -43,6 +43,7 @@ func (d nativePilotCaptureDiagnostic) GoString() string { return d.String() }
 
 type nativePilotCaptureError struct {
 	detail nativePilotCaptureDiagnostic
+	worker string // Canonical, validated structural telemetry only.
 	// A domain-owned operational error remains independently discoverable.
 	// Diagnostic metadata alone must never manufacture this cause.
 	cause error
@@ -102,7 +103,7 @@ func nativePilotCaptureInspectError(ctx context.Context, stage string, inspectio
 // ignored without changing the independently decoded operational failure.
 func nativePilotCaptureJSONDetail(raw []byte) (nativePilotCaptureDiagnostic, bool) {
 	var empty nativePilotCaptureDiagnostic
-	if len(raw) == 0 || len(raw) > 512 || !nativePilotStartupUnicode(raw) {
+	if len(raw) == 0 || len(raw) > 2048 || !nativePilotStartupUnicode(raw) {
 		return empty, false
 	}
 	d := json.NewDecoder(bytes.NewReader(raw))
@@ -110,6 +111,7 @@ func nativePilotCaptureJSONDetail(raw []byte) (nativePilotCaptureDiagnostic, boo
 		return empty, false
 	}
 	fields := map[string]string{}
+	workerSeen := false
 	for d.More() {
 		token, err := d.Token()
 		key, ok := token.(string)
@@ -119,10 +121,17 @@ func nativePilotCaptureJSONDetail(raw []byte) (nativePilotCaptureDiagnostic, boo
 		if _, exists := fields[key]; exists {
 			return empty, false
 		}
-		if key != "schema" && key != "stage" && key != "reason" && key != "cleanup" {
+		if key != "schema" && key != "stage" && key != "reason" && key != "cleanup" && key != "worker" {
 			return empty, false
 		}
 		var value json.RawMessage
+		if key == "worker" {
+			if workerSeen || d.Decode(&value) != nil {
+				return empty, false
+			}
+			workerSeen = true
+			continue // Validated independently; malformed telemetry cannot replace a known cause.
+		}
 		if d.Decode(&value) != nil || len(value) == 0 || value[0] != '"' {
 			return empty, false
 		}
@@ -166,10 +175,14 @@ func nativePilotCaptureTransportError(ctx context.Context, err error) error {
 		return known
 	}
 	var sideband nativePilotCaptureDiagnostic
+	var worker string
 	var carrier interface{ diagnosticJSON() []byte }
 	valid := false
 	if errors.As(err, &carrier) {
 		sideband, valid = nativePilotCaptureJSONDetail(carrier.diagnosticJSON())
+		if valid {
+			worker = nativePilotCaptureWorkerJSON(carrier.diagnosticJSON(), sideband)
+		}
 	}
 	if err != nil {
 		category, challenge := "", true
@@ -194,7 +207,7 @@ func nativePilotCaptureTransportError(ctx context.Context, err error) error {
 			return &nativePilotCaptureError{detail: d}
 		}
 		if err.Error() == "manual_capture_rejected" && valid && !strings.HasPrefix(sideband.reason, "challenge_") {
-			return &nativePilotCaptureError{detail: sideband}
+			return &nativePilotCaptureError{detail: sideband, worker: worker}
 		}
 	}
 	var canceled error
@@ -202,4 +215,61 @@ func nativePilotCaptureTransportError(ctx context.Context, err error) error {
 		canceled = ctx.Err()
 	}
 	return nativePilotCaptureFail(canceled, "transport", "unavailable")
+}
+
+// Capture observations may contain arrays and nulls, unlike startup receipts;
+// duplicate fields, invalid Unicode and unbounded nesting remain rejected.
+func xNativeCaptureJSON(raw []byte) bool {
+	if len(raw) == 0 || !nativePilotStartupUnicode(raw) {
+		return false
+	}
+	d := json.NewDecoder(bytes.NewReader(raw))
+	nodes := 0
+	var walk func(int) bool
+	walk = func(depth int) bool {
+		nodes++
+		if depth > 32 || nodes > 50000 {
+			return false
+		}
+		token, err := d.Token()
+		if err != nil {
+			return false
+		}
+		delim, compound := token.(json.Delim)
+		if !compound {
+			return true
+		}
+		switch delim {
+		case '{':
+			seen := map[string]bool{}
+			for d.More() {
+				key, err := d.Token()
+				name, ok := key.(string)
+				if err != nil || !ok || seen[name] {
+					return false
+				}
+				seen[name] = true
+				if !walk(depth + 1) {
+					return false
+				}
+			}
+			end, err := d.Token()
+			return err == nil && end == json.Delim('}')
+		case '[':
+			for d.More() {
+				if !walk(depth + 1) {
+					return false
+				}
+			}
+			end, err := d.Token()
+			return err == nil && end == json.Delim(']')
+		default:
+			return false
+		}
+	}
+	if !walk(0) {
+		return false
+	}
+	_, err := d.Token()
+	return err == io.EOF
 }

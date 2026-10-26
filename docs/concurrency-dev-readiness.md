@@ -18,6 +18,101 @@ roadmap are evidence, not a new list of prerequisites.
 
 ## Current implementation
 
+### Latest unified native QA: capture persisted, reader and cleanup pending (2026-10-26)
+
+One authorized run of preparation `496e9789604e4d57813453e43230466f`, source
+digest `fb36e37b92dece3f72c52a3de9753fa2417be24cc3235a4f258f31eeae506f7f`
+(reviewed changes on base `022f36d`, not a new committed revision), accepted
+startup and committed one observation with two post blocks. The owned reader
+marker overlapped the capture backend RPC. `empty_unverified` did not recur.
+
+The complete journey remains **not accepted**: foreground verification ended
+before a physical click, no post navigation completed, and application cleanup
+reported `uncertain`. The operator confirmed the marker was visible but had not
+yet been clicked. A bounded independent check found no process matching this QA
+root, the controller had exited, and the retained manifest was `clean`; those
+facts do not upgrade the final cleanup verdict. The disposable collector/instance
+is retained pending offline cleanup review. Do not reuse its session or plan.
+
+There was no retry, main login/database/runtime operation or Auto Update change.
+Offline review identified two ordering gaps. QA binds the five-second foreground
+capability before waiting for operator focus. Its controlled Close cancels the
+shared parent before Engine shutdown, allowing owner tree termination and
+broker abort RPCs to race. Native outcome logs do not identify the exact winning
+callback order. Existing synthetic abort/focus ports do not model this race.
+
+The proposed correction waits for the owned marker foreground during preparation
+before minting the unchanged short-lived capability, while retaining the original
+attempt deadline and recording overlap when the marker becomes ready. Controlled
+shutdown should close admission/work, complete broker cleanup while the owner
+transport remains usable, then dispose the owned tree and verify profile release.
+Real parent death must still trigger immediate Job containment. Logical abort,
+physical disposal and release evidence must remain distinguishable; absence of a
+process is insufficient to clear uncertain state. These corrections are reviewed,
+not implemented in this increment.
+
+This does not block committing the default-off code or continued offline work.
+Cleanup and reader acceptance still gate activation for actual main-dev use.
+Preserve the demonstrated native capture result; do not reopen deferred renewal
+as a prerequisite. Further native execution needs new explicit permission. See the
+[scoped result and containment](x-unified-native-qa-fb36e37b.md).
+
+### Capture readiness and structural diagnostics corrected offline (2026-10-26)
+
+The private native capture adapter now takes its default hydration wait from
+`captureHydrationMS` in `internal/engine/x-manual-timing-policy.json`: 3,000 ms,
+validated in Go and Node within 1,000–45,000 ms. This is a capture readiness
+budget, independent of startup evidence age. Each request clips it to the
+original authorization's remaining time; neither a reader action nor telemetry
+can reset the 60-second attempt. Explicit payload types are validated before
+numeric clamping. Login/account/ownership and protected-cookie rules are unchanged.
+
+The worker's empty/invalid capture evidence now survives the adapter, correlated
+pipe, Engine result and final QA first-failure report. Optional `worker` metadata
+distinguishes `snapshot_unavailable`, `no_posts` and `observation_invalid`, with
+hydration/elapsed durations and at most two structural samples: candidate and
+rejection counts, nullable readiness/UI flags, and four fixed rejection categories.
+UI flags are observations, never login/account authority. URLs, IDs, post text,
+cookie values, tokens and arbitrary exception strings are excluded. The terminal
+diagnostic envelope is capped at 2 KiB (worker section 1.5 KiB); progress retains
+its 512-byte bound. Malformed optional telemetry cannot replace the known
+operational cause, grant a retry or enter observation content. Cleanup stays
+independent and report snapshots do not expose mutable first-failure state.
+
+Offline regressions reproduce a post appearing after 2.3 seconds: the former
+one-second wait fails, while the configured wait captures it. A separate real
+worker/parser fixture reports rejected identity candidates. No-snapshot,
+privacy, malformed metadata, deadline clipping, first-cause, Engine/Store replay
+and actual Node-to-Go pipe tests pass. Actual-main synthetic journeys and four
+build variants pass in `x-qa-entry-50fcc2cc704f420d953194ca1fe3881e.log.txt`;
+both legacy native staging modes compile without executing native tests.
+The accountless pipe regression also uses a sentinel argument so importing a
+driver cannot activate its direct-CLI entry.
+
+These results establish the corrections and diagnostic propagation, not the
+cause of the previous native failure or native acceptance of this patch. No QA
+profile, session transfer, main login/database/runtime or Auto Update setting was
+accessed or changed. A fresh native attempt still requires explicit permission
+and a new runtime plan; the consumed plan remains unusable.
+
+### First unified native QA: startup accepted, capture rejected (2026-10-26)
+
+The 30-file unified increment was reviewed and pushed as
+`022f36d857513849b9e1331cce0bc5a86da0462b`; origin/main matched. One newly
+authorized retained-QA attempt then accepted native startup and observed owned
+reader-marker/capture-backend overlap. Capture failed first with
+`worker / empty_unverified`; no observation was committed, and foreground/post
+navigation remained unverified. The subsequent foreground failure did not
+overwrite the capture cause. This trial does not close native acceptance.
+
+Complete owned cleanup was verified, the retained manifest returned to `clean`,
+the reader profile was preserved and the disposable collector root was removed.
+There was no retry or main login/database/runtime/Auto Update change. The next
+work was offline worker/parser/page-readiness diagnosis using the
+[bounded trial evidence](x-unified-native-qa-022f36d.md), without reopening the
+completed shared-ownership integration or renewal scope. A new native run needs
+new permission; the consumed runtime plan must not be reused.
+
 ### Unified retained ownership and complete offline journey (2026-10-26)
 
 The working-tree increment implements Astra's cohesive integration unit. Legacy
@@ -533,9 +628,10 @@ Node uses private WeakMap branding. Operational failure codes and observational
 metadata are now independent: the correlated failure reply carries its existing
 `code` plus an optional `diagnostic` envelope with schema
 `aku.capture-diagnostic.v1`, `stage`, `reason` and `cleanup`. The generic fixture
-bridge only carries a bounded opaque payload (at most 512 bytes); the capture
-adapter validates its version, exact unique fields, string types and closed
-catalogs. Unknown/malformed metadata is ignored without changing the operational
+bridge only carries a bounded opaque payload (originally 512 bytes, now 2 KiB
+for the optional structural worker summary); progress remains limited to 512
+bytes. The capture adapter validates its version, unique fields, types and closed
+catalogs. The optional worker section is validated independently. Unknown/malformed metadata is ignored without changing the operational
 failure. A diagnostic claiming challenge cannot create challenge/pause authority;
 a contradictory diagnostic cannot change a challenge's independently decoded
 category. The old `manual_capture_detail_<stage>__<reason>__<cleanup>` code reader

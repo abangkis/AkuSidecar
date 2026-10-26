@@ -21,6 +21,7 @@ test('canonical policy is closed, safe-integer validated, and immutable', () => 
   assert.equal(MANUAL_TIMING.evidenceMaxAgeMS, 6000);
   assert.equal(MANUAL_TIMING.attemptAuthorizationMaxMS, 60000);
   assert.equal(MANUAL_TIMING.collectorHomeReadyMS, 45000);
+  assert.equal(MANUAL_TIMING.captureHydrationMS, 3000);
   assert.ok(Object.isFrozen(MANUAL_TIMING));
   assert.ok(Object.isFrozen(parsed));
 });
@@ -34,6 +35,8 @@ test('policy parser rejects malformed, open, missing, and unsafe configuration w
     p => { p.startupTotalMS = Number.MAX_SAFE_INTEGER + 1; },
     p => { p.settingsFallbackMS = 600001; },
     p => { p.rendezvousMS = 0; },
+    p => { p.captureHydrationMS = 999; },
+    p => { p.captureHydrationMS = 45001; },
     p => { p.schema = 'other'; },
   ]) {
     const value = clone(); mutate(value); invalid(value);
