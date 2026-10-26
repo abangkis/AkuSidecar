@@ -29,7 +29,7 @@ if(mode!==undefined){
 }
 const manifest = { schema: 'aku.native-manual-chrome.staging.v1', copied: [], extracted: [] };
 // Shared imported code must be pinned even for the named-file staging modes.
-manifest.moduleDependencies=['go.mod','go.sum',...['internal/ownedprocess','internal/ownedrpc'].flatMap(directory=>
+manifest.moduleDependencies=['go.mod','go.sum',...['internal/ownedprocess','internal/ownedrpc','internal/ownedprofile'].flatMap(directory=>
   fs.readdirSync(path.join(project,directory)).filter(file=>file.endsWith('.go')&&!file.endsWith('_test.go')).sort().map(file=>`${directory}/${file}`)
 )].map(source=>({source,sha256:hash(fs.readFileSync(path.join(project,source)))}));
 if(mode!==undefined){

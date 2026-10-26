@@ -134,22 +134,22 @@ func (c *Client) Call(ctx context.Context, op string, fields map[string]any, pro
 	}
 }
 
-// Deliver ignores unknown, duplicate and retired correlations. The framing layer
-// has already bounded the result. Diagnostics have their independent byte limit.
-func (c *Client) Deliver(id int64, reply Reply) {
-	c.mu.Lock()
-	call, ok := c.pending[id]
-	if ok {
-		delete(c.pending, id)
-	}
-	c.mu.Unlock()
-	if !ok {
-		return
-	}
+// Deliver ignores unknown, duplicate and retired correlations. Its return is
+// local correlation accounting only. Framing/domain validation stays with callers.
+func (c *Client) Deliver(id int64, reply Reply) bool {
 	if len(reply.Diagnostic) > 512 {
 		reply.Diagnostic = nil
 	}
-	call.reply <- reply
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	call, ok := c.pending[id]
+	if ok {
+		// Publish the buffered terminal reply before retiring its correlation.
+		// Close must not observe retirement before the reply becomes readable.
+		call.reply <- reply
+		delete(c.pending, id)
+	}
+	return ok
 }
 
 func (c *Client) Progress(id int64, raw []byte) {

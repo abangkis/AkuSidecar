@@ -270,6 +270,35 @@ func TestDeliveredReplySurvivesImmediateEOF(t *testing.T) {
 	}
 }
 
+func TestConcurrentCloseCannotHideAcceptedTerminalReply(t *testing.T) {
+	for i := 0; i < 200; i++ {
+		w, requests := captureWriter()
+		c := New(w)
+		type result struct {
+			reply Reply
+			err   error
+		}
+		done := make(chan result, 1)
+		go func() { r, err := c.Call(context.Background(), "inspect", nil, nil); done <- result{r, err} }()
+		q := receive(t, requests)
+		accepted := make(chan bool, 1)
+		if i%2 == 0 {
+			accepted <- c.Deliver(q.ID, Reply{Code: "first_failure"})
+		} else {
+			go func() { accepted <- c.Deliver(q.ID, Reply{Code: "first_failure"}) }()
+		}
+		c.Close()
+		out := receive(t, done)
+		delivered := receive(t, accepted)
+		if delivered && (out.err != nil || out.reply.Code != "first_failure") {
+			t.Fatal("close hid accepted terminal reply")
+		}
+		if !delivered && !errors.Is(out.err, ErrClosed) {
+			t.Fatal("retired correlation produced a reply")
+		}
+	}
+}
+
 func TestFailedWriteClosesBeforeQueuedWrite(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	var writes atomic.Int32

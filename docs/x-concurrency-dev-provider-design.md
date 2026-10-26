@@ -1,8 +1,62 @@
 # X manual pilot: development provider integration
 
 Prepared 2026-10-25, after native capture acceptance on `5964a24`.
-Status: shared ownership/transport extraction implemented; provider construction,
-application registration and runtime activation remain pending.
+Status: shared ownership/transport extraction and the private application owner
+factory/profile lease are implemented. Packaged native driver composition,
+application routing/status/stop registration and runtime activation remain pending.
+
+## Application owner factory and profile lease (2026-10-26)
+
+`internal/ownedprofile` supplies an OS-held lease over existing canonical root
+and profile directories. Expected physical IDs are checked before the reserved
+lock file is opened. Directory pins deny delete sharing, and an exclusive empty
+`.aku-x-manual.lock` stays held for the lease lifetime. Content remains writable;
+the pinned root/profile cannot be renamed. Closing retains the empty lock file
+to avoid a lock-file replacement race. This is an application-root lease, not
+account enrollment or compatibility with the retained-QA manifest lock. A future
+retained-QA adapter must hold its existing lease as well; descriptors alone do
+not authorize sharing that profile.
+
+The Windows/dev-only `startXApplicationOwner` is private and disabled by default.
+It verifies and holds the explicitly supplied asset files/digests before taking
+profile leases. It uses the existing `appshell.StartOwnedCommand` suspended-start,
+launcher-lifetime and per-tree Job implementation instead of starting Node and
+assigning it after readiness. The driver must answer a strict nonce-bound
+`aku.x.application-owner.v1` handshake. Only existing manual owner operations
+can use the private correlated pipe. No public decoder, CLI provider selection,
+environment opt-in, retained profile discovery or real-session transfer is added.
+
+The worker receives a limited Windows environment and dedicated temporary root;
+it cannot inherit `NODE_OPTIONS`/`NODE_PATH` or Node startup overrides that execute
+code before the pinned driver. Complete native driver packaging remains required:
+the production bundle/import graph must be pinned by trusted composition, not
+selected from a frontend path or treated as trusted because a handshake passed.
+This increment tests a standalone synthetic driver and supplies no production
+native driver artifact.
+
+Startup request cancellation and the Sidecar/owner lifetime are distinct. The
+single configured startup budget is clipped by the request and parent contexts;
+asset/lease phases cannot reset it. Completing/canceling a successful startup
+request does not retire the still-owned reader. Parent cancellation, pipe loss
+or explicit full-owner disposal closes admission and the exact owned Job.
+Existing manual broker abort remains responsible for preserving a reader during
+ordinary pilot stop; full-owner disposal is not a substitute for that operation.
+
+A PID announcement is only a candidate. `bindRole` checks creation/image,
+process parent links, exact Job membership, lease scope, physical directory pins
+and collector window state through the existing Windows adapter. Role/collector
+facts remain separate from account/login evidence and cannot issue a Store
+permit. Leases and asset/role pins are released only after Job cleanup and the
+pipe reader are verified complete. The first cleanup cause is retained. An
+unverified post-spawn startup can return a quarantined owner plus an error; its
+leases stay held, with no automatic retry or in-process recovery proof. The
+application must retain that owner until host disposal/recovery is explicit.
+
+Run `scripts/test-x-application-owner.ps1`. It uses new synthetic directories,
+an accountless Node driver and hidden test executables as browser stand-ins.
+Its OS binding acceptance is not native Chrome/account acceptance. The helper
+also runs existing application session/worker-command regressions. Symlink
+cases remain unverified when Windows symlink privilege is unavailable.
 
 ## Extraction checkpoint (2026-10-25)
 
@@ -28,9 +82,9 @@ the native owner adapter, rather than being replaced with status flags.
 The Windows X owner adapter now builds with `auth_session_dev` without the
 fixture tag. Its transport and held-profile scope arrive through a private
 trusted Go port, not a concrete fixture bridge or JSON flag. The QA bridge
-implements that port with its existing QA-root policy; the application owner
-factory still needs its own lease-backed implementation. This is a compiled
-adapter, not a registered or available application provider.
+implements that port with its existing QA-root policy. The application factory
+in the newer checkpoint above now supplies the lease-backed implementation.
+Neither compiled adapter registers an available application provider by itself.
 
 Named-file staging records hashes of the imported shared-package sources and
 module files. Prepared plans include those dependencies before their existing
@@ -67,8 +121,8 @@ flowchart TD
 
 | Responsibility | Existing implementation to reuse | Provider integration delta |
 | --- | --- | --- |
-| Process tree and private RPC | `internal/ownedprocess`, `internal/ownedrpc`, with existing fixture wrappers | Shared primitives are extracted. Supply the application launcher/handshake and profile-lease composition; keep fixture grants, fault hooks and loopback scenarios outside the dev provider. |
-| Native Windows ownership | `internal/engine/development_x_manual_pilot_owner_windows.go` | The adapter now accepts the private transport/scope port. Implement that port from the application owner, preserving image, creation, parent, Job, directory and complete-window checks. |
+| Process tree and private RPC | `internal/ownedprocess`, `internal/ownedrpc`, `internal/ownedprofile`, application owner factory | Shared primitives, launcher/handshake and physical leases are implemented. Package the minimum native driver and register the application composition; keep fixture grants/fault hooks outside it. |
+| Native Windows ownership | `internal/engine/development_x_manual_pilot_owner_windows.go` | The private application owner now implements the transport/lease port and verifies announced role candidates. Wire that owner into the existing startup/broker path without changing its proof checks. |
 | Enrollment and two-cookie derivation | Retained setup recipe and `scripts/auth-session-fixture/x-native-metadata-probe-driver.mjs` | Move the minimum reviewed owner operations behind a packaged private driver. Preserve startup-document binding, exact two-cookie manifest and one-use consent. Do not expose the full QA command set. |
 | Startup authority | `development_native_pilot_broker.go`, `development_x_manual_pilot_owner.go`, `development_native_pilot_adapter.go` | Construct existing typed ports from the owned provider. Keep source provenance private and fixed by code. |
 | Concurrent borrowing/capture | `development_native_pilot_runtime.go`, `internal/collection/manual_concurrent_session.go` | Bind the two Managers and the exact admitted collector backend; reuse reader borrow rather than exclusive replacement. |

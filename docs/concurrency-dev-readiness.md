@@ -17,6 +17,47 @@ roadmap are evidence, not a new list of prerequisites.
 
 ## Current implementation
 
+### Private application owner construction (2026-10-26)
+
+The next provider increment adds the Windows/dev-only application owner factory
+and physically pinned existing-profile lease. Asset verification precedes lease
+acquisition; disabled/invalid construction cannot start the worker. The factory
+reuses the application's suspended launcher and Job lifetime guarantees, answers
+a strict nonce handshake through the shared pipe, isolates Node startup
+environment overrides, and verifies announced role PIDs against actual OS facts.
+No account receipt, Store authority, native provider registration or runtime
+activation follows from constructing those resources.
+
+Startup request lifetime is separate from owner lifetime, so a completed request
+cannot close a reader that is still owned by Sidecar. Full-owner disposal first
+closes admission, then verifies owned process/pipe cleanup before releasing pins
+and leases. Unknown cleanup keeps the profiles fenced; it is not a retry signal.
+See the [construction contract and limits](x-concurrency-dev-provider-design.md#application-owner-factory-and-profile-lease-2026-10-26).
+
+Accountless run `482eb41b1c304dffa8bc3adc94af383a` passed four lease groups,
+eight application-factory groups (ten nested invalid-start/RPC cases) and twelve
+existing application session/worker-command groups. It covers wrong asset/pins,
+wrong/extra/duplicate handshake fields, stalled readiness, parent cancellation,
+effective Node preload rejection, separate startup/owner lifetime, private
+operation limits, role binding, protocol loss and verified lease reacquisition.
+The fake-browser helper is deliberately skipped outside its child invocation.
+Symlink rejection subcases could not execute without Windows symlink privilege.
+Evidence: `runtime/qa/auth-session-sidecar/x-application-owner-482eb41b1c304dffa8bc3adc94af383a.log.txt`.
+
+Main regression run `93a092c5157f4255bb645285fb454532` passed four build variants,
+all ten actual-main synthetic scenarios, early config/database rejection and
+Coordinator regressions. No browser, retained/main profile, X network, real
+transfer, user database/runtime or Auto Update setting was accessed or changed.
+These are construction/regression results, not another native capture run.
+
+Shared-core compatibility run `15ef359855404f8eb3b7e520450e1999` also passed the
+seventeen RPC/OS ownership cases, synthetic Engine/Store scenarios, accountless
+Node/Go diagnostics and both named-file staging modes. Staging now fingerprints
+the imported profile-lease package as well. The additional RPC regression orders
+terminal publication and correlation retirement atomically against concurrent
+close, so an accepted operational cause cannot disappear during owner teardown.
+Its boolean delivery result is local bookkeeping and grants no session authority.
+
 ### Shared Windows ownership and private transport (2026-10-25)
 
 The first provider integration increment extracts reusable Windows OS facts and
@@ -839,8 +880,9 @@ remaining work is provider integration and isolated activation validation:
 1. Promote the owned Windows/profile lifecycle from QA-only construction into a
    development provider, with explicit opt-in, status, stop and source-route
    arbitration. Shared OS/pipe primitives and the dev-tag owner adapter have been
-   extracted; the application launcher/profile lease and factory remain unwired.
-   A boolean alone cannot activate them safely.
+   extracted, and private application owner/lease construction is implemented.
+   The packaged native driver and application routing/status/stop remain unwired;
+   a boolean alone cannot activate the provider safely.
    The [provider implementation plan](x-concurrency-dev-provider-design.md)
    maps the existing code, extraction boundary, application construction order,
    source occupancy and stop/rollback responsibilities. Its extraction checkpoint

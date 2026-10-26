@@ -57,6 +57,12 @@ func (p *OwnedCommand) Terminate() {
 }
 func (p *OwnedCommand) CloseForRetry(ctx context.Context) error {
 	p.Terminate()
+	return p.WaitForCleanup(ctx)
+}
+
+// WaitForCleanup observes completed owned-tree cleanup without initiating a new
+// termination policy. Callers retain profile pins until this returns success.
+func (p *OwnedCommand) WaitForCleanup(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
