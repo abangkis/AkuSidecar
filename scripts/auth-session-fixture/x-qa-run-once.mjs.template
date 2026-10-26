@@ -1,0 +1,104 @@
+// Task-owned, one-shot operator controller. No cookie/body values cross this pipe.
+import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {createHash,randomBytes} from 'node:crypto';
+import {spawn,execFileSync} from 'node:child_process';
+import {createInterface} from 'node:readline';
+
+@@CAPTURE_START_GATE@@
+
+const root=path.dirname(fileURLToPath(import.meta.url));
+const project=path.resolve(root,'../../..');
+const [grant,url]=process.argv.slice(2);
+if(grant!=='--transfer-authorized'||process.argv.length!==4||!/^https:\/\/x\.com\/[A-Za-z0-9_]{1,15}\/status\/[0-9]{1,20}$/u.test(url??''))throw new Error('Explicit one-shot authorization and canonical post required');
+if(path.basename(root)!=='@@PREPARED_ID@@'||fs.realpathSync(root).toLowerCase()!==root.toLowerCase())throw new Error('Prepared scope rejected');
+const commit='@@COMMIT@@';
+if(execFileSync('git',['rev-parse','HEAD'],{cwd:project,encoding:'utf8'}).trim()!==commit)throw new Error('Approved commit drift');
+const review=JSON.parse(fs.readFileSync(path.join(root,'prepared-review.json'),'utf8'));
+const sha=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+const expectedSourceSHA256='@@SOURCE_SHA@@';
+if(review.sourceSHA256!==expectedSourceSHA256)throw new Error('Reviewed source mismatch');
+const sourcePaths=execFileSync('git',['ls-files','--cached','--others','--exclude-standard','--','cmd','internal','go.mod','go.sum'],{cwd:project,encoding:'utf8'}).trim().split(/\r?\n/u).filter(Boolean).sort();
+const digest=createHash('sha256');
+for(const file of sourcePaths){digest.update(file+'\0');digest.update(createHash('sha256').update(fs.readFileSync(path.join(project,file))).digest());}
+if(digest.digest('hex')!==expectedSourceSHA256)throw new Error('Reviewed source drift');
+
+for(const asset of [...Object.values(review.assets),review.runtimePlan])if(sha(asset.path)!==asset.sha256)throw new Error('Prepared asset drift');
+if(review.controller?.sha256!==sha(fileURLToPath(import.meta.url)))throw new Error('Prepared controller drift');
+const runtime=JSON.parse(fs.readFileSync(review.runtimePlan.path,'utf8'));
+if(runtime.readerSource!=='retained-qa'||Object.values(runtime.reader).some(Boolean)||fs.existsSync(runtime.database))throw new Error('Fresh isolated runtime plan required');
+const claim=fs.openSync(path.join(root,'execution.claim'),'wx',0o600);
+fs.writeFileSync(claim,JSON.stringify({commit,sourceSHA256:expectedSourceSHA256,transfersAtMost:1,retry:false})+'\n');fs.closeSync(claim);
+const events=path.join(root,'execution-events.jsonl');fs.writeFileSync(events,'',{flag:'wx'});
+const temp=path.join(root,'execution-tmp');fs.mkdirSync(temp);
+const began=Date.now();let finalReport,closed=false,exitCode,signal,parseErrors=0,stderrBytes=0,marker=false,postPending=false,terminalReason,readerGateResult;
+const orderingAbort=new AbortController();let readerGate;
+let child;
+const record=value=>{const item={elapsedMS:Date.now()-began,...value};fs.appendFileSync(events,JSON.stringify(item)+'\n');process.stdout.write(JSON.stringify(item)+'\n');};
+const safeReport=r=>({synthetic:r?.synthetic,nativeQualified:r?.nativeQualified,
+  status:r?.status,observations:r?.observations,blocks:r?.blocks,evidence:r?.evidence});
+const send=value=>{if(child?.stdin.writable&&!closed)child.stdin.write(JSON.stringify(value)+'\n');};
+const requestId='broker_'+randomBytes(16).toString('hex');
+child=spawn(review.assets.application.path,['--dev','--dev-session-reuse=native-x-manual-qa','--dev-qa-pilot-plan='+review.runtimePlan.path],
+  {cwd:runtime.root,env:{...process.env,TEMP:temp,TMP:temp,NODE_OPTIONS:'',NODE_PATH:''},windowsHide:true,stdio:['pipe','pipe','pipe']});
+const input=createInterface({input:child.stdout});
+input.on('line',line=>{
+  if(line.length>32768){parseErrors++;terminalReason??='output_limit';orderingAbort.abort();child.stdin.end();return;}
+  let event;try{event=JSON.parse(line);}catch{parseErrors++;return;}
+  if(!['qa_ready','qa_start','qa_open_post','qa_settle','qa_stop','qa_closed'].includes(event.event)){parseErrors++;return;}
+  record({event:event.event,ok:event.ok,report:safeReport(event.report),...(event.failure?{failure:event.failure}:{})});
+  if(event.ok===false&&event.event!=='qa_closed'){terminalReason??='operation_failed';orderingAbort.abort();postPending=false;child.stdin.end();return;}
+  switch(event.event){
+    case 'qa_ready':send({op:'start',acknowledgeLimitations:true,allowOneSessionDerivation:true});break;
+    case 'qa_start':{
+      if(readerGate)break;
+      const remaining=event.report?.status?.remainingMs;
+      if(!Number.isSafeInteger(remaining)||remaining<=0||remaining>60000){terminalReason??='attempt_unavailable';child.stdin.end();break;}
+      readerGate=createCaptureStartGate({deadlineMS:Date.now()+remaining,signal:orderingAbort.signal,
+        readStatus:async({signal})=>{
+          const response=await fetch('http://127.0.0.1:'+runtime.port+'/qa/status',{signal});
+          if(!response.ok)throw new Error('QA status unavailable');
+          return response.json();
+        },
+        openReader:({captureEnteredMS})=>{
+          if(closed||!child.stdin.writable)throw new Error('QA pipe unavailable');
+          record({event:'capture_gate_opened',captureEnteredMS});
+          postPending=true;send({op:'open_post',request:{requestId,source:'x',url}});
+        }});
+      void readerGate().then(result=>{
+        readerGateResult=result;
+        if(!result.opened&&!closed){terminalReason??=result.reason;record({event:'capture_gate_rejected',reason:result.reason});orderingAbort.abort();child.stdin.end();}
+      });
+      break;
+    }
+    case 'qa_open_post':postPending=false;send({op:'settle'});break;
+    case 'qa_settle':send({op:'stop'});break;
+    case 'qa_stop':child.stdin.end();break;
+    case 'qa_closed':orderingAbort.abort();closed=true;postPending=false;finalReport=safeReport(event.report);break;
+  }
+});
+child.stderr.on('data',bytes=>{stderrBytes+=bytes.length;if(stderrBytes>65536){terminalReason??='stderr_limit';orderingAbort.abort();child.stdin.end();}});
+child.on('error',()=>{terminalReason??='launch_failed';orderingAbort.abort();});
+let polling=false;
+const poll=setInterval(async()=>{
+  if(!postPending||marker||polling)return;polling=true;
+  try{
+    const response=await fetch('http://127.0.0.1:'+runtime.port+'/qa/status',{signal:AbortSignal.timeout(1000)});
+    if(response.ok){const status=await response.json();if(status?.evidence?.stages?.some(row=>row.stage==='reader_marker_ready')){marker=true;record({event:'reader_marker_ready_click_now'});}}
+  }catch{}finally{polling=false;}
+},100);
+const deadline=setTimeout(()=>{terminalReason??='controller_deadline';orderingAbort.abort();child.stdin.end();setTimeout(()=>{if(exitCode===undefined)child.kill();},8000).unref();},135000);
+child.on('exit',(code,sig)=>{exitCode=code;signal=sig;});
+child.on('close',()=>{
+  orderingAbort.abort();clearInterval(poll);clearTimeout(deadline);
+  const cleanup=finalReport?.evidence?.cleanup??'unknown';
+  const passed=!terminalReason&&readerGateResult?.opened===true&&exitCode===0&&cleanup==='verified'&&!finalReport?.evidence?.firstFailure&&
+    finalReport?.observations>0&&finalReport?.blocks>0&&finalReport?.evidence?.overlap==='observed'&&
+    finalReport?.evidence?.stages?.some(row=>row.stage==='reader_navigation_completed');
+  const result={commit,sourceSHA256:expectedSourceSHA256,sourceDirty:review.sourceDirty,passed,exitCode,signal,terminalReason:terminalReason??null,parseErrors,stderrBytes,cleanup,readerGate:readerGateResult??null,
+    report:finalReport??null,retry:false,mainRuntimeChanged:false,autoUpdateChanged:false};
+  fs.writeFileSync(path.join(root,'execution-result.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});
+  record({event:'controller_complete',passed,cleanup,exitCode,retry:false});
+  process.exitCode=passed?0:2;
+});

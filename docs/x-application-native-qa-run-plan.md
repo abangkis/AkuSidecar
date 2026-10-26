@@ -2,11 +2,13 @@
 
 ## Current readiness
 
-The published base is `29d2d14726af9a22a9c433495c1c32a47af6202b`. One native
-trial on its reviewed source committed one observation/two post blocks, but did
-not accept reader foreground or final cleanup. The current working-tree increment
-corrects foreground preparation and controlled Close ordering offline. It has
-not executed natively; native execution remains separately gated.
+The published base is `d24d882969a0817649c56b1a3d7345fbf6b8bc6e`. Preparation
+`1617147ae968446cb6887b138d4edd7f`, with the separately pinned uncommitted
+capture-start controller, passed one explicitly authorized native execution:
+startup, one observation/two post blocks, reader foreground/post navigation,
+observed backend overlap and full cleanup. See [the accepted journey](x-unified-native-qa-1617147.md).
+The earlier 856c7939 trial's missing-overlap verdict is unchanged. Native execution
+remains separately gated; never reuse a consumed preparation or permission.
 
 `scripts/prepare-x-application-qa.mjs` compiles a development-only application
 image, builds the sealed owner package and fingerprints those artifacts plus
@@ -29,14 +31,35 @@ nested runtime plan is suitable for the pilot selector. Git base, dirty-source
 status, source digest and binary/package hashes identify the prepared artifacts.
 Later code/package changes require new preparation. Preparing grants no consent.
 
+Preparation also renders `run-once.mjs` from the canonical controller template,
+embeds the exact offline-tested capture-start gate and syntax-checks it without
+execution. `prepared-review.json.controller` records its path, SHA256, ordering
+and controller-source dirty state separately from the Go source graph. Before
+claiming execution, the generated controller checks its own hash and the
+application/Node/Chrome/driver/runtime-plan pins. It never loads mutable worktree
+controller code at runtime. Run the accountless regressions with:
+
+```powershell
+.\scripts\test-x-qa-entry.ps1 -ControllerOnly
+```
+
+Preparation `1617147ae968446cb6887b138d4edd7f` contains the new uncommitted
+controller and unchanged d24d882 Go source. Its later, separately approved native
+execution passed and consumed its claim. Verified cleanup removed only its new
+collector. After commit/source changes, prepare again rather than editing its
+pins or executing an obsolete package. No retry is authorized.
+
 Historical preparation `21edfb1e39c24536bf4a997a4016878e` was review-only before
 the shared binding existed. Do not reuse it as a runtime plan.
 
 Preparations `2bd6390be6b04ab98634ce0732e3c0b3` and
-`496e9789604e4d57813453e43230466f` were each consumed by one explicitly authorized
+`496e9789604e4d57813453e43230466f`, and
+`856c7939903641b59641c591e8b3bd9d` were each consumed by one explicitly authorized
 native attempt. Never rerun them or reset their execution claims. The second
 instance/collector remains retained because application cleanup was uncertain;
 the new source correction does not retroactively upgrade its cleanup verdict.
+The third attempt verified cleanup and its new disposable collector was removed;
+its overlap acceptance remains open. See [the third attempt](x-unified-native-qa-d24d882.md).
 See [the recorded outcome](x-unified-native-qa-fb36e37b.md). Prepare a fresh package
 after the current source changes; no new native execution is authorized here.
 
@@ -107,8 +130,12 @@ profile release remain distinct facts; no missing process alone proves cleanup.
    precede the one-use explicit `start` consent. Reuse the existing enrollment,
    seed, paired startup verification, Store permit and capture path. Do not
    reopen deferred identity renewal or rotation qualification.
-4. Tell the operator before launch to click the marker once when visible. Issue
-   one `open_post` for a reviewed canonical X post while capture is active. The
+4. Tell the operator before launch to click the marker once when visible. Poll
+   bounded status after startup acceptance and require `capture_entered` with
+   no `capture_returned` before issuing one `open_post` for the reviewed canonical
+   X post. Active status alone is insufficient. Stop without retry if the capture
+   interval is missed, evidence is unavailable, the attempt fails, status stalls
+   or cancellation/deadline occurs. Polling cannot renew backend authority. The
    owned marker becomes observable during preparation, before issuing a ticket.
    Wait for foreground within preparation and the original attempt's remaining
    time, then bind a fresh five-second capability, verify foreground and navigate.
@@ -119,6 +146,8 @@ profile release remain distinct facts; no missing process alone proves cleanup.
    post navigation and observed backend-execution overlap. An `active` pilot
    state alone is not proof that a backend call overlapped reader opening.
    If overlap was not observed, report it as unproven; do not retry automatically.
+   A status sample can precede backend return while marker creation follows it;
+   the sequencing gate does not replace the final recorded-event overlap check.
 6. Stop on the first operational failure, challenge, invalidation or deadline.
    Preserve its first cause separately from cleanup errors. Stop revokes the
    collector while keeping the reader under Sidecar ownership; then close the

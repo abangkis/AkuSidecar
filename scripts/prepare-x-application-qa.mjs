@@ -6,6 +6,7 @@ import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createServer} from 'node:net';
 import {buildNativeOwnerPackage} from './build-x-native-owner.mjs';
+import {renderXQAController} from './auth-session-fixture/x-qa-controller-render.mjs';
 
 const project=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 if(process.argv.length!==2||process.platform!=='win32')throw new Error('Windows preparation takes no arguments; native execution is unavailable');
@@ -48,10 +49,15 @@ await writeFile(requestPath,JSON.stringify({schema:'aku.x.application-qa-materia
 // config, Store, owner factory or browser. The fixed retained source is deferred.
 const materialized=JSON.parse(command(image,['--dev','--dev-qa-pilot-prepare='+requestPath]));
 if(materialized.event!=='qa_plan_prepared'||materialized.executionApproved!==false||materialized.browserStarted!==false||materialized.retainedProfileInspected!==false)throw new Error('Preparation-only receipt rejected');
+const controllerPath=join(root,'run-once.mjs');
+await writeFile(controllerPath,await renderXQAController({id,commit:sourceCommit,sourceSHA256}),{flag:'wx'});
+command(node,['--check',controllerPath]); // Parse only; no controller execution or claim.
+const controller={path:controllerPath,sha256:await sha256(controllerPath),ordering:'capture_entered_before_open_post',
+  sourceDirty:command('git',['status','--porcelain','--untracked-files=normal','--','scripts/auth-session-fixture/x-qa*','scripts/prepare-x-application-qa.mjs'])!==''};
 const plan={schema:'aku.x.application-qa-preparation.v2',sourceCommit,sourceDirty,sourceSHA256,
   preparationOnly:true,executionApproved:false,executionReady:false,runtimePlanMaterialized:true,
   readiness:'offline_ready_pending_native_execution_authorization',blockers:[],
-  runtimePlan:{path:materialized.plan,sha256:materialized.sha256},assets,
+  runtimePlan:{path:materialized.plan,sha256:materialized.sha256},assets,controller,
   reader:{selection:'existing_retained_qa_in_place',
     manifest:join(project,'runtime','qa','auth-session-sidecar','x-retained-native-qa.json'),
     inspected:false,leaseAcquired:false,profileCopied:false},

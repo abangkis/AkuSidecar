@@ -1,6 +1,6 @@
-param([switch]$StoreOnly,[switch]$StagingOnly)
+param([switch]$StoreOnly,[switch]$StagingOnly,[switch]$ControllerOnly)
 $ErrorActionPreference='Stop'
-if($StoreOnly -and $StagingOnly){throw 'Select at most one focused validation stage.'}
+if(@($StoreOnly,$StagingOnly,$ControllerOnly).Where({[bool]$_}).Count -gt 1){throw 'Select at most one focused validation stage.'}
 $project=(Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 $parent=Join-Path $project 'runtime\qa\auth-session-sidecar'
 $id=[guid]::NewGuid().ToString('N')
@@ -43,6 +43,11 @@ try{
  $env:AKU_CHROME_FIXTURE_ROOT=$root
  Write-Output ('Offline isolated QA entry: '+$id) | Tee-Object -FilePath $log
  if($StagingOnly){Invoke-QAStagingCompile;Write-Output ('Evidence: '+$log);return}
+ if(!$StoreOnly){
+  & $env:AKU_CHROME_FIXTURE_NODE --test --test-timeout=15000 scripts/auth-session-fixture/x-qa-capture-start-gate.test.mjs scripts/auth-session-fixture/x-qa-controller-render.test.mjs 2>&1 | Tee-Object -FilePath $log -Append
+  if($LASTEXITCODE -ne 0){throw 'Accountless one-shot QA controller ordering regressions failed.'}
+ }
+ if($ControllerOnly){Write-Output 'PASS: capture-start sequencing and generated controller only; no application/browser/profile/transfer execution.' | Tee-Object -FilePath $log -Append;Write-Output ('Evidence: '+$log);return}
  & go test ./internal/store -run '^(TestStoreRecordsTheRuntimeVersionThatLastOpenedData|TestStoreRejectsDataWrittenByANewerRuntime|TestRuntimeVersionComparisonRecognizesDowngradesAndPrereleases|TestDatabaseCompatibilityClassification)$' -count=1 -timeout=60s -v 2>&1 | Tee-Object -FilePath $log -Append
  if($LASTEXITCODE -ne 0){throw 'Ordinary Store runtime-marker/compatibility regression failed.'}
  if($StoreOnly){Write-Output ('Evidence: '+$log);return}

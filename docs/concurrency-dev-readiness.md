@@ -18,9 +18,73 @@ roadmap are evidence, not a new list of prerequisites.
 
 ## Current implementation
 
+### Native capture-start QA passes the complete selected gate (2026-10-26)
+
+One explicitly authorized execution of preparation
+`1617147ae968446cb6887b138d4edd7f` passed startup, persisted capture, reader
+foreground/post navigation, observed capture-backend overlap and full cleanup.
+It used unchanged d24d882 Go source plus the separately pinned, uncommitted
+controller. Reader request followed capture entry by 44 ms; marker, foreground
+and navigation completion all occurred before capture returned. The strict
+overlap predicate was unchanged. One observation/two post blocks persisted.
+
+The controller finished in 17.81 seconds without retry. Independent scoped
+verification found no matching QA processes and a clean retained-reader manifest;
+only the new disposable collector was removed. Reader profile, older retained
+collector, main login/database/runtime and Auto Update were preserved. The
+preparation/permission is consumed. See [the accepted bounded journey](x-unified-native-qa-1617147.md).
+This closes the prior QA overlap gate, not general production qualification or
+main-dev activation. No further native execution is authorized by this result.
+
+### Capture-start sequencing implemented offline (2026-10-26)
+
+Fresh preparation now renders and hashes a one-shot controller containing the
+exact tested capture-start gate. After startup acceptance, it waits for
+`capture_entered` with no `capture_returned` before sending one `open_post`.
+Active status alone never opens the reader. A missed interval, failed/stalled
+status read, failed attempt or cancellation ends the sequence without retry.
+This is harness sequencing, not account, Store or reader authority.
+
+`test-x-qa-entry.ps1 -ControllerOnly` passed 18 accountless Node regressions in
+run `653d3b34ae2446e593766218dd06a9f5`. Preparation
+`1617147ae968446cb6887b138d4edd7f` pins the unchanged d24d882 Go source and the
+new uncommitted controller separately. It only parsed the generated controller;
+it did not execute it, acquire the retained profile, open a database, start a
+browser or transfer a session during preparation. The later, separately approved
+execution above consumed its claim.
+
+The final native overlap predicate remains unchanged. Capture may still finish
+between a status sample and marker creation; only the recorded native events
+can establish overlap. The preceding 856c7939 trial remains not accepted; the
+later 1617147 trial above passed independently. The offline increment itself
+granted no native execution authority.
+
+### Native d24d882: capture, reader and cleanup succeed; overlap gate remains open (2026-10-26)
+
+One authorized execution of preparation `856c7939903641b59641c591e8b3bd9d` on
+committed `d24d882` accepted startup, persisted one observation/two post blocks,
+verified the reader foreground, completed post navigation, settled, stopped and
+verified full owned cleanup. No operational first failure occurred. The new
+collector root was then safely removed after independent scoped verification;
+the reader profile was preserved and the older retained collector was untouched.
+
+The full harness verdict remains **not accepted**, solely because overlap was
+`not_observed`: the marker-ready event preceded capture backend entry by 28 ms,
+and the subsequent foreground/navigation events followed backend return. This
+is an acceptance/evidence ordering gap, not a new capture, account, reader or
+cleanup operational error. Do not silently reinterpret the point-event criterion
+or infer concurrency from active status alone. The offline sequencing increment
+above now waits for actual capture entry before requesting the reader, without
+retries or changing guards. It has not been exercised natively. See the
+[native timings and containment](x-unified-native-qa-d24d882.md).
+
+The native trial completed in 17.94 seconds without retry. Main login, user
+database/runtime and Auto Update were unchanged. This permission and plan are
+consumed; any later native attempt requires a new plan and explicit permission.
+
 ### Foreground preparation and graceful-close ordering corrected offline (2026-10-26)
 
-The current working-tree increment addresses the two reviewed ordering gaps.
+Commit d24d882 addresses the two reviewed ordering gaps.
 The native post preparer first observes a unique marker belonging to the exact
 reader PID in the held Job, then waits for its foreground during the existing
 preparation lifetime. This observation issues no property/capability and never
@@ -62,7 +126,8 @@ could not read a shared Go cache; a process-local project cache resolved that
 environment issue without editing cache settings or helper changes from other work.
 The routing regression also covers Stop canceling blocked reader preparation.
 
-This increment has no native execution or transfer. It does not establish Windows
+At offline acceptance, this increment had no native execution or transfer. Those
+synthetic checks alone do not establish Windows
 foreground/native cleanup acceptance, dispose the previously retained collector,
 or authorize another native trial. Main login, user database/runtime and Auto
 Update are unchanged. The next native attempt needs a new prepared package and
@@ -1157,24 +1222,22 @@ profile/database/build root only after Job/lease cleanup is verified.
 
 ## Remaining activation work
 
-Native capture acceptance is complete for the bounded scenario above. The
-remaining work is provider integration and isolated activation validation:
+The isolated actual-main QA selector now has native startup, capture persistence,
+reader overlap and owned cleanup evidence. Packaged driver and QA application
+routing/status/stop are implemented; the earlier statements that they remained
+unwired are historical. Ordinary main-dev activation remains separate:
 
-1. Promote the owned Windows/profile lifecycle from QA-only construction into a
-   development provider, with explicit opt-in, status, stop and source-route
-   arbitration. Shared OS/pipe primitives and the dev-tag owner adapter have been
-   extracted, and private application owner/lease construction is implemented.
-   The packaged native driver and application routing/status/stop remain unwired;
-   a boolean alone cannot activate the provider safely.
-   The [provider implementation plan](x-concurrency-dev-provider-design.md)
-   maps the existing code, extraction boundary, application construction order,
-   source occupancy and stop/rollback responsibilities. Its extraction checkpoint
-   is implemented; it does not yet expose an available runtime selector or add an
-   account-proof prerequisite.
-2. Verify that provider against an isolated dev instance before separately
-   approving main-dev runtime activation. Keep Auto Update enabled and preserve
-   the existing main login. Rollback closes pilot admission/owners and returns
-   routing to the ordinary scheduler without clearing challenge state.
+1. Review/commit the accepted harness and evidence, then review the minimum
+   ordinary-dev entry and trusted profile/database selection for the existing
+   manual X-only pilot. Keep explicit opt-in default-off, status, stop, source
+   arbitration and the original 60-second limit. Do not add a new identity source
+   or reopen deferred renewal/rotation qualification for this pilot.
+2. Prepare the concrete build/activation and rollback package before obtaining
+   explicit main-dev activation permission. Preserve the existing main login and
+   Auto Update. Rollback closes pilot admission/owners and returns source routing
+   to the ordinary scheduler without clearing challenge state. No QA success
+   silently authorizes user-profile/database access or a runtime restart.
 
-No ordinary config switch or UI button is exposed until it has a working provider.
-The current source changes do not restart, migrate or write the user's runtime.
+No main-dev configuration, migration, build replacement or restart was performed
+by this QA. The [provider design](x-concurrency-dev-provider-design.md) remains
+architectural background; current implementation/acceptance is recorded here.
