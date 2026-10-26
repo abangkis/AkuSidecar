@@ -27,6 +27,7 @@ if(mode!==undefined){
   if(!['x-owner-port','x-retained-manual','x-retained-capture'].includes(mode))throw new Error('standalone_stage_mode_invalid');
   if(!capture)files.push('development_x_manual_pilot_owner.go','development_x_manual_pilot_owner_windows.go');
 }
+if(retained&&!capture)files.push('development_x_retained_profile_windows.go');
 const manifest = { schema: 'aku.native-manual-chrome.staging.v1', copied: [], extracted: [] };
 // Shared imported code must be pinned even for the named-file staging modes.
 manifest.moduleDependencies=['go.mod','go.sum',...['internal/ownedprocess','internal/ownedrpc','internal/ownedprofile'].flatMap(directory=>
@@ -69,7 +70,16 @@ fs.writeFileSync(path.join(stage, 'x-manual-timing-policy.json'), timingPolicyBy
 manifest.copied.push({source:timingPolicySource,sha256:hash(timingPolicyBytes)});
 for (const file of files) {
   const relative = `internal/engine/${file}`, bytes = fs.readFileSync(path.join(project, relative));
-  fs.writeFileSync(path.join(stage, file), bytes, { flag: 'wx' });
+  // Preserve the trusted checkout anchor when compiling staged source copies.
+  let staged=bytes;
+  if(file==='development_x_retained_profile_windows.go'){
+    const source=bytes.toString('utf8'),marker='const xRetainedQAProfileManifestName';
+    const position=source.indexOf(marker),line=source.slice(0,position).split('\n').length;
+    if(position<0)throw new Error('standalone_retained_source_unavailable');
+    staged=Buffer.from(source.replace(marker,`//line ${path.join(project,relative).replaceAll('\\','/')}:${line}\n${marker}`));
+    manifest.generatedRetainedSHA256=hash(staged);
+  }
+  fs.writeFileSync(path.join(stage, file), staged, { flag: 'wx' });
   manifest.copied.push({ source: relative, sha256: hash(bytes) });
 }
 const original = fs.readFileSync(path.join(project, 'internal/engine/process_fixture_windows.go'), 'utf8');
@@ -98,30 +108,5 @@ if(!capture)fs.writeFileSync(path.join(stage, 'native_manual_chrome_support_wind
 manifest.originalProcessSourceSHA256 = hash(original);
 manifest.supportTemplateSHA256 = hash(template);
 manifest.generatedSupportSHA256 = hash(support);
-if(retained){
-  // Preserve original function bytes and runtime.Caller source identity. Only
-  // the test-only import is omitted; no retained-profile tests are staged.
-  const relative='internal/engine/x_retained_qa_profile_windows_test.go';
-  const source=fs.readFileSync(path.join(project,relative),'utf8');
-  const end=source.indexOf('\nfunc TestXRetainedQAProfileOffline(');
-  if(end<0||!source.includes('\n\t"testing"'))throw new Error('standalone_retained_source_unavailable');
-  let prefix=source.slice(0,end).replace('\n\t"testing"','');
-  const marker='const xRetainedQAProfileManifestName';
-  const position=source.indexOf(marker), line=source.slice(0,position).split('\n').length;
-  if(position<0)throw new Error('standalone_retained_source_unavailable');
-  prefix=prefix.replace(marker,`//line ${path.join(project,relative).replaceAll('\\','/')}:${line}\n${marker}`);
-  const twoPhaseRelative='internal/engine/x_two_phase_metadata_windows_test.go';
-  const twoPhase=fs.readFileSync(path.join(project,twoPhaseRelative),'utf8');
-  const pinStart=twoPhase.indexOf('func pinXTwoPhaseDirectory('), pinEnd=twoPhase.indexOf('\nfunc ',pinStart+1);
-  if(pinStart<0||pinEnd<0)throw new Error('standalone_retained_pin_unavailable');
-  const pin=twoPhase.slice(pinStart,pinEnd).trimEnd()+'\n';
-  const generated=prefix+'\n'+pin;
-  const generatedFile='native_manual_retained_lease_windows.go';
-  fs.writeFileSync(path.join(stage,generatedFile),generated,{flag:'wx'});
-  files.push(generatedFile);
-  manifest.extracted.push({source:relative,section:'implementation-before-tests',originalSHA256:hash(source),sha256:hash(source.slice(0,end))},
-    {source:twoPhaseRelative,name:'pinXTwoPhaseDirectory',sha256:hash(pin)});
-  manifest.generatedRetainedSHA256=hash(generated);
-}
 fs.writeFileSync(path.join(task, 'staging-provenance.json'), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx' });
 process.stdout.write(JSON.stringify({ stage, files: capture?files:[...files, 'native_manual_chrome_support_windows.go'] }) + '\n');

@@ -53,15 +53,16 @@ func DecodeXApplicationQACommand(raw []byte) (XApplicationQACommand, error) {
 }
 
 type XApplicationQAReport struct {
-	Status          XManualStatus `json:"status"`
-	Synthetic       bool          `json:"synthetic"`
-	NativeQualified bool          `json:"nativeQualified"`
-	Observations    int           `json:"observations"`
-	Blocks          int           `json:"blocks"`
+	Status          XManualStatus          `json:"status"`
+	Synthetic       bool                   `json:"synthetic"`
+	NativeQualified bool                   `json:"nativeQualified"`
+	Observations    int                    `json:"observations"`
+	Blocks          int                    `json:"blocks"`
+	Evidence        XApplicationQAEvidence `json:"evidence"`
 }
 type xQASyntheticKit struct {
 	clock      store.Clock
-	factory    func(*Engine) xManualApplicationFactory
+	factory    func(*Engine, *xQASelection) xManualApplicationFactory
 	foreground func(context.Context, readerbroker.Target) error
 	close      func()
 }
@@ -75,19 +76,22 @@ type xQASystemClock struct{}
 func (xQASystemClock) Now() time.Time { return time.Now() }
 
 type XApplicationQAPilot struct {
-	mu        sync.Mutex
-	selection *xQASelection
-	e         *Engine
-	state     *store.Store
-	parent    context.Context
-	cancel    context.CancelFunc
-	synthetic bool
-	kit       *xQASyntheticKit
-	attempted bool
-	runtime   *xManualApplication
-	run       string
-	closeOnce sync.Once
-	closeErr  error
+	mu                   sync.Mutex
+	selection            *xQASelection
+	e                    *Engine
+	state                *store.Store
+	parent               context.Context
+	cancel               context.CancelFunc
+	synthetic            bool
+	kit                  *xQASyntheticKit
+	attempted            bool
+	runtime              *xManualApplication
+	run                  string
+	closeOnce            sync.Once
+	closeErr             error
+	evidence             *xQAAttemptEvidence
+	closed               bool
+	observations, blocks int
 }
 
 func (*XApplicationQAPilot) String() string     { return "private-isolated-X-QA-pilot" }
@@ -102,7 +106,7 @@ func OpenXApplicationQAPilot(parent context.Context, options XApplicationQAOptio
 		return nil, err
 	}
 	life, cancel := context.WithCancel(parent)
-	q = &XApplicationQAPilot{selection: s, parent: life, cancel: cancel, synthetic: options.Synthetic}
+	q = &XApplicationQAPilot{selection: s, parent: life, cancel: cancel, synthetic: options.Synthetic, evidence: newXQAAttemptEvidence(time.Now)}
 	owned := q
 	defer func() {
 		if err != nil {
@@ -142,86 +146,117 @@ func (q *XApplicationQAPilot) Start(ctx context.Context, acknowledgeLimitations,
 	q.mu.Lock()
 	if q.attempted || !acknowledgeLimitations || allowOneSessionDerivation == q.synthetic || ctx == nil || ctx.Err() != nil || q.parent.Err() != nil {
 		q.mu.Unlock()
-		return errors.New("explicit one-use QA start rejected")
+		return q.fail("consent", "rejected", nil)
+	}
+	if !q.synthetic && q.selection.owner.retainedProject == "" {
+		q.mu.Unlock()
+		return q.fail("consent", "rejected", nil)
 	}
 	q.attempted = true
 	q.mu.Unlock()
+	q.evidence.mark("start_requested")
 	settings, err := q.state.GetSettings(ctx)
 	if err != nil {
-		return errors.New("QA settings unavailable")
+		return q.fail("session", "unavailable", err)
 	}
 	settings.CollectionMode = "headless"
 	settings.ActiveSources = []domain.Source{domain.SourceX}
 	session, err := q.state.CreateUpdateSession(ctx, "Isolated manual X QA pilot", settings, domain.UpdatePolicy{Trigger: domain.UpdateTriggerUser, Delivery: domain.UpdateDeliveryVisible, BudgetAuthority: domain.BudgetAuthorityUser})
 	if err != nil {
-		return errors.New("QA session unavailable")
+		return q.fail("session", "unavailable", err)
 	}
 	command, err := q.state.StartRun(ctx, session.Runs[0].ID, map[string]any{"captureRuntime": map[string]any{"driver": "headless"}, "scrolls": 1, "maxBlocksPerSnapshot": 5})
 	if err != nil {
 		_ = q.e.CancelSession(context.Background(), session.ID)
-		return errors.New("QA command unavailable")
+		return q.fail("command", "unavailable", err)
 	}
 	q.mu.Lock()
 	q.run = command.RunID
 	q.mu.Unlock()
 	var factory xManualApplicationFactory
 	if q.kit != nil {
-		factory = q.kit.factory(q.e)
+		factory = q.kit.factory(q.e, q.selection)
 	} else {
 		prepare, prepareErr := newXApplicationPostPreparer(q.Origin())
 		if prepareErr != nil {
 			_ = q.e.CancelSession(context.Background(), session.ID)
-			return errors.New("QA reader preparer unavailable")
+			return q.fail("reader_prepare", "unavailable", prepareErr)
 		}
 		factory = q.e.xApplicationNativeFactory(q.selection.owner, newXApplicationManualConsent(q.selection.owner, true), prepare)
 	}
-	r, err := q.e.startXManualApplication(ctx, q.parent, session.ID, command.RunID, command.ID, factory)
+	r, err := q.e.startXManualApplication(ctx, withXQAEvidence(q.parent, q.evidence), session.ID, command.RunID, command.ID, factory)
 	q.mu.Lock()
 	q.runtime = r
 	q.mu.Unlock()
 	if err != nil {
 		_ = q.e.CancelSession(context.Background(), session.ID)
-		return errors.New("QA startup unavailable")
+		if r != nil {
+			r.mu.Lock()
+			if r.startupFailure != nil {
+				err = r.startupFailure
+			}
+			r.mu.Unlock()
+		}
+		return q.fail("owner_startup", "unavailable", err)
 	}
+	q.evidence.mark("startup_accepted")
 	r.step(q.parent)
+	go func() {
+		select {
+		case <-r.captureDone:
+			q.captureFailure(r)
+		case <-q.parent.Done():
+		}
+	}()
 	return nil
 }
 func (q *XApplicationQAPilot) Report() XApplicationQAReport {
-	out := XApplicationQAReport{Status: q.e.XManualStatus(), Synthetic: q.synthetic}
+	out := XApplicationQAReport{Status: q.e.XManualStatus(), Synthetic: q.synthetic, Evidence: q.evidence.snapshot()}
 	q.mu.Lock()
 	run := q.run
+	closed := q.closed
+	out.Observations, out.Blocks = q.observations, q.blocks
 	q.mu.Unlock()
-	if run != "" {
+	if run != "" && !closed {
 		if observations, err := q.state.Observations(q.parent, run); err == nil {
 			out.Observations = len(observations)
+			out.Blocks = 0
 			for _, o := range observations {
 				for _, s := range o.Snapshots {
 					out.Blocks += len(s.Blocks)
 				}
 			}
+			q.mu.Lock()
+			q.observations, q.blocks = out.Observations, out.Blocks
+			q.mu.Unlock()
 		}
 	}
 	return out
 }
 func (q *XApplicationQAPilot) OpenPost(ctx context.Context, request readerbroker.Request) error {
+	q.evidence.mark("reader_requested")
 	marker := "/split-reader-intent?id=" + domain.NewID("split")
 	prepared, selected, err := q.e.PrepareXManualReader(ctx, request, marker)
 	if err != nil || !selected || prepared.VerifyForeground == nil || prepared.NavigatePost == nil {
-		return errors.New("QA reader preparation rejected")
+		return q.fail("reader_prepare", "rejected", err)
 	}
+	q.evidence.mark("reader_marker_ready")
 	wait := waitXQAReaderForeground
 	if q.kit != nil {
 		wait = q.kit.foreground
 	}
 	if err = wait(ctx, prepared.Target); err != nil {
-		return errors.New("QA reader requires manual foreground")
+		return q.fail("reader_foreground", "unavailable", err)
 	}
-	if prepared.VerifyForeground(ctx) != nil {
-		return errors.New("QA reader foreground verification rejected")
+	if err = prepared.VerifyForeground(ctx); err != nil {
+		return q.fail("reader_verify", "rejected", err)
 	}
-	if prepared.NavigatePost(ctx) != nil {
-		return errors.New("QA reader navigation rejected")
+	q.evidence.mark("reader_foreground_verified")
+	q.evidence.mark("reader_navigation_requested")
+	if err = prepared.NavigatePost(ctx); err != nil {
+		return q.fail("reader_navigate", "rejected", err)
 	}
+	q.evidence.mark("reader_navigation_completed")
 	return nil
 }
 func waitXQAReaderForeground(ctx context.Context, target readerbroker.Target) error {
@@ -250,42 +285,102 @@ func (q *XApplicationQAPilot) Settle(ctx context.Context) error {
 	r := q.runtime
 	q.mu.Unlock()
 	if r == nil {
-		return errors.New("QA capture not started")
+		return q.fail("capture_wait", "not_started", nil)
 	}
 	r.mu.Lock()
 	started := r.captureStarted
 	r.mu.Unlock()
 	if !started || ctx == nil {
-		return errors.New("QA capture not started")
+		return q.fail("capture_wait", "not_started", nil)
 	}
 	select {
 	case <-r.captureDone:
 	case <-ctx.Done():
-		return errors.New("QA capture did not settle")
+		return q.fail("capture_wait", "unavailable", ctx.Err())
+	}
+	if err := q.captureFailure(r); err != nil {
+		return err
 	}
 	if !q.e.WaitForIdle(nativePilotCleanup) {
-		return errors.New("QA reasoning did not settle")
+		return q.fail("reasoning", "deadline", nil)
+	}
+	q.evidence.mark("capture_settled")
+	return nil
+}
+func (q *XApplicationQAPilot) Stop(ctx context.Context) error {
+	q.evidence.mark("stop_requested")
+	if err := q.e.StopXManual(ctx); err != nil {
+		return q.fail("stop", "uncertain", err)
 	}
 	return nil
 }
-func (q *XApplicationQAPilot) Stop(ctx context.Context) error { return q.e.StopXManual(ctx) }
 func (q *XApplicationQAPilot) Close() error {
 	q.closeOnce.Do(func() {
+		q.Report()
+		q.mu.Lock()
+		q.closed = true
+		q.mu.Unlock()
+		q.evidence.mark("parent_cleanup_started")
 		q.cancel()
 		q.e.Shutdown()
 		status := q.e.XManualStatus()
 		if status.State != "disabled" && status.Cleanup != "verified" || !q.e.WaitForIdle(nativePilotCleanup) {
-			q.closeErr = errors.New("QA cleanup uncertain")
+			q.closeErr = q.fail("cleanup", "uncertain", nil)
+			q.evidence.cleaned(false)
 			return
 		}
 		if q.kit != nil {
 			q.kit.close()
 		}
 		if q.state.Close() != nil {
-			q.closeErr = errors.New("QA database close uncertain")
+			q.closeErr = q.fail("cleanup", "uncertain", nil)
+			q.evidence.cleaned(false)
 			return
 		}
 		q.selection.close()
+		q.evidence.cleaned(true)
 	})
 	return q.closeErr
+}
+
+func (q *XApplicationQAPilot) Failed() <-chan struct{} {
+	if q.evidence == nil {
+		return nil
+	}
+	return q.evidence.failed
+}
+func (q *XApplicationQAPilot) RecordControlFailure(reason string) error {
+	return q.fail("control", reason, nil)
+}
+func (q *XApplicationQAPilot) fail(stage, reason string, err error) error {
+	f := xQAFailure(stage, reason, err)
+	var rpc *xApplicationRPCError
+	if errors.As(err, &rpc) {
+		if detail, ok := nativePilotSeedCode(rpc.code); ok {
+			f.Detail = detail
+		}
+	}
+	return q.evidence.fail(f)
+}
+func (q *XApplicationQAPilot) captureFailure(r *xManualApplication) error {
+	r.mu.Lock()
+	result, ready := r.captureResult, r.captureResultReady
+	r.mu.Unlock()
+	if !ready {
+		return nil
+	}
+	if result.PersistenceError == nil && result.Outcome != store.Committed && result.Outcome != store.AlreadyCommitted {
+		return q.fail("capture", "rejected", nil)
+	}
+	if result.PersistenceError != nil {
+		f := xQAFailure("capture", "failed", result.PersistenceError)
+		if result.CaptureDiagnostic.stage != "" {
+			f.Detail = result.CaptureDiagnostic.closed().String()
+		}
+		return q.evidence.fail(f)
+	}
+	if result.DeliveryError != nil {
+		return q.fail("reasoning", "failed", result.DeliveryError)
+	}
+	return nil
 }

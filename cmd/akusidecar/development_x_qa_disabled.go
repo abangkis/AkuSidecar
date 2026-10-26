@@ -10,7 +10,7 @@ import (
 )
 
 func dispatchXApplicationQA(options config.Options, _ io.Reader, _ io.Writer) (bool, error) {
-	if options.DevelopmentQAPilotPlan != "" || options.DevelopmentSessionReuse == "native-x-manual-qa" || options.DevelopmentSessionReuse == "synthetic-x-manual-qa" {
+	if options.DevelopmentQAPilotPrepare != "" || options.DevelopmentQAPilotPlan != "" || options.DevelopmentSessionReuse == "native-x-manual-qa" || options.DevelopmentSessionReuse == "synthetic-x-manual-qa" {
 		return true, errors.New("isolated X QA requires the Windows development build")
 	}
 	return false, nil

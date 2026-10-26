@@ -40,56 +40,7 @@ func xManualRetainedExecutionEnabled() bool {
 // the same exclusive lock and requires an already clean, physically pinned
 // profile; there is no missing-manifest fallback or profile creation branch.
 func acquireXManualExistingRetained(project string) (*xRetainedQAProfile, error) {
-	canonical, err := xRetainedQAProjectRoot()
-	if err != nil || !filepath.IsAbs(project) || !samePath(project, canonical) {
-		return nil, errors.New("manual-retained-project-unavailable")
-	}
-	parent, parentID, err := xRetainedOrdinaryDirectory(filepath.Join(canonical, "runtime", "qa", "auth-session-sidecar"))
-	if err != nil {
-		return nil, errors.New("manual-retained-parent-unavailable")
-	}
-	manifestPath := filepath.Join(parent, xRetainedQAProfileManifestName)
-	lock, err := xRetainedOpenExclusiveLock(manifestPath + ".lock")
-	if err != nil {
-		return nil, errors.New("manual-retained-lease-unavailable")
-	}
-	p := &xRetainedQAProfile{parent: parent, parentID: parentID, manifestPath: manifestPath, lockPath: manifestPath + ".lock", lock: lock}
-	ready := false
-	defer func() {
-		if !ready {
-			p.xRetainedCloseHandles()
-		}
-	}()
-	p.parentPin, err = pinXTwoPhaseDirectory(parent)
-	if err != nil {
-		return nil, errors.New("manual-retained-parent-unavailable")
-	}
-	manifest, err := xRetainedReadManifest(manifestPath)
-	if err != nil || manifest.State != "clean" || manifest.ProfileID == "" {
-		return nil, errors.New("manual-retained-existing-profile-required")
-	}
-	p.Root, p.RootID, p.ProfileID, p.Existing = filepath.Join(parent, manifest.Root), manifest.RootID, manifest.ProfileID, true
-	if !xRetainedValidRootPath(parent, p.Root) {
-		return nil, errors.New("manual-retained-profile-scope-invalid")
-	}
-	p.rootPin, err = pinXTwoPhaseDirectory(p.Root)
-	if err != nil {
-		return nil, errors.New("manual-retained-root-unavailable")
-	}
-	p.profilePin, err = pinXTwoPhaseDirectory(filepath.Join(p.Root, "shared"))
-	if err != nil || p.xRetainedValidateHeldIDs() != nil {
-		return nil, errors.New("manual-retained-profile-unavailable")
-	}
-	var nonce [32]byte
-	if _, err = rand.Read(nonce[:]); err != nil {
-		return nil, errors.New("manual-retained-scope-unavailable")
-	}
-	p.Nonce = hex.EncodeToString(nonce[:])
-	if p.xRetainedPersist("active") != nil {
-		return nil, errors.New("manual-retained-lease-unavailable")
-	}
-	ready = true
-	return p, nil
+	return acquireXApplicationRetainedProfile(project)
 }
 
 type xManualRetainedSeed struct {
@@ -174,9 +125,9 @@ func xManualRetainedRole(bridge *chromeFixtureBridge, parent, node processFixtur
 	if err != nil {
 		return r, errors.New("manual-retained-process-unavailable")
 	}
-	r.rootPin, err = pinXTwoPhaseDirectory(root)
+	r.rootPin, err = xRetainedPinDirectory(root)
 	if err == nil {
-		r.profilePin, err = pinXTwoPhaseDirectory(profile)
+		r.profilePin, err = xRetainedPinDirectory(profile)
 	}
 	if err != nil {
 		return r, errors.New("manual-retained-directory-unavailable")

@@ -176,7 +176,10 @@ func (p *xNativePilotCapture) Capture(ctx context.Context, source domain.Source,
 	var raw json.RawMessage
 	defer func() { clear(raw) }()
 	started = true
-	if err := p.ports.backend.rpc(call, "collector", "manual_capture", map[string]any{"handle": p.prepared.handle, "request": request}, &raw); err != nil {
+	finishActivity := xQACaptureExecuting(call)
+	err = p.ports.backend.rpc(call, "collector", "manual_capture", map[string]any{"handle": p.prepared.handle, "request": request}, &raw)
+	finishActivity()
+	if err != nil {
 		return domain.Observation{}, nativePilotCaptureTransportError(call, err)
 	}
 	var wire struct {

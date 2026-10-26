@@ -5,6 +5,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -24,6 +25,8 @@ func (c xQAClock) Now() time.Time {
 type xQASyntheticCapture struct{ *manualRuntimeFixtureProcess }
 
 func (c xQASyntheticCapture) Capture(ctx context.Context, source domain.Source, payload map[string]any) (domain.Observation, error) {
+	finish := xQACaptureExecuting(ctx)
+	defer finish()
 	v, err := c.manualRuntimeFixtureProcess.Capture(ctx, source, payload)
 	if err == nil {
 		v.Coverage = map[string]any{"synthetic": true}
@@ -69,9 +72,33 @@ func init() {
 			return nil, err
 		}
 		var release sync.Once
-		kit := &xQASyntheticKit{clock: xQAClock{f}, close: f.close, foreground: func(ctx context.Context, _ readerbroker.Target) error { return ctx.Err() }}
-		kit.factory = func(e *Engine) xManualApplicationFactory {
+		kit := &xQASyntheticKit{clock: xQAClock{f}, close: f.close, foreground: func(ctx context.Context, _ readerbroker.Target) error {
+			select {
+			case <-f.backend.entered:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}}
+		kit.factory = func(e *Engine, selection *xQASelection) xManualApplicationFactory {
 			return func(ctx, parent context.Context) (xManualApplicationPorts, error) {
+				var retained *xRetainedQAProfile
+				if selection.plan.ReaderSource == "retained-qa" {
+					// Combined-tag fixture selection always uses the invented
+					// manifest inside this fresh instance, never the real manifest.
+					var err error
+					retained, err = acquireXRetainedProfileAtParent(filepath.Join(selection.plan.Root, "retained-fixture"), true)
+					if err != nil {
+						return xManualApplicationPorts{dispose: func(context.Context) error { f.close(); return nil }}, errors.New("synthetic retained lease unavailable")
+					}
+				}
+				dispose := func(context.Context) error {
+					f.close()
+					if retained != nil {
+						return retained.Close()
+					}
+					return nil
+				}
 				prepare := func(call context.Context, req readerbroker.Request, marker string) (readerbroker.NativePostPreparation, error) {
 					if call.Err() != nil || req.Source != "x" || !xApplicationPostURL.MatchString(req.URL) || !xApplicationMarkerPath.MatchString(marker) {
 						return readerbroker.NativePostPreparation{}, errors.New("synthetic post rejected")
@@ -94,7 +121,7 @@ func init() {
 						return nil
 					}}, nil
 				}
-				return xManualApplicationPorts{broker: f.broker, admission: xQASyntheticAdmission{f.broker, e.store}, prepare: prepare, dispose: func(context.Context) error { f.close(); return nil }, buildRuntime: func(call context.Context) (*nativePilotRuntime, error) {
+				return xManualApplicationPorts{broker: f.broker, admission: xQASyntheticAdmission{f.broker, e.store}, prepare: prepare, dispose: dispose, buildRuntime: func(call context.Context) (*nativePilotRuntime, error) {
 					return newNativePilotRuntime(f.broker, f.reader, f.collector, xQASyntheticCapture{f.backend}, func(context.Context, readerbroker.Request) error { return nil })
 				}}, nil
 			}

@@ -20,6 +20,20 @@ import (
 )
 
 func dispatchXApplicationQA(options config.Options, input io.Reader, output io.Writer) (bool, error) {
+	if options.DevelopmentQAPilotPrepare != "" {
+		if !options.Dev || options.DevelopmentSessionReuse != "" || options.DevelopmentQAPilotPlan != "" || options.AppShell || options.WindowsCaptureSplit || options.BrowserProfilePath != "" || options.DatabasePath != "" || options.DatabaseInspect || options.DatabaseAction != "" {
+			return true, errors.New("QA preparation requires its isolated development-only entry")
+		}
+		path, err := engine.MaterializeXApplicationQAPlanFile(options.DevelopmentQAPilotPrepare)
+		if err != nil {
+			return true, err
+		}
+		hash, err := engine.XApplicationQAPlanSHA256(path)
+		if err != nil {
+			return true, err
+		}
+		return true, json.NewEncoder(output).Encode(map[string]any{"event": "qa_plan_prepared", "plan": path, "sha256": hash, "executionApproved": false, "browserStarted": false, "retainedProfileInspected": false})
+	}
 	selected := options.DevelopmentSessionReuse == "synthetic-x-manual-qa" || options.DevelopmentSessionReuse == "native-x-manual-qa"
 	if !selected && options.DevelopmentQAPilotPlan == "" {
 		return false, nil
@@ -39,38 +53,88 @@ func runXApplicationQA(parent context.Context, options engine.XApplicationQAOpti
 	if err != nil {
 		return err
 	}
+	encoder := json.NewEncoder(output)
 	defer func() {
-		if closeErr := q.Close(); retErr == nil && closeErr != nil {
+		closeErr := q.Close()
+		if retErr == nil && closeErr != nil {
 			retErr = closeErr
+		}
+		if err := encoder.Encode(map[string]any{"event": "qa_closed", "ok": closeErr == nil, "report": q.Report()}); retErr == nil && err != nil {
+			retErr = q.RecordControlFailure("output")
 		}
 	}()
 	address := strings.TrimPrefix(q.Origin(), "http://")
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
-		return errors.New("QA loopback port unavailable")
+		return q.RecordControlFailure("listener")
 	}
 	server := &http.Server{Handler: xQAMarkerHandler(q), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second}
-	go func() { _ = server.Serve(listener) }()
+	go func() {
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			_ = q.RecordControlFailure("listener")
+		}
+	}()
 	defer func() {
 		call, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		_ = server.Shutdown(call)
 	}()
-	encoder := json.NewEncoder(output)
 	if encoder.Encode(map[string]any{"event": "qa_ready", "report": q.Report()}) != nil {
-		return errors.New("QA output unavailable")
+		return q.RecordControlFailure("output")
 	}
 	scanner := bufio.NewScanner(input)
 	scanner.Buffer(make([]byte, 4096), 16*1024)
+	type line struct {
+		raw  []byte
+		err  error
+		done bool
+	}
+	lines := make(chan line, 1)
+	scanDone := make(chan struct{})
+	defer close(scanDone)
+	go func() {
+		for scanner.Scan() {
+			value := line{raw: append([]byte(nil), scanner.Bytes()...)}
+			select {
+			case lines <- value:
+			case <-scanDone:
+				return
+			}
+		}
+		select {
+		case lines <- line{done: true, err: scanner.Err()}:
+		case <-scanDone:
+		}
+	}()
 	count := 0
-	for scanner.Scan() {
+	for {
+		select {
+		case <-q.Failed():
+			return &qaJourneyFailure{}
+		default:
+		}
+		var next line
+		select {
+		case <-q.Failed():
+			return &qaJourneyFailure{}
+		case <-parent.Done():
+			return q.RecordControlFailure("canceled")
+		case next = <-lines:
+		}
+		if next.done {
+			if next.err != nil {
+				return q.RecordControlFailure("input")
+			}
+			return nil
+		}
 		count++
 		if count > 32 {
-			return errors.New("QA control capacity reached")
+			return q.RecordControlFailure("capacity")
 		}
-		command, decodeErr := engine.DecodeXApplicationQACommand(scanner.Bytes())
+		command, decodeErr := engine.DecodeXApplicationQACommand(next.raw)
+		clear(next.raw)
 		if decodeErr != nil {
-			return errors.New("QA control rejected")
+			return q.RecordControlFailure("invalid_command")
 		}
 		call, cancel := context.WithTimeout(parent, 60*time.Second)
 		var actionErr error
@@ -87,16 +151,21 @@ func runXApplicationQA(parent context.Context, options engine.XApplicationQAOpti
 		cancel()
 		result := map[string]any{"event": "qa_" + command.Op, "ok": actionErr == nil, "report": q.Report()}
 		if actionErr != nil {
-			result["reason"] = "operation_rejected"
+			result["failure"] = engine.XApplicationQAFailureOf(actionErr)
 		}
 		if encoder.Encode(result) != nil {
-			return errors.New("QA output unavailable")
+			return q.RecordControlFailure("output")
+		}
+		if actionErr != nil {
+			return actionErr
 		}
 	}
-	if scanner.Err() != nil {
-		return errors.New("QA control input unavailable")
-	}
-	return nil
+}
+
+type qaJourneyFailure struct{}
+
+func (*qaJourneyFailure) Error() string {
+	return "QA journey stopped after its first failure; see bounded report"
 }
 
 func xQAMarkerHandler(q *engine.XApplicationQAPilot) http.Handler {

@@ -67,6 +67,10 @@ func (b *xApplicationOwner) seedNative(ctx context.Context) (xApplicationSeedRec
 			return fail(time.Time{}, errors.New("application seed owner unavailable"))
 		}
 	}
+	// The authorization clock starts here, after bounded owner/home preflight
+	// and ownership revalidation. The factory passes this exact anchor to the
+	// broker; later startup, reader and capture operations cannot renew it.
+	// seedUsed was consumed before this point, so a replay cannot mint an anchor.
 	started := time.Now()
 	call, cancel := context.WithDeadline(ctx, started.Add(nativePilotLife))
 	defer cancel()

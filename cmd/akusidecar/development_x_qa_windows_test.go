@@ -22,6 +22,9 @@ import (
 )
 
 func xQAEntryTestPlan(t *testing.T) string {
+	return xQAEntryPlan(t, false)
+}
+func xQAEntryPlan(t *testing.T, retained bool) string {
 	t.Helper()
 	node := os.Getenv("AKU_CHROME_FIXTURE_NODE")
 	if node == "" {
@@ -36,7 +39,11 @@ func xQAEntryTestPlan(t *testing.T) string {
 	if port == 11122 {
 		t.Fatal("ephemeral port conflicted with main port")
 	}
-	path, err := engine.WriteXApplicationQASyntheticPlan(t.TempDir(), node, port)
+	write := engine.WriteXApplicationQASyntheticPlan
+	if retained {
+		write = engine.WriteXApplicationQASyntheticRetainedPlan
+	}
+	path, err := write(t.TempDir(), node, port)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,11 +51,16 @@ func xQAEntryTestPlan(t *testing.T) string {
 }
 
 func TestXQAActualMainSyntheticJourney(t *testing.T) {
+	for _, retained := range []bool{false, true} {
+		t.Run(map[bool]string{false: "local", true: "retained-shared-lease"}[retained], func(t *testing.T) { xQAActualMainJourney(t, retained) })
+	}
+}
+func xQAActualMainJourney(t *testing.T, retained bool) {
 	image := os.Getenv("AKU_X_QA_ENTRY_IMAGE")
 	if image == "" {
 		t.Skip("actual main image required")
 	}
-	path := xQAEntryTestPlan(t)
+	path := xQAEntryPlan(t, retained)
 	const commands = `{"op":"status"}
 {"op":"start","acknowledgeLimitations":true}
 {"op":"open_post","request":{"requestId":"broker_0123456789abcdef0123456789abcdef","source":"x","url":"https://x.com/aku_fixture/status/1"}}
@@ -68,7 +80,7 @@ func TestXQAActualMainSyntheticJourney(t *testing.T) {
 		t.Fatalf("synthetic main failed %v output=%s stderr=%s", err, out, stderr.String())
 	}
 	lines := bytes.Split(bytes.TrimSpace(out), []byte("\n"))
-	if len(lines) != 7 {
+	if len(lines) != 8 {
 		t.Fatalf("events=%d output=%s", len(lines), out)
 	}
 	var observationCount int
@@ -88,12 +100,59 @@ func TestXQAActualMainSyntheticJourney(t *testing.T) {
 			t.Fatal("entry implicitly started pilot")
 		}
 		observationCount = event.Report.Observations
+		if i == len(lines)-1 && (event.Event != "qa_closed" || event.Report.Evidence.Cleanup != "verified" || event.Report.Evidence.Overlap != "observed") {
+			t.Fatal("missing final cleanup or observed execution overlap")
+		}
 	}
 	if observationCount != 1 || bytes.Contains(out, []byte(filepath.Dir(path))) || bytes.Contains(out, []byte("accountId")) {
 		t.Fatal("missing capture or private-data leakage")
 	}
 	if _, err = os.Stat(filepath.Join(filepath.Dir(path), "config", "sidecar.json")); !os.IsNotExist(err) {
 		t.Fatal("ordinary config created")
+	}
+}
+
+func TestXQAActualMainFirstFailureIsTerminal(t *testing.T) {
+	image := os.Getenv("AKU_X_QA_ENTRY_IMAGE")
+	if image == "" {
+		t.Skip("actual main image required")
+	}
+	path := xQAEntryTestPlan(t)
+	commands := `{"op":"start","acknowledgeLimitations":true}
+{"op":"open_post","request":{"requestId":"broker_0123456789abcdef0123456789abcdef","source":"x","url":"https://x.com/home?PRIVATE=secret"}}
+{"op":"status"}
+{"op":"start","acknowledgeLimitations":true}
+`
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, image, "--dev", "--dev-session-reuse=synthetic-x-manual-qa", "--dev-qa-pilot-plan="+path)
+	command.Dir = filepath.Dir(path)
+	command.Stdin = strings.NewReader(commands)
+	out, err := command.CombinedOutput()
+	if err == nil {
+		t.Fatal("failed one-shot exited successfully")
+	}
+	if bytes.Contains(out, []byte("PRIVATE")) || bytes.Contains(out, []byte("secret")) || bytes.Contains(out, []byte(`"event":"qa_status"`)) {
+		t.Fatal("private error escaped or command continued after failure")
+	}
+	var closed engine.XApplicationQAReport
+	starts := 0
+	for _, line := range bytes.Split(out, []byte("\n")) {
+		var event struct {
+			Event  string                      `json:"event"`
+			Report engine.XApplicationQAReport `json:"report"`
+		}
+		if json.Unmarshal(line, &event) == nil {
+			if event.Event == "qa_start" {
+				starts++
+			}
+			if event.Event == "qa_closed" {
+				closed = event.Report
+			}
+		}
+	}
+	if starts != 1 || closed.Evidence.FirstFailure == nil || closed.Evidence.FirstFailure.Stage != "reader_prepare" || closed.Evidence.Cleanup != "verified" {
+		t.Fatalf("first cause or separate cleanup missing: %+v", closed.Evidence)
 	}
 }
 

@@ -5,10 +5,12 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 	"github.com/abangkis/AkuSidecar/internal/store"
@@ -98,6 +100,53 @@ func TestXQAPlanRejectsBeforeDatabaseOpen(t *testing.T) {
 		})
 	}
 }
+
+func TestXQARetainedPlanSourceIsDeferredAndFixed(t *testing.T) {
+	trusted, err := xRetainedQAProjectRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, scenario := range []string{"deferred", "wrong-project", "explicit-profile", "unknown-source", "local-project"} {
+		t.Run(scenario, func(t *testing.T) {
+			path := xQAPlanTest(t)
+			p := xQAEditPlan(t, path, func(p *XApplicationQAPlan) {
+				p.ReaderSource = "retained-qa"
+				p.ProjectRoot = trusted
+				if scenario != "explicit-profile" {
+					p.Reader = XApplicationQAProfile{}
+				}
+				switch scenario {
+				case "wrong-project":
+					p.ProjectRoot = p.Root
+				case "unknown-source":
+					p.ReaderSource = "external"
+				case "local-project":
+					p.ReaderSource = ""
+				}
+			})
+			s, err := openXQASelection(context.Background(), path)
+			if scenario != "deferred" {
+				if err == nil {
+					s.close()
+					t.Fatal("invalid source accepted")
+				}
+				if _, err = os.Stat(p.Database); !os.IsNotExist(err) {
+					t.Fatal("invalid source touched database")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.close()
+			// Reader remains unresolved: opening a plan cannot acquire its lease
+			// or reconstruct profile authority from a serialized descriptor.
+			if s.owner.retainedProject != trusted || s.owner.reader.Root != "" || s.owner.reader.DirectoryID != "" {
+				t.Fatal("retained source resolved before explicit start")
+			}
+		})
+	}
+}
 func TestXQAEntrySyntheticStartReaderCaptureStopAndReuse(t *testing.T) {
 	path := xQAPlanTest(t)
 	q, err := OpenXApplicationQAPilot(context.Background(), XApplicationQAOptions{Dev: true, PlanPath: path, Synthetic: true})
@@ -113,12 +162,10 @@ func TestXQAEntrySyntheticStartReaderCaptureStopAndReuse(t *testing.T) {
 		other.Close()
 		t.Fatal("duplicate instance opened")
 	}
-	if err = q.Start(context.Background(), true, true); err == nil {
-		t.Fatal("synthetic mode accepted real transfer consent")
-	}
 	if err = q.Start(context.Background(), true, false); err != nil {
 		t.Fatal(err)
 	}
+	originalDeadline := q.runtime.deadline
 	request := readerbroker.Request{RequestID: "broker_0123456789abcdef0123456789abcdef", Source: "x", URL: "https://x.com/aku_fixture/status/1"}
 	if err = q.OpenPost(context.Background(), request); err != nil {
 		t.Fatal(err)
@@ -128,6 +175,12 @@ func TestXQAEntrySyntheticStartReaderCaptureStopAndReuse(t *testing.T) {
 	}
 	if v := q.Report(); v.Observations != 1 || v.Blocks < 1 || v.NativeQualified {
 		t.Fatalf("capture %+v", v)
+	}
+	if q.Report().Evidence.Overlap != "observed" {
+		t.Fatal("held synthetic capture and foreground did not prove overlap")
+	}
+	if !q.runtime.deadline.Equal(originalDeadline) {
+		t.Fatal("reader/capture reset original attempt deadline")
 	}
 	if err = q.Start(context.Background(), true, false); err == nil {
 		t.Fatal("second start accepted")
@@ -175,5 +228,86 @@ func TestXQAEntryFailedStartupHasNoCaptureToSettle(t *testing.T) {
 	q := &XApplicationQAPilot{runtime: &xManualApplication{captureDone: make(chan struct{})}}
 	if err := q.Settle(context.Background()); err == nil {
 		t.Fatal("failed startup reported a completed capture")
+	}
+}
+
+func TestXQARetainedSyntheticJourneyKeepsLeaseThroughStop(t *testing.T) {
+	node := os.Getenv("AKU_CHROME_FIXTURE_NODE")
+	if node == "" {
+		t.Skip("canonical QA helper required")
+	}
+	path, err := WriteXApplicationQASyntheticRetainedPlan(t.TempDir(), node, 28175)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, err := OpenXApplicationQAPilot(context.Background(), XApplicationQAOptions{Dev: true, PlanPath: path, Synthetic: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer q.Close()
+	parent := filepath.Join(q.selection.plan.Root, "retained-fixture")
+	if err = q.Start(context.Background(), true, false); err != nil {
+		t.Fatal(err)
+	}
+	request := readerbroker.Request{RequestID: "broker_0123456789abcdef0123456789abcdef", Source: "x", URL: "https://x.com/aku_fixture/status/1"}
+	if err = q.OpenPost(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if err = q.Settle(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err = q.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := xRetainedReadManifest(filepath.Join(parent, xRetainedQAProfileManifestName))
+	if err != nil || manifest.State != "active" {
+		t.Fatal("reader-preserving stop released retained profile")
+	}
+	if competing, err := acquireXRetainedProfileAtParent(parent, false); err == nil {
+		competing.Release(false)
+		t.Fatal("legacy caller acquired still-owned reader")
+	}
+	if report := q.Report(); report.Observations != 1 || report.Evidence.Overlap != "observed" || report.NativeQualified {
+		t.Fatal("retained journey lost offline provenance, capture or overlap")
+	}
+	if err = q.Close(); err != nil {
+		t.Fatal(err)
+	}
+	next, err := acquireXRetainedProfileAtParent(parent, false)
+	if err != nil {
+		t.Fatal("verified parent cleanup did not permit legacy reacquisition")
+	}
+	if err = next.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestXQAAsyncCaptureFailurePreservesCauseWithoutAnotherCommand(t *testing.T) {
+	q, err := OpenXApplicationQAPilot(context.Background(), XApplicationQAOptions{Dev: true, PlanPath: xQAPlanTest(t), Synthetic: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer q.Close()
+	f := q.kit.clock.(xQAClock).fixture
+	f.backend.probe = func() error { return errors.New("PRIVATE backend failure cookie=secret") }
+	if err = q.Start(context.Background(), true, false); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-q.Failed():
+	case <-time.After(3 * time.Second):
+		t.Fatal("capture failure waited for another input command")
+	}
+	first := q.Report().Evidence.FirstFailure
+	if first == nil || first.Stage != "capture" || strings.Contains(first.Detail, "PRIVATE") || strings.Contains(first.Detail, "secret") {
+		t.Fatal("capture cause missing or leaked")
+	}
+	q.RecordControlFailure("output")
+	if err = q.Close(); err != nil {
+		t.Fatal(err)
+	}
+	final := q.Report().Evidence
+	if final.FirstFailure == nil || *final.FirstFailure != *first || final.Cleanup != "verified" {
+		t.Fatal("later output/cleanup replaced primary cause")
 	}
 }

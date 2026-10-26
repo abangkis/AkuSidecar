@@ -24,8 +24,11 @@ func TestXApplicationSeedPrivateReceiptAndReplay(t *testing.T) {
 	if _, _, err = b.initializeNative(context.Background()); err != nil {
 		t.Fatal("synthetic role initialization failed")
 	}
+	// Initialization has causally completed before authorization is requested.
+	// Its elapsed time must not be silently included in the returned seed clock.
+	preflightCompleted := time.Now()
 	seed, start, err := b.seedNative(context.Background())
-	if err != nil || !nativePilotAccount(seed.AccountID) || start.IsZero() || time.Since(start) >= nativePilotLife {
+	if err != nil || !nativePilotAccount(seed.AccountID) || start.Before(preflightCompleted) || time.Since(start) >= nativePilotLife {
 		t.Fatal("synthetic seed receipt rejected")
 	}
 	if !b.seedReady {
@@ -39,8 +42,8 @@ func TestXApplicationSeedPrivateReceiptAndReplay(t *testing.T) {
 	if _, err = json.Marshal(seed); err == nil {
 		t.Fatal("private account receipt serialized")
 	}
-	if _, _, err = b.seedNative(context.Background()); err == nil {
-		t.Fatal("seed replay accepted")
+	if _, replayStart, replayErr := b.seedNative(context.Background()); replayErr == nil || !replayStart.IsZero() {
+		t.Fatal("seed replay accepted or minted another authorization clock")
 	}
 	if err = b.rpcRoundTripObserved(context.Background(), "native_owner_seed", nil, nil, nil); err == nil {
 		t.Fatal("generic seed bypass")

@@ -53,6 +53,9 @@ type xManualApplication struct {
 	published                       bool
 	captureStarted                  bool
 	captureDone                     chan struct{}
+	startupFailure                  error
+	captureResult                   nativePilotStoreResult
+	captureResultReady              bool
 }
 
 // Reserve before any owner acquisition. Existing Store source occupancy is
@@ -141,6 +144,9 @@ func (e *Engine) startXManualApplication(ctx, parent context.Context, session, r
 	cancelStartup()
 	close(r.ready)
 	if err != nil {
+		r.mu.Lock()
+		r.startupFailure = err
+		r.mu.Unlock()
 		_ = r.stop(context.Background(), "startup-failed")
 		return r, errors.New("manual application startup failed")
 	}
@@ -321,6 +327,9 @@ func (r *xManualApplication) step(ctx context.Context) {
 			stop := context.AfterFunc(ctx, r.cancel)
 			defer stop()
 			result := r.e.captureNativePilot(r.work, runtime, r.command)
+			r.mu.Lock()
+			r.captureResult, r.captureResultReady = result, true
+			r.mu.Unlock()
 			// Publish reconciliation before stop can wait for this work. A failing
 			// capture must never wait for its own goroutine to finish.
 			close(r.captureDone)

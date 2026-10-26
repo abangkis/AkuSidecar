@@ -78,3 +78,58 @@ func WriteXApplicationQASyntheticPlan(parent, node string, port int) (string, er
 	}
 	return path, nil
 }
+
+// The actual CLI can exercise retained provenance/lease composition using the
+// same shared implementation and an invented instance-local manifest only.
+func WriteXApplicationQASyntheticRetainedPlan(parent, node string, port int) (string, error) {
+	path, err := WriteXApplicationQASyntheticPlan(parent, node, port)
+	if err != nil {
+		return "", err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	var plan XApplicationQAPlan
+	if json.Unmarshal(raw, &plan) != nil {
+		return "", errors.New("synthetic plan unavailable")
+	}
+	fixtureParent := filepath.Join(plan.Root, "retained-fixture")
+	if os.Mkdir(fixtureParent, 0700) != nil {
+		return "", errors.New("synthetic retained parent unavailable")
+	}
+	lease, err := acquireXRetainedQAProfileAtParent(fixtureParent)
+	if err != nil {
+		return "", err
+	}
+	clean := false
+	defer func() {
+		if !clean {
+			_ = lease.Release(false)
+		}
+	}()
+	if os.Mkdir(filepath.Join(lease.Root, "shared"), 0700) != nil {
+		return "", errors.New("synthetic retained profile unavailable")
+	}
+	if err = lease.RememberProfile(); err != nil {
+		return "", err
+	}
+	if err = lease.Release(true); err != nil {
+		return "", err
+	}
+	clean = true
+	plan.ProjectRoot, err = xRetainedQAProjectRoot()
+	if err != nil {
+		return "", err
+	}
+	plan.ReaderSource = "retained-qa"
+	plan.Reader = XApplicationQAProfile{}
+	raw, err = json.Marshal(plan)
+	if err != nil {
+		return "", err
+	}
+	if os.WriteFile(path, raw, 0600) != nil {
+		return "", errors.New("synthetic retained plan publication unavailable")
+	}
+	return path, nil
+}

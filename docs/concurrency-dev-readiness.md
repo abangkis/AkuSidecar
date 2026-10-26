@@ -5,7 +5,8 @@ roadmap are evidence, not a new list of prerequisites.
 
 ## Selected scope
 
-- Manual, X-only attempt, at most 60 seconds from the original attempt start.
+- Manual, X-only attempt, at most 60 seconds from the original one-use seed
+  authorization start; bounded owner/Home preflight remains separate.
 - Strict account/login evidence for both owners at startup; identity renewal and
   complete refresh/rotation qualification remain deferred.
 - Startup acquisition/publication has an 18-second deadline. Every identity and
@@ -16,6 +17,38 @@ roadmap are evidence, not a new list of prerequisites.
   the global scheduling preference.
 
 ## Current implementation
+
+### Unified retained ownership and complete offline journey (2026-10-26)
+
+The working-tree increment implements Astra's cohesive integration unit. Legacy
+and application callers share the exact retained manifest/lock/state module;
+the application owner resolves the existing reader only at explicit start and
+releases its lease only before launch or after verified whole-tree cleanup.
+Stop preserves the reader and active lease. Uncertain cleanup retains fencing.
+The collector, QA database, strict startup evidence and Store policy are unchanged.
+
+Both local and invented retained-source actual-main journeys now compose the
+same application path. Tests verify once-committed capture, reader operation,
+backend-RPC overlap, terminal first cause, separate cleanup and legacy lease
+reacquisition after parent close. The real retained manifest/profile is never
+used by these tests. Both legacy staging modes compile without executing their
+native binaries. The next boundary is one separately authorized native QA run,
+not another retained-binding implementation or renewal investigation.
+
+The [updated operator plan](x-application-native-qa-run-plan.md) describes the
+implemented lifetime and clock semantics. The preparation helper now invokes
+only the image's early preparation exit and emits a hashed runtime plan with
+the retained source deferred, without a database open or browser launch. The
+review envelope still reports execution approval/readiness false pending native
+permission and observation. Older gap descriptions below are historical.
+
+Acceptance `611740f32903415ca786b3c57877d64f`: 29 Go groups/73 nested cases,
+four main build variants, and both legacy compile-only staging modes passed.
+Owner regression `ddb78b51d6f04998b1939cdd30d49f01`: 30 groups/21 cases passed;
+existing Windows symlink cases require privileges unavailable here. Five Node
+seed-clock regressions passed. Current preparation
+`2bd6390be6b04ab98634ce0732e3c0b3` includes the exact current source fingerprint
+and hashed runtime plan, without real profile/SQLite/browser access.
 
 ### Isolated application QA entry: synthetic acceptance (2026-10-26)
 

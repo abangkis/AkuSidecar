@@ -2,6 +2,15 @@
 
 ## Isolated application QA entry (2026-10-26)
 
+The unified increment shares retained-profile ownership across legacy/application
+callers. `scripts/test-x-qa-entry.ps1` now covers local and invented-retained
+actual-main journeys, first-cause/cleanup separation, backend-RPC overlap, legacy
+lease tests and both staging compilation modes. `-StagingOnly` compiles without
+running the native test binaries. `scripts/prepare-x-application-qa.mjs` invokes
+only `--dev-qa-pilot-prepare` to emit a runtime plan; it never selects the native
+pilot or reads the real retained manifest/profile. Source/asset changes require
+new preparation before separately authorized native execution.
+
 Use `scripts/test-x-qa-entry.ps1` for the accountless actual-main QA entry,
 profile/database isolation, owned post preparation and four-build checks. It
 executes only the combined-tag synthetic selector; the Windows/dev native

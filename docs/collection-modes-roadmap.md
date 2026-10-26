@@ -5,6 +5,20 @@ The dated entries below preserve experiment history. Their old blocker/next-step
 wording must not override the current checkpoint. The bounded manual X pilot
 still defers full renewal/rotation qualification.
 
+### Unified QA-to-application ownership increment (2026-10-26)
+
+The working tree closes the retained-reader composition as one bounded change:
+shared legacy/application lease, owner-finalized release, deferred fixed reader
+source, runtime-plan materialization, backend-execution overlap and terminal
+first-failure diagnostics. Synthetic tests exercise actual main through both
+profile sources, with isolated SQLite persistence and reader-preserving Stop.
+Legacy fixtures remain specialized reference tests using the same lease; they
+are not a second application acceptance journey. See
+[current readiness](concurrency-dev-readiness.md) and the
+[native operator plan](x-application-native-qa-run-plan.md). Native QA execution
+and main-dev activation remain separate explicit boundaries. No renewal, Store
+policy, user runtime or Auto Update change is added.
+
 ### Isolated pilot entry: offline acceptance (2026-10-26)
 
 The [application QA entry](x-application-qa-entry.md) now connects explicit opt-in,

@@ -34,14 +34,21 @@ type xApplicationOwnerConfig struct {
 	enabled              bool
 	node, chrome, driver xApplicationOwnerAsset
 	reader, collector    ownedprofile.Descriptor
+	retainedProject      string
 }
 
 func (xApplicationOwnerConfig) String() string     { return "private-x-application-owner-config" }
 func (v xApplicationOwnerConfig) GoString() string { return v.String() }
 
+type xApplicationProfileLease interface {
+	Validate() error
+	Matches(string, string) bool
+	Close() error
+}
+
 type xApplicationOwner struct {
 	cfg                         xApplicationOwnerConfig
-	readerLease, collectorLease *ownedprofile.Lease
+	readerLease, collectorLease xApplicationProfileLease
 	assets                      []*os.File
 	worker                      *appshell.OwnedCommand
 	stdin                       io.WriteCloser
@@ -107,19 +114,17 @@ func startXApplicationOwner(parent, request context.Context, cfg xApplicationOwn
 	if parent == nil || request == nil || parent.Err() != nil || request.Err() != nil {
 		return nil, errors.New("application owner context unavailable")
 	}
+	// Known local descriptors must reject overlap before creating any lease.
+	// Retained descriptors are checked again after their fixed source resolves.
+	if cfg.retainedProject == "" {
+		if err := xApplicationSeparateProfiles(cfg.reader, cfg.collector); err != nil {
+			return nil, err
+		}
+	}
 	startup, cancelStartup := context.WithTimeout(request, nativePilotStartup)
 	stopParentStartup := context.AfterFunc(parent, cancelStartup)
 	defer cancelStartup()
 	defer stopParentStartup()
-	if cfg.reader.Root == cfg.collector.Root || cfg.reader.DirectoryID == cfg.collector.DirectoryID {
-		return nil, errors.New("application owner profiles overlap")
-	}
-	for _, pair := range [][2]string{{cfg.reader.Root, cfg.collector.Root}, {cfg.collector.Root, cfg.reader.Root}} {
-		rel, err := filepath.Rel(pair[0], pair[1])
-		if err != nil || rel == "." || !filepath.IsAbs(rel) && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return nil, errors.New("application owner roots overlap")
-		}
-	}
 	b := &xApplicationOwner{cfg: cfg, ready: make(chan error, 1), readerDone: make(chan struct{}), closed: make(chan struct{}), stopping: make(chan struct{})}
 	// Asset validation precedes lease acquisition; default/invalid construction
 	// cannot touch profile locks. Pins stay held until owned cleanup is proved.
@@ -136,10 +141,24 @@ func startXApplicationOwner(parent, request context.Context, cfg xApplicationOwn
 		return nil, errors.New("application owner startup canceled")
 	}
 	var err error
-	b.readerLease, err = ownedprofile.Acquire(cfg.reader)
+	if cfg.retainedProject != "" {
+		var retained *xRetainedQAProfile
+		retained, err = acquireXApplicationRetainedProfile(cfg.retainedProject)
+		if err == nil {
+			b.readerLease = retained
+			cfg.reader = retained.descriptor()
+			b.cfg.reader = cfg.reader
+		}
+	} else {
+		b.readerLease, err = ownedprofile.Acquire(cfg.reader)
+	}
 	if err != nil {
 		b.releasePins()
 		return nil, errors.New("application owner reader lease unavailable")
+	}
+	if err = xApplicationSeparateProfiles(cfg.reader, cfg.collector); err != nil {
+		b.releasePins()
+		return nil, err
 	}
 	if startup.Err() != nil {
 		b.releasePins()
@@ -216,6 +235,19 @@ func startXApplicationOwner(parent, request context.Context, cfg xApplicationOwn
 		return fail("application owner scope changed")
 	}
 	return b, nil
+}
+
+func xApplicationSeparateProfiles(reader, collector ownedprofile.Descriptor) error {
+	if reader.Root == collector.Root || reader.DirectoryID == collector.DirectoryID {
+		return errors.New("application owner profiles overlap")
+	}
+	for _, pair := range [][2]string{{reader.Root, collector.Root}, {collector.Root, reader.Root}} {
+		rel, err := filepath.Rel(pair[0], pair[1])
+		if err != nil || rel == "." || !filepath.IsAbs(rel) && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return errors.New("application owner roots overlap")
+		}
+	}
+	return nil
 }
 
 // The effective worker program must match the pinned driver. Inheriting Node
@@ -326,17 +358,19 @@ func (b *xApplicationOwner) releasePins() error {
 			failed = true
 		}
 	}
-	if b.readerLease != nil {
-		if b.readerLease.Close() != nil {
-			failed = true
-		}
-	}
 	for _, f := range b.assets {
 		if f.Close() != nil {
 			failed = true
 		}
 	}
 	b.assets = nil
+	// A retained profile may become clean only after every other owned pin closes.
+	if b.readerLease != nil && !failed {
+		if b.readerLease.Close() != nil {
+			failed = true
+		}
+	}
+
 	if failed {
 		return errors.New("application owner pin release uncertain")
 	}

@@ -3,9 +3,9 @@
 ## Scope and activation
 
 The Windows `auth_session_dev` build recognizes `native-x-manual-qa` through
-`--dev-session-reuse`, together with `--dev` and `--dev-qa-pilot-plan`. This is
-source implementation only: the native selector has not been executed or
-qualified by this increment. Ordinary builds reject it before configuration or
+`--dev-session-reuse`, together with `--dev` and `--dev-qa-pilot-plan`. The unified
+retained-source integration remains default-off: its native selector has not
+been executed or qualified here. Ordinary builds reject it before configuration or
 database initialization. No normal configuration setting enables the pilot.
 
 The isolated dispatcher runs before ordinary configuration, application shell,
@@ -33,10 +33,15 @@ There is no lookup of a default profile or database and no fallback to main dev.
 | Instance | Matching `instance.json` schema `aku.x.qa-isolation.v1`, instance and physical root identity |
 | State | Exact `state` child and its physical directory identity, held by an exclusive instance lease |
 | Database | Exact `state/pilot.db`; exclusive creation, or explicit physical file identity and current schema for reuse |
-| Reader | Exact `profiles/reader/profile`, with physical root and profile directory identities |
+| Reader | Native: fixed retained-QA manifest and trusted checkout, resolved/leased only at start. Synthetic: local profile or an invented instance-local retained manifest. |
 | Collector | Exact `profiles/collector/profile`, independently pinned and leased at native owner acquisition |
 | Assets | Explicit Node, Chrome and sealed driver paths and SHA256 hashes, held against replacement |
 | Listener | Explicit loopback port 1024–65535 excluding 11122 |
+
+Native plans specify `readerSource:"retained-qa"`, trusted `projectRoot` and an
+empty reader descriptor. They cannot supply arbitrary external profile paths.
+Legacy and application callers share the original manifest lock/state protocol;
+the application owner finalizes its lease only after complete verified cleanup.
 
 Aliases/reparse points, hardlinked state files, URI-special paths and incorrect
 identities are rejected. Existing WAL/SHM/journal files require separate offline
@@ -58,8 +63,9 @@ verification must succeed before the sole post navigation. The entry does not
 force focus or close user windows on preparation failure. Cancellation, expiry,
 failed verification and failed navigation retire the temporary capability.
 
-Stop revokes collection authority while preserving the reader under its Sidecar
-parent. EOF/process shutdown disposes the complete owned tree. Unknown cleanup
+Stop revokes collection authority while preserving the reader and its active
+retained lease under Sidecar. EOF/process shutdown disposes the complete owned
+tree. Unknown cleanup
 retains instance/profile fences; it never means retry or permission to start
 again. Reopening the same clean QA database starts disabled with new consent
 required. `settle` rejects an unsuccessful startup without waiting on a capture
@@ -73,6 +79,8 @@ Run from the repository root:
 .\scripts\test-x-qa-entry.ps1
 # Only ordinary Store version/compatibility checks:
 .\scripts\test-x-qa-entry.ps1 -StoreOnly
+# Compile both legacy staging modes without executing their native tests:
+.\scripts\test-x-qa-entry.ps1 -StagingOnly
 ```
 
 The helper compiles four actual-main variants and executes only
@@ -85,7 +93,7 @@ owned-reader preparation, exactly-once nonempty observation persistence,
 status/stop and clean database reopening. Neither Chrome nor the native selector
 is executed. Disposable test roots/binaries are removed; logs remain project-local.
 
-Acceptance `ae6c9295edd7400383dbe8d8caa80ad9` passed eight Engine/post groups
+Earlier acceptance `ae6c9295edd7400383dbe8d8caa80ad9` passed eight Engine/post groups
 with 24 nested cases, three actual-main groups with nine nested cases, and all
 four builds. Windows hardlink rejection cases executed successfully outside the
 filesystem sandbox. The ordinary Store regression run
@@ -99,21 +107,35 @@ native X capture or frontend/native-message integration through this new entry.
 Those require a separately prepared native QA plan and an explicitly authorized
 bounded run. Main login, user database/runtime and Auto Update were not changed.
 
-## Retained-profile preparation finding (2026-10-26)
+## Unified retained-source composition (2026-10-26)
 
-The v1 layout accepts only the instance-local `profiles/reader/profile`. The
-retained QA harness instead uses the fixed `x-retained-native-qa.json` manifest,
-`run-x-two-phase-<32hex>` owned root and its `shared` profile, with a
-manifest-level lease.
-The application owner's root lease is not a replacement for that shared lease.
-Consequently, v1 cannot yet reuse the retained login in place. A plan that simply
-substitutes that external path is correctly rejected before opening the database.
+The earlier layout/lease gap is closed in the working tree. The shared retained
+lease module is used by legacy adapters and the application owner. Synthetic
+actual-main tests exercise both profile sources through the same application
+journey, preserving offline provenance. They verify capture/post overlap at the
+backend execution interval, once-committed observations, terminal first failure,
+separate cleanup reporting and lease retention through reader-preserving Stop.
+Owner and staging regressions protect compatibility with the older callers.
 
-Before a retained native run, add a narrowly scoped reader binding to the fixed
-retained-QA manifest and the existing exclusive lease/clean-state protocol. Keep
-the collector and database instance-local, retain physical identity checks, and
-hold the retained lease until complete owned-reader cleanup. This is preparation
-work, not a request to copy/move a Chrome profile, copy credentials, create a new
-login, or relax arbitrary-path admission. The retained binding is not implemented
-or qualified by this increment; do not run the native selector against that
-profile. A source-only synthetic increment must close this specific gap first.
+The preparation helper now compiles the dev image and invokes only its early
+`--dev-qa-pilot-prepare` exit. This materializes a hashed runtime plan, collector
+directory and empty state directory without opening SQLite, resolving the real
+retained manifest or starting a browser. The review envelope's execution flags
+remain false until separate permission. See the updated
+[native run plan](x-application-native-qa-run-plan.md) for evidence and the exact
+seed authorization time anchor. No new renewal, timing tuning or Store policy
+gate is introduced. Native Chrome/X acceptance remains unexecuted.
+
+Final unified run `611740f32903415ca786b3c57877d64f` passed **29 Go groups and
+73 nested cases**, with no skipped cases, all four actual-main build variants,
+and both compile-only legacy staging modes. This includes original retained
+lease tests, cross-caller exclusion, reader-preserving Stop/parent release,
+local/retained actual-main journeys, safe terminal errors and asynchronous first
+failure. The source path is complete for this offline acceptance unit.
+
+Owner regression `ddb78b51d6f04998b1939cdd30d49f01` passed 30 groups and
+21 nested cases across profile leases, suspended fake-worker Jobs, seed receipts
+and existing app-shell/session tests. Existing symlink-privilege cases remain
+unavailable on this Windows host; the unified run executed its hardlink cases.
+Five application-seed Node fake-clock tests also passed, protecting exact expiry,
+no deadline extension, replay rejection and pending-write behavior.

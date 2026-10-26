@@ -30,19 +30,21 @@ type XApplicationQAProfile struct {
 	DirectoryID string `json:"directoryId"`
 }
 type XApplicationQAPlan struct {
-	Schema     string                `json:"schema"`
-	Instance   string                `json:"instance"`
-	Root       string                `json:"root"`
-	RootID     string                `json:"rootId"`
-	StateID    string                `json:"stateId"`
-	Port       int                   `json:"port"`
-	Database   string                `json:"database"`
-	DatabaseID string                `json:"databaseId"`
-	Reader     XApplicationQAProfile `json:"reader"`
-	Collector  XApplicationQAProfile `json:"collector"`
-	Node       XApplicationQAAsset   `json:"node"`
-	Chrome     XApplicationQAAsset   `json:"chrome"`
-	Driver     XApplicationQAAsset   `json:"driver"`
+	ReaderSource string                `json:"readerSource,omitempty"`
+	ProjectRoot  string                `json:"projectRoot,omitempty"`
+	Schema       string                `json:"schema"`
+	Instance     string                `json:"instance"`
+	Root         string                `json:"root"`
+	RootID       string                `json:"rootId"`
+	StateID      string                `json:"stateId"`
+	Port         int                   `json:"port"`
+	Database     string                `json:"database"`
+	DatabaseID   string                `json:"databaseId"`
+	Reader       XApplicationQAProfile `json:"reader"`
+	Collector    XApplicationQAProfile `json:"collector"`
+	Node         XApplicationQAAsset   `json:"node"`
+	Chrome       XApplicationQAAsset   `json:"chrome"`
+	Driver       XApplicationQAAsset   `json:"driver"`
 }
 
 func (XApplicationQAPlan) String() string     { return "private-isolated-X-QA-plan" }
@@ -164,15 +166,29 @@ func openXQASelection(ctx context.Context, path string) (selection *xQASelection
 		}
 		return ownedprofile.Descriptor{Root: v.Root, Directory: v.Directory, RootID: r, DirectoryID: d}, nil
 	}
-	r, err := profile(p.Reader, "reader")
-	if err != nil {
-		return nil, err
+	var r ownedprofile.Descriptor
+	switch p.ReaderSource {
+	case "":
+		if p.ProjectRoot != "" {
+			return nil, errors.New("QA local profile source rejected")
+		}
+		r, err = profile(p.Reader, "reader")
+		if err != nil {
+			return nil, err
+		}
+	case "retained-qa":
+		trusted, trustErr := xRetainedQAProjectRoot()
+		if trustErr != nil || p.ProjectRoot != trusted || p.Reader != (XApplicationQAProfile{}) {
+			return nil, errors.New("QA retained profile source rejected")
+		}
+	default:
+		return nil, errors.New("QA reader source rejected")
 	}
 	c, err := profile(p.Collector, "collector")
 	if err != nil {
 		return nil, err
 	}
-	s.owner = xApplicationOwnerConfig{enabled: true, reader: r, collector: c, node: xApplicationOwnerAsset{p.Node.Path, p.Node.SHA256}, chrome: xApplicationOwnerAsset{p.Chrome.Path, p.Chrome.SHA256}, driver: xApplicationOwnerAsset{p.Driver.Path, p.Driver.SHA256}}
+	s.owner = xApplicationOwnerConfig{enabled: true, retainedProject: p.ProjectRoot, reader: r, collector: c, node: xApplicationOwnerAsset{p.Node.Path, p.Node.SHA256}, chrome: xApplicationOwnerAsset{p.Chrome.Path, p.Chrome.SHA256}, driver: xApplicationOwnerAsset{p.Driver.Path, p.Driver.SHA256}}
 	for _, asset := range []xApplicationOwnerAsset{s.owner.node, s.owner.chrome, s.owner.driver} {
 		f, e := pinXApplicationAsset(asset)
 		if e != nil {
