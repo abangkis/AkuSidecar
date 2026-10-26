@@ -93,6 +93,10 @@ func OpenReadOnly(path string) (*Store, error) {
 }
 
 func OpenWithClock(path string, defaults domain.Settings, clock Clock) (*Store, error) {
+	return openWithClock(path, defaults, clock, true)
+}
+
+func openWithClock(path string, defaults domain.Settings, clock Clock, publishRuntimeVersion bool) (*Store, error) {
 	if clock == nil {
 		return nil, errors.New("store clock is required")
 	}
@@ -130,9 +134,11 @@ func OpenWithClock(path string, defaults domain.Settings, clock Clock) (*Store, 
 		db.Close()
 		return nil, err
 	}
-	if err := writeDataRuntimeVersion(path, domain.ApplicationVersion); err != nil {
-		db.Close()
-		return nil, err
+	if publishRuntimeVersion {
+		if err := writeDataRuntimeVersion(path, domain.ApplicationVersion); err != nil {
+			db.Close()
+			return nil, err
+		}
 	}
 	return store, nil
 }

@@ -5,6 +5,7 @@ import {startupRPCCode} from '../../../../../scripts/auth-session-fixture/x-manu
 import {manualSeedRPCCode} from '../../../../../scripts/auth-session-fixture/x-native-metadata-probe-driver.mjs';
 import {manualCaptureRPCCode,manualCaptureRPCDiagnostic} from '../../../../../scripts/auth-session-fixture/x-native-manual-capture.mjs';
 import {MANUAL_TIMING} from '../../../../../scripts/auth-session-fixture/x-manual-timing-policy.mjs';
+import {applicationPostOperation} from '../../../../../scripts/auth-session-fixture/x-application-reader-post.mjs';
 
 export const OWNER_SCHEMA='aku.x.application-owner.v1';
 const MAX_LINE=65536,MAX_PENDING=32,MAX_CALLS=512;
@@ -22,6 +23,7 @@ export function ownerBootstrap(value){
 }
 export function ownerOperation(value){
   const operation=value&&Object.getOwnPropertyDescriptor(value,'op')?.value;
+  if(['manual_prepare_post','manual_complete_post','manual_cancel_post'].includes(operation))return applicationPostOperation(value);
   if(['native_owner_initialize','native_owner_seed','manual_open_reader'].includes(operation)){
     exact(value,operation==='native_owner_initialize'?['id','op']:['id','op','owner']);
     if(!Number.isSafeInteger(value.id)||value.id<1||operation!=='native_owner_initialize'&&(!Number.isSafeInteger(value.owner)||value.owner<1))throw failed();

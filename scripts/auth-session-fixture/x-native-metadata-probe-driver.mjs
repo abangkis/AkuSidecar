@@ -41,6 +41,7 @@ import { ManualStartupObservation } from './x-manual-startup-cookie-guard.mjs';
 import {startupFailure,startupFailureLatch,startupRPCCode,requireBoundStartup,startupInspectionFailure,startupPrepareFailure} from './x-manual-startup-diagnostic.mjs';
 import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 import {createApplicationSeedGrant} from './x-application-seed-grant.mjs';
+import {createApplicationReaderPost,applicationPostOperation} from './x-application-reader-post.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -557,6 +558,7 @@ function isTargetURL(rawURL) {
 }
 
 function projectCDPResult(method, result, projectionKind = null) {
+  if(projectionKind==='application_post'){if(!isObject(result))throw probeError('application_post_unavailable');return result;}
   if(projectionKind==='manual_root_control'){if(!isObject(result)||Reflect.ownKeys(result).length!==0)throw probeError('manual_root_control_ack');return{acknowledged:true};}
   if (!isObject(result)) throw probeError('cdp_result_invalid');
   if(projectionKind==='manual_enrollment_capture')return active.manualEnrollment.project(method,result);
@@ -974,6 +976,20 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
   });
 }
 
+// This writer is received only by the fixed application-post recipe. No caller
+// can select a method/parameter envelope through the private owner protocol.
+function sendApplicationPost(method,params={},sessionId){
+  if(!applicationScope||!['Target.getTargets','Browser.getWindowForTarget','Target.createTarget','Target.attachToTarget','Target.detachFromTarget','Page.enable','Page.getFrameTree','Page.navigate'].includes(method)||cdpFailure||pending.size>=MAX_PENDING_COMMANDS)return Promise.reject(probeError('application_post_unavailable'));
+  const id=++nextCommandId;
+  if(!Number.isSafeInteger(id)||id<1)return Promise.reject(probeError('application_post_unavailable'));
+  return new Promise((accept,reject)=>{
+    const timer=setTimeout(()=>{if(pending.has(id))failCDP('application_post_timeout');},COMMAND_TIMEOUT_MS);
+    pending.set(id,{method,projectionKind:'application_post',sessionId:sessionId??null,resolve:accept,reject,timer});
+    try{cdpWrite({id,method,params,...(sessionId?{sessionId}:{})});}
+    catch{pending.delete(id);clearTimeout(timer);reject(probeError('application_post_unavailable'));}
+  });
+}
+
 function rejectPending(code) {
   for (const [id, item] of pending) {
     clearTimeout(item.timer);
@@ -1009,6 +1025,7 @@ function dispatchCDP(raw) {
   if (own(raw, 'method')) {
     exactCDPKeys(raw, raw.sessionId === undefined ? ['method', 'params'] : ['method', 'params', 'sessionId']);
     active?.manualEnrollment?.observe(raw);
+    applicationScope?.readerPost?.observe(raw);
     active?.manualCookieGuard?.observe(raw);
     if(active?.manualObserver&&raw.sessionId===active.manualObserver.sessionId&&raw.method==='Runtime.executionContextCreated'){
       const context=raw.params?.context;
@@ -2261,6 +2278,16 @@ export async function createApplicationManualOwner({chromePath,readerProfile,col
       return applicationScope.seedGrant.run({id:message.id,op:'manual_seed_bootstrap',owner:message.owner});
     },
     async execute(message){
+      // Reserve the request in the post actor synchronously. A concurrent
+      // cancel must be able to retire it while profile/CDP reads are pending.
+      if(['manual_prepare_post','manual_complete_post','manual_cancel_post'].includes(message.op)){
+        applicationPostOperation(message);requireOwner(message);
+        if(active.manualAcquired?.size!==2)throw probeError('application_post_unavailable');
+        applicationScope.readerPost??=createApplicationReaderPost({owner:active.owner,bootstrapTarget:active.targetId,
+          command:async(method,params,session,beforeDispatch=()=>{})=>{await check();if(method!=='Target.detachFromTarget')applicationScope.seedGrant.assertCurrent();beforeDispatch();return sendApplicationPost(method,params,session);},
+          assertCurrent:()=>applicationScope.seedGrant.assertCurrent()});
+        return applicationScope.readerPost.execute(message);
+      }
       await check();
       const cleanup=['manual_abort','manual_capture_cancel'].includes(message.op);
       if(!cleanup)applicationScope.seedGrant.assertCurrent();
@@ -2275,7 +2302,7 @@ export async function createApplicationManualOwner({chromePath,readerProfile,col
     },
     async close(){
       if(closed)return;closed=true;
-      try{if(active?.shortFeasibility)await closeShortCollector(active);}
+      try{await applicationScope.readerPost?.close();if(active?.shortFeasibility)await closeShortCollector(active);}
       finally{await closeChrome();}
     },
   });

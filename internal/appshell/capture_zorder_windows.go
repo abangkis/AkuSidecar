@@ -38,6 +38,7 @@ type captureZOrder struct {
 	mu                                   sync.Mutex
 	job                                  windows.Handle
 	root                                 uint32
+	readerPID                            uint32 // Optional exact borrowed reader process; zero preserves normal containment.
 	logger                               *log.Logger
 	stop, done                           chan struct{}
 	once                                 sync.Once
@@ -87,7 +88,7 @@ func (c *captureZOrder) owns(hwnd uintptr) bool {
 	}
 	var pid uint32
 	procGetWindowThreadProcess.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
-	if pid == 0 {
+	if pid == 0 || c.readerPID != 0 && pid != c.readerPID {
 		return false
 	}
 	p, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)

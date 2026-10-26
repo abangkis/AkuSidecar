@@ -5,6 +5,17 @@ The dated entries below preserve experiment history. Their old blocker/next-step
 wording must not override the current checkpoint. The bounded manual X pilot
 still defers full renewal/rotation qualification.
 
+### Isolated pilot entry: offline acceptance (2026-10-26)
+
+The [application QA entry](x-application-qa-entry.md) now connects explicit opt-in,
+pinned QA profiles/database, owned post preparation and the existing Engine/Store
+path. Only the combined-tag synthetic selector was executed; eight Engine/post
+groups, three actual-main groups, four builds and four ordinary Store regression
+groups passed. The native selector was authorized for source implementation only
+and remains unexecuted/default-off. Next is native QA plan/operator review and a
+separately authorized bounded run, not ordinary runtime activation. No login,
+user database/runtime or Auto Update change was made.
+
 ### Native X capture composition: offline first (2026-10-25)
 
 The private native collector now composes the existing X parser/worker with the

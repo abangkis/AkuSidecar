@@ -62,6 +62,9 @@ type xApplicationOwner struct {
 	seedUsed                    bool
 	readerOpenUsed              bool
 	protocolOwner               int
+	postMu                      sync.Mutex
+	postBinding                 *appshell.OwnedReaderBinding
+	postRequests                map[string]bool
 }
 
 func (*xApplicationOwner) String() string     { return "private-x-application-owner" }

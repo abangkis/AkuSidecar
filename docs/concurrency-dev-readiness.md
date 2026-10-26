@@ -17,6 +17,35 @@ roadmap are evidence, not a new list of prerequisites.
 
 ## Current implementation
 
+### Isolated application QA entry: synthetic acceptance (2026-10-26)
+
+The preceding 35-file driver/routing increment was reviewed and pushed as
+`e6713edd0cc0c10ebf6bc997fc7d19b2f7014d29`. The new uncommitted increment
+adds the [isolated QA entry](x-application-qa-entry.md), explicit default-off
+selectors, pinned instance/profile/database validation and owned reader post
+preparation. The native selector is now implemented under Windows/dev tags
+after explicit source-only approval; it has **not been executed**. Ordinary
+runtime has no start control or configuration opt-in for it.
+
+Synthetic run `ae6c9295edd7400383dbe8d8caa80ad9` passed eight Engine/post
+groups, three actual-main groups and four build variants. It executed the
+accountless CLI start/post/capture/status/stop journey and database reopening,
+including Windows hardlink and SQLite sidecar rejection. Store marker/version
+and schema-classification regressions passed separately in
+`8fb0760356074539a91e7ef40cbd2fed`. Foreground must verify successfully before
+the one-use navigation; failure retires the temporary capability.
+
+Preparation review found that v1's instance-local reader layout cannot yet reuse
+the legacy retained QA profile in place. Its manifest-level lease must also be
+preserved; substituting an external path or using only the new owner's root lock
+is insufficient. First add/test a fixed retained-reader binding without copying
+the profile or credentials, then prepare/review the exact native plan and obtain
+execution authorization before any real transfer. Native foreground,
+Chrome composition and captured X results through this new entry remain
+unqualified. Main login, database/runtime and Auto Update remain untouched.
+The dated sections below describe prior increments and do not override this
+source/activation distinction.
+
 ### Packaged driver and application routing (2026-10-26)
 
 The application-owner/profile-lease increment was reviewed and pushed as

@@ -1,5 +1,16 @@
 # Local one-login concurrency fixture
 
+## Isolated application QA entry (2026-10-26)
+
+Use `scripts/test-x-qa-entry.ps1` for the accountless actual-main QA entry,
+profile/database isolation, owned post preparation and four-build checks. It
+executes only the combined-tag synthetic selector; the Windows/dev native
+selector is implemented but must not run under this approval. See the
+[entry contract and evidence](../../docs/x-application-qa-entry.md) for the explicit
+plan layout, one-use start consent, read-only loopback marker and cleanup rules.
+This helper does not launch Chrome, transfer a session, read the retained/main
+profile or change main runtime/Auto Update.
+
 ## Current X capture acceptance entry
 
 `scripts/prepare-x-manual-retained-qa.ps1 -Capture` prepares the real

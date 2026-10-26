@@ -465,6 +465,7 @@ type BridgeConfig struct {
 
 type Options struct {
 	DevelopmentSessionReuse     string
+	DevelopmentQAPilotPlan      string
 	DatabaseInspect             bool
 	DatabaseAction              string
 	DatabaseConfirm             bool
@@ -495,6 +496,7 @@ type Options struct {
 func ParseFlags() Options {
 	var options Options
 	flag.StringVar(&options.DevelopmentSessionReuse, "dev-session-reuse", "", "explicit development session integration provider; disabled in ordinary builds")
+	flag.StringVar(&options.DevelopmentQAPilotPlan, "dev-qa-pilot-plan", "", "explicit isolated X QA pilot plan; requires its development provider")
 	flag.BoolVar(&options.DatabaseInspect, "database-inspect", false, "inspect existing database compatibility and exit without migration")
 	flag.StringVar(&options.DatabaseAction, "database-action", "", "prepare existing database: migrate or fresh")
 	flag.BoolVar(&options.DatabaseConfirm, "database-confirm", false, "confirm the selected database action and recoverable backup")

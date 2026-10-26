@@ -44,7 +44,7 @@ export async function buildNativeOwnerPackage(outputDirectory){
   }
   await visit(entry);
   const modules=Object.fromEntries([...graph].sort(([a],[b])=>a.localeCompare(b)));
-  const manifest={schema:'aku.x.application-owner-package.v1',entry,nodeMinimum:'22.15.0',capabilities:{sessionSeed:true},
+  const manifest={schema:'aku.x.application-owner-package.v1',entry,nodeMinimum:'22.15.0',capabilities:{sessionSeed:true,readerPost:true},
     dataAssets:[{path:timingPath,sha256:hash(timingSource)}],
     modules:Object.entries(modules).map(([path,source])=>({path,sha256:hash(source)})),
     captureAssets:assetRows.map(({relative:path,sha256})=>({path,sha256}))};

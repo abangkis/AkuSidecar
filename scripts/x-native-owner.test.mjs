@@ -26,7 +26,7 @@ async function ready(h){await h.send(boot);assert.deepEqual(h.records.shift(),{r
 
 if(process.argv.includes('--pipe-fixture')){
   serveOwnerPipe({input:process.stdin,output:process.stdout,
-    createOwner:async()=>({initialize:async()=>({owner:1,readerPID:101,collectorPID:102}),seed:async()=>({seeded:true}),execute:async()=>({closed:true}),close:async()=>{}}),
+    createOwner:async()=>({initialize:async()=>({owner:1,readerPID:101,collectorPID:102}),seed:async()=>({seeded:true}),execute:async message=>message.op==='manual_prepare_post'?{handle:'c'.repeat(48),targetId:'synthetic-post',windowId:2,expiresMS:Date.now()+30000}:{closed:true},close:async()=>{}}),
     onClosed:()=>{process.stdin.destroy();process.stdout.end();},
   });
 }else{
@@ -95,7 +95,10 @@ if(process.argv.includes('--pipe-fixture')){
     try{
       child.stdin.write(JSON.stringify(boot)+'\n');await until(1);assert.equal(received[0].nonce,boot.nonce);
       child.stdin.write('{"id":1,"op":"native_owner_initialize"}\n');await until(2);assert.equal(received[1].ok,true);
-      child.stdin.write('{"id":2,"op":"Runtime.evaluate","expression":"SECRET"}\n');await exited;assert.equal(received.length,2);
+      child.stdin.write('{"id":2,"op":"native_owner_seed","owner":1}\n');await until(3);assert.equal(received[2].ok,true);
+      child.stdin.write(JSON.stringify({id:3,op:'manual_prepare_post',owner:1,request:{requestId:'broker_'+'a'.repeat(32),source:'x',url:'https://x.com/example/status/123'},marker:'http://127.0.0.1:12345/split-reader-intent?id=split_'+'b'.repeat(32)})+'\n');
+      await until(4);assert.equal(received[3].result.targetId,'synthetic-post');
+      child.stdin.write('{"id":4,"op":"Runtime.evaluate","expression":"SECRET"}\n');await exited;assert.equal(received.length,4);
     }finally{if(child.exitCode===null)child.kill();}
   });
   test('sealed package is reproducible, self contained, bootstrap only with private seed implementation',{timeout:20000},async()=>{

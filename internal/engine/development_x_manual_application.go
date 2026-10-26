@@ -102,7 +102,8 @@ func (e *Engine) startXManualApplication(ctx, parent context.Context, session, r
 	defer cancelPair()
 	if err == nil {
 		d := b.start(startup)
-		if !d.ManualEligible {
+		offline, isOffline := p.admission.(interface{ syntheticStartupAllowed() bool })
+		if !d.ManualEligible && !(d.OfflineValidated && isOffline && offline.syntheticStartupAllowed()) {
 			err = errors.New("manual startup rejected")
 		}
 	}
