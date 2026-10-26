@@ -71,6 +71,10 @@ func nativePilotRuntimeOwner(manager *captureruntime.Manager, lease *capturerunt
 }
 
 func (r *nativePilotRuntime) openReader(ctx context.Context, request readerbroker.Request) error {
+	return r.withReader(ctx, request, func(call context.Context) error { return r.open(call, request) })
+}
+
+func (r *nativePilotRuntime) withReader(ctx context.Context, request readerbroker.Request, open func(context.Context) error) error {
 	if request.Validate() != nil || request.Source != "x" {
 		return errors.New("manual reader request rejected")
 	}
@@ -107,7 +111,7 @@ func (r *nativePilotRuntime) openReader(ctx context.Context, request readerbroke
 		return errors.New("manual reader owner changed")
 	}
 	// External reader work always runs outside broker/controller locks.
-	if err = r.open(ctx, request); err != nil {
+	if err = open(ctx); err != nil {
 		return err
 	}
 	if !nativePilotRuntimeOwner(r.reader, lease, owner, "browser") {

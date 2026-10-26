@@ -103,6 +103,90 @@ see the [accepted run and limits](concurrency-dev-readiness.md#native-x-capture-
 
 ## Composition and responsibility
 
+### Implementation checkpoint: package and routing (2026-10-26)
+
+The private application pipe entry now exists under
+`internal/collection/headless/worker/native-pilot`. The offline builder seals its
+module graph, timing policy and parser/capture assets into one pinned CJS file.
+Only the narrow owner protocol is dispatched; QA commands and arbitrary CDP,
+scripts, URLs and executable selection are not exposed through it. Initialization
+is one-use, and Go verifies both returned PID candidates against actual owned OS
+processes. Initialization alone grants neither session nor Store authority.
+
+Application session seed code is now implemented under explicit source-only
+approval. Its private one-use grant reuses the retained recipe without setting
+QA environment flags or exposing the QA dispatcher. The manifest advertises
+`sessionSeed=true` as code capability, not operational permission. The Go seed
+entry checks live OS/profile ownership, the exact seven-field private receipt,
+and the original attempt deadline; no cookie value crosses into Go. Failure
+retires the owner and cannot trigger another transfer. Generic seed/open bypasses
+still reject. Legacy QA gates retain the same requirements for QA callers.
+
+The Windows/dev-only `xApplicationNativeFactory` composes the pinned owner,
+initialization, seed, existing native broker and exact fixed-role Managers. Its
+runtime builder runs after startup document binding. Store issuance remains a
+separate final step through the existing native issuer; the backend's revocation
+callback is installed there for both application and retained QA construction.
+Private consent is tied to the complete pinned owner configuration and consumed
+once before acquisition. Status, saved settings and package metadata cannot
+construct this consent. Startup disposal follows publication state, not a reason
+string that could be replaced by an earlier broker error.
+
+`native-x-manual` continues rejecting before ordinary config/database access.
+Do not enable the selector merely because the driver builds or synthetic tests
+pass. Activation still needs isolated instance/profile selection validation and
+an owned post-target preparer supplied to the private factory under the existing
+OS broker's request/foreground contract. No such runtime activation or real
+transfer was authorized or executed in this increment.
+
+`startXManualApplication` is private trusted Go composition, used by synthetic
+tests. It reserves X before invoking a factory, refuses an already claimed source,
+and publishes active routing only after existing broker evidence and Store
+issuance pass. The source gate covers ordinary command/media claims and skips X
+when choosing ordinary pending work, preserving non-X routes. Existing Store
+transactions remain the final occupancy/authority check. No new permit model,
+database migration or acceptance-result writer is introduced.
+
+The injected factory must honor context cancellation and return partial-resource
+disposal even after failure. Its preflight is bounded by the shared
+`collectorHomeReadyMS`; paired sampling then uses the existing `startupTotalMS`.
+These contexts derive separately from the same canceled-on-stop parent scope;
+unused preflight time does not become a shorter paired sampling deadline.
+Evidence age and original attempt deadline are still checked by the broker and
+Store. Uncooperative/unknown startup cleanup keeps X reserved; it cannot silently
+release the source or select fallback. No automatic retry or second attempt is
+available in this process.
+
+The direct reader preparation hook runs only after the existing split-action
+conversation attaches its authenticated helper. A selected X route borrows its
+private reader Manager, checks ownership around preparation and returns the
+existing target/foreground/navigation contract. It does not replace Windows
+foreground checks or infer foreground success from a browser window count.
+
+`GET /api/collection/runtime` adds the safe `xManual` projection. Development-only
+`POST /api/development/x-manual/stop` accepts an empty JSON object and the current
+`X-Aku-Split-Epoch`, under existing loopback/origin checks. Stop cancels work and
+revokes the existing permit through broker cleanup. The projection separates its
+first stop reason and cleanup state. Verified cleanup can release source routing;
+unknown cleanup keeps it fenced. Reader ownership survives ordinary opt-out;
+parent shutdown disposes the full owner tree. Neither API can start or seed it.
+The Engine marks shutdown and cancels existing work before calling external
+owner cleanup outside its mutex. A stop deadline remains an explicit uncertain
+cleanup state until the original resource operation finishes; it never authorizes
+retry. An already stopped broker's first cause takes precedence over a later
+manual stop even when no status endpoint was read in between.
+Pilot capture runs as a one-use owned task rather than blocking the ordinary
+collector loop. Both explicit stop and autonomous broker invalidation require
+browser cleanup plus completion of any started result reconciliation before
+reporting verified cleanup or releasing X routing. The capture publishes its
+reconciliation completion before calling stop after failure, avoiding self-wait.
+
+Run `scripts/test-x-application-routing.ps1` for synthetic Engine/Store lifecycle,
+reader, status/stop security and actual main builds. Run
+`node --test scripts/x-native-owner.test.mjs` for accountless protocol/package
+checks. These do not execute Chrome, transfer credentials, access retained/main
+profiles or change runtime settings.
+
 ```mermaid
 flowchart TD
   M[Main: validate explicit development selection and isolated paths]

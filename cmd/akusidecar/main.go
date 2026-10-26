@@ -168,6 +168,12 @@ func main() {
 	}
 	eventRuntime := semanticengine.New(state, eventResolver)
 	runtime := engine.New(state, provider, cfg, logger, eventRuntime)
+	if cfg.Dev {
+		// Inspection never starts an owner or acquires a profile. Native start
+		// remains unavailable until its private seed capability is approved.
+		manual := runtime.XManualStatus()
+		logger.Printf("x_manual_provider state=%s available=%t", manual.State, manual.Available)
+	}
 	mediaInspector := mediaprovenance.NewC2PAToolInspector(cfg.MediaProvenance.C2PAToolPath)
 	runtime.SetMediaProvenanceInspector(mediaInspector)
 	if mediaInspector.Available() {

@@ -66,7 +66,7 @@ export function validateManualCaptureRequest(request,now=Date.now()) {
 
 // A private capability on the existing owned collector pipe. No launcher, cookie
 // operation, startup navigation, or raw RPC URL/script reaches this boundary.
-export async function captureNativeXTarget({request,bridgePath,command,subscribe,browserContextId,proofSession,signal,onUnsafe=()=>{},onTrafficDiagnostic=()=>{}}) {
+export async function captureNativeXTarget({request,bridgePath,loadAssets=()=>sourceAssets(bridgePath,'x'),command,subscribe,browserContextId,proofSession,signal,onUnsafe=()=>{},onTrafficDiagnostic=()=>{}}) {
   const payload=validateManualCaptureRequest(request);
   if(typeof command!=='function'||typeof subscribe!=='function'||!ref(browserContextId))throw manualCaptureFailure(null,'admission','invalid_request');
   let target,session,unsubscribe,guard,unsafe=false,closed=false,first=null,stage='assets',wire;
@@ -79,7 +79,7 @@ export async function captureNativeXTarget({request,bridgePath,command,subscribe
   const timer=setTimeout(abort,Math.max(1,request.deadlineMS-Date.now()));
   signal?.addEventListener('abort',abort,{once:true});
   try {
-    const assets=await sourceAssets(bridgePath,'x');
+    const assets=await loadAssets();
     if(expired())throw record(null,'admission',signal?.aborted?'canceled':'deadline');
     stage='target_create';
     const created=await command('Target.createTarget',{url:'about:blank',browserContextId});

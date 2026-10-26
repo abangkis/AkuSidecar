@@ -358,6 +358,8 @@ function validateErrorPayload(value) {
 export function createQAFeasibilityCollector({
   executable,
   root,
+  applicationProfile,
+  loadAssets,
   spawnChrome = spawn,
   FrameDecoder,
   allowedExpressions = [],
@@ -467,7 +469,14 @@ export function createQAFeasibilityCollector({
     state = 'validating';
     let profile;
     try {
-      profile = await validateAndCreateProfile(root, executable);
+      // Only private application composition supplies an already leased profile.
+      // QA callers retain the new-profile-only validation path.
+      if(applicationProfile!==undefined){
+        if(typeof applicationProfile!=='string'||!isAbsolute(applicationProfile)||resolve(applicationProfile)!==applicationProfile)throw fixedError('qa_profile_rejected');
+        const info=await lstat(applicationProfile);
+        if(!info.isDirectory()||info.isSymbolicLink()||await realpath(applicationProfile)!==applicationProfile)throw fixedError('qa_profile_rejected');
+        profile=applicationProfile;
+      }else profile = await validateAndCreateProfile(root, executable);
       ownedProfile = profile;
     } catch (error) {
       state = 'failed';
@@ -641,9 +650,9 @@ export function createQAFeasibilityCollector({
   };
   let captureBusy=false;
   const captureWorker=async(request,{browserContextId,proofSession,signal,onUnsafe}={})=>{
-    if(process.env.AKU_X_NATIVE_MANUAL_CAPTURE_ALLOWED!=='1'||captureBusy||request?.pins?.ownerId!==String(child?.pid)||request?.pins?.profileId!==ownedProfile)throw fixedError('qa_capture_unavailable');
+    if((applicationProfile===undefined&&process.env.AKU_X_NATIVE_MANUAL_CAPTURE_ALLOWED!=='1')||captureBusy||request?.pins?.ownerId!==String(child?.pid)||request?.pins?.profileId!==ownedProfile)throw fixedError('qa_capture_unavailable');
     captureBusy=true;
-    try{return await captureNativeXTarget({request,bridgePath:resolve(PROJECT_ROOT,'..','AkuBridge'),browserContextId,proofSession,signal,onUnsafe,subscribe,
+    try{return await captureNativeXTarget({request,bridgePath:resolve(PROJECT_ROOT,'..','AkuBridge'),loadAssets,browserContextId,proofSession,signal,onUnsafe,subscribe,
       command:(method,params,sessionId,timeoutMs)=>writeCommand(method,params,sessionId,result=>result,timeoutMs)});}
     finally{captureBusy=false;}
   };

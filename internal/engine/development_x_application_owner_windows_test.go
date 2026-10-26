@@ -23,19 +23,29 @@ const applicationOwnerTestDriver = `
 import {createInterface} from 'node:readline';
 import {spawn} from 'node:child_process';
 const mode=MODE;
-let children=[];
+let children=[],scope;
 for await(const line of createInterface({input:process.stdin})){
  const q=JSON.parse(line);
  if(q.op==='native_owner_bootstrap'){
+  scope=q;
   if(mode==='stall')continue;
   if(mode==='bad-nonce'){console.log(JSON.stringify({ready:true,schema:q.schema,nonce:'wrong'}));continue;}
   if(mode==='extra'){console.log(JSON.stringify({ready:true,schema:q.schema,nonce:q.nonce,canAuthorize:true}));continue;}
   if(mode==='duplicate'){console.log('{'+'"ready":true,"schema":'+JSON.stringify(q.schema)+',"nonce":"wrong","nonce":'+JSON.stringify(q.nonce)+'}');continue;}
-  if(mode==='pair')children=[1,2].map(()=>spawn(q.chromePath,['-test.run=^TestXApplicationFakeBrowser$'],{windowsHide:true,stdio:'ignore',env:{...process.env,AKU_X_APPLICATION_FAKE_BROWSER:'1'}}));
+  if(mode==='pair'||mode==='init-pair'||mode.startsWith('seed-'))children=[1,2].map(()=>spawn(q.chromePath,['-test.run=^TestXApplicationFakeBrowser$'],{windowsHide:true,stdio:'ignore',env:{...process.env,AKU_X_APPLICATION_FAKE_BROWSER:'1'}}));
   console.log(JSON.stringify({ready:true,schema:q.schema,nonce:q.nonce}));continue;
  }
  if(mode==='invalid-wire'){console.log('{not-json');continue;}
  if(mode==='failure'){console.log(JSON.stringify({id:q.id,ok:false,code:'manual_inspection_failed',diagnostic:{stage:'synthetic'}}));continue;}
+ if(q.op==='native_owner_initialize'&&(mode==='init-pair'||mode.startsWith('seed-'))){console.log(JSON.stringify({id:q.id,ok:true,result:{owner:1,readerPID:children[0].pid,collectorPID:children[1].pid}}));continue;}
+ if(q.op==='native_owner_seed'){
+  if(mode==='seed-failure'){console.log(JSON.stringify({id:q.id,ok:false,code:'manual_seed_seed_write_unavailable_unknown'}));continue;}
+  const result={accountId:mode==='seed-badaccount'?'not-an-account':'1908123456789012345',readerPID:children[0].pid,readerProfile:scope.readerProfile,collectorPID:children[1].pid,collectorProfile:scope.collectorProfile,seeded:true,homeReady:true};
+  if(mode==='seed-extra')result.canAuthorize=true;
+  if(mode==='seed-swapped')[result.readerProfile,result.collectorProfile]=[result.collectorProfile,result.readerProfile];
+  console.log(JSON.stringify({id:q.id,ok:true,result}));continue;
+ }
+ if(q.op==='native_owner_initialize'&&mode==='init-extra'){console.log(JSON.stringify({id:q.id,ok:true,result:{owner:1,readerPID:101,collectorPID:102,seedReady:true}}));continue;}
  console.log(JSON.stringify({id:q.id,ok:true,result:children.length?{readerPID:children[0].pid,collectorPID:children[1].pid}:{closed:true}}));
 }
 `
@@ -326,4 +336,46 @@ func TestXApplicationFakeBrowser(t *testing.T) {
 		t.Skip("private accountless process helper")
 	}
 	time.Sleep(20 * time.Second)
+}
+
+func TestXApplicationNativeInitializeBindsOnlyOwnedOSRoles(t *testing.T) {
+	cfg := applicationConfig(t, "init-pair")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	b, err := startXApplicationOwner(ctx, ctx, cfg)
+	if err != nil {
+		t.Fatal("synthetic owner failed")
+	}
+	defer closeApplication(t, b)
+	reader, collector, err := b.initializeNative(ctx)
+	if err != nil || reader.role != "reader" || collector.role != "collector" || reader.chrome.PID == collector.chrome.PID {
+		t.Fatal("synthetic native initialization binding rejected")
+	}
+	if _, _, err := b.initializeNative(ctx); err == nil {
+		t.Fatal("native initialization replay admitted")
+	}
+	if b.seedReady || b.openNativeReader(ctx) == nil {
+		t.Fatal("unseeded package opened reader")
+	}
+	if b.rpcRoundTripObserved(ctx, "native_owner_seed", nil, nil, nil) == nil || b.rpcRoundTripObserved(ctx, "manual_open_reader", nil, nil, nil) == nil {
+		t.Fatal("generic pipe bypassed private initialization or seed gate")
+	}
+}
+
+func TestXApplicationNativeInitializeRejectsMalformedReplyAndRetires(t *testing.T) {
+	for _, mode := range []string{"normal", "init-extra", "failure"} {
+		t.Run(mode, func(t *testing.T) {
+			cfg := applicationConfig(t, mode)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			b, err := startXApplicationOwner(ctx, ctx, cfg)
+			if err != nil {
+				t.Fatal("synthetic owner failed")
+			}
+			defer closeApplication(t, b)
+			if _, _, err := b.initializeNative(ctx); err == nil || !b.isClosed() {
+				t.Fatal("invalid native initializer did not retire")
+			}
+		})
+	}
 }

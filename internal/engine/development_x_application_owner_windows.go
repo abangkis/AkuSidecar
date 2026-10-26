@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/appshell"
 	"github.com/abangkis/AkuSidecar/internal/ownedprocess"
@@ -55,6 +56,12 @@ type xApplicationOwner struct {
 	nonce                       string
 	roleMu                      sync.Mutex
 	roles                       []xManualPilotWindowsRole
+	initializationMu            sync.Mutex
+	initializeUsed              bool
+	seedReady                   bool // Set only after the one-use private seed receipt is validated.
+	seedUsed                    bool
+	readerOpenUsed              bool
+	protocolOwner               int
 }
 
 func (*xApplicationOwner) String() string     { return "private-x-application-owner" }
@@ -455,6 +462,82 @@ type xApplicationRPCError struct {
 func (e *xApplicationRPCError) Error() string          { return e.code }
 func (e *xApplicationRPCError) GoString() string       { return e.Error() }
 func (e *xApplicationRPCError) diagnosticJSON() []byte { return e.diagnostic }
+
+// initializeNative starts only the fixed packaged recipe. Announced PIDs are
+// candidates until both bindRole calls verify the live OS-owned processes.
+// A failed or malformed attempt retires the owned tree; it cannot be retried.
+func (b *xApplicationOwner) initializeNative(ctx context.Context) (xManualPilotWindowsRole, xManualPilotWindowsRole, error) {
+	var empty xManualPilotWindowsRole
+	if b == nil || ctx == nil || ctx.Err() != nil || b.isClosed() {
+		return empty, empty, errors.New("application owner initialization unavailable")
+	}
+	b.initializationMu.Lock()
+	if b.initializeUsed {
+		b.initializationMu.Unlock()
+		return empty, empty, errors.New("application owner initialization replay")
+	}
+	b.initializeUsed = true
+	b.initializationMu.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(nativePilotTimingPolicy["collectorHomeReadyMS"])*time.Millisecond)
+	defer cancel()
+	fail := func() (xManualPilotWindowsRole, xManualPilotWindowsRole, error) {
+		b.terminateOwnedTree()
+		return empty, empty, errors.New("application owner initialization rejected")
+	}
+	reply, err := b.pipe.Call(ctx, "native_owner_initialize", nil, nil)
+	defer clear(reply.Result)
+	if err != nil || reply.Code != "" {
+		return fail()
+	}
+	var announced struct {
+		Owner        int    `json:"owner"`
+		ReaderPID    uint32 `json:"readerPID"`
+		CollectorPID uint32 `json:"collectorPID"`
+	}
+	if xManualPilotDecode(reply.Result, &announced) != nil || announced.Owner <= 0 || announced.ReaderPID == 0 || announced.CollectorPID == 0 || announced.ReaderPID == announced.CollectorPID {
+		return fail()
+	}
+	reader, err := b.bindRole(ctx, "reader", announced.ReaderPID, announced.Owner)
+	if err != nil {
+		return fail()
+	}
+	collector, err := b.bindRole(ctx, "collector", announced.CollectorPID, announced.Owner)
+	if err != nil {
+		return fail()
+	}
+	b.initializationMu.Lock()
+	b.protocolOwner = announced.Owner
+	b.initializationMu.Unlock()
+	return reader, collector, nil
+}
+
+// Reader opening requires validated private seed/startup state. The generic
+// RPC operation allowlist cannot bypass this one-use entry.
+func (b *xApplicationOwner) openNativeReader(ctx context.Context) error {
+	if b == nil || ctx == nil || ctx.Err() != nil || b.isClosed() {
+		return errors.New("application owner reader unavailable")
+	}
+	b.initializationMu.Lock()
+	if !b.seedReady || b.protocolOwner <= 0 || b.readerOpenUsed {
+		b.initializationMu.Unlock()
+		return errors.New("application owner reader unavailable")
+	}
+	b.readerOpenUsed = true
+	owner := b.protocolOwner
+	b.initializationMu.Unlock()
+	reply, err := b.pipe.Call(ctx, "manual_open_reader", map[string]any{"owner": owner}, nil)
+	defer clear(reply.Result)
+	var opened struct {
+		Opened         bool `json:"opened"`
+		WindowCount    int  `json:"windowCount"`
+		BootstrapCount int  `json:"bootstrapCount"`
+	}
+	if err != nil || reply.Code != "" || xManualPilotDecode(reply.Result, &opened) != nil || !opened.Opened || opened.WindowCount < 2 || opened.WindowCount > 16 || opened.BootstrapCount != 1 {
+		b.terminateOwnedTree()
+		return errors.New("application owner reader rejected")
+	}
+	return nil
+}
 
 // A PID announcement is a candidate only. Verify its exact process creation,
 // image, parent, Job and pinned profile before exposing a role to the broker.

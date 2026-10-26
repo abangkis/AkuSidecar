@@ -1425,7 +1425,13 @@ func (s *Store) PendingBridgeRunID(ctx context.Context) (string, error) {
 }
 
 func (s *Store) PendingRunIDForCollector(ctx context.Context, collector string) (string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT r.id,c.payload_json FROM runs r JOIN bridge_commands c ON c.run_id=r.id WHERE r.status='waiting_for_bridge' AND c.status='queued' ORDER BY c.created_at,c.rowid`)
+	return s.PendingRunIDForCollectorExcept(ctx, collector, "")
+}
+
+// PendingRunIDForCollectorExcept selects an ordinary route without changing
+// admission policy. The Engine may reserve X for its private manual route.
+func (s *Store) PendingRunIDForCollectorExcept(ctx context.Context, collector string, excluded domain.Source) (string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT r.id,c.payload_json FROM runs r JOIN bridge_commands c ON c.run_id=r.id WHERE r.status='waiting_for_bridge' AND c.status='queued' AND r.source<>? ORDER BY c.created_at,c.rowid`, excluded)
 	if err != nil {
 		return "", err
 	}

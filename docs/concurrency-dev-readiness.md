@@ -17,6 +17,73 @@ roadmap are evidence, not a new list of prerequisites.
 
 ## Current implementation
 
+### Packaged driver and application routing (2026-10-26)
+
+The application-owner/profile-lease increment was reviewed and pushed as
+`42111c1bc3e99f7986fb822e33da37bef4bd60c4`. The next, uncommitted increment
+packages the minimum private pipe entry and adds the Engine's X-only source
+reservation, ordinary dispatch exclusion, reader preparation hook, read-only
+status and explicit stop. It reuses the existing broker, private Coordinator,
+Store issuer, claim and result path. No Store schema or admission policy changes
+are required. The two new Store methods are candidate selection/preflight reads.
+
+The sealed CJS bundle embeds its ESM dependency graph, capture/parser assets and
+timing policy. Runtime imports cannot read mutable sibling sources. Build with
+`node scripts/build-x-native-owner.mjs`; the output manifest records source/asset
+hashes and requires Node 22.15 or later. The default output is project-local
+`build/x-native-owner`. Do not interpret a reproducible bundle as account proof.
+
+**Native application activation remains unavailable.** After explicit source-only
+approval, the package implements a separate private application seed grant and
+declares `sessionSeed=true` as an implementation capability. It does not grant
+execution consent. The private Go composition requires a one-use selection bound
+to the pinned driver and both physical profiles. Existing QA callers retain their
+environment gates; application mode never sets or borrows those flags. No public
+seed RPC bypass, native selector or start control is enabled. Any later real
+execution still requires its own bounded authorization.
+
+The private factory now composes owned role initialization, the existing one-use
+enrollment/two-cookie recipe, strict private receipt validation, broker startup,
+then exact capture-runtime construction and Store issuance. Runtime construction
+occurs after document pins exist, rather than assuming a prebuilt synthetic
+backend. Unpublished startup always disposes the full owner tree independently
+of its preserved first diagnostic cause. Normal opt-out preserves the reader;
+parent shutdown disposes all owned roles. Native UI integration must supply an
+owned post preparer through the existing broker contract before activation.
+
+The focused Node grant/protocol/retained-setup command passed 22 cases using
+synthetic values only. Application-owner run
+`2660a0dba10d49149c880ac59df71c98` passed the Windows
+factory/role/seed-receipt regressions using fake browser processes only.
+Routing run `6ac54e44a9be49c699f7c5887c1c0541` passed sixteen synthetic route
+groups, existing Store and HTTP/reader broker regressions, and all four actual
+main build variants. Its synthetic database and build root were removed. This
+is application composition evidence, not native Chrome/session acceptance.
+
+The sealed driver has 59 embedded modules, 25 capture assets and the shared
+timing policy. Its SHA256 is
+`d36f09c6eb5ff3a9c60994d4a0630e779e70ccf756ad862faeb88b555a72a687`.
+
+The follow-up lifecycle audit preserves an earlier broker cause even when stop
+arrives without a prior status read. Shutdown marks/cancels the Engine before
+external owner disposal, without changing saved Auto Update preferences. A stop
+deadline reports uncertain cleanup and retains the X gate until late resource
+cleanup actually completes; it does not trigger a second startup or transfer.
+Preflight and paired sampling use separate envelopes from the shared timing
+policy while retaining the existing absolute attempt deadline.
+
+Pilot capture is a one-use asynchronous task, so a held X capture cannot block
+the ordinary collector pump or non-X selection. Stop and autonomous expiry keep
+source occupancy until both browser cleanup and result reconciliation finish.
+The synthetic tests hold each boundary to verify this ordering; committed
+observations survive expiry and cannot be captured a second time.
+
+The default route has no factory call or browser/profile access. Status cannot
+start it. The stop API requires development mode and the current instance epoch
+under the existing loopback/origin middleware. The normal reader helper retains
+request matching and foreground verification. No native start control is exposed.
+Main login, user database/runtime and Auto Update remain untouched.
+
 ### Private application owner construction (2026-10-26)
 
 The next provider increment adds the Windows/dev-only application owner factory

@@ -94,6 +94,7 @@ type Engine struct {
 	autoCancel                               context.CancelFunc
 	autoWake                                 chan struct{}
 	captureBehaviorMu                        sync.Mutex
+	xManual                                  xManualRouting
 	captureWork                              map[string]context.CancelFunc
 }
 
@@ -1055,6 +1056,11 @@ func (e *Engine) claimCommandForCollector(ctx context.Context, runID, bridgeID, 
 	if e.developmentSources != nil && !e.developmentSources[run.Source] {
 		return nil, errors.New("development session source unsupported")
 	}
+	releaseRoute, allowed := e.ordinarySourceRoute(run.Source)
+	if !allowed {
+		return nil, nil
+	}
+	defer releaseRoute()
 	session, err := e.store.GetSession(ctx, run.SessionID)
 	if err != nil {
 		return nil, err
@@ -1094,7 +1100,7 @@ func (e *Engine) PendingBridgeRunID(ctx context.Context) (string, error) {
 	if err := e.recoverExpiredBridgeCommands(ctx, time.Now()); err != nil {
 		return "", err
 	}
-	return e.store.PendingRunIDForCollector(ctx, collection.BackendBridge)
+	return e.ordinaryPendingRun(ctx, collection.BackendBridge)
 }
 
 func (e *Engine) recoverExpiredBridgeCommands(ctx context.Context, now time.Time) error {
@@ -2539,6 +2545,11 @@ func (e *Engine) claimMediaRecaptureForCollector(ctx context.Context, id, bridge
 	if err != nil {
 		return domain.MediaRecapture{}, err
 	}
+	releaseRoute, allowed := e.ordinarySourceRoute(job.Source)
+	if !allowed {
+		return domain.MediaRecapture{}, nil
+	}
+	defer releaseRoute()
 	admission, hybrid, err := store.MediaRecaptureAdmission(job.Payload)
 	if err != nil {
 		return domain.MediaRecapture{}, err
@@ -2782,7 +2793,6 @@ func (e *Engine) CleanDatabase(ctx context.Context, request store.DatabaseCleanu
 
 func (e *Engine) Shutdown() {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	e.shuttingDown = true
 	if e.autoCancel != nil {
 		e.autoCancel()
@@ -2790,6 +2800,8 @@ func (e *Engine) Shutdown() {
 	for _, cancel := range e.active {
 		cancel()
 	}
+	e.mu.Unlock()
+	e.shutdownXManual()
 }
 func (e *Engine) CloseProvider() error {
 	if closer, ok := e.provider.(interface{ Close() error }); ok {

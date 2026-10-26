@@ -154,6 +154,9 @@ func (e *Engine) bindNativePilotStoreAdmission(ctx context.Context, r *nativePil
 	if !closed {
 		r.mu.Lock()
 		r.storeLink = l
+		if backend, ok := r.backend.(*xNativePilotCapture); ok {
+			backend.revoke = l.close
+		}
 		r.mu.Unlock()
 	}
 	l.mu.Unlock()

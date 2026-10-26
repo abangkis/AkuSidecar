@@ -252,7 +252,22 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": domain.ApplicationVersion, "runtime": "go", "deployment": s.config.Deployment.PublicStatus(), "provider": s.engine.ProviderName(), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime(), "bridgeContractVersion": domain.BridgeContractVersion, "softwareUpdate": domain.SidecarSoftwareUpdateMetadata(store.SchemaVersion), "instanceEpoch": s.engine.Epoch(), "uptimeMs": time.Since(s.started).Milliseconds(), "database": map[string]any{"status": "healthy"}, "loadProfile": settings.LoadProfile})
 	case r.Method == http.MethodGet && p == "/api/collection/runtime":
-		return writeJSON(w, http.StatusOK, map[string]any{"collectionRuntime": s.engine.CollectionRuntime()})
+		return writeJSON(w, http.StatusOK, map[string]any{"collectionRuntime": s.engine.CollectionRuntime(), "xManual": s.engine.XManualStatus()})
+	case r.Method == http.MethodPost && p == "/api/development/x-manual/stop":
+		if !s.config.Dev {
+			return notFound("development route")
+		}
+		if r.Header.Get("X-Aku-Split-Epoch") != s.engine.Epoch() {
+			return apiError{Status: 409, Code: "capture_epoch_mismatch", Message: "AkuBrowser restarted; refresh the page."}
+		}
+		var request struct{}
+		if err := readJSON(r, &request); err != nil {
+			return err
+		}
+		if err := s.engine.StopXManual(ctx); err != nil {
+			return apiError{Status: 409, Code: "manual_cleanup_uncertain", Message: "Manual X cleanup has not been verified."}
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"xManual": s.engine.XManualStatus()})
 	case r.Method == http.MethodPost && p == "/api/collection/interactive":
 		if err := s.engine.PrepareInteractiveCapture(ctx); err != nil {
 			return apiError{Status: 409, Code: "interactive_handoff_unavailable", Message: err.Error()}

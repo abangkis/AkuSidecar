@@ -269,7 +269,11 @@ func (s *Server) runDirectNativeReader(ctx context.Context, t *splitCaptureTrans
 		return
 	}
 	marker := "/split-reader-intent?id=" + entry.action.ID
-	prepared, err := prepare(ctx, entry.action.ID, entry.action.URL, marker)
+	req := readerbroker.Request{RequestID: entry.action.RequestID, Source: entry.action.Source, URL: entry.action.URL}
+	prepared, selected, err := s.engine.PrepareXManualReader(ctx, req, marker)
+	if !selected {
+		prepared, err = prepare(ctx, entry.action.ID, entry.action.URL, marker)
+	}
 	timing("target_prepare", err == nil)
 	if err != nil {
 		outcome = err

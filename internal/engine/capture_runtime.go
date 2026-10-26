@@ -256,6 +256,7 @@ func (e *Engine) StartHeadlessCollection(ctx context.Context) {
 				return
 			case <-ticker.C:
 			}
+			e.stepXManual(ctx)
 			if e.collectionRuntime == nil || e.captureOwner == nil {
 				continue
 			}
@@ -291,7 +292,7 @@ func (e *Engine) StartHeadlessCollection(ctx context.Context) {
 			func() {
 				defer e.endFixtureCaptureStep()
 				defer lease.Release()
-				id, err := e.store.PendingRunIDForCollector(ctx, collector)
+				id, err := e.ordinaryPendingRun(ctx, collector)
 				if err != nil || id == "" {
 					e.captureInternalMediaRecapture(ctx, driver, collector, workerID)
 					return

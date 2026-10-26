@@ -26,6 +26,7 @@ try{
  if($LASTEXITCODE -ne 0){throw 'Application owner source inventory unavailable.'}
  $sources=@($production | Where-Object {$_.Trim() -ne ''} | ForEach-Object {Join-Path $project ('internal/engine/'+$_)})
  $sources+=Join-Path $project 'internal/engine/development_x_application_owner_windows_test.go'
+ $sources+=Join-Path $project 'internal/engine/development_x_application_seed_windows_test.go'
  & go test -tags auth_session_dev -run '^TestXApplication' -count=1 -timeout=60s -v @sources 2>&1 | Tee-Object -FilePath $log -Append
  if($LASTEXITCODE -ne 0){throw 'Application owner regression failed.'}
  & go test ./internal/appshell -run '^(TestSession|TestPrepareWorkerCommand)' -count=1 -timeout=30s -v 2>&1 | Tee-Object -FilePath $log -Append

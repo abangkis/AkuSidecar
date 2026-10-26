@@ -61,6 +61,7 @@ type nativePilotBroker struct {
 	cleanupFailed            bool
 	started, stopped         bool
 	reason                   string
+	firstStopReason          string
 	cancelPrepare            context.CancelFunc
 	prepareDone, cleanupDone chan struct{}
 	prepared                 []nativePilotPreparedRole
@@ -256,6 +257,7 @@ func (b *nativePilotBroker) stop(reason string) nativePilotDiagnostic {
 		return nativePilotDiagnostic{Reason: b.reason}
 	}
 	b.stopped, b.reason = true, reason
+	b.firstStopReason = reason
 	if b.cleanupFailed {
 		b.reason = "cleanup-uncertain"
 	}

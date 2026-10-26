@@ -77,7 +77,7 @@ type nativeStoreFixture struct {
 	clock      *nativeStoreClock
 }
 
-func newNativeStoreFixture(t *testing.T, trusted bool, beforeStart func(*manualRuntimeFixture)) *nativeStoreFixture {
+func newNativeStoreFixture(t *testing.T, trusted bool, beforeStart func(*manualRuntimeFixture), sources ...domain.Source) *nativeStoreFixture {
 	t.Helper()
 	f, err := newManualRuntimeFixture(false)
 	if err != nil {
@@ -108,6 +108,9 @@ func newNativeStoreFixture(t *testing.T, trusted bool, beforeStart func(*manualR
 	}
 	settings.CollectionMode = "headless"
 	settings.ActiveSources = []domain.Source{domain.SourceX}
+	if len(sources) > 0 {
+		settings.ActiveSources = sources
+	}
 	session, err := s.CreateUpdateSession(context.Background(), "synthetic Store integration", settings, domain.UpdatePolicy{Trigger: domain.UpdateTriggerUser, Delivery: domain.UpdateDeliveryVisible, BudgetAuthority: domain.BudgetAuthorityUser})
 	if err != nil {
 		t.Fatal(err)

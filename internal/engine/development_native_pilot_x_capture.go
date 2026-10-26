@@ -223,8 +223,9 @@ func (p *xNativePilotCapture) Capture(ctx context.Context, source domain.Source,
 	return observation, nil
 }
 
-// Private QA composition only. No main, CLI or HTTP caller is registered.
-func (e *Engine) bindXNativePilotRuntime(ctx context.Context, b *nativePilotBroker, p *xManualPilotOwnerPorts, reader, collector *captureruntime.Manager, open func(context.Context, readerbroker.Request) error, sessionID, runID string) (*nativePilotRuntime, error) {
+// Runtime construction follows startup verification. Store issuance is a
+// separate step so application source routing stays closed throughout startup.
+func newXNativePilotRuntime(ctx context.Context, b *nativePilotBroker, p *xManualPilotOwnerPorts, reader, collector *captureruntime.Manager, open func(context.Context, readerbroker.Request) error) (*nativePilotRuntime, error) {
 	if b == nil || p == nil || p.backend.provenance() != nativePilotTrustedStartup {
 		return nil, errors.New("native X owner unavailable")
 	}
@@ -260,12 +261,18 @@ func (e *Engine) bindXNativePilotRuntime(ctx context.Context, b *nativePilotBrok
 	if err != nil {
 		return nil, err
 	}
+	return r, nil
+}
+
+// Existing QA composition retains its single constructor/Store binding entry.
+func (e *Engine) bindXNativePilotRuntime(ctx context.Context, b *nativePilotBroker, p *xManualPilotOwnerPorts, reader, collector *captureruntime.Manager, open func(context.Context, readerbroker.Request) error, sessionID, runID string) (*nativePilotRuntime, error) {
+	r, err := newXNativePilotRuntime(ctx, b, p, reader, collector, open)
+	if err != nil {
+		return nil, err
+	}
 	if err = e.bindNativePilotStore(ctx, r, sessionID, runID); err != nil {
 		return nil, err
 	}
-	r.mu.Lock()
-	backend.revoke = r.storeLink.close
-	r.mu.Unlock()
 	return r, nil
 }
 

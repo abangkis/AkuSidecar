@@ -40,6 +40,7 @@ import { ManualEnrollmentCapture } from './x-manual-enrollment-capture.mjs';
 import { ManualStartupObservation } from './x-manual-startup-cookie-guard.mjs';
 import {startupFailure,startupFailureLatch,startupRPCCode,requireBoundStartup,startupInspectionFailure,startupPrepareFailure} from './x-manual-startup-diagnostic.mjs';
 import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
+import {createApplicationSeedGrant} from './x-application-seed-grant.mjs';
 
 const qualificationMode = mode => mode === 'retained_source_qualification';
 const bodyMode = mode => accountSettingsBodyMode(mode) || qualificationMode(mode);
@@ -751,6 +752,10 @@ function isHomeTarget(value) {
 }
 
 let executable = '';
+let applicationScope = null;
+const manualStartupAllowed=()=>applicationScope?applicationScope.seedGrant.startupAllowed():process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED==='1';
+const retainedTransferAllowed=()=>applicationScope?applicationScope.seedGrant.transferAllowed():process.env.AKU_X_MANUAL_RETAINED_TRANSFER_ONCE==='1';
+const shortTransferAllowed=()=>applicationScope?applicationScope.seedGrant.transferAllowed():process.env.AKU_X_QA_SHORT_TRANSFER_ALLOWED==='1';
 let qaRoot = '';
 let controlOrigin = '';
 let profilePath = '';
@@ -773,6 +778,7 @@ let cdpFrames = new CDPFrameDecoder();
 const pending = new Map();
 
 function emit(value, maxBytes = MAX_CONTROL_LINE_BYTES) {
+  if(applicationScope){if(value?.event==='manual_startup_progress')applicationScope.emitProgress(value);return;}
   let bytes;
   try { bytes = Buffer.from(`${JSON.stringify(value)}\n`, 'utf8'); }
   catch { process.exitCode = 2; return; }
@@ -849,11 +855,11 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
     return Promise.reject(probeError('cdp_command_invalid'));
   }
   if(method==='Network.setBypassServiceWorker'&&!allowsStartupControl(active,method,params,sessionId))return Promise.reject(probeError('manual_root_control_failed'));
-  const manualRootControl=purpose==='manual_root_control'&&qualificationMode(driverMode)&&process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED==='1'&&active?.manualStartupSelected===true&&allowsStartupControl(active,method,params,sessionId);
+  const manualRootControl=purpose==='manual_root_control'&&qualificationMode(driverMode)&&manualStartupAllowed()&&active?.manualStartupSelected===true&&allowsStartupControl(active,method,params,sessionId);
   const webState = active?.webABA;
-  const manualProvenance=purpose==='manual_provenance'&&qualificationMode(driverMode)&&process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED==='1'&&process.env.AKU_X_MANUAL_RETAINED_TRANSFER_ONCE==='1'&&!!active?.manualSetup&&!active.manualStartupPort&&sessionId===active.sessionId&&(
+  const manualProvenance=purpose==='manual_provenance'&&qualificationMode(driverMode)&&manualStartupAllowed()&&retainedTransferAllowed()&&!!active?.manualSetup&&!active.manualStartupPort&&sessionId===active.sessionId&&(
     method==='Page.getFrameTree'&&Object.keys(params).length===0||method==='Network.setCacheDisabled'&&!active.manualCacheControlReady&&JSON.stringify(params)==='{"cacheDisabled":true}'||method==='Network.enable'&&JSON.stringify(params)===JSON.stringify({maxTotalBufferSize:MAX_TOTAL_NETWORK_BUFFER_BYTES,maxResourceBufferSize:MAX_RESOURCE_NETWORK_BUFFER_BYTES,maxPostDataSize:0}));
-  const manualEnrollment=purpose==='manual_enrollment'&&process.env.AKU_X_MANUAL_RETAINED_TRANSFER_ONCE==='1'&&qualificationMode(driverMode)&&active?.manualEnrollment?.command(method,params,sessionId)===true;
+  const manualEnrollment=purpose==='manual_enrollment'&&retainedTransferAllowed()&&qualificationMode(driverMode)&&active?.manualEnrollment?.command(method,params,sessionId)===true;
   if(method==='Target.detachFromTarget'&&!manualEnrollment)return Promise.reject(probeError('manual_enrollment_detach_denied'));
   const manualControl=!!active?.manualStartupPort&&purpose==='manual_owner'&&(
     method==='Target.getTargets'&&sessionId===undefined&&Object.keys(params).length===0||
@@ -892,7 +898,7 @@ function send(method, params = {}, sessionId = undefined, purpose = null) {
       !qaGuestCommand(method, params, sessionId, active.guest))) return Promise.reject(probeError('qa_guest_command_not_authorized'));
   if (purpose !== null && !manualRootControl && !manualControl && !manualEnrollment && !manualProvenance && !(purpose === 'normal_remove' && method === 'Debugger.removeBreakpoint' &&
       active?.earlyCapture?.handoff.breakpoints.has(params.breakpointId))) return Promise.reject(probeError('early_command_not_authorized'));
-  if (shortCookieExport && (process.env.AKU_X_QA_SHORT_TRANSFER_ALLOWED !== '1' || active.shortFeasibility.exportIssued ||
+  if (shortCookieExport && (!shortTransferAllowed() || active.shortFeasibility.exportIssued ||
       sessionId !== active.sessionId || JSON.stringify(params) !== JSON.stringify(qaCookieRequest('api_v1')))) return Promise.reject(probeError('qa_short_transfer_denied'));
   if (method === 'Network.getCookies' && !shortCookieExport && (!qualificationMode(driverMode) || !active?.qaCookieRequested || active.qaCookieIssued ||
       sessionId !== active.sessionId || JSON.stringify(params) !== JSON.stringify(qaCookieRequest(active.qaSourceRoute)))) {
@@ -1780,6 +1786,7 @@ async function prepareShortConcurrency(message) {
   if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !current.gate.loginVisible ||
       current.gate.observationStarted || current.shortFeasibility) throw probeError('qa_short_gate_closed');
   const transport = createQAFeasibilityCollector({ executable, root: process.env.AKU_CHROME_FIXTURE_ROOT,
+    ...(applicationScope?{applicationProfile:applicationScope.collectorProfile,loadAssets:applicationScope.loadAssets}:{}),
     FrameDecoder: CDPFrameDecoder, allowedExpressions: [ACCOUNT_READY_EXPRESSION, QA_BOUND_BOOTSTRAP_EXPRESSION] });
   const state = current.shortFeasibility = { transport, exportIssued: false, exporting: false, contextId: null, closed: false, ran: false };
   const launched = await transport.launch();
@@ -1961,7 +1968,7 @@ export function manualReloadFrameProjection(value,frameId,oldLoader){
   return {frameId};
 }
 export function createOwnedManualStartupOwners(message,diagnostics=startupFailureLatch()) {
-  if (process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED !== '1') throw probeError('manual_startup_disabled');
+  if (!manualStartupAllowed()) throw probeError('manual_startup_disabled');
   const current = requireOwner(message), collector = current.shortFeasibility;
   if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !manualStartupStateReady(current)) throw probeError('manual_startup_unavailable');
   const rendezvous = new QACheckpointRendezvous(MANUAL_TIMING.rendezvousMS);
@@ -2051,7 +2058,7 @@ async function retireManualReader(current,preserveReader,close=closeChrome){
   if(!preserveReader||mustRetireStartupOwner(current)){const closed=await close();if(!closed.exited)throw probeError('chrome_exit_unverified');}
 }
 export async function executeManualOwnerRPC(message) {
-  if(process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED!=='1')throw probeError('manual_startup_disabled');
+  if(!manualStartupAllowed()&&!(applicationScope&&['manual_abort','manual_capture_cancel'].includes(message?.op)))throw probeError('manual_startup_disabled');
   manualOwnerOperation(message);
   const current=requireOwner(message), collector=current.shortFeasibility;
   if(!current.manualStartupPort){
@@ -2136,12 +2143,12 @@ async function startManualCookieObservation(current) {
 
 export async function seedRetainedManualPilot(message){
   exactKeys(message,['id','op','owner'],'manual_setup_unavailable');
-  if(message.op!=='manual_seed_bootstrap'||process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED!=='1'||
-    process.env.AKU_X_MANUAL_RETAINED_TRANSFER_ONCE!=='1'||process.env.AKU_X_QA_SHORT_TRANSFER_ALLOWED!=='1')throw manualSeedFailure('preconditions','disabled');
+  if(message.op!=='manual_seed_bootstrap'||!manualStartupAllowed()||!retainedTransferAllowed()||!shortTransferAllowed())throw manualSeedFailure('preconditions','disabled');
   const current=requireOwner(message),s=current.shortFeasibility;
   if(!qualificationMode(driverMode)||!retainedQAScope?.reuse||!current.gate.loginVisible||current.gate.observationStarted||
     !s||s.closed||s.ran||s.exportIssued||current.manualStartupPort||current.manualSetup)throw manualSeedFailure('preconditions',current.manualSetup?'replay':'rejected',current.manualSetup?'unknown':'not_attempted');
   const assertGuards=()=>{
+    applicationScope?.seedGrant.assertCurrent();
     for(const [role,guard]of [['reader',current.manualCookieGuard],['collector',s.manualCookieGuard]]){
       if(!guard)throw manualSeedFailure('preconditions','rejected');
       const reason=guard.rejection();
@@ -2198,13 +2205,80 @@ export async function seedRetainedManualPilot(message){
 async function openRetainedManualReader(message){
   exactKeys(message,['id','op','owner'],'manual_owner_unavailable');
   const current=requireOwner(message);
-  if(process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED!=='1'||!current.manualStartupPort||current.manualAcquired?.size!==2||current.manualReaderOpened)throw probeError('manual_owner_unavailable');
+  if(!manualStartupAllowed()||!current.manualStartupPort||current.manualAcquired?.size!==2||current.manualReaderOpened)throw probeError('manual_owner_unavailable');
   current.manualReaderOpened=true;
   await current.manualStartupPort.execute({id:message.id,op:'manual_inspect',owner:message.owner,role:'reader'});
   await send('Target.createTarget',{url:HOME_URL,newWindow:true,background:true},undefined,'manual_owner');
   const inventory=await manualReaderInventory(current);
   if(inventory.windowCount<2||inventory.bootstrapCount!==1)throw probeError('manual_owner_unavailable');
   return {opened:true,...inventory};
+}
+
+// Trusted application composition selects fixed paths once. The application
+// pipe never exposes the QA execute dispatcher, URL selection or CDP methods.
+// Application seed has its own private one-use grant. Legacy QA gates retain
+// their existing environment requirements and cannot enable application seed.
+export async function createApplicationManualOwner({chromePath,readerProfile,collectorProfile,loadAssets,emitProgress=()=>{}}){
+  if(applicationScope||child||protocolOwner||driverMode!=='single_phase'||typeof loadAssets!=='function'||typeof emitProgress!=='function')throw probeError('application_owner_unavailable');
+  for(const path of [chromePath,readerProfile,collectorProfile])if(typeof path!=='string'||!isAbsolute(path)||resolve(path)!==path)throw probeError('application_owner_path_invalid');
+  const chromeInfo=await lstat(chromePath);
+  if(!chromeInfo.isFile()||chromeInfo.isSymbolicLink()||!sameWindowsPath(await realpath(chromePath),chromePath))throw probeError('application_owner_path_invalid');
+  for(const [left,right]of [[readerProfile,collectorProfile],[collectorProfile,readerProfile]]){
+    const rel=relative(left,right);
+    if(!rel||!isAbsolute(rel)&&rel!=='..'&&!rel.startsWith('..'+sep))throw probeError('application_owner_profiles_overlap');
+  }
+  const readerIdentity=await ordinaryDirectoryIdentity(readerProfile),collectorIdentity=await ordinaryDirectoryIdentity(collectorProfile);
+  const root=dirname(readerProfile),rootIdentity=await ordinaryDirectoryIdentity(root);
+  executable=chromePath;profilePath=readerProfile;qaRoot=root;
+  driverMode='retained_source_qualification';retainedQAScope={reuse:true};
+  twoPhaseState={root,profile:readerProfile,rootIdentity,profileIdentity:readerIdentity,phase2Started:true};
+  applicationScope={collectorProfile,loadAssets,emitProgress,seedGrant:createApplicationSeedGrant({runSeed:seedRetainedManualPilot})};
+  let used=false,closed=false;
+  const check=async()=>{
+    if(closed||!await verifyTwoPhaseDirectories()||!sameDirectoryIdentity(await ordinaryDirectoryIdentity(collectorProfile),collectorIdentity))throw probeError('application_owner_scope_changed');
+  };
+  return Object.freeze({
+    async initialize(){
+      if(used)throw probeError('application_owner_replay');used=true;
+      await check();
+      const spawned=spawn(executable,twoPhaseChromeArgs(readerProfile,true),{windowsHide:false,stdio:['ignore','ignore','ignore','pipe','pipe']});
+      child=spawned;childExited=false;bindChrome(spawned);
+      if(!Number.isSafeInteger(spawned.pid)||spawned.pid<1)throw probeError('application_owner_launch_failed');
+      const launched=await initializeChromeSession(spawned,readerProfile);
+      const deadline=Date.now()+15000;
+      while(!(await loginState({owner:launched.owner})).ready){
+        await check();if(Date.now()>=deadline)throw probeError('application_owner_home_unavailable');
+        await new Promise(accept=>setTimeout(accept,250));
+      }
+      const collector=await prepareShortConcurrency({owner:launched.owner});
+      await check();
+      return{owner:launched.owner,readerPID:launched.pid,collectorPID:collector.collectorPID};
+    },
+    async seed(message){
+      exactKeys(message,['id','op','owner'],'manual_setup_unavailable');
+      if(message.op!=='native_owner_seed')throw manualSeedFailure('preconditions','rejected');
+      requireOwner(message);await check();
+      return applicationScope.seedGrant.run({id:message.id,op:'manual_seed_bootstrap',owner:message.owner});
+    },
+    async execute(message){
+      await check();
+      const cleanup=['manual_abort','manual_capture_cancel'].includes(message.op);
+      if(!cleanup)applicationScope.seedGrant.assertCurrent();
+      if(message.op==='manual_capture')applicationScope.seedGrant.assertCaptureDeadline(message.request?.deadlineMS);
+      let result;
+      try{
+        if(message.op==='manual_open_reader')result=await openRetainedManualReader(message);
+        else{manualOwnerOperation(message);result=await executeManualOwnerRPC(message);}
+        if(!cleanup)applicationScope.seedGrant.assertCurrent();
+        return result;
+      }catch(error){if(Buffer.isBuffer(result))result.fill(0);throw error;}
+    },
+    async close(){
+      if(closed)return;closed=true;
+      try{if(active?.shortFeasibility)await closeShortCollector(active);}
+      finally{await closeChrome();}
+    },
+  });
 }
 
 async function runShortConcurrency(message, synchronize = false) {
