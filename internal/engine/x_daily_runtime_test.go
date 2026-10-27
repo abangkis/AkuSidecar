@@ -25,6 +25,7 @@ type syntheticDailyOwner struct {
 	failCleanup                   bool
 	failOwnerCleanup              bool
 	hold                          chan struct{}
+	captureStarted                chan struct{}
 	check                         func(context.Context) error
 }
 
@@ -66,6 +67,9 @@ func (o *syntheticDailyOwner) BeginBatch(ctx, _ context.Context, g uint64, r dom
 func (b *syntheticDailyBatch) StartedAt() time.Time { return b.start }
 func (b *syntheticDailyBatch) Deadline() time.Time  { return b.start.Add(time.Minute) }
 func (b *syntheticDailyBatch) Capture(ctx context.Context, command string) (domain.Run, error) {
+	if b.o.captureStarted != nil {
+		close(b.o.captureStarted)
+	}
 	if b.o.hold != nil {
 		select {
 		case <-b.o.hold:
@@ -100,11 +104,19 @@ func (b *syntheticDailyBatch) Close(ctx context.Context) error {
 }
 func dailyRuntimeFixture(t *testing.T) (*Engine, *syntheticDailyOwner) {
 	t.Helper()
+	return dailyRuntimeFixtureWithConfig(t, nil)
+}
+
+func dailyRuntimeFixtureWithConfig(t *testing.T, configure func(*config.Config)) (*Engine, *syntheticDailyOwner) {
+	t.Helper()
 	e, state := testEngine(t)
 	e.config.Dev = true
 	e.config.Database.Path = state.Path()
 	e.config.Capture.XMode = config.XCaptureConcurrent
-	s, err := PrepareXDailyDevelopment(e.config, config.Options{Dev: true})
+	if configure != nil {
+		configure(&e.config)
+	}
+	s, err := PrepareXDailyDevelopment(e.config, config.Options{Dev: true, AppShell: e.config.Capture.XUsesMainProfile()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,19 +191,17 @@ func TestXDailyRepeatedBatchesPersistAndStop(t *testing.T) {
 func TestXDailyStopCancelsBatchPreservesReader(t *testing.T) {
 	e, o := dailyRuntimeFixture(t)
 	o.hold = make(chan struct{})
+	o.captureStarted = make(chan struct{})
 	ctx := context.Background()
 	if _, err := e.StartVisibleUpdate(ctx, "held"); err != nil {
 		t.Fatal(err)
 	}
-	end := time.Now().Add(time.Second)
-	for time.Now().Before(end) {
-		o.mu.Lock()
-		n := len(o.generations)
-		o.mu.Unlock()
-		if n > 0 {
-			break
-		}
-		time.Sleep(time.Millisecond)
+	// Wait for an issued permit and active capture, not merely BeginBatch entry.
+	// Startup cancellation has its own regression below.
+	select {
+	case <-o.captureStarted:
+	case <-time.After(time.Second):
+		t.Fatal("synthetic capture did not start")
 	}
 	if err := e.StopXManual(ctx); err != nil {
 		t.Fatal(err)

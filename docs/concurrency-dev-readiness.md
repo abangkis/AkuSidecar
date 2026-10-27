@@ -5,6 +5,40 @@ roadmap are evidence, not a new list of prerequisites.
 
 ## Current daily-use MVP target (2026-10-27)
 
+### Daily-X Browser admission correction (offline, not activated)
+
+The first main-dev mixed update persisted its Instagram/LinkedIn/X queue, then
+rejected Instagram before creating a capture command. Its frozen daily-X plan
+uses Browser for ordinary sources but shares the legacy hybrid policy envelope;
+the Engine incorrectly applied the Facebook-only temporary Browser exception.
+
+The working-tree correction admits ordinary non-X Browser work when daily-X is
+configured and the coordinator requests Browser. Common predecessor-drain,
+lease/driver/generation checks remain in place. A requested headless backend
+still uses the legacy Facebook exception, and native X/Store authorization is
+unchanged. No schema or frozen-policy format changes are needed.
+
+New synthetic Engine/SQLite regressions cover three Instagram/LinkedIn/X
+orders, two batches per order, persistent-reader retention, Bridge stamps,
+cross-driver and stale-owner rejection, predecessor drain, the legacy headless
+exception and durable non-X queue recovery without X consent. The canonical
+main-profile offline runner now includes the existing hybrid Facebook suite.
+These tests use fake browser/native owners and deterministic reasoning.
+
+Offline validation passed: 30 Node tests, the selected seven-package Go suite
+under both default and `auth_session_dev` builds (including legacy Facebook
+regressions), and four main build/tag combinations. Evidence:
+`build/x-main-offline-c8797529e9d94bc38b1e99ea8597ea2d/offline.log.txt`.
+The existing stop regression now waits for actual synthetic capture entry,
+rather than the earlier batch-start marker, before testing cancellation; its
+20-repeat check also passed. Real Chrome tests remain explicitly skipped.
+
+This patch is not in the previously sealed runtime candidate. No real X batch
+or reader-overlap acceptance is established by it. The earlier main-dev test
+queue remains retained for supported cleanup during an approved recovery;
+this offline increment does not edit the user database or runtime. Source code
+must be reviewed/published and a new candidate prepared before activation.
+
 The main-profile connection is approved for offline implementation; the dedicated
 reader package is historical evidence, not proof that the main login is connected.
 Track the [main-profile transport, ownership and compatibility gates](x-main-profile-connection-design.md).

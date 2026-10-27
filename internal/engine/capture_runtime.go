@@ -828,7 +828,13 @@ func (e *Engine) admitHybridRun(ctx context.Context, session domain.Session, run
 	if !ok {
 		return false, errors.New("hybrid session source plan is missing or invalid")
 	}
-	if desired == "browser" {
+	// Daily-X freezes Browser for ordinary sources while only X uses a separate
+	// collector. A requested Browser owner needs no temporary Facebook borrow;
+	// that exception belongs to the legacy common-headless route. Keep the
+	// predecessor, lease and generation checks below for both admission paths.
+	ordinaryDailyBrowser := e.XDailyConfigured() && run.Source != domain.SourceX &&
+		e.collectionRuntime != nil && e.collectionRuntime.Status().Requested == "browser"
+	if desired == "browser" && !ordinaryDailyBrowser {
 		if err := e.beginHybridBrowserCollection(session.ID, run.Source); err != nil {
 			return false, err
 		}
