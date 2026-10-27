@@ -6,14 +6,15 @@ import {fileURLToPath} from 'node:url';
 import {buildMainBrowserTransportPackage} from './build-x-native-owner.mjs';
 import {digest,fileRecord,inventory,requiredRuntimeSchemas} from './x-development-pilot-package.mjs';
 import {dailyPackageSchema,dailyPreparationArguments,dailyReaderContract,dailyReaderSelection,dailyPrerequisites,
-  argumentValue,dailyLayout,dailyConfigProposal,dailyMainRollbackProposal,dailyServiceProposal,verifyDailyPackage} from './x-daily-development-package.mjs';
+  argumentValue,dailyLayout,dailyConfigProposal,dailyMainRollbackProposal,dailyServiceProposal,dailyRollbackProvenance,verifyDailyPackage} from './x-daily-development-package.mjs';
 const project=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-async function fixture(t,readerSource='dedicated',capture={}){
+async function fixture(t,readerSource='dedicated',capture={},packaged=false){
   const reader=dailyReaderContract(readerSource);
   const parent=join(project,'build');await mkdir(parent,{recursive:true});
   const temp=await mkdtemp(join(parent,'test-daily-package-'));
   t.after(async()=>{if(dirname(temp)!==parent)throw new Error('cleanup_boundary');await rm(temp,{recursive:true,force:true});});
-  const main=join(temp,'main'),root=join(temp,'package'),runtime=join(main,'runtime','dev');
+  const main=join(temp,'main'),root=join(temp,'package');
+  const runtime=packaged?join(main,'build','x-daily-development-prepared','a'.repeat(32),'bin'):join(main,'runtime','dev');
   const service={cwd:main,command:join(runtime,'aku-sidecar.exe'),args:['--config',join(main,'config','sidecar.json'),
     '--dev','--app-shell','--windows-capture-split','--bridge-extension-origin','chrome-extension://synthetic/',
     '--browser-profile',join(main,'runtime','ordinary-profile'),'--chromium-path',join(main,'chrome','chrome.exe'),
@@ -26,12 +27,24 @@ async function fixture(t,readerSource='dedicated',capture={}){
   await write(service.args[1],config);
   const baseline=[];
   for(const [path,name] of [[service.args[1],'sidecar.json'],[service.command,'aku-sidecar.exe'],
-    [join(runtime,'aku-reader-broker.exe'),'aku-reader-broker.exe'],[service.command+'.runtime-state.json','aku-sidecar.exe.runtime-state.json']]){
+    [join(runtime,'aku-reader-broker.exe'),'aku-reader-broker.exe']]){
     if(name!=='sidecar.json')await write(path,'synthetic; never execute');
     const backup=join(root,'rollback',name);await mkdir(dirname(backup),{recursive:true});await copyFile(path,backup);
     baseline.push({...await fileRecord(path),backup:'rollback/'+name});
   }
-  const layout=dailyLayout(service,config),configSHA256=(await fileRecord(layout.config)).sha256;
+  if(packaged){
+    await write(join(runtime,'com.akubrowser.reader_activation.json'),{synthetic:true});
+    const files=[];
+    for(const name of ['aku-sidecar.exe','aku-reader-broker.exe','com.akubrowser.reader_activation.json'])
+      files.push({file:'bin/'+name,sha256:(await fileRecord(join(runtime,name))).sha256});
+    await write(join(dirname(runtime),'daily-package.json'),{schema:dailyReaderContract('main').schema,readerSource:'main',
+      packageId:'a'.repeat(32),sourceCommit:'b'.repeat(40),preparationOnly:true,buildTags:['auth_session_dev'],files});
+    await write(join(dirname(runtime),'activation-receipt.json'),{historical:true});
+  }else await write(service.command+'.runtime-state.json','synthetic provenance');
+  const provenance=await dailyRollbackProvenance(service,{allowPackaged:readerSource==='main'});
+  await copyFile(provenance.path,join(root,provenance.backup));
+  baseline.push({...await fileRecord(provenance.path),backup:provenance.backup});
+  const layout=dailyLayout(service,config,readerSource),configSHA256=(await fileRecord(layout.config)).sha256;
   for(const rel of ['bin/aku-sidecar.exe','bin/aku-reader-broker.exe','bin/ui-reader-broker/manifest.json',
     'bin/ui-reader-broker/content.js','bin/ui-reader-broker/service-worker.js','bin/headless-worker/worker.mjs',
     'bin/headless-worker/LICENSE-AkuSidecar','ACTIVATION.md','preflight.ps1','tools/verify-x-daily-development.mjs',
@@ -159,6 +172,68 @@ test('main proposal removes an explicit empty dedicated-profile field; rollback 
   assert.deepEqual(plan.config.fields.map(row=>row.before),[
     {present:true,value:'exclusive'},{present:true,value:'dedicated'},{present:true,value:''}]);
   assert.equal((await verifyDailyPackage(f.path)).readerSource,'main');
+});
+
+test('explicit main refresh preserves the existing concurrent config and exact rollback values',async t=>{
+  const f=await fixture(t,'main',{xMode:'concurrent',xReaderSource:'main'}),before=await readFile(f.service.args[1],'utf8');
+  assert.equal((await verifyDailyPackage(f.path)).readerSource,'main');
+  const plan=JSON.parse(await readFile(join(f.root,'rollback-proposal.json')));
+  assert.deepEqual(plan.config.fields.map(row=>row.before),[
+    {present:true,value:'concurrent'},{present:true,value:'main'},{present:false}]);
+  assert.equal(await readFile(f.service.args[1],'utf8'),before);
+  assert.throws(()=>dailyLayout(f.service,f.config),/baseline_config_rejected/);
+  for(const capture of [
+    {xMode:'concurrent',xReaderSource:'dedicated'}, {xMode:'concurrent'},
+    {xMode:'concurrent',xReaderSource:'main',xReaderProfile:'another-profile'},
+    {xMode:'unknown',xReaderSource:'main'},
+  ])assert.throws(()=>dailyLayout(f.service,{...f.config,capture},'main'),/baseline_config_rejected/);
+});
+
+test('sealed main refresh uses pinned previous-package provenance without state or account reads',async t=>{
+  const f=await fixture(t,'main',{xMode:'concurrent',xReaderSource:'main'},true);
+  const result=await verifyDailyPackage(f.path);
+  assert.equal(result.preparationOnly,true);assert.equal(result.activationReady,false);assert.equal(result.sessionTransferred,false);
+  const provenance=await dailyRollbackProvenance(f.service,{allowPackaged:true});
+  assert.equal(provenance.backup,'rollback/previous-daily-package.json');
+  assert.equal((await readFile(provenance.path)).equals(await readFile(join(f.root,provenance.backup))),true);
+  await assert.rejects(readFile(f.service.command+'.runtime-state.json'),{code:'ENOENT'});
+  await assert.rejects(readFile(f.manifest.ordinary.database),{code:'ENOENT'});
+  await assert.rejects(readFile(f.manifest.ordinary.profile),{code:'ENOENT'});
+  await assert.rejects(dailyRollbackProvenance(f.service),/rollback_provenance_missing/);
+  const row=f.manifest.baseline.find(row=>row.backup===provenance.backup);
+  f.manifest.baseline.push({...row});await f.save();
+  await assert.rejects(verifyDailyPackage(f.path),/rollback_provenance_missing/);
+});
+
+test('previous-package provenance rejects stale or ambiguous code pins even after new inventory is sealed',async t=>{
+  for(const [label,mutate,reason] of [
+    ['schema',p=>{p.schema='unknown';},/previous_package_contract_rejected/],
+    ['identity',p=>{p.packageId='c'.repeat(32);},/previous_package_contract_rejected/],
+    ['source commit',p=>{p.sourceCommit='uncommitted';},/previous_package_contract_rejected/],
+    ['helper pin',p=>{p.files.find(row=>row.file==='bin/aku-reader-broker.exe').sha256='c'.repeat(64);},/previous_package_payload_changed/],
+    ['missing native host',p=>{p.files=p.files.filter(row=>row.file!=='bin/com.akubrowser.reader_activation.json');},/previous_package_inventory_rejected/],
+    ['duplicate binary',p=>{p.files.push({...p.files[0]});},/previous_package_inventory_rejected/],
+  ])await t.test(label,async t=>{
+    const f=await fixture(t,'main',{xMode:'concurrent',xReaderSource:'main'},true);
+    const row=f.manifest.baseline.find(row=>row.backup==='rollback/previous-daily-package.json');
+    const previous=JSON.parse(await readFile(row.path,'utf8'));mutate(previous);
+    await f.write(row.path,previous);await copyFile(row.path,join(f.root,row.backup));
+    row.sha256=(await fileRecord(row.path)).sha256;await f.refresh();
+    await assert.rejects(verifyDailyPackage(f.path),reason);
+  });
+});
+
+test('provenance drift, missing metadata and an unsealed executable fail closed',async t=>{
+  const legacy=await fixture(t);
+  await rm(legacy.service.command+'.runtime-state.json');
+  await assert.rejects(dailyRollbackProvenance(legacy.service),/rollback_provenance_missing/);
+  const f=await fixture(t,'main',{xMode:'concurrent',xReaderSource:'main'},true);
+  await f.write(f.service.command+'.runtime-state.json','unexpected new provenance');
+  await assert.rejects(verifyDailyPackage(f.path),/rollback_provenance_changed/);
+  await assert.rejects(dailyRollbackProvenance({...f.service,command:join(f.main,'arbitrary','aku-sidecar.exe')},{allowPackaged:true}),/path_escape/);
+  await rm(f.service.command+'.runtime-state.json');
+  await writeFile(f.service.command,'changed old executable');
+  await assert.rejects(dailyRollbackProvenance(f.service,{allowPackaged:true}),/previous_package_payload_changed/);
 });
 test('main verifier rejects wrong entry, lifecycle, driver pin and missing transport even after inventory refresh',async t=>{
   for(const [label,mutate,reason] of [

@@ -8,7 +8,7 @@ import {fileURLToPath} from 'node:url';
 import {buildNativeDailyOwnerPackage,buildMainBrowserTransportPackage} from './build-x-native-owner.mjs';
 import {ordinary,digest,fileRecord,copyTree,inventory} from './x-development-pilot-package.mjs';
 import {dailyPreparationArguments,dailyReaderContract,dailyReaderSelection,dailyPrerequisites,
-  dailyLayout,dailyConfigProposal,dailyMainRollbackProposal,dailyServiceProposal,verifyDailyPackage} from './x-daily-development-package.mjs';
+  dailyLayout,dailyConfigProposal,dailyMainRollbackProposal,dailyServiceProposal,dailyRollbackProvenance,verifyDailyPackage} from './x-daily-development-package.mjs';
 import {sourceAssets} from '../internal/collection/headless/worker/worker.mjs';
 
 const project=resolve(dirname(fileURLToPath(import.meta.url)),'..');
@@ -22,9 +22,10 @@ if(!service?.args)throw new Error('ordinary_akusidecar_service_missing');
 const {argumentValue}=await import('./x-daily-development-package.mjs');
 const configPath=argumentValue(service.args,'--config');
 const originalBytes=await readFile(await ordinary(configPath)),original=JSON.parse(originalBytes);
-const layout=dailyLayout(service,original);
+const layout=dailyLayout(service,original,reader.source);
 if(layout.root!==project)throw new Error('daily_preparation_requires_current_main_checkout');
 if(Object.keys(service.environment??{}).length!==0)throw new Error('service_environment_requires_separate_review');
+const provenance=await dailyRollbackProvenance(service,{allowPackaged:reader.source==='main'});
 const id=randomUUID().replaceAll('-',''),parent=join(project,'build','x-daily-development-prepared');
 await mkdir(parent,{recursive:true});await ordinary(parent,true);
 const root=join(parent,id),bin=join(root,'bin'),rollback=join(root,'rollback'),temp=join(root,'tmp');
@@ -58,7 +59,7 @@ async function backup(source,name,optional=false){
 await backup(configPath,'sidecar.json');
 await backup(service.command,'aku-sidecar.exe');
 await backup(join(dirname(service.command),'aku-reader-broker.exe'),'aku-reader-broker.exe');
-await backup(service.command+'.runtime-state.json','aku-sidecar.exe.runtime-state.json');
+await backup(provenance.path,provenance.backup.slice('rollback/'.length));
 await backup(join(dirname(service.command),'com.akubrowser.reader_activation.json'),'com.akubrowser.reader_activation.json',true);
 await writeFile(join(rollback,'service.json'),JSON.stringify(service,null,2)+'\n',{flag:'wx'});
 const image=join(bin,'aku-sidecar.exe');

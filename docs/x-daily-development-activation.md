@@ -43,6 +43,23 @@ verifier checks that source, entry, lifecycle, payload hash, config proposal and
 rollback proposal agree. It does not certify account/session or operational
 readiness. A newly prepared package is still default-off and grants no consent.
 
+An explicit main refresh also accepts an existing `concurrent/main` baseline,
+without a dedicated reader profile. Its config proposal is idempotent; rollback
+retains the exact existing field presence/values rather than inventing an
+`exclusive/dedicated` baseline. Preparation never applies either proposal.
+
+Rollback provenance uses the ordinary executable's runtime-state file when
+present. If absent, the main refresh requires the previous sealed main package
+under this checkout's `build/x-daily-development-prepared/<id>/bin/`. Its manifest
+must match the directory identity, source commit and build tag, and exactly one
+record for each old Sidecar binary, reader helper and native-host manifest must
+match the on-disk hash. The original manifest is copied into
+`rollback/previous-daily-package.json`; no runtime-state file is fabricated.
+The old package's handoff receipt is historical evidence only. New activation,
+ownership and process consent remain unapproved, and a receipt on the new
+candidate still blocks reuse. Rollback restores the recorded previous version;
+it does not implicitly switch an already-concurrent config to exclusive mode.
+
 Committed Go, schemas, broker, worker, fixture/bundle code and actual sibling
 AkuBridge capture inputs are pinned. New preparation scripts are hashed
 separately and must not be described as committed until published. Unrelated

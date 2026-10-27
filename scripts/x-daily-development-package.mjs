@@ -1,7 +1,7 @@
 // Preparation and read-only verification. Never open a DB, browser profile,
 // native pipe or HTTP endpoint, and never apply the proposed service/config.
 import {readFile,lstat} from 'node:fs/promises';
-import {dirname,join,resolve,isAbsolute,relative,sep} from 'node:path';
+import {basename,dirname,join,resolve,isAbsolute,relative,sep} from 'node:path';
 import {ordinary,contained,digest,fileRecord,requiredRuntimeSchemas} from './x-development-pilot-package.mjs';
 
 const schema='aku.x.daily-development-package.v1';
@@ -49,7 +49,8 @@ export function argumentValue(args,name){
   if(values.length>1)throw new Error('daily_duplicate_argument');
   return values[0];
 }
-export function dailyLayout(service,original){
+export function dailyLayout(service,original,readerSource='dedicated'){
+  dailyReaderContract(readerSource);
   if(!service||!isAbsolute(service.cwd)||!isAbsolute(service.command)||!Array.isArray(service.args)||
     !service.args.every(arg=>typeof arg==='string')||!service.args.includes('--dev')||!service.args.includes('--app-shell')||
     !service.args.includes('--windows-capture-split')||service.ports?.length!==1||service.ports[0]!==11122)
@@ -67,9 +68,12 @@ export function dailyLayout(service,original){
     else if(arg===name){if(!service.args[i+1]||service.args[i+1].startsWith('--'))throw new Error('daily_service_selector_rejected');i++;}
     else if(arg===name+'=')throw new Error('daily_service_selector_rejected');
   }
-  if(original.version!==1||original.deployment?.mode!=='development'||!original.reasoning||!original.capture||
-    !['exclusive',undefined,''].includes(original.capture.xMode)||original.capture.xReaderProfile||
-    !['dedicated',undefined,''].includes(original.capture.xReaderSource))
+  const capture=original.capture;
+  const initial=['exclusive',undefined,''].includes(capture?.xMode)&&
+    ['dedicated',undefined,''].includes(capture?.xReaderSource);
+  const existingMain=readerSource==='main'&&capture?.xMode==='concurrent'&&capture.xReaderSource==='main';
+  if(original.version!==1||original.deployment?.mode!=='development'||!original.reasoning||!capture||
+    capture.xReaderProfile||(!initial&&!existingMain))
     throw new Error('daily_baseline_config_rejected');
   const config=argumentValue(service.args,'--config');
   if(!config||!isAbsolute(config))throw new Error('daily_absolute_config_required');
@@ -115,6 +119,29 @@ export function dailyServiceProposal(service,image){
 }
 async function absent(path){try{await lstat(path);return false;}catch(error){if(error.code==='ENOENT')return true;throw error;}}
 function reject(condition,reason){if(!condition)throw new Error(reason);}
+export async function dailyRollbackProvenance(service,{allowPackaged=false}={}){
+  const state=service.command+'.runtime-state.json';
+  if(!await absent(state))return{path:await ordinary(state),backup:'rollback/aku-sidecar.exe.runtime-state.json'};
+  reject(allowPackaged,'daily_rollback_provenance_missing');
+  // A previously sealed main package has its own provenance. Validate only
+  // fixed code artifacts; never follow its historical source/state paths or
+  // reuse its activation approval. Its old handoff receipt is expected.
+  const root=dirname(dirname(service.command));
+  contained(join(resolve(service.cwd),'build','x-daily-development-prepared'),root);
+  reject(resolve(service.command)===join(root,'bin','aku-sidecar.exe')&&/^[a-f0-9]{32}$/u.test(basename(root)),
+    'daily_previous_package_path_rejected');
+  const path=await ordinary(join(root,'daily-package.json'));
+  const previous=JSON.parse(await readFile(path,'utf8'));
+  reject(previous.schema===mainSchema&&previous.readerSource==='main'&&previous.packageId===basename(root)&&
+    /^[a-f0-9]{40}$/u.test(previous.sourceCommit)&&previous.preparationOnly===true&&
+    equal(previous.buildTags,['auth_session_dev'])&&Array.isArray(previous.files),'daily_previous_package_contract_rejected');
+  for(const file of ['bin/aku-sidecar.exe','bin/aku-reader-broker.exe','bin/com.akubrowser.reader_activation.json']){
+    const rows=previous.files.filter(row=>row.file===file);
+    reject(rows.length===1&&/^[a-f0-9]{64}$/u.test(rows[0].sha256),'daily_previous_package_inventory_rejected');
+    reject((await fileRecord(join(root,file))).sha256===rows[0].sha256,'daily_previous_package_payload_changed');
+  }
+  return{path,backup:'rollback/previous-daily-package.json'};
+}
 export async function verifyDailyPackage(path){
   const root=dirname(await ordinary(path));
   const manifest=JSON.parse(await readFile(path,'utf8'));
@@ -144,7 +171,7 @@ export async function verifyDailyPackage(path){
   for(const rel of required)reject(seen.has(join(root,rel).toLowerCase()),'daily_required_payload_missing: '+rel);
   const read=async rel=>JSON.parse(await readFile(join(root,rel),'utf8'));
   const service=await read('rollback/service.json'),original=await read('rollback/sidecar.json');
-  const layout=dailyLayout(service,original);
+  const layout=dailyLayout(service,original,source);
   reject(equal(layout,manifest.ordinary),'daily_layout_changed');
   const proposal=await read('config-proposal.json');
   reject(equal(proposal,dailyConfigProposal(layout.config,manifest.configSHA256,source,original)),'daily_config_proposal_changed');
@@ -171,17 +198,24 @@ export async function verifyDailyPackage(path){
     ['rollback/sidecar.json',layout.config],['rollback/aku-sidecar.exe',service.command],
     ['rollback/aku-reader-broker.exe',join(dirname(service.command),'aku-reader-broker.exe')],
     ['rollback/aku-sidecar.exe.runtime-state.json',service.command+'.runtime-state.json'],
+    ['rollback/previous-daily-package.json',join(dirname(dirname(service.command)),'daily-package.json')],
     ['rollback/com.akubrowser.reader_activation.json',join(dirname(service.command),'com.akubrowser.reader_activation.json')],
   ]);
-  for(const name of ['sidecar.json','aku-sidecar.exe','aku-reader-broker.exe','aku-sidecar.exe.runtime-state.json'])
+  for(const name of ['sidecar.json','aku-sidecar.exe','aku-reader-broker.exe'])
     reject(manifest.baseline.some(row=>row.backup==='rollback/'+name),'daily_rollback_baseline_missing');
+  const provenance=manifest.baseline.filter(row=>['rollback/aku-sidecar.exe.runtime-state.json','rollback/previous-daily-package.json'].includes(row.backup));
+  reject(provenance.length===1,'daily_rollback_provenance_missing');
+  const baselineSeen=new Set();
   for(const row of manifest.baseline){
-    reject(baselinePaths.has(row.backup)&&resolve(row.path)===resolve(baselinePaths.get(row.backup)),'daily_baseline_scope_rejected');
+    reject(baselinePaths.has(row.backup)&&!baselineSeen.has(row.backup)&&resolve(row.path)===resolve(baselinePaths.get(row.backup)),'daily_baseline_scope_rejected');
+    baselineSeen.add(row.backup);
     contained(root,join(root,row.backup));
     reject(seen.has(resolve(root,row.backup).toLowerCase())&&
       (await fileRecord(join(root,row.backup))).sha256===row.sha256,'daily_backup_changed');
     reject((await fileRecord(row.path)).sha256===row.sha256,'daily_main_baseline_stale');
   }
+  reject(equal({path:provenance[0].path,backup:provenance[0].backup},await dailyRollbackProvenance(service,{allowPackaged:main})),
+    'daily_rollback_provenance_changed');
   reject((await fileRecord(layout.config)).sha256===manifest.configSHA256,'daily_main_config_stale');
   // External reads are exclusively the pinned application code/assets. The
   // database and all browser profile subtrees are never verification inputs.
