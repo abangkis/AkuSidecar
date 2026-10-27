@@ -2,8 +2,24 @@
 
 **Current checkpoint:** [X concurrency dev readiness](concurrency-dev-readiness.md).
 The dated entries below preserve experiment history. Their old blocker/next-step
-wording must not override the current checkpoint. The bounded manual X pilot
-still defers full renewal/rotation qualification.
+wording must not override the current checkpoint.
+
+## Current MVP: daily X capture in main dev (2026-10-27)
+
+1. Add the restart-required `capture.xMode` selection and ordinary main-dev
+   composition, preserving normal Store/settings/provider/UI. Until the batch
+   adapter is attached, report not-ready and prohibit legacy X fallback.
+2. Route ordinary repeated X batches through the concurrent reader/collector
+   mechanism. Process-lifetime derivation authorization is user-approved;
+   every batch has separate account/ownership/Store authority and a 60-second
+   ceiling. Preserve the reader across batches and keep Auto Update unchanged.
+3. Prove two daily batches, reader overlap, normal Timeline persistence, Stop
+   and graceful config rollback; then activate only with operational approval.
+
+QA is supporting validation, not the MVP endpoint. Full rotation/renewal
+qualification and hot switching stay deferred. The normal source scheduler and
+existing capture/Store machinery are reused. See the
+[daily design and explicit increment boundaries](x-daily-development-design.md).
 
 ### Unified QA-to-application ownership increment (2026-10-26)
 

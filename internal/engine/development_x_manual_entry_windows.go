@@ -4,6 +4,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -64,6 +65,12 @@ func PrepareXManualDevelopment(options config.Options) (XManualDevelopmentSelect
 	pin, _, err := xQAPinFile(options.ConfigPath)
 	if err != nil {
 		return nil, errors.New("manual X instance configuration must be an ordinary pinned file")
+	}
+	// Reject daily-mode mixing before the QA selector creates isolated state.
+	var configuration config.Config
+	if json.NewDecoder(pin).Decode(&configuration) != nil || configuration.Capture.ValidateXMode() != nil || configuration.Capture.XCaptureMode() != config.XCaptureExclusive {
+		pin.Close()
+		return nil, errors.New("manual X configuration cannot select daily concurrent capture")
 	}
 	s, err := openXQASelection(context.Background(), options.DevelopmentXManualPlan)
 	if err != nil {

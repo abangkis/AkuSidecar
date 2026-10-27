@@ -71,6 +71,11 @@ func main() {
 	}
 	cfg, err := config.Load(options)
 	fatal(logger, err)
+	daily, err := engine.PrepareXDailyDevelopment(cfg, options)
+	fatal(logger, err)
+	if daily != nil {
+		defer daily.Close()
+	}
 	if manual != nil {
 		fatal(logger, manual.ValidateConfig(cfg))
 	}
@@ -110,6 +115,9 @@ func main() {
 	}
 	fatal(logger, err)
 	defer func() {
+		if daily != nil {
+			_ = daily.Close()
+		}
 		if err := closeDatabaseAfterManualSelection(manual, state); err != nil {
 			logger.Printf("database release deferred: manual cleanup or database close uncertain")
 		}
@@ -198,6 +206,10 @@ func main() {
 	}
 	eventRuntime := semanticengine.New(state, eventResolver)
 	runtime := engine.New(state, provider, cfg, logger, eventRuntime)
+	if daily != nil {
+		fatal(logger, daily.Attach(runtime))
+		fatal(logger, runtime.ReconcileXDailyStartup(context.Background()))
+	}
 	if manual != nil {
 		defer runtime.Shutdown()
 		fatal(logger, manual.Attach(context.Background(), runtime))
@@ -280,6 +292,7 @@ func main() {
 			server.SetAppShellPID(shell.PID)
 		}
 	}
+	fatal(logger, runtime.ResumeXDailyScheduling(collectionCtx))
 	runtime.StartAutoUpdateScheduler()
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)

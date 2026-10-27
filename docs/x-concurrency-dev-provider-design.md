@@ -1,5 +1,13 @@
 # X manual pilot: development provider integration
 
+**Current target:** [daily X concurrency in ordinary development](x-daily-development-design.md).
+The selected policy is now process-lifetime derivation authorization and a
+60-second ceiling per batch, with restart-required `capture.xMode` selection.
+The bounded one-use/QA composition below remains historical implementation
+background and reusable evidence; it is not the daily-use MVP endpoint.
+Increment 1 adds ordinary selection and unavailable-adapter admission fencing;
+increment 2 still owns persistent reader and repeated native batch integration.
+
 Prepared 2026-10-25, after native capture acceptance on `5964a24`.
 Status: shared ownership/transport, application owner/profile lease, packaged
 driver and QA native overlap acceptance are implemented. The ordinary development

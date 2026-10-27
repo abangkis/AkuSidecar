@@ -3,7 +3,27 @@
 This page is the current checkpoint. Historical experiments in the design and
 roadmap are evidence, not a new list of prerequisites.
 
-## Selected scope
+## Current daily-use MVP target (2026-10-27)
+
+The target is repeated X capture in ordinary main dev, selectable with
+`capture.xMode: exclusive | concurrent`, initially requiring graceful restart.
+Normal Store, effective provider/settings, Timeline and non-X scheduling remain
+in use. Derivation authorization lasts only for the running Sidecar process;
+each batch remains limited to 60 seconds and requires fresh batch authority.
+QA packages are supporting validation, not the delivered MVP.
+
+The current increment adds config/composition and closes legacy X admission
+while the daily batch adapter is unavailable. It must report
+`batch-adapter-required`, not daily capture success. Next connect repeated native
+batches and persistent reader ownership, then validate actual daily use under
+separate activation authority. Full renewal/rotation qualification stays
+deferred. See [daily design and three delivery increments](x-daily-development-design.md).
+
+The old isolated package failed startup, was rolled back and was replaced by
+the [schema-complete preparation](x-development-pilot-package-0e46923a.md).
+Its old readiness and next-step statements below are time-specific history.
+
+## Historical bounded pilot scope
 
 - Manual, X-only attempt, at most 60 seconds from the original one-use seed
   authorization start; bounded owner/Home preflight remains separate.
@@ -17,6 +37,31 @@ roadmap are evidence, not a new list of prerequisites.
   the global scheduling preference.
 
 ## Current implementation
+
+### Daily mode selection and ordinary composition: offline increment 1
+
+`capture.xMode` now defaults to `exclusive`; `concurrent` is Windows/dev-tag
+only and takes effect on restart. Ordinary main keeps its Store, config,
+effective provider and UI; the daily selection neither consumes a QA plan nor
+starts a native owner. X capture/reader legacy fallback is blocked while the
+daily batch adapter is not ready. The status endpoint reports this explicitly.
+
+Synthetic recovery now covers both queued and claimed pre-restart X commands,
+X-only finalization, mixed-source progress and accepted-observation follow-up
+preservation. The recovery transaction keeps existing protected-pilot fences.
+Configuration, daily Engine/HTTP tests and four actual-main builds passed in
+`scripts/test-x-daily-development.ps1` (evidence under
+`build/x-daily-offline-9555c38c309b426193d2368ec98ab163/`). Strengthened queued/
+claimed and accepted-follow-up tests passed separately after that run.
+The existing manual-entry suite also passed, including its synthetic HTTP
+journey, Store/reader regressions, ordinary-main consent bootstrap and four
+builds (log `runtime/qa/auth-session-sidecar/x-development-entry-ee3fe7e24dc742e2865a55586be401fd.log.txt`).
+
+Astra accepted increment 1 after the recovery correction. No runtime, login,
+Auto Update, user database, registration or session transfer was changed.
+Daily native capture is not implemented by this increment: next is increment 2
+in the [daily design](x-daily-development-design.md), including persistent reader
+ownership and ordinary repeated batches under process-scoped authorization.
 
 ### Activation/rollback candidate prepared, not activated (2026-10-27)
 

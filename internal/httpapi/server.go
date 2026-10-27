@@ -74,7 +74,7 @@ func New(cfg config.Config, state *store.Store, runtime *engine.Engine, logger *
 		nativeReaderGate:   make(chan struct{}, 1),
 		postScreenshotGate: make(chan struct{}, 1),
 	}
-	if (cfg.WindowsCaptureSplit || cfg.Dev && runtime.XManualConfigured()) && goruntime.GOOS == "windows" {
+	if (cfg.WindowsCaptureSplit || cfg.Dev && runtime.XConcurrentConfigured()) && goruntime.GOOS == "windows" {
 		server.splitCapture = newSplitCaptureTransport()
 		runtime.SetBrowserCollectionCleanup(server.ReleaseBrowserCollectionSurfaces)
 		runtime.SetBrowserMediaRecaptureDispatch(server.DispatchBrowserMediaRecapture)
@@ -252,7 +252,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": domain.ApplicationVersion, "runtime": "go", "deployment": s.config.Deployment.PublicStatus(), "provider": s.engine.ProviderName(), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime(), "bridgeContractVersion": domain.BridgeContractVersion, "softwareUpdate": domain.SidecarSoftwareUpdateMetadata(store.SchemaVersion), "instanceEpoch": s.engine.Epoch(), "uptimeMs": time.Since(s.started).Milliseconds(), "database": map[string]any{"status": "healthy"}, "loadProfile": settings.LoadProfile})
 	case r.Method == http.MethodGet && p == "/api/collection/runtime":
-		return writeJSON(w, http.StatusOK, map[string]any{"collectionRuntime": s.engine.CollectionRuntime(), "xManual": s.engine.XManualStatus()})
+		return writeJSON(w, http.StatusOK, map[string]any{"collectionRuntime": s.engine.CollectionRuntime(), "xManual": s.engine.XManualStatus(), "xCapture": s.engine.XCaptureStatus()})
 	case r.Method == http.MethodPost && p == "/api/development/x-manual/start":
 		if !s.config.Dev {
 			return notFound("development route")

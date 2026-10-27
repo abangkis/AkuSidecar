@@ -96,6 +96,7 @@ type Engine struct {
 	autoWake                                 chan struct{}
 	captureBehaviorMu                        sync.Mutex
 	xManual                                  xManualRouting
+	xDaily                                   xDailyRouting
 	captureWork                              map[string]context.CancelFunc
 }
 
@@ -656,6 +657,10 @@ func (e *Engine) startSession(ctx context.Context, intent string, policy domain.
 		return domain.Session{}, errors.New("collection runtime does not match the saved collection mode")
 	}
 	validSources := e.grantedActiveSources(settings)
+	validSources, err = e.dailyCaptureSources(validSources)
+	if err != nil {
+		return domain.Session{}, err
+	}
 	validSources, err = e.captureBehaviorSources(ctx, validSources)
 	if err != nil {
 		return domain.Session{}, err
@@ -707,6 +712,26 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 	run, err := e.store.AdvanceSession(ctx, sessionID)
 	if err != nil {
 		return run, err
+	}
+	// A durable pre-restart X run must not strand later non-X work or fall
+	// through to the ordinary collector while the daily adapter is unavailable.
+	skippedDailyX := false
+	for run != nil && e.xDailyUnavailable(run.Source) {
+		skippedDailyX = true
+		failure := domain.Failure{Code: "x_concurrent_not_ready", Stage: "capture", Message: "X concurrent capture is not ready: batch-adapter-required", Retryable: true}
+		if err := e.store.FailRun(ctx, run.ID, failure); err != nil {
+			return nil, err
+		}
+		run, err = e.store.AdvanceSession(ctx, sessionID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if skippedDailyX {
+		session, err = e.store.GetSession(ctx, sessionID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if run == nil {
 		for _, candidate := range session.Runs {

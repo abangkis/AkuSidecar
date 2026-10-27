@@ -448,6 +448,7 @@ func (p ProviderConfig) Validate(name string) error {
 }
 
 type CaptureConfig struct {
+	XMode                string                `json:"xMode,omitempty"`
 	Behavior             CaptureBehaviorConfig `json:"behavior,omitempty"`
 	Profile              string                `json:"profile"`
 	Visibility           string                `json:"visibility"`
@@ -636,6 +637,9 @@ func (c Config) Validate() error {
 	}
 	if c.Capture.MaxAcquisitionRounds < 1 || c.Capture.MaxAcquisitionRounds > 2 {
 		return errors.New("max acquisition rounds must be one or two")
+	}
+	if err := c.Capture.ValidateXMode(); err != nil {
+		return err
 	}
 	if err := c.Capture.Behavior.Validate(); err != nil {
 		return err
