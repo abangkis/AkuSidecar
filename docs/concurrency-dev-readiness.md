@@ -18,6 +18,21 @@ roadmap are evidence, not a new list of prerequisites.
 
 ## Current implementation
 
+### Activation/rollback candidate prepared, not activated (2026-10-27)
+
+Package `fd755aa1904d4f2e80a6c9d25c249b93` pins the reviewed development-tag
+main/helper, owned Node, CfT UI, native driver and an isolated config/plan.
+Eleven package tests, 331-file verification and the early config/schema probe
+passed without Store, browser, retained-session or provider startup. Backup
+files and current-user registration values were captured read-only. No runtime
+or Auto Update changes were made; preparation source remains uncommitted.
+
+Both current-user native-host mappings still select another runtime and the
+exclusive reader pipe is present. Do not activate until the concrete host/pipe
+handoff and candidate launch have separate operational approval; `/start` also
+requires a fresh one-use transfer approval. See the [package checkpoint](x-development-pilot-package-fd755aa1.md)
+and [activation/rollback runbook](x-development-pilot-activation.md).
+
 ### SQLite canceled-query ownership fixed by upstream driver (2026-10-27)
 
 The separately authorized driver update now selects `modernc.org/sqlite v1.57.0`
