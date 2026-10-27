@@ -21,6 +21,14 @@ qualification and hot switching stay deferred. The normal source scheduler and
 existing capture/Store machinery are reused. See the
 [daily design and explicit increment boundaries](x-daily-development-design.md).
 
+Increment 1 is published at `7f495c6`. Increment 2 now has offline implementation
+and synthetic repeated-batch/Store/ownership evidence: process-scoped consent,
+persistent dedicated reader, fresh collectors, 60-second per-batch authority and
+verified Stop/drain. It is not activated. The remaining MVP acceptance is daily
+use in ordinary main dev after explicit resource/activation approval, not another
+one-shot QA package as the final product. Initial native X capture is one round
+per batch; full continuation and hot switching stay deferred.
+
 ### Unified QA-to-application ownership increment (2026-10-26)
 
 The working tree closes the retained-reader composition as one bounded change:

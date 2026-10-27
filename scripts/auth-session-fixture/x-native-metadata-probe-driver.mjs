@@ -755,9 +755,9 @@ function isHomeTarget(value) {
 
 let executable = '';
 let applicationScope = null;
-const manualStartupAllowed=()=>applicationScope?applicationScope.seedGrant.startupAllowed():process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED==='1';
-const retainedTransferAllowed=()=>applicationScope?applicationScope.seedGrant.transferAllowed():process.env.AKU_X_MANUAL_RETAINED_TRANSFER_ONCE==='1';
-const shortTransferAllowed=()=>applicationScope?applicationScope.seedGrant.transferAllowed():process.env.AKU_X_QA_SHORT_TRANSFER_ALLOWED==='1';
+const manualStartupAllowed=()=>applicationScope?applicationScope.seedGrant?.startupAllowed()===true:process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED==='1';
+const retainedTransferAllowed=()=>applicationScope?applicationScope.seedGrant?.transferAllowed()===true:process.env.AKU_X_MANUAL_RETAINED_TRANSFER_ONCE==='1';
+const shortTransferAllowed=()=>applicationScope?applicationScope.seedGrant?.transferAllowed()===true:process.env.AKU_X_QA_SHORT_TRANSFER_ALLOWED==='1';
 let qaRoot = '';
 let controlOrigin = '';
 let profilePath = '';
@@ -2188,7 +2188,10 @@ export async function seedRetainedManualPilot(message){
         snapshot:async()=>({pid:current.pid,profileId:current.profileId,targetId:current.targetId,sessionId:current.sessionId,alive:!childExited&&!cdpFailure}),
         projectEvent:projectCDPEvent,
       });
-      const account=await current.manualEnrollment.run();assertGuards();return account;
+      const account=await current.manualEnrollment.run();assertGuards();
+      // Daily composition checks the process account before cookie access.
+      if(applicationScope?.expectedAccount!==undefined&&applicationScope.expectedAccount!==account)throw manualSeedFailure('enrollment_project','rejected');
+      return account;
     },
     readAllowedCookies:async()=>{
       assertGuards();await current.manualEnrollment.check();assertGuards();
@@ -2305,6 +2308,90 @@ export async function createApplicationManualOwner({chromePath,readerProfile,col
       try{await applicationScope.readerPost?.close();if(active?.shortFeasibility)await closeShortCollector(active);}
       finally{await closeChrome();}
     },
+  });
+}
+
+// Daily composition has a persistent, exclusively owned reader and a new
+// actor/session/grant for every disposable collector. No consumed pilot grant
+// is reset, and the manual factory above retains its one-use semantics.
+export async function createApplicationDailyOwner({chromePath,readerProfile,loadAssets,emitProgress=()=>{}}){
+  if(applicationScope||child||protocolOwner||driverMode!=='single_phase'||typeof loadAssets!=='function')throw probeError('daily_owner_unavailable');
+  for(const path of [chromePath,readerProfile])if(typeof path!=='string'||!isAbsolute(path)||resolve(path)!==path)throw probeError('daily_owner_path_invalid');
+  const info=await lstat(chromePath);
+  if(!info.isFile()||info.isSymbolicLink()||!sameWindowsPath(await realpath(chromePath),chromePath))throw probeError('daily_owner_path_invalid');
+  const readerIdentity=await ordinaryDirectoryIdentity(readerProfile),root=dirname(readerProfile),rootIdentity=await ordinaryDirectoryIdentity(root);
+  executable=chromePath;profilePath=readerProfile;qaRoot=root;driverMode='retained_source_qualification';retainedQAScope={reuse:true};
+  twoPhaseState={root,profile:readerProfile,rootIdentity,profileIdentity:readerIdentity,phase2Started:true};
+  applicationScope={loadAssets,emitProgress};
+  let initialized=false,closed=false,failed=false,base,batch,generation=0,account;
+  const posts=new Map();
+  const check=async()=>{if(closed||childExited||cdpFailure||!await verifyTwoPhaseDirectories())throw probeError('daily_reader_changed');return{readerPID:child.pid,readerProfile};};
+  const home=async()=>{const end=Date.now()+MANUAL_TIMING.collectorHomeReadyMS;while(!(await loginState({owner:active.owner})).ready){await check();if(Date.now()>=end)throw probeError('daily_reader_login_unavailable');await new Promise(r=>setTimeout(r,200));}};
+  const endBatch=async()=>{
+    if(!batch)return{closed:true};const current=batch;
+    // A restored source-control envelope is required before keeping the reader.
+    if(mustRetireStartupOwner(current)){failed=true;throw probeError('daily_reader_cleanup_uncertain');}
+    if(!await closeShortCollector(current)){failed=true;throw probeError('daily_collector_cleanup_uncertain');}
+    current.manualCollectorUnsubscribe?.();current.shortFeasibility?.manualCookieUnsubscribe?.();
+    await current.manualEnrollment?.close();
+    for(const sessionId of new Set([current.manualObserver?.sessionId,current.sessionId].filter(Boolean)))await sendApplicationPost('Target.detachFromTarget',{sessionId});
+    batch=null;active=base;protocolOwner=base.owner;applicationScope={loadAssets,emitProgress};
+    return{closed:true};
+  };
+  return Object.freeze({
+    async initialize(){
+      if(initialized||closed)throw probeError('daily_reader_replay');initialized=true;
+      child=spawn(executable,twoPhaseChromeArgs(readerProfile,true),{windowsHide:false,stdio:['ignore','ignore','ignore','pipe','pipe']});childExited=false;bindChrome(child);
+      if(!Number.isSafeInteger(child.pid)||child.pid<1)throw probeError('daily_reader_launch_failed');
+      const launched=await initializeChromeSession(child,readerProfile);await home();base=active;
+      return{owner:base.owner,readerPID:launched.pid};
+    },
+    async check(){if(!initialized)throw probeError('daily_reader_unavailable');return check();},
+    async begin(message){
+      if(!initialized||failed||batch||message.generation!==generation+1)throw probeError('daily_batch_unavailable');
+      generation=message.generation;await check();
+      const path=message.collectorProfile;
+      if(typeof path!=='string'||!isAbsolute(path)||resolve(path)!==path)throw probeError('daily_collector_path_invalid');
+      for(const [left,right]of [[readerProfile,path],[path,readerProfile]]){const rel=relative(left,right);if(!rel||!isAbsolute(rel)&&rel!=='..'&&!rel.startsWith('..'+sep))throw probeError('daily_profiles_overlap');}
+      const collectorIdentity=await ordinaryDirectoryIdentity(path);
+      const attached=await sendApplicationPost('Target.attachToTarget',{targetId:base.targetId,flatten:true});
+      if(!safeId(attached.sessionId))throw probeError('daily_reader_attachment_failed');
+      // Fresh object and attachment: old actor capabilities remain consumed.
+      batch=active={owner:++nextOwner,pid:base.pid,profileId:base.profileId,targetId:base.targetId,sessionId:attached.sessionId,
+        gate:new LoginObservationGate(),pageLoad:null,metadata:null,observationEndsAt:0,networkEventCount:0,eventLimitReached:false};protocolOwner=batch.owner;
+      registerFreshStartupSession(batch,batch.sessionId,'reader');await send('Page.enable',{},batch.sessionId);await home();
+      applicationScope={collectorProfile:path,loadAssets,emitProgress,expectedAccount:account,seedGrant:createApplicationSeedGrant({runSeed:seedRetainedManualPilot})};
+      try{const collector=await prepareShortConcurrency({owner:batch.owner});if(!sameDirectoryIdentity(await ordinaryDirectoryIdentity(path),collectorIdentity))throw probeError('daily_collector_changed');return{owner:batch.owner,readerPID:base.pid,collectorPID:collector.collectorPID};}
+      catch(error){failed=true;throw error;}
+    },
+    async seed(message){
+      if(!batch||failed||message.generation!==generation||message.owner!==batch.owner)throw probeError('daily_seed_unavailable');
+      try{const receipt=await applicationScope.seedGrant.run({id:message.id,op:'manual_seed_bootstrap',owner:batch.owner});
+        if(account!==undefined&&account!==receipt.accountId)throw probeError('daily_account_changed');account=receipt.accountId;return receipt;
+      }catch(error){failed=true;throw error;}
+    },
+    async execute(message){
+      if(!batch)throw probeError('daily_batch_unavailable');await check();
+      const cleanup=['manual_abort','manual_capture_cancel'].includes(message.op);
+      if(!cleanup){if(failed)throw probeError('daily_batch_failed');applicationScope.seedGrant.assertCurrent();}
+      if(message.op==='manual_capture')applicationScope.seedGrant.assertCaptureDeadline(message.request?.deadlineMS);
+      try{return await executeManualOwnerRPC(message);}catch(error){if(!cleanup)failed=true;throw error;}
+    },
+    async end(message){if(message.generation!==generation)throw probeError('daily_batch_stale');await check();return endBatch();},
+    async post(message){
+      await check();applicationPostOperation(message,{allowMainOrigin:true});if(message.owner!==base.owner)throw probeError('daily_reader_scope');
+      const key=message.request?.requestId??message.requestId;let record=posts.get(key);
+      if(message.op==='manual_prepare_post'){
+        if(record||posts.size>=32)throw probeError('daily_reader_busy');
+        const actor=createApplicationReaderPost({owner:base.owner,bootstrapTarget:base.targetId,allowMainOrigin:true,
+          command:async(method,params,session,before=()=>{})=>{await check();before();return sendApplicationPost(method,params,session);},
+          assertCurrent:()=>{if(closed||childExited||cdpFailure)throw probeError('daily_reader_changed');}});
+        record={actor,timer:setTimeout(()=>{posts.delete(key);void actor.close().catch(()=>{failed=true;});},35000)};posts.set(key,record);
+      }
+      if(!record)throw probeError('daily_reader_request_missing');
+      try{return await record.actor.execute(message);}finally{if(message.op!=='manual_prepare_post'){clearTimeout(record.timer);posts.delete(key);await record.actor.close();}}
+    },
+    async close(){if(closed)return;closed=true;for(const p of posts.values()){clearTimeout(p.timer);await p.actor.close().catch(()=>{});}posts.clear();try{if(batch)await closeShortCollector(batch);}finally{await closeChrome();}},
   });
 }
 

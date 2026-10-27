@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -14,6 +15,22 @@ const xDailyBatchLimitMS = 60000
 type xDailyRouting struct {
 	mu               sync.RWMutex
 	attached, closed bool
+	owner            xDailyNativeOwner
+	parent           context.Context
+	authorized       bool
+	generation       uint64
+	done             chan struct{}
+	runID            string
+	workers          int
+	drain            chan struct{}
+	cancel           context.CancelFunc
+	reason           string
+	failurePhase     string
+	factory          func(context.Context, context.Context) (xDailyNativeOwner, error)
+	startUsed        bool
+	cleanupUncertain bool
+	startDone        chan struct{}
+	cancelStart      context.CancelFunc
 }
 
 // XDailySelection owns only the restart-required routing selection. Step two
@@ -34,6 +51,8 @@ type XCaptureStatus struct {
 	AuthorizationPolicy          string `json:"authorizationPolicy,omitempty"`
 	MaxBatchMS                   int    `json:"maxBatchMs,omitempty"`
 	DerivationAuthorized         bool   `json:"derivationAuthorized"`
+	FailurePhase                 string `json:"failurePhase,omitempty"`
+	Cleanup                      string `json:"cleanup,omitempty"`
 }
 
 // Prepare runs after config loading but before the ordinary Store/provider/UI.
@@ -78,7 +97,9 @@ func (s *XDailySelection) Close() error {
 	defer s.mu.Unlock()
 	s.closed = true
 	if s.engine != nil {
-		s.engine.closeXDailySelection()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		return s.engine.closeXDaily(ctx)
 	}
 	return nil
 }
@@ -98,8 +119,42 @@ func (e *Engine) XCaptureStatus() XCaptureStatus {
 	status.AuthorizationPolicy, status.MaxBatchMS = "process", xDailyBatchLimitMS
 	e.xDaily.mu.RLock()
 	defer e.xDaily.mu.RUnlock()
+	status.FailurePhase = e.xDaily.failurePhase
+	if e.xDaily.owner != nil {
+		status.Cleanup = "verified"
+	}
+	if e.xDaily.done != nil {
+		status.Cleanup = "pending"
+	}
+	if e.xDaily.startDone != nil {
+		select {
+		case <-e.xDaily.startDone:
+		default:
+			status.Cleanup = "pending"
+		}
+	}
+	if e.xDaily.cleanupUncertain {
+		status.Cleanup = "uncertain"
+	}
+	if e.xDaily.owner != nil {
+		status.State, status.Reason = "stopped", e.xDaily.reason
+		if e.xDaily.authorized && e.xDaily.parent.Err() == nil {
+			status.EffectiveMode, status.State, status.Reason, status.DerivationAuthorized = "concurrent", "ready", "", true
+			if e.xDaily.done != nil {
+				status.State = "capturing"
+			}
+		}
+	}
+	if e.xDaily.owner == nil && e.xDaily.factory != nil && !e.xDaily.startUsed {
+		status.State, status.Reason = "disabled", "process-consent-required"
+	}
 	if e.xDaily.closed {
-		status.State, status.Reason = "stopped", "process-authorization-ended"
+		status.State = "stopped"
+		if e.xDaily.reason == "" || e.xDaily.reason == "opted-out" {
+			status.Reason = "process-authorization-ended"
+		} else {
+			status.Reason = e.xDaily.reason
+		}
 	}
 	return status
 }
@@ -111,7 +166,7 @@ func (e *Engine) closeXDailySelection() {
 }
 
 func (e *Engine) xDailyUnavailable(source domain.Source) bool {
-	return source == domain.SourceX && e.XDailyConfigured()
+	return source == domain.SourceX && e.XDailyConfigured() && !e.xDailyReady()
 }
 
 func (e *Engine) dailyCaptureSources(sources []domain.Source) ([]domain.Source, error) {
@@ -142,7 +197,7 @@ func (e *Engine) ReconcileXDailyStartup(ctx context.Context) error {
 	}
 	for _, run := range session.Runs {
 		if run.Source == domain.SourceX {
-			if err = e.store.RejectUnavailableXCapture(ctx, run.ID); err != nil {
+			if err = e.store.ReconcileClosedDailyXCapture(ctx, run.ID); err != nil {
 				return err
 			}
 		}

@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,mkdir,readFile,rm} from 'node:fs/promises';
+import {resolve,join,dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {createHash} from 'node:crypto';
+import {buildNativeDailyOwnerPackage} from './build-x-native-owner.mjs';
+const project=resolve(dirname(fileURLToPath(import.meta.url)),'..');
+test('daily owner package seals the distinct process/batch entry without execution',async t=>{
+  const parent=join(project,'build');await mkdir(parent,{recursive:true});
+  const root=await mkdtemp(join(parent,'test-daily-owner-'));
+  t.after(async()=>{if(dirname(root)!==parent)throw new Error('invalid cleanup boundary');await rm(root,{recursive:true,force:true});});
+  const result=await buildNativeDailyOwnerPackage(root);
+  const manifest=JSON.parse(await readFile(result.manifest,'utf8')),bytes=await readFile(result.driver);
+  assert.equal(manifest.dailyLifecycle,true);
+  assert.equal(manifest.entry,'internal/collection/headless/worker/native-pilot/daily-owner.mjs');
+  assert.equal(createHash('sha256').update(bytes).digest('hex'),result.sha256);
+  assert.match(bytes.toString(),/module\.runDailyOwner\(\)/u);
+  assert(manifest.modules.some(row=>row.path.endsWith('/daily-owner-protocol.mjs')));
+  assert(manifest.captureAssets.length>0);
+});

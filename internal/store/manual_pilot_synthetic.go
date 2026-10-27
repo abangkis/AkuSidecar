@@ -43,6 +43,9 @@ func (s *Store) IssueSyntheticManualPilot(ctx context.Context, r ManualPilotSynt
 }
 
 func (s *Store) issueDevelopmentManualPilot(ctx context.Context, sessionID, runID, owner, pair, attempt string, generation uint64, deadline time.Time) (*ManualPilotPermit, error) {
+	return s.issueDevelopmentPilot(ctx, sessionID, runID, owner, pair, attempt, generation, deadline, false)
+}
+func (s *Store) issueDevelopmentPilot(ctx context.Context, sessionID, runID, owner, pair, attempt string, generation uint64, deadline time.Time, runScoped bool) (*ManualPilotPermit, error) {
 	s.manualPilotMu.Lock()
 	defer s.manualPilotMu.Unlock()
 	tx, e := s.db.BeginTx(ctx, nil)
@@ -78,7 +81,7 @@ func (s *Store) issueDevelopmentManualPilot(ctx context.Context, sessionID, runI
 	if e != nil {
 		return nil, e
 	}
-	v := manualPilotState{SessionID: sessionID, RunID: runID, Source: domain.SourceX, Incarnation: incarnation, Epoch: domain.NewID("manual-epoch"), Attempt: attempt, OwnerRef: owner, PairRef: pair, OwnerGeneration: generation, Revision: 1}
+	v := manualPilotState{SessionID: sessionID, RunID: runID, Source: domain.SourceX, Incarnation: incarnation, Epoch: domain.NewID("manual-epoch"), Attempt: attempt, OwnerRef: owner, PairRef: pair, OwnerGeneration: generation, Revision: 1, RunScoped: runScoped}
 	raw, e := json.Marshal(v)
 	if e != nil {
 		return nil, e

@@ -613,7 +613,12 @@ func noGrantedActiveSourceError() error {
 
 func (e *Engine) startSession(ctx context.Context, intent string, policy domain.UpdatePolicy) (domain.Session, error) {
 	e.operation.Lock()
-	defer e.operation.Unlock()
+	operationLocked := true
+	defer func() {
+		if operationLocked {
+			e.operation.Unlock()
+		}
+	}()
 	if e.collectionRuntime != nil && e.collectionRuntime.Status().Pending {
 		return domain.Session{}, errors.New("collection mode transition is pending; finish active capture or close source/reader windows")
 	}
@@ -657,6 +662,29 @@ func (e *Engine) startSession(ctx context.Context, intent string, policy domain.
 		return domain.Session{}, errors.New("collection runtime does not match the saved collection mode")
 	}
 	validSources := e.grantedActiveSources(settings)
+	if e.xDailyReady() {
+		for _, source := range settings.ActiveSources {
+			if source == domain.SourceX {
+				found := false
+				for _, v := range validSources {
+					if v == source {
+						found = true
+					}
+				}
+				if !found {
+					validSources = append(validSources, source)
+				}
+			}
+		}
+	}
+	if e.xDailyReady() {
+		e.xDaily.mu.RLock()
+		busy := e.xDaily.done != nil
+		e.xDaily.mu.RUnlock()
+		if busy {
+			return domain.Session{}, errors.New("daily X collector cleanup is pending")
+		}
+	}
 	validSources, err = e.dailyCaptureSources(validSources)
 	if err != nil {
 		return domain.Session{}, err
@@ -680,12 +708,22 @@ func (e *Engine) startSession(ctx context.Context, intent string, policy domain.
 			return domain.Session{}, err
 		}
 	}
-	session, err := e.store.CreateUpdateSession(ctx, intent, settings, policy)
+	var session domain.Session
+	if e.XDailyConfigured() && e.xDailyReady() {
+		session, err = e.store.CreateDailyXUpdateSession(ctx, intent, settings, policy)
+	} else {
+		session, err = e.store.CreateUpdateSession(ctx, intent, settings, policy)
+	}
 	if err != nil {
 		lease.Release()
 		return domain.Session{}, err
 	}
 	e.rememberCaptureSession(session.ID, lease)
+	// The queued session is durable now. Do not hold operation while acquiring
+	// schedule: finalization can hold schedule while acquiring operation for
+	// calibration, including when the preceding daily batch just completed.
+	e.operation.Unlock()
+	operationLocked = false
 	if _, err := e.startNext(ctx, session.ID); err != nil {
 		return domain.Session{}, err
 	}
@@ -698,6 +736,10 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 	}
 	e.schedule.Lock()
 	defer e.schedule.Unlock()
+	return e.startNextLocked(ctx, sessionID)
+}
+
+func (e *Engine) startNextLocked(ctx context.Context, sessionID string) (*domain.Run, error) {
 	if !e.fixtureAdmissionAllowed() {
 		return nil, nil
 	}
@@ -813,6 +855,27 @@ func (e *Engine) startNext(ctx context.Context, sessionID string) (*domain.Run, 
 		}
 		e.launchLivingTopicRouting(sessionID)
 		return nil, nil
+	}
+	if run.Source == domain.SourceX && e.XDailyConfigured() && e.xDailyReady() {
+		settings, err := e.store.GetSettings(ctx)
+		if err != nil {
+			return nil, err
+		}
+		payload := capturePayload(*run, session.ID, settings, 1, nil, "")
+		payload["captureRuntime"] = map[string]any{"driver": "headless"}
+		payload["captureCollector"] = collectorStamp("headless")
+		if behavior := e.config.Capture.Behavior.Effective(); behavior.Enabled {
+			payload["scrollFraction"] = behavior.ScrollFraction
+			payload["scrollSettleMs"] = behavior.ScrollSettleMS
+		}
+		if err = e.queueXDailyBatch(*run, payload); err != nil {
+			if failErr := e.store.RejectUnavailableXCapture(ctx, run.ID); failErr != nil {
+				return nil, failErr
+			}
+			return e.startNextLocked(ctx, sessionID)
+		}
+		started, err := e.store.GetRun(ctx, run.ID)
+		return &started, err
 	}
 	if hybridCollectionSession(session) {
 		admitted, admissionErr := e.admitHybridRun(ctx, session, *run)
@@ -1777,7 +1840,11 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 		_, err = e.startNext(ctx, run.SessionID)
 		return err
 	}
-	if allowPlanning && len(observations) == 1 && e.config.Capture.MaxAcquisitionRounds > 1 {
+	dailyRoundOne, err := e.store.IsDailyXCapture(ctx, runID)
+	if err != nil {
+		return err
+	}
+	if allowPlanning && !dailyRoundOne && len(observations) == 1 && e.config.Capture.MaxAcquisitionRounds > 1 {
 		localMode := "local_frontier"
 		localReason, localFinish := localStructuredFallbackCompletionReason(run.Source, observations[0])
 		if localFinish {

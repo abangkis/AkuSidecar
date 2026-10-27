@@ -83,11 +83,12 @@ type manualPilotState struct {
 	OwnerGeneration uint64        `json:"ownerGeneration"`
 	Revision        uint64        `json:"revision"`
 	Closed          bool          `json:"closed"`
+	RunScoped       bool          `json:"runScoped,omitempty"`
 }
 
 func rejectManualPilotRun(ctx context.Context, tx *sql.Tx, runID string) error {
 	var n int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM runs r JOIN meta m ON m.key=?||r.session_id WHERE r.id=?`, manualPilotSessionPrefix, runID).Scan(&n); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM runs r JOIN meta m ON m.key=?||r.session_id WHERE r.id=? AND (r.source='x' OR COALESCE(json_extract(m.value,'$.runScoped'),0)<>1)`, manualPilotSessionPrefix, runID).Scan(&n); err != nil {
 		return err
 	}
 	if n != 0 {
@@ -213,6 +214,14 @@ func writeManualOp(ctx context.Context, tx *sql.Tx, v ManualPilotOperation) erro
 	return e
 }
 func (s *Store) finishManualTx(ctx context.Context, tx *sql.Tx, op ManualPilotOperation) (ManualPilotOutcome, error) {
+	retireDaily := func() {
+		if op.Kind == "revoke" {
+			if p := s.manualPilots[op.SessionID]; p != nil && p.state.RunScoped && p.state.Attempt == op.Binding {
+				delete(s.manualPilots, op.SessionID)
+				s.manualPilotClosures.Delete(op.SessionID)
+			}
+		}
+	}
 	var err error
 	if s.manualPilotCommit != nil {
 		err = s.manualPilotCommit(tx)
@@ -220,6 +229,7 @@ func (s *Store) finishManualTx(ctx context.Context, tx *sql.Tx, op ManualPilotOp
 		err = tx.Commit()
 	}
 	if err == nil {
+		retireDaily()
 		return Committed, nil
 	}
 	// Release a still-open transaction before using a fresh read. An absent receipt
@@ -227,6 +237,7 @@ func (s *Store) finishManualTx(ctx context.Context, tx *sql.Tx, op ManualPilotOp
 	_ = tx.Rollback()
 	got, readErr := readManualOp(ctx, s.db, op.OperationID)
 	if readErr == nil && matchingManualOp(got, op) {
+		retireDaily()
 		return AlreadyCommitted, nil
 	}
 	return Indeterminate, fmt.Errorf("manual pilot commit outcome unresolved: %w", err)
@@ -395,6 +406,11 @@ func (s *Store) CommitManualPilotResult(ctx context.Context, h *ManualPilotClaim
 	}
 	if e = s.saveObservationTx(ctx, tx, h.commandID, p.state.RunID, clone, s.Now().UTC().Format(time.RFC3339Nano)); e != nil {
 		return RejectedNoMutation, e
+	}
+	if p.state.RunScoped {
+		if _, e = tx.ExecContext(ctx, `UPDATE runs SET coverage_json=json_set(coverage_json,'$.dailyXAcquisitionPolicy','round_one_v1') WHERE id=?`, p.state.RunID); e != nil {
+			return RejectedNoMutation, e
+		}
 	}
 	if s.manualPilotBeforeCommit != nil {
 		s.manualPilotBeforeCommit()

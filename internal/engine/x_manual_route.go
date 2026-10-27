@@ -47,6 +47,20 @@ type xManualStarter interface {
 }
 
 func (e *Engine) xManualStartupPending() bool {
+	e.xDaily.mu.RLock()
+	dailyStart := e.xDaily.startDone
+	dailyUncertain := e.xDaily.cleanupUncertain
+	e.xDaily.mu.RUnlock()
+	if dailyUncertain {
+		return true
+	}
+	if dailyStart != nil {
+		select {
+		case <-dailyStart:
+		default:
+			return true
+		}
+	}
 	e.xManual.mu.RLock()
 	s := e.xManual.starter
 	e.xManual.mu.RUnlock()
@@ -97,7 +111,7 @@ func (e *Engine) StopXManual(ctx context.Context) error {
 		return errors.New("manual stop context required")
 	}
 	if e.XDailyConfigured() {
-		e.closeXDailySelection()
+		return e.stopXDaily(ctx)
 	}
 	e.xManual.mu.RLock()
 	r := e.xManual.route
@@ -129,6 +143,10 @@ func (e *Engine) PrepareXManualReader(ctx context.Context, req readerbroker.Requ
 		return readerbroker.NativePostPreparation{}, true, errors.New("manual reader request rejected")
 	}
 	if req.Source == "x" && e.XDailyConfigured() {
+		if e.xDailyReady() {
+			p, err := e.prepareXDailyReader(ctx, req, marker)
+			return p, true, err
+		}
 		return readerbroker.NativePostPreparation{}, true, errors.New("X concurrent reader is not ready: batch-adapter-required")
 	}
 	e.xManual.mu.RLock()
@@ -144,7 +162,7 @@ func (e *Engine) PrepareXManualReader(ctx context.Context, req readerbroker.Requ
 // Hold the read lock through the ordinary durable claim. Startup reserves X
 // under the write lock, so a preliminary availability check cannot race it.
 func (e *Engine) ordinarySourceRoute(source domain.Source) (func(), bool) {
-	if e.xDailyUnavailable(source) {
+	if source == domain.SourceX && e.XDailyConfigured() {
 		return func() {}, false
 	}
 	if source != domain.SourceX {

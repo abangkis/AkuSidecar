@@ -116,7 +116,10 @@ func main() {
 	fatal(logger, err)
 	defer func() {
 		if daily != nil {
-			_ = daily.Close()
+			if err := daily.Close(); err != nil {
+				logger.Printf("database release deferred: daily X cleanup uncertain")
+				return
+			}
 		}
 		if err := closeDatabaseAfterManualSelection(manual, state); err != nil {
 			logger.Printf("database release deferred: manual cleanup or database close uncertain")
@@ -291,6 +294,14 @@ func main() {
 			server.SetOpenExtensionsAction(shell.OpenExtensionsPage)
 			server.SetAppShellPID(shell.PID)
 		}
+	}
+	if daily != nil {
+		ordinaryProfile := browserProfilePath(options, cfg)
+		if cfg.WindowsCaptureSplit {
+			ordinaryProfile, _, err = appshell.SplitProfilePaths(ordinaryProfile)
+			fatal(logger, err)
+		}
+		fatal(logger, engine.ConfigureXDailyNativeRuntime(collectionCtx, runtime, ordinaryProfile, options.ChromiumPath))
 	}
 	fatal(logger, runtime.ResumeXDailyScheduling(collectionCtx))
 	runtime.StartAutoUpdateScheduler()

@@ -42,13 +42,14 @@ func newXApplicationPostPreparer(origin string) (xApplicationPostPreparer, error
 }
 
 type xApplicationPostPorts struct {
-	readerPID      uint32
-	check          func(context.Context) error
-	call           func(context.Context, string, map[string]any, *json.RawMessage) error
-	bind           func(context.Context, string) (readerbroker.Target, func(context.Context) error, error)
-	waitForeground func(context.Context, string, func()) error
-	release        func(readerbroker.Target)
-	now            func() time.Time
+	allowMainOrigin bool // Trusted daily composition only; manual defaults remain unchanged.
+	readerPID       uint32
+	check           func(context.Context) error
+	call            func(context.Context, string, map[string]any, *json.RawMessage) error
+	bind            func(context.Context, string) (readerbroker.Target, func(context.Context) error, error)
+	waitForeground  func(context.Context, string, func()) error
+	release         func(readerbroker.Target)
+	now             func() time.Time
 }
 
 // This entry borrows an already pinned reader and the production HWND marker
@@ -111,7 +112,7 @@ func prepareXApplicationPost(ctx context.Context, req readerbroker.Request, mark
 		return bad()
 	}
 	u, err := url.Parse(marker)
-	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || !xApplicationPostPort(u.Port()) || u.User != nil || u.Fragment != "" || !xApplicationMarkerPath.MatchString(u.RequestURI()) || u.String() != marker {
+	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || !(xApplicationPostPort(u.Port()) || p.allowMainOrigin && u.Port() == "11122") || u.User != nil || u.Fragment != "" || !xApplicationMarkerPath.MatchString(u.RequestURI()) || u.String() != marker {
 		return bad()
 	}
 	call, cancel := context.WithTimeout(ctx, readerbroker.PreparationLifetime)

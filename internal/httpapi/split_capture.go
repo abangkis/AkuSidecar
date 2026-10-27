@@ -1163,7 +1163,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		}
 		entry := &pendingSplitAction{action: a, result: make(chan splitActionResult, 1)}
 		queued := false
-		if a.Source == "x" && s.engine.XDailyConfigured() && (a.Type == "open_native_post" || a.Type == "open_source") {
+		if a.Source == "x" && s.engine.XDailyConfigured() && (a.Type == "open_source" || a.Type == "open_native_post" && s.engine.XCaptureStatus().EffectiveMode != "concurrent") {
 			return apiError{Status: 409, Code: "x_concurrent_not_ready", Message: "X concurrent reader is not ready: batch-adapter-required"}
 		}
 		manualReader := a.Type == "open_native_post" && a.Source == "x" && s.engine.XConcurrentConfigured()

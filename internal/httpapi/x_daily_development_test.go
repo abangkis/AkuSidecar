@@ -37,3 +37,24 @@ func TestXDailyStatusAndReaderNoFallback(t *testing.T) {
 		t.Fatal("unavailable daily reader entered ordinary queue")
 	}
 }
+
+func TestXDailyConsentHasDistinctExactProcessScope(t *testing.T) {
+	for _, tc := range []struct {
+		body  string
+		valid bool
+	}{
+		{`{"acknowledgeLimitations":true,"allowProcessSessionDerivation":true}`, true},
+		{`{"acknowledgeLimitations":true,"allowOneSessionDerivation":true}`, false},
+		{`{"acknowledgeLimitations":true,"allowProcessSessionDerivation":true,"allowProcessSessionDerivation":false}`, false},
+		{`{"acknowledgeLimitations":true}`, false},
+		{`{"acknowledgeLimitations":true,"allowProcessSessionDerivation":true} {}`, false},
+		{`{"acknowledgeLimitations":true,"allowProcessSessionDerivation":true,"profile":"untrusted"}`, false},
+	} {
+		r := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/api/development/x-daily/start", strings.NewReader(tc.body))
+		r.Header.Set("Content-Type", "application/json")
+		_, err := readXDailyStart(r)
+		if (err == nil) != tc.valid {
+			t.Fatalf("valid=%t error=%v", tc.valid, err)
+		}
+	}
+}

@@ -42,6 +42,18 @@ type nativePilotNativeStoreAdmission struct {
 	store  *store.Store
 }
 
+type nativePilotDailyStoreAdmission struct {
+	broker *nativePilotBroker
+	store  *store.Store
+}
+
+func (a nativePilotDailyStoreAdmission) validate(ctx context.Context) (store.DevelopmentManualPilotBinding, error) {
+	return a.broker.storeStartup(ctx)
+}
+func (a nativePilotDailyStoreAdmission) issue(ctx context.Context, session, run string) (*store.ManualPilotPermit, error) {
+	return a.store.NewDevelopmentDailyPilotIssuer(a.validate)(ctx, session, run)
+}
+
 func (a nativePilotNativeStoreAdmission) validate(ctx context.Context) (store.DevelopmentManualPilotBinding, error) {
 	return a.broker.storeStartup(ctx)
 }

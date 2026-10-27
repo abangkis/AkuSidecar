@@ -286,9 +286,10 @@ func TestXDailyRestartPreservesAcceptedObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	after, err := state.GetRun(ctx, run.ID)
-	if err != nil || after.Status != "reasoning" || after.BridgeCommandStatus != "failed" {
+	if err != nil || after.Status != "reasoning" {
 		t.Fatalf("accepted run lost %+v %v", after, err)
 	}
+	if drained,err:=state.SessionCaptureCommandsDrained(ctx,session.ID,nil);err!=nil || !drained{t.Fatal("follow-up command not terminalized",err)}
 	observations, err := state.Observations(ctx, run.ID)
 	if err != nil || len(observations) != 1 {
 		t.Fatal("accepted observation lost", err)

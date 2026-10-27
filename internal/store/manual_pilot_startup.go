@@ -27,6 +27,16 @@ func (*DevelopmentManualPilotBinding) UnmarshalJSON([]byte) error  { return errM
 // startup vector and provenance; public reports and caller-supplied flags are
 // not validators. No callback runs inside a Store transaction or mutex.
 func (s *Store) NewDevelopmentManualPilotIssuer(validate func(context.Context) (DevelopmentManualPilotBinding, error)) func(context.Context, string, string) (*ManualPilotPermit, error) {
+	return s.newDevelopmentPilotIssuer(validate, false)
+}
+
+// Daily permits retain the same account/owner/deadline checks, while fencing
+// X rather than unrelated source runs in the ordinary mixed-source session.
+func (s *Store) NewDevelopmentDailyPilotIssuer(validate func(context.Context) (DevelopmentManualPilotBinding, error)) func(context.Context, string, string) (*ManualPilotPermit, error) {
+	return s.newDevelopmentPilotIssuer(validate, true)
+}
+
+func (s *Store) newDevelopmentPilotIssuer(validate func(context.Context) (DevelopmentManualPilotBinding, error), runScoped bool) func(context.Context, string, string) (*ManualPilotPermit, error) {
 	return func(ctx context.Context, session, run string) (*ManualPilotPermit, error) {
 		if validate == nil || session == "" || run == "" {
 			return nil, errManualPilot
@@ -40,7 +50,7 @@ func (s *Store) NewDevelopmentManualPilotIssuer(validate func(context.Context) (
 		if err != nil || len(digest) != 32 || v.Attempt == "" || v.OwnerGeneration == 0 || v.StartedAt.IsZero() || v.StartedAt.After(now) || !v.Deadline.After(now) || v.Deadline.After(v.StartedAt.Add(60*time.Second)) {
 			return nil, errManualPilot
 		}
-		p, err := s.issueDevelopmentManualPilot(ctx, session, run, "startup-sha256:"+v.Digest, "startup-sha256:"+v.Digest, v.Attempt, v.OwnerGeneration, v.Deadline)
+		p, err := s.issueDevelopmentPilot(ctx, session, run, "startup-sha256:"+v.Digest, "startup-sha256:"+v.Digest, v.Attempt, v.OwnerGeneration, v.Deadline, runScoped)
 		if err != nil {
 			return nil, err
 		}

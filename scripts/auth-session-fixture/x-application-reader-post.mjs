@@ -9,7 +9,7 @@ function exact(value,keys){
   const d=Object.getOwnPropertyDescriptors(value),names=Reflect.ownKeys(d);
   if(names.length!==keys.length||names.some(k=>!keys.includes(k)||!Object.hasOwn(d[k],'value')||!d[k].enumerable))throw fail();
 }
-export function applicationPostOperation(message){
+export function applicationPostOperation(message,{allowMainOrigin=false}={}){
   const op=message&&Object.getOwnPropertyDescriptor(message,'op')?.value;
   if(!['manual_prepare_post','manual_complete_post','manual_cancel_post'].includes(op))throw fail();
   exact(message,op==='manual_prepare_post'?['id','op','owner','request','marker']:['id','op','owner','handle','requestId']);
@@ -21,14 +21,14 @@ export function applicationPostOperation(message){
     let marker;try{marker=new URL(message.marker);}catch{throw fail();}
     const action=marker.searchParams.get('id');
     const fixed=/^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})\/split-reader-intent\?id=split_[a-f0-9]{32}$/u.exec(message.marker);
-    if(!fixed||Number(fixed[1])>65535||fixed[1]==='11122'||marker.protocol!=='http:'||marker.hostname!=='127.0.0.1'||marker.username||marker.password||marker.hash||marker.pathname!=='/split-reader-intent'||!/^split_[a-f0-9]{32}$/u.test(action??''))throw fail();
+    if(!fixed||Number(fixed[1])>65535||!allowMainOrigin&&fixed[1]==='11122'||marker.protocol!=='http:'||marker.hostname!=='127.0.0.1'||marker.username||marker.password||marker.hash||marker.pathname!=='/split-reader-intent'||!/^split_[a-f0-9]{32}$/u.test(action??''))throw fail();
   }else{
     if(!(message.op==='manual_cancel_post'&&message.handle===null)&&!/^[a-f0-9]{48}$/u.test(message.handle??''))throw fail();
     if(!/^broker_[a-f0-9]{32}$/u.test(message.requestId??''))throw fail();
   }
   return message;
 }
-export function createApplicationReaderPost({owner,bootstrapTarget,command,assertCurrent,now=()=>Date.now(),token=()=>randomBytes(24).toString('hex')}={}){
+export function createApplicationReaderPost({owner,bootstrapTarget,command,assertCurrent,now=()=>Date.now(),token=()=>randomBytes(24).toString('hex'),allowMainOrigin=false}={}){
   if(!Number.isSafeInteger(owner)||owner<1||!ref(bootstrapTarget)||![command,assertCurrent,now,token].every(v=>typeof v==='function'))throw fail();
   const requests=new Set(),held=new Map(),byRequest=new Map();let origin;
   const inventory=async()=>{
@@ -67,7 +67,7 @@ export function createApplicationReaderPost({owner,bootstrapTarget,command,asser
       }
     },
     async execute(raw){
-      const message=applicationPostOperation(raw);if(message.owner!==owner)throw fail();
+      const message=applicationPostOperation(raw,{allowMainOrigin});if(message.owner!==owner)throw fail();
       if(message.op==='manual_prepare_post'){
         if(requests.has(message.request.requestId)||requests.size>=32)throw fail();requests.add(message.request.requestId);
         assertCurrent();const selectedOrigin=new URL(message.marker).origin;

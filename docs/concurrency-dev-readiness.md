@@ -12,12 +12,12 @@ in use. Derivation authorization lasts only for the running Sidecar process;
 each batch remains limited to 60 seconds and requires fresh batch authority.
 QA packages are supporting validation, not the delivered MVP.
 
-The current increment adds config/composition and closes legacy X admission
-while the daily batch adapter is unavailable. It must report
-`batch-adapter-required`, not daily capture success. Next connect repeated native
-batches and persistent reader ownership, then validate actual daily use under
-separate activation authority. Full renewal/rotation qualification stays
-deferred. See [daily design and three delivery increments](x-daily-development-design.md).
+Config/composition and the daily process/batch adapter are implemented and
+validated offline. Without the required resource package and process consent,
+X remains unavailable and cannot fall back to legacy capture. Remaining work is
+the concrete main-dev resource/activation package and actual daily-use acceptance
+under separate approval. Full renewal/rotation qualification stays deferred.
+See [daily design and three delivery increments](x-daily-development-design.md).
 
 The old isolated package failed startup, was rolled back and was replaced by
 the [schema-complete preparation](x-development-pilot-package-0e46923a.md).
@@ -37,6 +37,35 @@ Its old readiness and next-step statements below are time-specific history.
   the global scheduling preference.
 
 ## Current implementation
+
+### Daily persistent reader and repeated batches: offline increment 2
+
+Increment 1 was reviewed and pushed as `7f495c6`. The new working-tree increment
+adds a separate daily process/batch owner protocol, process-start consent,
+normal scheduled/manual X dispatch and run-scoped Store authority. The reader
+survives successful collector disposal; each collector/profile/generation is new.
+Stop and failed/uncertain cleanup prevent another batch. The ordinary source,
+provider, Timeline and scheduling settings remain in use.
+
+Startup recovery preserves accepted X reasoning in mixed sessions. Registration
+of a cancel/join worker precedes durable command creation, preventing Stop from
+orphaning a pending capture. Complete daily-worker drain, including the final
+scheduling continuation, precedes database release. The two-batch test also
+exposed and fixed an operation/schedule lock inversion during finalization;
+the durable session is created before releasing operation for scheduling.
+
+The canonical daily helper passed with 20 Node checks, legacy/daily Store
+authority regressions, daily Engine/HTTP cases, synthetic native ownership and
+all four main builds. Evidence:
+`build/x-daily-offline-7ba0c07728c340439c823aa3fe7342f7/offline.log.txt`.
+Unsupported default-build attachment is intentionally skipped; the supported
+dev ownership test actually ran. Astra accepted the corrective shutdown/recovery
+delta after review. The collector test uses fake child executables, not Chrome.
+
+No runtime, login, user database or Auto Update change occurred. Activation still
+requires the dedicated reader profile/resource package and process consent.
+The first daily MVP has one acquisition round per X batch; configured command
+budgets and evaluation remain ordinary. See [policy, resources and limits](x-daily-development-design.md#increment-2-persistent-process-reader-and-repeated-ordinary-batches).
 
 ### Daily mode selection and ordinary composition: offline increment 1
 

@@ -840,6 +840,15 @@ func (s *Store) CompleteOnboarding(ctx context.Context, sources []domain.Source)
 }
 
 func (s *Store) CreateUpdateSession(ctx context.Context, intent string, settings domain.Settings, policy domain.UpdatePolicy) (domain.Session, error) {
+	return s.createUpdateSession(ctx, intent, settings, policy, false)
+}
+
+// The daily X route changes only X's frozen driver, never saved preferences or
+// the ordinary routing decisions for the other selected sources.
+func (s *Store) CreateDailyXUpdateSession(ctx context.Context, intent string, settings domain.Settings, policy domain.UpdatePolicy) (domain.Session, error) {
+	return s.createUpdateSession(ctx, intent, settings, policy, true)
+}
+func (s *Store) createUpdateSession(ctx context.Context, intent string, settings domain.Settings, policy domain.UpdatePolicy, dailyX bool) (domain.Session, error) {
 	if err := domain.ValidateIntent(intent); err != nil {
 		return domain.Session{}, err
 	}
@@ -885,6 +894,21 @@ func (s *Store) CreateUpdateSession(ctx context.Context, intent string, settings
 				driver = "browser"
 			}
 			drivers[string(source)] = driver
+		}
+		coverageValue["collectionPolicy"] = domain.SessionCollectionPolicyHybridHeadlessV1
+		coverageValue["collectionSourceDrivers"] = drivers
+		coverageValue["collectionSources"] = configuredSources
+	}
+	if dailyX {
+		drivers, ok := coverageValue["collectionSourceDrivers"].(map[string]string)
+		if !ok {
+			drivers = map[string]string{}
+			for _, source := range sources {
+				drivers[string(source)] = "browser"
+			}
+		}
+		if _, ok := drivers["x"]; ok {
+			drivers["x"] = "headless"
 		}
 		coverageValue["collectionPolicy"] = domain.SessionCollectionPolicyHybridHeadlessV1
 		coverageValue["collectionSourceDrivers"] = drivers

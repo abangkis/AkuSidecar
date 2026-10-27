@@ -253,6 +253,36 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		return writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": domain.ApplicationVersion, "runtime": "go", "deployment": s.config.Deployment.PublicStatus(), "provider": s.engine.ProviderName(), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime(), "bridgeContractVersion": domain.BridgeContractVersion, "softwareUpdate": domain.SidecarSoftwareUpdateMetadata(store.SchemaVersion), "instanceEpoch": s.engine.Epoch(), "uptimeMs": time.Since(s.started).Milliseconds(), "database": map[string]any{"status": "healthy"}, "loadProfile": settings.LoadProfile})
 	case r.Method == http.MethodGet && p == "/api/collection/runtime":
 		return writeJSON(w, http.StatusOK, map[string]any{"collectionRuntime": s.engine.CollectionRuntime(), "xManual": s.engine.XManualStatus(), "xCapture": s.engine.XCaptureStatus()})
+	case r.Method == http.MethodPost && p == "/api/development/x-daily/start":
+		if !s.config.Dev {
+			return notFound("development route")
+		}
+		if r.Header.Get("X-Aku-Split-Epoch") != s.engine.Epoch() {
+			return apiError{Status: 409, Code: "capture_epoch_mismatch", Message: "AkuBrowser restarted; refresh the page."}
+		}
+		request, err := readXDailyStart(r)
+		if err != nil {
+			return err
+		}
+		if err = s.engine.StartXDaily(ctx, request); err != nil {
+			return apiError{Status: 409, Code: "daily_start_unavailable", Message: "Daily X startup failed or consent was consumed; inspect runtime status."}
+		}
+		return writeJSON(w, 200, map[string]any{"xCapture": s.engine.XCaptureStatus()})
+	case r.Method == http.MethodPost && p == "/api/development/x-daily/stop":
+		if !s.config.Dev {
+			return notFound("development route")
+		}
+		if r.Header.Get("X-Aku-Split-Epoch") != s.engine.Epoch() {
+			return apiError{Status: 409, Code: "capture_epoch_mismatch", Message: "AkuBrowser restarted; refresh the page."}
+		}
+		var request struct{}
+		if err := readJSON(r, &request); err != nil {
+			return err
+		}
+		if err := s.engine.StopXManual(ctx); err != nil {
+			return apiError{Status: 409, Code: "daily_cleanup_uncertain", Message: "Daily X cleanup has not been verified."}
+		}
+		return writeJSON(w, 200, map[string]any{"xCapture": s.engine.XCaptureStatus()})
 	case r.Method == http.MethodPost && p == "/api/development/x-manual/start":
 		if !s.config.Dev {
 			return notFound("development route")
