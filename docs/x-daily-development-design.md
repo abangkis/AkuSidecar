@@ -153,3 +153,8 @@ deliberately fail account qualification; their announcements cannot grant real
 capture authority. This proves offline composition, not native account capture
 or foreground acceptance. The live daily-use acceptance in increment 3 remains
 separately authorized; no actual transfer or main-dev activation was run.
+
+Preparation for increment 3 is documented in
+[Daily X main-dev activation and rollback](x-daily-development-activation.md).
+The distinct daily package retains the original ordinary config root/database
+and service arguments, and leaves reader selection and process consent pending.
