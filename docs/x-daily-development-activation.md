@@ -1,17 +1,18 @@
 # Daily X main-dev activation and rollback
 
-This preparer and its historical payload describe the dedicated-reader route.
-The newly implemented [main-profile connection](x-main-profile-connection-design.md)
-requires a new candidate containing `main-browser-transport` and an explicit
-`capture.xReaderSource: main` proposal without xReaderProfile. Do not retrofit,
-activate or infer main-profile readiness from the earlier dedicated package.
+The preparer supports two explicit payload contracts: the historical v1
+dedicated-reader package and the v2 [main-profile connection](x-main-profile-connection-design.md).
+`--reader-source=main` selects v2, containing `main-browser-transport` and a
+`capture.xReaderSource: main` proposal without xReaderProfile. Omitting the option
+retains the dedicated-reader route; no profile is selected automatically.
+Existing prepared artifacts remain immutable. Do not relabel a v1 package as v2.
 
 ## Prepared delivery, not operational approval
 
 This package targets ordinary AkuBrowser development on port 11122, its existing
 database, effective persisted provider/settings, Timeline and Auto Update. It is
 not the isolated one-transfer QA package. Preparation builds `auth_session_dev`
-main, the reader helper, pinned Node, ordinary non-X worker, sealed daily owner
+main, the reader helper, pinned Node, ordinary non-X worker, sealed reader transport
 and UI broker into `build/x-daily-development-prepared/<id>/bin/`. It does not
 overwrite runtime/dev, launch Chrome, open a database/profile, connect to the
 reader pipe, invoke inference, write registry/service configuration or change
@@ -21,11 +22,11 @@ before Store, provider, HTTP, browser or daily factory startup.
 From the checkout, using the actual Supervisor configuration path:
 
 ```powershell
-.\runtime\dev\headless-worker\node.exe scripts/prepare-x-daily-development.mjs --supervisor-config=C:\Users\Force\AppData\Local\AkuSupervisor\services.json
+.\runtime\dev\headless-worker\node.exe scripts/prepare-x-daily-development.mjs --supervisor-config=C:\Users\Force\AppData\Local\AkuSupervisor\services.json --reader-source=main
 ```
 
 The manifest records `executionApproved:false`, `activationReady:false`, absent
-process consent, payload/source hashes, ordinary resolved paths, a two-field
+process consent, payload/source hashes, ordinary resolved paths, a minimal
 config proposal, complete proposed service and rollback copies of the on-disk
 binary/helper/config/provenance and service definition. The provider declaration
 is unchanged; the effective provider will be resolved from the same database at
@@ -34,12 +35,20 @@ parity. No database or login/profile backup is made. Typed registry snapshots
 cover HKCU/HKLM, 32/64 views, Chrome/Chromium; inaccessible reads stay unavailable.
 Pipe presence is observed without connecting; ownership remains unverified.
 
+Main packages carry `schema: aku.x.daily-development-package.v2` and
+`readerSource: main`. They include
+`bin/main-browser-transport/{manifest.json,main-browser-transport.cjs}` with
+`mainLifecycle:true`, not the dedicated `bin/x-daily-owner/` launcher. The v2
+verifier checks that source, entry, lifecycle, payload hash, config proposal and
+rollback proposal agree. It does not certify account/session or operational
+readiness. A newly prepared package is still default-off and grants no consent.
+
 Committed Go, schemas, broker, worker, fixture/bundle code and actual sibling
 AkuBridge capture inputs are pinned. New preparation scripts are hashed
 separately and must not be described as committed until published. Unrelated
 dirty files are excluded. No temporary QA port/database is substituted.
 
-## Read-only verification and unresolved reader selection
+## Read-only verification and reader selection
 
 ```powershell
 <package>\bin\headless-worker\node.exe <package>\tools\verify-x-daily-development.mjs <package>\daily-package.json
@@ -51,7 +60,29 @@ does not read databases, browser profiles, cookies, tokens or accounts. Stale
 inputs or an existing `activation-receipt.json` reject reuse. That receipt is
 written during a separately approved handoff, never by preparation.
 
-The reader profile is intentionally **unresolved**. Before activation, select
+For **main**, the existing ordinary `--browser-profile` is the reader resource;
+the selected Chrome profile-directory is resolved and independently pinned only
+at approved runtime startup. Preparation does not inspect Local State, profile
+contents, accounts or locks, acquire a lease, or validate live ownership. It does
+not launch another Chrome on that resource. `reader.selection: ordinary-main`
+describes the proposal, with `ownershipVerified:false`.
+
+The main proposal changes only `capture.xMode` to `concurrent` and
+`capture.xReaderSource` to `main` in the original config. If an empty
+`xReaderProfile` field exists, the proposal explicitly removes it. A nonempty
+dedicated-profile baseline is rejected. The exact presence/value of all three
+fields is recorded in `rollback-proposal.json`, including absent fields. Source
+Stop revokes X and cleans collectors while the main Window/Manager retains its
+reader; only graceful application shutdown releases that Chrome/profile.
+
+Before operational approval, review effective non-X headless selections: they
+conflict with the retained main reader. Quiet has no unrestricted evaluator in
+main mode, and remains unavailable without typed recipes. Existing collector
+policy may choose Bridge. Preparation does not read the settings database,
+rewrite source modes or claim that all persisted selections are compatible.
+
+For **dedicated** (`--reader-source=dedicated`, also the CLI default), the reader
+profile is intentionally **unresolved**. Before activation, select
 an existing canonical dedicated signed-in X user-data directory, distinct and
 nonoverlapping with the ordinary capture and UI profiles, with no simultaneous
 Chrome owner. Do not copy, adopt, rename, clear or log into the main profile as a
@@ -60,7 +91,7 @@ decision. If no eligible profile exists, enrollment requires separate approval.
 Finalize selection in a new reviewed package/receipt; never apply the `null`
 template value blindly. Preparation does not inspect or create that profile.
 
-The proposal changes only `capture.xMode` to `concurrent` and
+The dedicated proposal changes only `capture.xMode` to `concurrent` and
 `capture.xReaderProfile` to the approved path **in the original config file**.
 The service proposal changes only the executable. Its cwd, arguments and actual
 config path remain ordinary: config.Load derives its root from that path.
@@ -69,7 +100,8 @@ forbidden. No manual/QA selector, provider override or consent flag is added.
 
 ## Later handoff, after explicit operational authorization
 
-1. Reverify package SHA, sources and baseline. Resolve the reader choice; refresh
+1. Reverify package SHA, sources and baseline. Confirm the explicit reader source
+   and its resource prerequisites; refresh
    service revision, actual running image/tree and typed native-host mappings.
    Retain exact pre-switch observations. Database compatibility is checked only
    under the separately authorized runtime gate, not preparation.
@@ -82,7 +114,7 @@ forbidden. No manual/QA selector, provider override or consent flag is added.
    `AkuBrowser.reader-activation.11122` release. Supervisor Stop may escalate to
    forced termination and is not authorized. If graceful exit stalls, abort;
    never force-kill or remove locks/profiles.
-4. After release, atomically apply the reviewed two-field config change with a
+4. After release, atomically apply the reviewed config proposal with a
    matching baseline hash. Register the proposed service using the Supervisor
    human approval workflow. Switch required native-host mappings to candidate
    `bin/com.akubrowser.reader_activation.json`, whose absolute helper path names
@@ -127,8 +159,11 @@ restart must restore ordinary routing. Offline tests do not prove live outcomes.
    delete locks, collectors, profiles or database files manually.
 3. Restore mappings only if still matching the switch receipt, preserving exact
    previous value/kind/key-presence/view. Restore the original service through
-   the approved Supervisor workflow. Restore only the two config fields if other
-   settings changed meanwhile; replacing the exact backup requires a matching
+   the approved Supervisor workflow. For main packages, follow
+   `rollback-proposal.json`: restore the original presence/value of xMode,
+   xReaderSource and xReaderProfile, and refuse changes conflicting with the
+   switch receipt. Never leave `xReaderSource: main` with exclusive mode. Restore
+   only these fields if other settings changed meanwhile; replacing the exact backup requires a matching
    post-switch hash. Refuse conflicting changes.
 4. Restart original service/binary/ordinary arguments. Side-by-side delivery
    leaves the original binary/helper/worker untouched. Verify exclusive X,
@@ -140,3 +175,22 @@ restart must restore ordinary routing. Offline tests do not prove live outcomes.
    stop for a compatibility decision.
 
 Preparation, verification and publication authorize none of these runtime steps.
+
+## Synthetic package acceptance (2026-10-27)
+
+The daily/package regression command passed 56 tests (30 daily and 26 isolated
+package checks):
+
+```powershell
+.\runtime\dev\headless-worker\node.exe --test scripts/x-daily-development-package.test.mjs scripts/x-development-pilot-package.test.mjs
+```
+
+Coverage includes legacy v1 compatibility, explicit main selection, actual sealed
+transport generation and hash verification, wrong/mixed lifecycle rejection,
+ordinary-root/service/provider preservation, absent/present config rollback,
+stale baselines, receipt requirements and no implicit activation/consent. The
+fixture databases/profiles remain absent; packaged binaries and Chrome are not
+launched. Evidence:
+`build/x-main-package-offline-f6c6d07b2dd84028be475c8afd9d289c/tests.log.txt`.
+These are preparation-contract checks, not an executed runtime rollback or
+signed-in main-profile acceptance.

@@ -23,6 +23,14 @@ survival after fixture Node exit and verified cleanup/profile removal. Physical
 foreground and signed-in capture remain pending; no daily main-profile activation
 is claimed. See the local receipt in the main-profile design for evidence.
 
+Main-profile delivery now has an explicit preparation path:
+`prepare-x-daily-development.mjs --reader-source=main` produces a v2 package
+with the sealed main transport, original-root config/service proposals and an
+exact-presence rollback plan. Synthetic verification includes the real sealed
+bundle; it does not activate the package or establish signed-in capture. Keep
+the historical dedicated v1 package separate. See the
+[activation/rollback contract](x-daily-development-activation.md).
+
 1. Add the restart-required `capture.xMode` selection and ordinary main-dev
    composition, preserving normal Store/settings/provider/UI. Until the batch
    adapter is attached, report not-ready and prohibit legacy X fallback.

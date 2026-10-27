@@ -72,6 +72,17 @@ packaged executable requires a sealed `bin/main-browser-transport/` with
 `buildMainBrowserTransportPackage` in `scripts/build-x-native-owner.mjs` builds
 that separate entry. The old dedicated-reader package cannot supply this port.
 
+`scripts/prepare-x-daily-development.mjs --reader-source=main` now selects the
+separate v2 delivery contract. Config proposals target the original ordinary
+root and select concurrent/main, removing an explicit empty xReaderProfile if
+present. Rollback records original field presence/value and requires a matching
+operational switch receipt; it never restores a database/profile snapshot.
+The preparation verifier checks the main entry/lifecycle/hash, ordinary layout,
+minimal proposal, rollback and absent activation authority. The dedicated v1
+default is retained for historical callers. Preparation is not main-profile
+ownership verification or process consent. Follow the
+[activation and rollback plan](x-daily-development-activation.md).
+
 The main-only reader binding shares the existing containment registry; observed
 owned marker windows are exempted from capture lowering without issuing an early
 foreground ticket. Physical focus and the short-lived activation ticket still

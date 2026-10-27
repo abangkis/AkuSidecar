@@ -3,10 +3,13 @@ import assert from 'node:assert/strict';
 import {mkdir,mkdtemp,readFile,writeFile,rm,copyFile} from 'node:fs/promises';
 import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {buildMainBrowserTransportPackage} from './build-x-native-owner.mjs';
 import {digest,fileRecord,inventory,requiredRuntimeSchemas} from './x-development-pilot-package.mjs';
-import {dailyPackageSchema,argumentValue,dailyLayout,dailyConfigProposal,dailyServiceProposal,verifyDailyPackage} from './x-daily-development-package.mjs';
+import {dailyPackageSchema,dailyPreparationArguments,dailyReaderContract,dailyReaderSelection,dailyPrerequisites,
+  argumentValue,dailyLayout,dailyConfigProposal,dailyMainRollbackProposal,dailyServiceProposal,verifyDailyPackage} from './x-daily-development-package.mjs';
 const project=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-async function fixture(t){
+async function fixture(t,readerSource='dedicated',capture={}){
+  const reader=dailyReaderContract(readerSource);
   const parent=join(project,'build');await mkdir(parent,{recursive:true});
   const temp=await mkdtemp(join(parent,'test-daily-package-'));
   t.after(async()=>{if(dirname(temp)!==parent)throw new Error('cleanup_boundary');await rm(temp,{recursive:true,force:true});});
@@ -18,7 +21,7 @@ async function fixture(t){
     ports:[11122],environment:{},shutdownGraceMs:5000,restartPolicy:'manual'};
   const config={version:1,deployment:{mode:'development'},server:{host:'127.0.0.1',port:11122},
     database:{path:'runtime/main.db'},reasoning:{activeProvider:'synthetic',providers:{synthetic:{modelId:'unchanged'}}},
-    capture:{visibility:'quiet',behavior:{enabled:true}},preference:{mode:'guarded_live'}};
+    capture:{visibility:'quiet',behavior:{enabled:true},...capture},preference:{mode:'guarded_live'}};
   const write=async(path,value)=>{await mkdir(dirname(path),{recursive:true});await writeFile(path,typeof value==='object'?JSON.stringify(value):value);};
   await write(service.args[1],config);
   const baseline=[];
@@ -35,12 +38,13 @@ async function fixture(t){
     'tools/x-daily-development-package.mjs','tools/x-development-pilot-package.mjs'])await write(join(root,rel),'synthetic');
   await write(join(root,'bin/headless-worker/node.exe'),'synthetic node');await write(join(root,'bin/headless-worker/LICENSE'),'synthetic license');
   await write(join(root,'bin/headless-worker/node.pin.json'),{protocol:1,nodeSha256:digest('synthetic node'),licenseSha256:digest('synthetic license')});
-  await write(join(root,'bin/x-daily-owner/x-daily-owner.cjs'),'synthetic daily driver');
-  await write(join(root,'bin/x-daily-owner/manifest.json'),{schema:'aku.x.application-owner-package.v1',dailyLifecycle:true,
-    entry:'internal/collection/headless/worker/native-pilot/daily-owner.mjs',driver:{file:'x-daily-owner.cjs',sha256:digest('synthetic daily driver')},captureAssets:[]});
+  await write(join(root,'bin',reader.directory,reader.driver),'synthetic daily driver');
+  await write(join(root,'bin',reader.directory,'manifest.json'),{schema:'aku.x.application-owner-package.v1',[reader.lifecycle]:true,
+    entry:reader.entry,driver:{file:reader.driver,sha256:digest('synthetic daily driver')},captureAssets:[]});
   await write(join(root,'bin/com.akubrowser.reader_activation.json'),{name:'com.akubrowser.reader_activation',description:'Explicit Windows AkuBrowser reader activation',
     path:join(root,'bin/aku-reader-broker.exe'),type:'stdio',allowed_origins:['chrome-extension://dlibmmlopdahibfniinemhnghlifiple/']});
-  await write(join(root,'config-proposal.json'),dailyConfigProposal(layout.config,configSHA256));
+  await write(join(root,'config-proposal.json'),dailyConfigProposal(layout.config,configSHA256,readerSource,config));
+  if(readerSource==='main')await write(join(root,'rollback-proposal.json'),dailyMainRollbackProposal(layout.config,configSHA256,config));
   await write(join(root,'service-proposal.json'),dailyServiceProposal(service,join(root,'bin/aku-sidecar.exe')));
   await write(join(root,'rollback/service.json'),service);await write(join(root,'rollback/native-hosts.json'),{synthetic:true});
   const sourceInputs=[];
@@ -52,9 +56,9 @@ async function fixture(t){
   }
   const externalAssets=[];
   for(const path of [layout.chrome,layout.uiChrome,join(dirname(dirname(layout.uiChrome)),'pin.json')]){await write(path,'synthetic code');externalAssets.push(await fileRecord(path));}
-  const manifest={schema:dailyPackageSchema,packageId:'synthetic',sourceCommit:'synthetic',preparationOnly:true,executionApproved:false,
+  const manifest={schema:reader.schema,...(readerSource==='main'?{readerSource}:{}),packageId:'synthetic',sourceCommit:'synthetic',preparationOnly:true,executionApproved:false,
     activationReady:false,processConsentGranted:false,defaultOff:true,authorization:{scope:'sidecar-process',maxBatchMS:60000,retryFailedBatch:false,cookieNames:['auth_token','ct0']},
-    ordinary:layout,configSHA256,configProbe:{status:'ok',databaseSchemaVersion:30},reader:{selection:'unresolved',profileInspected:false,leaseAcquired:false},
+    ordinary:layout,configSHA256,configProbe:{status:'ok',databaseSchemaVersion:30},reader:dailyReaderSelection(readerSource),prerequisites:dailyPrerequisites(readerSource),
     baseline,sourceInputs,externalAssets,preparationInputs,files:await inventory(root)};
   const path=join(root,'daily-package.json'),save=()=>writeFile(path,JSON.stringify(manifest));await save();
   const refresh=async()=>{manifest.files=(await inventory(root)).filter(row=>row.path!==path);await save();};
@@ -105,4 +109,106 @@ test('verification rejects database/profile paths before reading them as assets'
 test('inventory traversal rejects before an outside read',async t=>{
   const f=await fixture(t);f.manifest.files.unshift({file:'../missing-private-file',sha256:'unknown'});await f.save();
   await assert.rejects(verifyDailyPackage(f.path),/path_escape/);
+});
+test('main reader requires explicit preparation selection; legacy dedicated remains the default',()=>{
+  const config=join(project,'synthetic-services.json');
+  assert.deepEqual(dailyPreparationArguments(['--supervisor-config='+config]),{supervisorConfig:config,readerSource:'dedicated'});
+  assert.deepEqual(dailyPreparationArguments(['--reader-source=main','--supervisor-config='+config]),{supervisorConfig:config,readerSource:'main'});
+  for(const args of [[],['--supervisor-config=relative.json'],['--supervisor-config='+config,'--reader-source=auto'],
+    ['--supervisor-config='+config,'--reader-source=main','--reader-source=main'],
+    ['--supervisor-config='+config,'--supervisor-config='+config],['--supervisor-config='+config,'--activate'],
+    ['--supervisor-config='+config,'--reader-source='],['--supervisor-config='+config,'--transfer-session']]){
+    assert.throws(()=>dailyPreparationArguments(args),/daily_/);
+  }
+  assert.equal(dailyReaderContract().schema,dailyPackageSchema);
+});
+test('main package binds ordinary profile without reading it or granting activation/consent',async t=>{
+  const f=await fixture(t,'main'),before=JSON.stringify(f.config);
+  const proposal=JSON.parse(await readFile(join(f.root,'config-proposal.json')));
+  assert.deepEqual(proposal.changes,[{path:'/capture/xMode',value:'concurrent'},{path:'/capture/xReaderSource',value:'main'}]);
+  assert.equal(proposal.expectedSHA256,f.manifest.configSHA256);assert.equal(proposal.applyApproved,false);
+  const result=await verifyDailyPackage(f.path);
+  assert.deepEqual(result,{packageId:'synthetic',sourceCommit:'synthetic',filesVerified:f.manifest.files.length,
+    preparationOnly:true,executionApproved:false,activationReady:false,readerSource:'main',readerSelection:'ordinary-main',
+    databaseOpened:false,profileInspected:false,sessionTransferred:false});
+  assert.equal(await readFile(f.service.args[1],'utf8'),before);
+  await assert.rejects(readFile(f.manifest.ordinary.database),{code:'ENOENT'});
+  await assert.rejects(readFile(f.manifest.ordinary.profile),{code:'ENOENT'});
+  await assert.rejects(readFile(join(f.root,'bin/x-daily-owner/manifest.json')),{code:'ENOENT'});
+});
+test('main rollback restores absent fields and protects service/native-host observations',async t=>{
+  const f=await fixture(t,'main'),plan=JSON.parse(await readFile(join(f.root,'rollback-proposal.json')));
+  assert.deepEqual(plan,{schema:'aku.x.daily-main-rollback-proposal.v1',applyApproved:false,switchReceiptRequired:true,shutdown:'graceful-only',
+    config:{target:f.service.args[1],baselineSHA256:f.manifest.configSHA256,conflictPolicy:'match-switch-receipt-and-changed-fields',fields:[
+      {path:'/capture/xMode',before:{present:false},after:{present:true,value:'concurrent'}},
+      {path:'/capture/xReaderSource',before:{present:false},after:{present:true,value:'main'}},
+      {path:'/capture/xReaderProfile',before:{present:false},after:{present:false}}]},
+    service:{backup:'rollback/service.json',conflictPolicy:'match-switch-receipt'},
+    nativeHosts:{backup:'rollback/native-hosts.json',conflictPolicy:'match-switch-receipt',preserveValueKindPresenceAndView:true},
+    preserved:{database:true,profiles:true,login:true,providerSettings:true,autoUpdate:true},restoreDatabaseSnapshot:false});
+  plan.config.fields[0].before={present:true,value:'exclusive'};
+  await f.write(join(f.root,'rollback-proposal.json'),plan);await f.refresh();
+  await assert.rejects(verifyDailyPackage(f.path),/rollback_proposal_changed/);
+});
+test('main proposal removes an explicit empty dedicated-profile field; rollback retains exact values',async t=>{
+  const f=await fixture(t,'main',{xMode:'exclusive',xReaderSource:'dedicated',xReaderProfile:''});
+  const proposal=JSON.parse(await readFile(join(f.root,'config-proposal.json')));
+  assert.deepEqual(proposal.changes,[{path:'/capture/xMode',value:'concurrent'},{path:'/capture/xReaderSource',value:'main'},
+    {path:'/capture/xReaderProfile',operation:'remove'}]);
+  const plan=JSON.parse(await readFile(join(f.root,'rollback-proposal.json')));
+  assert.deepEqual(plan.config.fields.map(row=>row.before),[
+    {present:true,value:'exclusive'},{present:true,value:'dedicated'},{present:true,value:''}]);
+  assert.equal((await verifyDailyPackage(f.path)).readerSource,'main');
+});
+test('main verifier rejects wrong entry, lifecycle, driver pin and missing transport even after inventory refresh',async t=>{
+  for(const [label,mutate,reason] of [
+    ['entry',owner=>{owner.entry='internal/collection/headless/worker/native-pilot/daily-owner.mjs';},/owner_pin_rejected/],
+    ['lifecycle',owner=>{delete owner.mainLifecycle;owner.dailyLifecycle=true;},/owner_pin_rejected/],
+    ['mixed',owner=>{owner.dailyLifecycle=true;},/owner_pin_rejected/],
+    ['pin',owner=>{owner.driver.sha256=digest('wrong');},/owner_pin_rejected/],
+    ['driver',owner=>{owner.driver.file='../x-daily-owner.cjs';},/owner_pin_rejected/],
+  ])await t.test(label,async t=>{
+    const f=await fixture(t,'main'),path=join(f.root,'bin/main-browser-transport/manifest.json'),owner=JSON.parse(await readFile(path));
+    mutate(owner);await f.write(path,owner);await f.refresh();await assert.rejects(verifyDailyPackage(f.path),reason);
+  });
+  const f=await fixture(t,'main');f.manifest.files=f.manifest.files.filter(row=>row.file!=='bin/main-browser-transport/main-browser-transport.cjs');
+  await f.save();await assert.rejects(verifyDailyPackage(f.path),/required_payload_missing/);
+});
+test('main rollback, config, prerequisites and runtime authority cannot be silently relaxed',async t=>{
+  for(const field of ['executionApproved','activationReady','processConsentGranted'])await t.test(field,async t=>{
+    const f=await fixture(t,'main');f.manifest[field]=true;await f.save();await assert.rejects(verifyDailyPackage(f.path),/contract_rejected/);
+  });
+  for(const [label,file,mutate,reason] of [
+    ['reader source','config-proposal.json',p=>{p.changes[1].value='dedicated';},/config_proposal_changed/],
+    ['graceful shutdown','rollback-proposal.json',p=>{p.shutdown='force-tree';},/rollback_proposal_changed/],
+    ['switch receipt','rollback-proposal.json',p=>{p.switchReceiptRequired=false;},/rollback_proposal_changed/],
+    ['database preservation','rollback-proposal.json',p=>{p.restoreDatabaseSnapshot=true;},/rollback_proposal_changed/],
+    ['provider preservation','service-proposal.json',p=>{p.args.push('--provider=other');},/service_proposal_changed/],
+  ])await t.test(label,async t=>{
+    const f=await fixture(t,'main'),path=join(f.root,file),p=JSON.parse(await readFile(path));
+    mutate(p);await f.write(path,p);await f.refresh();await assert.rejects(verifyDailyPackage(f.path),reason);
+  });
+  const f=await fixture(t,'main');f.manifest.prerequisites=f.manifest.prerequisites.filter(v=>v!=='review_non_x_headless_conflicts_and_quiet_unavailability');
+  await f.save();await assert.rejects(verifyDailyPackage(f.path),/main_prerequisites_changed/);
+});
+test('main verification rejects source relabeling, stale config and missing rollback plan',async t=>{
+  const f=await fixture(t,'main');f.manifest.readerSource='dedicated';await f.save();await assert.rejects(verifyDailyPackage(f.path),/contract_rejected/);
+  f.manifest.readerSource='main';f.manifest.reader.ownershipVerified=true;await f.save();await assert.rejects(verifyDailyPackage(f.path),/reader_prerequisite/);
+  f.manifest.reader.ownershipVerified=false;await f.save();
+  await f.write(f.service.args[1],{...f.config,preference:{mode:'changed'}});
+  await assert.rejects(verifyDailyPackage(f.path),/main_baseline_stale/);
+  await copyFile(join(f.root,'rollback/sidecar.json'),f.service.args[1]);
+  f.manifest.files=f.manifest.files.filter(row=>row.file!=='rollback-proposal.json');await f.save();
+  await assert.rejects(verifyDailyPackage(f.path),/required_payload_missing/);
+});
+test('v1 dedicated cannot be relabeled as main without a new package contract',async t=>{
+  const f=await fixture(t);f.manifest.readerSource='main';await f.save();
+  await assert.rejects(verifyDailyPackage(f.path),/contract_rejected/);
+});
+test('main verifier accepts the actual sealed transport builder without launching any packaged executable',async t=>{
+  const f=await fixture(t,'main'),bundle=await buildMainBrowserTransportPackage(join(f.root,'bin/main-browser-transport'));
+  assert.ok(bundle.moduleCount>0);assert.ok(bundle.assetCount>0);
+  await f.refresh();assert.equal((await verifyDailyPackage(f.path)).readerSource,'main');
+  await writeFile(bundle.driver,'tampered sealed transport');await f.refresh();
+  await assert.rejects(verifyDailyPackage(f.path),/owner_pin_rejected/);
 });

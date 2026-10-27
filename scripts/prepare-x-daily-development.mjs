@@ -5,16 +5,16 @@ import {spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {buildNativeDailyOwnerPackage} from './build-x-native-owner.mjs';
+import {buildNativeDailyOwnerPackage,buildMainBrowserTransportPackage} from './build-x-native-owner.mjs';
 import {ordinary,digest,fileRecord,copyTree,inventory} from './x-development-pilot-package.mjs';
-import {dailyPackageSchema,dailyLayout,dailyConfigProposal,dailyServiceProposal,verifyDailyPackage} from './x-daily-development-package.mjs';
+import {dailyPreparationArguments,dailyReaderContract,dailyReaderSelection,dailyPrerequisites,
+  dailyLayout,dailyConfigProposal,dailyMainRollbackProposal,dailyServiceProposal,verifyDailyPackage} from './x-daily-development-package.mjs';
 import {sourceAssets} from '../internal/collection/headless/worker/worker.mjs';
 
 const project=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-const args=process.argv.slice(2);
-if(process.platform!=='win32'||args.length!==1||!args[0].startsWith('--supervisor-config='))
-  throw new Error('usage: node scripts/prepare-x-daily-development.mjs --supervisor-config=<absolute-services.json>');
-const supervisorConfig=await ordinary(args[0].slice('--supervisor-config='.length));
+if(process.platform!=='win32')throw new Error('daily_preparation_requires_windows');
+const options=dailyPreparationArguments(process.argv.slice(2)),reader=dailyReaderContract(options.readerSource);
+const supervisorConfig=await ordinary(options.supervisorConfig);
 const supervisorBytes=await readFile(supervisorConfig),supervisor=JSON.parse(supervisorBytes);
 const service=supervisor.services?.akusidecar;
 if(!service?.args)throw new Error('ordinary_akusidecar_service_missing');
@@ -74,7 +74,8 @@ const node=join(worker,'node.exe'),nodePin=JSON.parse(await readFile(join(worker
 if((await fileRecord(node)).sha256!==nodePin.nodeSha256||
   (await fileRecord(join(worker,'LICENSE'))).sha256!==nodePin.licenseSha256)throw new Error('daily_node_pin_rejected');
 await copyTree(join(project,'ui-reader-broker'),join(bin,'ui-reader-broker'));
-const bundle=await buildNativeDailyOwnerPackage(join(bin,'x-daily-owner'));
+const buildReader=reader.source==='main'?buildMainBrowserTransportPackage:buildNativeDailyOwnerPackage;
+const bundle=await buildReader(join(bin,reader.directory));
 const owner=JSON.parse(await readFile(bundle.manifest,'utf8'));
 // Record actual sealed capture inputs, including the sibling Bridge. Generated
 // modules are validated through the bundle hash rather than a source-file hash.
@@ -88,7 +89,9 @@ if(configProbe.status!=='ok'||configProbe.databaseSchemaVersion!==30)throw new E
 await writeFile(join(bin,'com.akubrowser.reader_activation.json'),JSON.stringify({name:'com.akubrowser.reader_activation',
   description:'Explicit Windows AkuBrowser reader activation',path:join(bin,'aku-reader-broker.exe'),type:'stdio',
   allowed_origins:['chrome-extension://dlibmmlopdahibfniinemhnghlifiple/']},null,2)+'\n',{flag:'wx'});
-await writeFile(join(root,'config-proposal.json'),JSON.stringify(dailyConfigProposal(configPath,digest(originalBytes)),null,2)+'\n',{flag:'wx'});
+await writeFile(join(root,'config-proposal.json'),JSON.stringify(dailyConfigProposal(configPath,digest(originalBytes),reader.source,original),null,2)+'\n',{flag:'wx'});
+if(reader.source==='main')await writeFile(join(root,'rollback-proposal.json'),
+  JSON.stringify(dailyMainRollbackProposal(configPath,digest(originalBytes),original),null,2)+'\n',{flag:'wx'});
 await writeFile(join(root,'service-proposal.json'),JSON.stringify(dailyServiceProposal(service,image),null,2)+'\n',{flag:'wx'});
 await copyFile(join(project,'docs','x-daily-development-activation.md'),join(root,'ACTIVATION.md'));
 await copyFile(join(project,'scripts','x-daily-preflight.ps1'),join(root,'preflight.ps1'));
@@ -100,15 +103,12 @@ const preparationInputs=await Promise.all(['scripts/prepare-x-daily-development.
   'scripts/x-daily-preflight.ps1','scripts/verify-x-daily-development.mjs','scripts/x-development-pilot-package.mjs',
   'docs/x-daily-development-activation.md'].map(file=>fileRecord(join(project,file))));
 const files=await inventory(root);for(const row of files)delete row.path;
-const manifest={schema:dailyPackageSchema,packageId:id,sourceCommit,bridgeCommit,buildTags:['auth_session_dev'],
+const manifest={schema:reader.schema,...(reader.source==='main'?{readerSource:'main'}:{}),packageId:id,sourceCommit,bridgeCommit,buildTags:['auth_session_dev'],
   preparationOnly:true,executionApproved:false,activationReady:false,defaultOff:true,processConsentGranted:false,
   authorization:{scope:'sidecar-process',maxBatchMS:60000,cookieNames:['auth_token','ct0'],retryFailedBatch:false},
   ordinary:layout,configSHA256:digest(originalBytes),configProbe,baseline,baselineScope:'files-on-disk-only',runningProcessInspected:false,
   supervisor:{path:supervisorConfig,sha256:digest(supervisorBytes),service:'akusidecar',registrationChanged:false},
-  reader:{selection:'unresolved',profileInspected:false,leaseAcquired:false},
-  prerequisites:['explicit_dedicated_signed_in_reader_selection','fresh_operational_activation_approval',
-    'refresh_supervisor_and_typed_registry_snapshot','graceful_old_tree_and_pipe_release',
-    'review_service_registration_and_native_host_switch','explicit_process_derivation_consent'],
+  reader:dailyReaderSelection(reader.source),prerequisites:dailyPrerequisites(reader.source),
   preserved:{mainLogin:true,userDatabase:true,ordinaryConfigRoot:true,effectiveProviderSettings:true,autoUpdate:true},
   sourceInputs,externalAssets,preparationInputs,files};
 const manifestPath=join(root,'daily-package.json');

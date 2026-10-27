@@ -19,6 +19,15 @@ exit, verified owned cleanup and profile removal. Evidence:
 Physical foreground and signed-in main-profile capture remain unqualified. No
 activation, real transfer, user-database access or Auto Update change occurred.
 
+The daily package preparer now has an explicit `--reader-source=main` route.
+Its v2 contract seals the main transport, proposes concurrent/main in the
+ordinary config, and records exact field presence/values for rollback. The
+verifier rejects mixed dedicated/main entries, missing transport, stale baselines,
+changed rollback terms or implicit activation/consent. The dedicated v1 path
+remains available. Package tests use synthetic baselines and the real sealed
+transport builder without launching Chrome or opening a database/profile.
+See [package preparation and rollback](x-daily-development-activation.md).
+
 The target is repeated X capture in ordinary main dev, selectable with
 `capture.xMode: exclusive | concurrent`, initially requiring graceful restart.
 Normal Store, effective provider/settings, Timeline and non-X scheduling remain
@@ -28,9 +37,16 @@ QA packages are supporting validation, not the delivered MVP.
 
 Config/composition and the daily process/batch adapter are implemented and
 validated offline. Without the required resource package and process consent,
-X remains unavailable and cannot fall back to legacy capture. Remaining work is
-the concrete main-dev resource/activation package and actual daily-use acceptance
-under separate approval. Full renewal/rotation qualification stays deferred.
+X remains unavailable and cannot fall back to legacy capture. A new main-reader
+candidate is prepared at
+`build/x-daily-development-prepared/53c7a2a805044f0b9130d236b58bac2f/daily-package.json`
+from runtime commit `ce9c24f`, with 92 verified payload files and separately
+hashed, uncommitted preparation changes. Its manifest SHA-256 is
+`922b5dbf1171586aaff3a4652599ccef7a372daffa00507a2f615ad0122d777a`.
+It retains `executionApproved:false`, `activationReady:false` and absent process
+consent. Remaining work is operational review/resource preflight and actual
+daily-use acceptance under separate approval. Full renewal/rotation
+qualification stays deferred.
 See [daily design and three delivery increments](x-daily-development-design.md).
 
 The old isolated package failed startup, was rolled back and was replaced by

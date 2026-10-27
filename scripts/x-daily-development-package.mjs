@@ -5,8 +5,41 @@ import {dirname,join,resolve,isAbsolute,relative,sep} from 'node:path';
 import {ordinary,contained,digest,fileRecord,requiredRuntimeSchemas} from './x-development-pilot-package.mjs';
 
 const schema='aku.x.daily-development-package.v1';
+const mainSchema='aku.x.daily-development-package.v2';
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 export const dailyPackageSchema=schema;
+export function dailyReaderContract(source='dedicated'){
+  if(source==='dedicated')return{source,schema,directory:'x-daily-owner',driver:'x-daily-owner.cjs',
+    entry:'internal/collection/headless/worker/native-pilot/daily-owner.mjs',lifecycle:'dailyLifecycle'};
+  if(source==='main')return{source,schema:mainSchema,directory:'main-browser-transport',driver:'main-browser-transport.cjs',
+    entry:'internal/collection/headless/worker/native-pilot/main-browser-transport.mjs',lifecycle:'mainLifecycle'};
+  throw new Error('daily_reader_source_rejected');
+}
+export function dailyPreparationArguments(args){
+  const values=new Map();
+  for(const arg of args){
+    const match=/^--(supervisor-config|reader-source)=(.+)$/u.exec(arg);
+    if(!match||values.has(match[1]))throw new Error('daily_preparation_argument_rejected');
+    values.set(match[1],match[2]);
+  }
+  const supervisorConfig=values.get('supervisor-config'),readerSource=values.get('reader-source')??'dedicated';
+  if(!supervisorConfig||!isAbsolute(supervisorConfig))throw new Error('daily_absolute_supervisor_config_required');
+  dailyReaderContract(readerSource);
+  return{supervisorConfig,readerSource};
+}
+export function dailyReaderSelection(source='dedicated'){
+  dailyReaderContract(source);
+  return source==='main'?{selection:'ordinary-main',profileInspected:false,leaseAcquired:false,ownershipVerified:false}:
+    {selection:'unresolved',profileInspected:false,leaseAcquired:false};
+}
+export function dailyPrerequisites(source='dedicated'){
+  dailyReaderContract(source);
+  return[...(source==='dedicated'?['explicit_dedicated_signed_in_reader_selection']:[]),
+    'fresh_operational_activation_approval','refresh_supervisor_and_typed_registry_snapshot','graceful_old_tree_and_pipe_release',
+    'review_service_registration_and_native_host_switch',
+    ...(source==='main'?['verify_main_profile_and_subprofile_ownership_at_startup','review_non_x_headless_conflicts_and_quiet_unavailability']:[]),
+    'explicit_process_derivation_consent'];
+}
 export function argumentValue(args,name){
   const values=[];
   for(let i=0;i<args.length;i++){
@@ -35,7 +68,8 @@ export function dailyLayout(service,original){
     else if(arg===name+'=')throw new Error('daily_service_selector_rejected');
   }
   if(original.version!==1||original.deployment?.mode!=='development'||!original.reasoning||!original.capture||
-    !['exclusive',undefined,''].includes(original.capture.xMode)||original.capture.xReaderProfile)
+    !['exclusive',undefined,''].includes(original.capture.xMode)||original.capture.xReaderProfile||
+    !['dedicated',undefined,''].includes(original.capture.xReaderSource))
     throw new Error('daily_baseline_config_rejected');
   const config=argumentValue(service.args,'--config');
   if(!config||!isAbsolute(config))throw new Error('daily_absolute_config_required');
@@ -52,11 +86,27 @@ export function dailyLayout(service,original){
     !argumentValue(service.args,'--bridge-extension-origin'))throw new Error('daily_ordinary_paths_required');
   return{root:resolve(root),config:resolve(config),database,profile:resolve(profile),chrome:resolve(chrome),uiChrome:resolve(uiChrome),bridge:resolve(bridge),port:11122};
 }
-export function dailyConfigProposal(configPath,configSHA256){
+export function dailyConfigProposal(configPath,configSHA256,readerSource='dedicated',original={}){
+  dailyReaderContract(readerSource);
+  if(readerSource==='main')return{schema:'aku.x.daily-config-proposal.v2',target:configPath,expectedSHA256:configSHA256,applyApproved:false,
+    changes:[{path:'/capture/xMode',value:'concurrent'},{path:'/capture/xReaderSource',value:'main'},
+      ...(Object.hasOwn(original.capture??{},'xReaderProfile')?[{path:'/capture/xReaderProfile',operation:'remove'}]:[])],
+    readerSelection:'ordinary-main',restartRequired:true};
   return{schema:'aku.x.daily-config-proposal.v1',target:configPath,expectedSHA256:configSHA256,applyApproved:false,
     changes:[{path:'/capture/xMode',value:'concurrent'},
       {path:'/capture/xReaderProfile',value:null,requiresExplicitSelection:true}],
     readerSelection:'unresolved',restartRequired:true};
+}
+export function dailyMainRollbackProposal(configPath,configSHA256,original){
+  const capture=original.capture;
+  const state=name=>Object.hasOwn(capture,name)?{present:true,value:capture[name]}:{present:false};
+  return{schema:'aku.x.daily-main-rollback-proposal.v1',applyApproved:false,switchReceiptRequired:true,shutdown:'graceful-only',
+    config:{target:configPath,baselineSHA256:configSHA256,conflictPolicy:'match-switch-receipt-and-changed-fields',
+      fields:['xMode','xReaderSource','xReaderProfile'].map(name=>({path:'/capture/'+name,before:state(name),
+        after:name==='xReaderProfile'?{present:false}:{present:true,value:name==='xMode'?'concurrent':'main'}}))},
+    service:{backup:'rollback/service.json',conflictPolicy:'match-switch-receipt'},
+    nativeHosts:{backup:'rollback/native-hosts.json',conflictPolicy:'match-switch-receipt',preserveValueKindPresenceAndView:true},
+    preserved:{database:true,profiles:true,login:true,providerSettings:true,autoUpdate:true},restoreDatabaseSnapshot:false};
 }
 export function dailyServiceProposal(service,image){
   // Exact ordinary arguments retain the true config root, database, UI/capture
@@ -68,7 +118,10 @@ function reject(condition,reason){if(!condition)throw new Error(reason);}
 export async function verifyDailyPackage(path){
   const root=dirname(await ordinary(path));
   const manifest=JSON.parse(await readFile(path,'utf8'));
-  reject(manifest.schema===schema&&manifest.preparationOnly===true&&manifest.executionApproved===false&&
+  reject([schema,mainSchema].includes(manifest.schema),'daily_package_contract_rejected');
+  const main=manifest.schema===mainSchema,source=main?'main':'dedicated',reader=dailyReaderContract(source);
+  reject((main?manifest.readerSource==='main':[undefined,'dedicated'].includes(manifest.readerSource))&&
+    manifest.preparationOnly===true&&manifest.executionApproved===false&&
     manifest.activationReady===false&&manifest.processConsentGranted===false&&manifest.defaultOff===true&&
     manifest.authorization?.scope==='sidecar-process'&&manifest.authorization.maxBatchMS===60000&&
     manifest.authorization.retryFailedBatch===false&&equal(manifest.authorization.cookieNames,['auth_token','ct0']), 'daily_package_contract_rejected');
@@ -83,24 +136,30 @@ export async function verifyDailyPackage(path){
   const required=['bin/aku-sidecar.exe','bin/aku-reader-broker.exe','bin/ui-reader-broker/manifest.json',
     'bin/ui-reader-broker/content.js','bin/ui-reader-broker/service-worker.js',
     'bin/headless-worker/node.exe','bin/headless-worker/node.pin.json','bin/headless-worker/LICENSE','bin/headless-worker/LICENSE-AkuSidecar',
-    'bin/headless-worker/worker.mjs','bin/x-daily-owner/manifest.json','bin/x-daily-owner/x-daily-owner.cjs',
+    'bin/headless-worker/worker.mjs',`bin/${reader.directory}/manifest.json`,`bin/${reader.directory}/${reader.driver}`,
     'bin/com.akubrowser.reader_activation.json','config-proposal.json','service-proposal.json',
     'rollback/service.json','rollback/sidecar.json','rollback/native-hosts.json','ACTIVATION.md',
     'preflight.ps1','tools/verify-x-daily-development.mjs','tools/x-daily-development-package.mjs','tools/x-development-pilot-package.mjs'];
+  if(main)required.push('rollback-proposal.json');
   for(const rel of required)reject(seen.has(join(root,rel).toLowerCase()),'daily_required_payload_missing: '+rel);
   const read=async rel=>JSON.parse(await readFile(join(root,rel),'utf8'));
   const service=await read('rollback/service.json'),original=await read('rollback/sidecar.json');
   const layout=dailyLayout(service,original);
   reject(equal(layout,manifest.ordinary),'daily_layout_changed');
   const proposal=await read('config-proposal.json');
-  reject(equal(proposal,dailyConfigProposal(layout.config,manifest.configSHA256)),'daily_config_proposal_changed');
+  reject(equal(proposal,dailyConfigProposal(layout.config,manifest.configSHA256,source,original)),'daily_config_proposal_changed');
   reject(equal(await read('service-proposal.json'),dailyServiceProposal(service,join(root,'bin','aku-sidecar.exe'))),'daily_service_proposal_changed');
-  reject(manifest.reader?.selection==='unresolved'&&manifest.reader.profileInspected===false&&manifest.reader.leaseAcquired===false,
-    'daily_reader_prerequisite_changed');
-  const owner=await read('bin/x-daily-owner/manifest.json');
-  reject(owner.schema==='aku.x.application-owner-package.v1'&&owner.dailyLifecycle===true&&
-    owner.entry==='internal/collection/headless/worker/native-pilot/daily-owner.mjs'&&owner.driver.file==='x-daily-owner.cjs'&&
-    owner.driver.sha256===digest(await readFile(join(root,'bin','x-daily-owner',owner.driver.file))), 'daily_owner_pin_rejected');
+  reject(equal(manifest.reader,dailyReaderSelection(source)),'daily_reader_prerequisite_changed');
+  if(main){
+    reject(equal(manifest.prerequisites,dailyPrerequisites(source)),'daily_main_prerequisites_changed');
+    reject(equal(await read('rollback-proposal.json'),dailyMainRollbackProposal(layout.config,manifest.configSHA256,original)),
+      'daily_rollback_proposal_changed');
+  }
+  const owner=await read(`bin/${reader.directory}/manifest.json`);
+  reject(owner.schema==='aku.x.application-owner-package.v1'&&owner[reader.lifecycle]===true&&
+    (main?owner.dailyLifecycle===undefined:owner.mainLifecycle===undefined)&&
+    owner.entry===reader.entry&&owner.driver?.file===reader.driver&&
+    owner.driver.sha256===digest(await readFile(join(root,'bin',reader.directory,reader.driver))), 'daily_owner_pin_rejected');
   const pin=await read('bin/headless-worker/node.pin.json');
   reject(pin.protocol===1&&pin.nodeSha256===digest(await readFile(join(root,'bin/headless-worker/node.exe')))&&
     pin.licenseSha256===digest(await readFile(join(root,'bin/headless-worker/LICENSE'))),'daily_node_pin_rejected');
@@ -156,6 +215,6 @@ export async function verifyDailyPackage(path){
   reject(manifest.configProbe?.status==='ok'&&manifest.configProbe.databaseSchemaVersion===30,'daily_schema_probe_rejected');
   reject(await absent(join(root,'activation-receipt.json')),'daily_package_already_handed_off');
   return{packageId:manifest.packageId,sourceCommit:manifest.sourceCommit,filesVerified:manifest.files.length,
-    preparationOnly:true,executionApproved:false,activationReady:false,readerSelection:'unresolved',
+    preparationOnly:true,executionApproved:false,activationReady:false,readerSource:source,readerSelection:manifest.reader.selection,
     databaseOpened:false,profileInspected:false,sessionTransferred:false};
 }
