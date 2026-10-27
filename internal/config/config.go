@@ -465,6 +465,7 @@ type BridgeConfig struct {
 
 type Options struct {
 	DevelopmentSessionReuse     string
+	DevelopmentXManualPlan      string
 	DevelopmentQAPilotPlan      string
 	DevelopmentQAPilotPrepare   string
 	DatabaseInspect             bool
@@ -497,6 +498,7 @@ type Options struct {
 func ParseFlags() Options {
 	var options Options
 	flag.StringVar(&options.DevelopmentSessionReuse, "dev-session-reuse", "", "explicit development session integration provider; disabled in ordinary builds")
+	flag.StringVar(&options.DevelopmentXManualPlan, "dev-x-manual-plan", "", "pinned isolated resources for the manual X development provider; does not start or transfer a session")
 	flag.StringVar(&options.DevelopmentQAPilotPlan, "dev-qa-pilot-plan", "", "explicit isolated X QA pilot plan; requires its development provider")
 	flag.StringVar(&options.DevelopmentQAPilotPrepare, "dev-qa-pilot-prepare", "", "materialize an isolated QA plan and exit without browser, profile, database or session access")
 	flag.BoolVar(&options.DatabaseInspect, "database-inspect", false, "inspect existing database compatibility and exit without migration")

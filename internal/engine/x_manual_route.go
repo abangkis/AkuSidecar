@@ -30,17 +30,64 @@ type xManualRoute interface {
 	prepareReader(context.Context, readerbroker.Request, string) (readerbroker.NativePostPreparation, error)
 }
 type xManualRouting struct {
-	mu     sync.RWMutex
-	route  xManualRoute
-	closed bool
+	mu       sync.RWMutex
+	route    xManualRoute
+	closed   bool
+	starting bool
+	starter  xManualStarter
+}
+
+// Only build-gated trusted composition can install this process-local control.
+type xManualStarter interface {
+	start(context.Context, XManualStartRequest) error
+	stop()
+	waitStart(context.Context) error
+	startPending() bool
+	status() XManualStatus
+}
+
+func (e *Engine) xManualStartupPending() bool {
+	e.xManual.mu.RLock()
+	s := e.xManual.starter
+	e.xManual.mu.RUnlock()
+	return s != nil && s.startPending()
+}
+
+type XManualStartRequest struct {
+	AcknowledgeLimitations    bool `json:"acknowledgeLimitations"`
+	AllowOneSessionDerivation bool `json:"allowOneSessionDerivation"`
+}
+
+func (e *Engine) StartXManual(ctx context.Context, request XManualStartRequest) error {
+	if !e.config.Dev || ctx == nil || ctx.Err() != nil || !request.AcknowledgeLimitations || !request.AllowOneSessionDerivation {
+		return errors.New("manual X start requires explicit development consent")
+	}
+	e.xManual.mu.RLock()
+	s := e.xManual.starter
+	e.xManual.mu.RUnlock()
+	if s == nil {
+		return errors.New("manual X provider unavailable")
+	}
+	return s.start(ctx, request)
+}
+
+// Selection only controls routing. It neither proves login nor issues a permit.
+func (e *Engine) XManualConfigured() bool {
+	e.xManual.mu.RLock()
+	defer e.xManual.mu.RUnlock()
+	return e.xManual.starter != nil || e.xManual.route != nil
 }
 
 func (e *Engine) XManualStatus() XManualStatus {
 	e.xManual.mu.RLock()
 	r := e.xManual.route
+	s := e.xManual.starter
 	e.xManual.mu.RUnlock()
 	if r != nil {
 		return r.status()
+	}
+	if s != nil {
+		return s.status()
 	}
 	return XManualStatus{Source: "x", State: "disabled", Reason: "explicit-start-required"}
 }
@@ -51,7 +98,20 @@ func (e *Engine) StopXManual(ctx context.Context) error {
 	}
 	e.xManual.mu.RLock()
 	r := e.xManual.route
+	s := e.xManual.starter
 	e.xManual.mu.RUnlock()
+	if s != nil {
+		s.stop()
+	}
+	if s != nil {
+		if err := s.waitStart(ctx); err != nil {
+			return err
+		}
+		// Startup may have installed a route after the initial snapshot.
+		e.xManual.mu.RLock()
+		r = e.xManual.route
+		e.xManual.mu.RUnlock()
+	}
 	if r == nil {
 		return nil
 	}
@@ -82,7 +142,7 @@ func (e *Engine) ordinarySourceRoute(source domain.Source) (func(), bool) {
 		return func() {}, true
 	}
 	e.xManual.mu.RLock()
-	if e.xManual.route != nil && e.xManual.route.occupied() {
+	if e.xManual.starting || e.xManual.route != nil && e.xManual.route.occupied() {
 		e.xManual.mu.RUnlock()
 		return func() {}, false
 	}
@@ -101,7 +161,7 @@ func (e *Engine) stepXManual(ctx context.Context) {
 func (e *Engine) ordinaryPendingRun(ctx context.Context, collector string) (string, error) {
 	e.xManual.mu.RLock()
 	r := e.xManual.route
-	blocked := r != nil && r.occupied()
+	blocked := e.xManual.starting || r != nil && r.occupied()
 	e.xManual.mu.RUnlock()
 	if blocked {
 		return e.store.PendingRunIDForCollectorExcept(ctx, collector, domain.SourceX)
@@ -113,7 +173,11 @@ func (e *Engine) shutdownXManual() {
 	e.xManual.mu.Lock()
 	e.xManual.closed = true
 	r := e.xManual.route
+	s := e.xManual.starter
 	e.xManual.mu.Unlock()
+	if s != nil {
+		s.stop()
+	}
 	if r != nil {
 		r.shutdown()
 	}

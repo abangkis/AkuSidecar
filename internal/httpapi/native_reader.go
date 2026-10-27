@@ -264,14 +264,14 @@ func (s *Server) runDirectNativeReader(ctx context.Context, t *splitCaptureTrans
 	timing("broker_attach_wait", true)
 	s.auditSplitAction(ctx, entry.action, "claimed", "accepted")
 	s.auditSplitAction(ctx, entry.action, "reader_prepare", "pending")
-	if prepare == nil {
-		outcome = errors.New("reader unavailable")
-		return
-	}
 	marker := "/split-reader-intent?id=" + entry.action.ID
 	req := readerbroker.Request{RequestID: entry.action.RequestID, Source: entry.action.Source, URL: entry.action.URL}
 	prepared, selected, err := s.engine.PrepareXManualReader(ctx, req, marker)
 	if !selected {
+		if prepare == nil {
+			outcome = errors.New("reader unavailable")
+			return
+		}
 		prepared, err = prepare(ctx, entry.action.ID, entry.action.URL, marker)
 	}
 	timing("target_prepare", err == nil)

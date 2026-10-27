@@ -1,9 +1,12 @@
 # X manual pilot: development provider integration
 
 Prepared 2026-10-25, after native capture acceptance on `5964a24`.
-Status: shared ownership/transport extraction and the private application owner
-factory/profile lease are implemented. Packaged native driver composition,
-application routing/status/stop registration and runtime activation remain pending.
+Status: shared ownership/transport, application owner/profile lease, packaged
+driver and QA native overlap acceptance are implemented. The ordinary development
+entry now has source wiring and offline/synthetic tests; runtime activation is
+separate. See the [current entry](x-manual-development-entry.md) and
+[readiness checkpoint](concurrency-dev-readiness.md). Dated sections below retain
+their historical implementation scope.
 
 ## Application owner factory and profile lease (2026-10-26)
 

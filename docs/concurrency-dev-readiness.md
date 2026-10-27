@@ -31,6 +31,43 @@ See [dependency changes, evidence and limits](sqlite-driver-upgrade.md).
 This fixes the old driver cancellation leak independently of the Engine's drain
 correction. No native session transfer or main-dev runtime activation occurred.
 
+### Ordinary development start wiring implemented; commit review (2026-10-27)
+
+The Windows/dev-only `native-x-manual` selector now continues through ordinary
+configuration, provider, Engine and HTTP startup with a pinned instance-local
+config/database/profile plan. No selector leaves startup unchanged. The new
+epoch/origin-checked one-use start API connects the accepted private factory;
+status/stop and X source arbitration are reused. No Store policy/schema or
+account verifier changes are introduced.
+
+The optional UI has its own fresh profile and exact-origin broker assets. The
+ordinary app-shell OS broker attaches to it; HTTP routes only X to the private
+reader without borrowing the ordinary capture profile. Consent, deadline,
+foreground and cleanup guards remain intact. The existing native helper/pipe
+must be available at activation; no registry or runtime operation is performed
+by the source/tests. See [entry, validation and activation boundaries](x-manual-development-entry.md).
+
+The tests additionally found and fixed Engine's early-idle report during deferred
+worker cleanup. Teardown now drains the real worker before closing SQLite and
+releasing its pins. This is a shutdown-lifecycle fix, not an account/deadline
+relaxation. Native transfer and main-dev activation remain unauthorized here.
+
+Commit review additionally found a pending-startup drain gap on the HTTP shutdown
+timeout path. Engine idle now includes startup completion, and main joins manual
+selection cleanup before closing SQLite. Uncertain cleanup retains SQLite until
+process exit. The exported staged payload passed 70 Go groups, 59 nested cases
+and four main builds; 18 controller/gate cases and both legacy compile-only
+staging modes passed. New synthetic cases cover the pre-route shutdown race,
+ordered closure and uncertainty retention. No real browser/session was used.
+
+Final accountless run `a2bc24a2cc804171a53b286d1781ee79` passed 67 Go groups,
+59 nested cases and four build modes with no skips/failures. The real ordinary
+dev image reached HTTP readiness without invoking native start and shut down
+gracefully. Separately, 18 controller regressions and both legacy compile-only
+staging modes passed. At that checkpoint the reproduced SQLite cancellation leak
+was still deferred. The separately authorized driver upgrade above now fixes
+and tests that path; completed-flow acceptance remains scoped to completed work.
+
 ### Native capture-start QA passes the complete selected gate (2026-10-26)
 
 One explicitly authorized execution of preparation
@@ -1240,11 +1277,12 @@ reader overlap and owned cleanup evidence. Packaged driver and QA application
 routing/status/stop are implemented; the earlier statements that they remained
 unwired are historical. Ordinary main-dev activation remains separate:
 
-1. Review/commit the accepted harness and evidence, then review the minimum
-   ordinary-dev entry and trusted profile/database selection for the existing
-   manual X-only pilot. Keep explicit opt-in default-off, status, stop, source
-   arbitration and the original 60-second limit. Do not add a new identity source
-   or reopen deferred renewal/rotation qualification for this pilot.
+1. Harness/evidence are committed at `ae97e52`; the ordinary-dev wiring and
+   worker-drain increment above is reviewed and accountlessly validated. Prepare
+   a concrete development-tag build with its
+   reviewed instance-local config, fresh plan and compatible native helper. Keep
+   the existing manual X-only, default-off start/status/stop and 60-second limit.
+   No new identity source or deferred renewal/rotation qualification is required.
 2. Prepare the concrete build/activation and rollback package before obtaining
    explicit main-dev activation permission. Preserve the existing main login and
    Auto Update. Rollback closes pilot admission/owners and returns source routing

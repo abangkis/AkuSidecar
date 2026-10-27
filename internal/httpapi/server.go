@@ -74,7 +74,7 @@ func New(cfg config.Config, state *store.Store, runtime *engine.Engine, logger *
 		nativeReaderGate:   make(chan struct{}, 1),
 		postScreenshotGate: make(chan struct{}, 1),
 	}
-	if cfg.WindowsCaptureSplit && goruntime.GOOS == "windows" {
+	if (cfg.WindowsCaptureSplit || cfg.Dev && runtime.XManualConfigured()) && goruntime.GOOS == "windows" {
 		server.splitCapture = newSplitCaptureTransport()
 		runtime.SetBrowserCollectionCleanup(server.ReleaseBrowserCollectionSurfaces)
 		runtime.SetBrowserMediaRecaptureDispatch(server.DispatchBrowserMediaRecapture)
@@ -253,6 +253,21 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		return writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": domain.ApplicationVersion, "runtime": "go", "deployment": s.config.Deployment.PublicStatus(), "provider": s.engine.ProviderName(), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime(), "bridgeContractVersion": domain.BridgeContractVersion, "softwareUpdate": domain.SidecarSoftwareUpdateMetadata(store.SchemaVersion), "instanceEpoch": s.engine.Epoch(), "uptimeMs": time.Since(s.started).Milliseconds(), "database": map[string]any{"status": "healthy"}, "loadProfile": settings.LoadProfile})
 	case r.Method == http.MethodGet && p == "/api/collection/runtime":
 		return writeJSON(w, http.StatusOK, map[string]any{"collectionRuntime": s.engine.CollectionRuntime(), "xManual": s.engine.XManualStatus()})
+	case r.Method == http.MethodPost && p == "/api/development/x-manual/start":
+		if !s.config.Dev {
+			return notFound("development route")
+		}
+		if r.Header.Get("X-Aku-Split-Epoch") != s.engine.Epoch() {
+			return apiError{Status: 409, Code: "capture_epoch_mismatch", Message: "AkuBrowser restarted; refresh the page."}
+		}
+		request, err := readXManualStart(r)
+		if err != nil {
+			return err
+		}
+		if err := s.engine.StartXManual(ctx, request); err != nil {
+			return apiError{Status: 409, Code: "manual_start_unavailable", Message: "Manual X start was rejected or failed; inspect runtime status and cleanup."}
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"xManual": s.engine.XManualStatus()})
 	case r.Method == http.MethodPost && p == "/api/development/x-manual/stop":
 		if !s.config.Dev {
 			return notFound("development route")

@@ -45,9 +45,23 @@ func main() {
 		fatal(logger, err)
 		return
 	}
-	if handled, err := dispatchDevelopmentSession(options, os.Stdin, os.Stdout); handled || err != nil {
-		fatal(logger, err)
-		return
+	manual, err := engine.PrepareXManualDevelopment(options)
+	fatal(logger, err)
+	if manual != nil {
+		defer func() {
+			if err := manual.Close(); err != nil {
+				logger.Printf("manual X selection cleanup uncertain")
+			}
+		}()
+		if options.AppShell {
+			options.BridgeExtensionPath = manual.UIExtensionPath()
+		}
+	}
+	if manual == nil {
+		if handled, err := dispatchDevelopmentSession(options, os.Stdin, os.Stdout); handled || err != nil {
+			fatal(logger, err)
+			return
+		}
 	}
 	if options.DiscoverCodex {
 		os.Exit(discoverCodex(options))
@@ -57,6 +71,9 @@ func main() {
 	}
 	cfg, err := config.Load(options)
 	fatal(logger, err)
+	if manual != nil {
+		fatal(logger, manual.ValidateConfig(cfg))
+	}
 	if options.RuntimeCandidateProbe {
 		probe, probeErr := runtimeCandidateProbe(cfg.Version, options.RuntimeCandidateProbeSchema)
 		fatal(logger, probeErr)
@@ -85,9 +102,18 @@ func main() {
 			fatal(logger, fmt.Errorf("database requires an explicit recovery decision (%s): %s; inspect with --database-inspect", compatibility.Status, compatibility.Reason))
 		}
 	}
-	state, err := store.Open(cfg.Database.Path, settings)
+	var state *store.Store
+	if manual != nil {
+		state, err = manual.OpenDatabase(settings)
+	} else {
+		state, err = store.Open(cfg.Database.Path, settings)
+	}
 	fatal(logger, err)
-	defer state.Close()
+	defer func() {
+		if err := closeDatabaseAfterManualSelection(manual, state); err != nil {
+			logger.Printf("database release deferred: manual cleanup or database close uncertain")
+		}
+	}()
 	persistedSettings, err := state.GetSettings(context.Background())
 	fatal(logger, err)
 	selected := cfg.Reasoning.ActiveProvider
@@ -172,9 +198,13 @@ func main() {
 	}
 	eventRuntime := semanticengine.New(state, eventResolver)
 	runtime := engine.New(state, provider, cfg, logger, eventRuntime)
+	if manual != nil {
+		defer runtime.Shutdown()
+		fatal(logger, manual.Attach(context.Background(), runtime))
+	}
 	if cfg.Dev {
-		// Inspection never starts an owner or acquires a profile. Native start
-		// remains unavailable until its private seed capability is approved.
+		// Inspection cannot start an owner or derive a session. A selected
+		// process still requires explicit one-use start consent through the API.
 		manual := runtime.XManualStatus()
 		logger.Printf("x_manual_provider state=%s available=%t", manual.State, manual.Available)
 	}
@@ -282,6 +312,17 @@ func main() {
 	logger.Printf("shutdown completed duration_ms=%d", time.Since(shutdownStarted).Milliseconds())
 }
 
+// Pending startup may outlast HTTP shutdown's grace period. Join its cleanup
+// before closing SQLite; uncertain cleanup retains the database until exit.
+func closeDatabaseAfterManualSelection(manual, database io.Closer) error {
+	if manual != nil {
+		if err := manual.Close(); err != nil {
+			return err
+		}
+	}
+	return database.Close()
+}
+
 func existingInstance(healthURL string, timeout time.Duration) (string, bool) {
 	client := &http.Client{Timeout: timeout}
 	response, err := client.Get(healthURL)
@@ -371,14 +412,26 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 	extensionPath := options.BridgeExtensionPath
 	uiResult := result
 	var uiArgs []string
-	if cfg.WindowsCaptureSplit {
-		fatal(logger, server.RequireHostOnlyRetirement())
-		sidecarExecutable, executableErr := os.Executable()
+	manualUI := options.DevelopmentSessionReuse == "native-x-manual"
+	var sidecarExecutable string
+	if cfg.WindowsCaptureSplit || manualUI {
+		var executableErr error
+		sidecarExecutable, executableErr = os.Executable()
 		fatal(logger, executableErr)
 		uiDiscoveryCtx, cancelUIDiscovery := context.WithTimeout(context.Background(), 10*time.Second)
 		uiResult, err = appshell.DiscoverSplitUI(uiDiscoveryCtx, sidecarExecutable, options.UIChromiumPath)
 		cancelUIDiscovery()
 		fatal(logger, err)
+	}
+	if manualUI {
+		helperInfo, helperErr := os.Stat(filepath.Join(filepath.Dir(sidecarExecutable), "aku-reader-broker.exe"))
+		if helperErr != nil || !helperInfo.Mode().IsRegular() {
+			fatal(logger, errors.New("manual X UI native helper is not packaged"))
+		}
+		uiArgs = []string{"--disable-extensions-except=" + extensionPath, "--enable-features=LaunchWindowsNativeHostsDirectly"}
+	}
+	if cfg.WindowsCaptureSplit {
+		fatal(logger, server.RequireHostOnlyRetirement())
 		uiBrokerPath := filepath.Join(filepath.Dir(sidecarExecutable), "ui-reader-broker")
 		if _, err := os.Stat(filepath.Join(uiBrokerPath, "manifest.json")); err != nil {
 			fatal(logger, fmt.Errorf("Windows split UI reader broker is not packaged: %w", err))
@@ -443,7 +496,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 		fatal(logger, err)
 	}
 	logger.Printf("app_shell executable=%s version=%s pid=%d url=%s", uiResult.Executable, uiResult.Version, window.PID(), target)
-	if cfg.WindowsCaptureSplit {
+	if cfg.WindowsCaptureSplit || manualUI {
 		go func() {
 			if err := window.ServeReaderBroker(context.Background(), server.HandleReaderBroker); err != nil {
 				logger.Printf("reader_broker unavailable=%q", err.Error())
@@ -630,6 +683,9 @@ func appShellIconPath(extensionPath string) string {
 }
 
 func browserProfilePath(options config.Options, cfg config.Config) string {
+	if options.DevelopmentSessionReuse == "native-x-manual" {
+		return filepath.Join(cfg.Root, "profiles", "ui", "profile")
+	}
 	if profilePath := strings.TrimSpace(options.BrowserProfilePath); profilePath != "" {
 		return profilePath
 	}

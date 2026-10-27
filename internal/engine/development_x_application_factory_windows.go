@@ -36,9 +36,9 @@ func newXApplicationManualConsent(cfg xApplicationOwnerConfig, limitationAcknowl
 
 type xApplicationPostPreparer func(context.Context, xManualPilotWindowsRole, readerbroker.Request, string) (readerbroker.NativePostPreparation, error)
 
-// This factory is intentionally private and unregistered. A future isolated
-// manual-start entry must supply explicit consent and an owned post preparer;
-// compiling this function or inspecting status cannot start a session transfer.
+// Only trusted development composition selects this private factory, supplying
+// explicit one-use consent and an owned post preparer. Compiling this function
+// or inspecting status cannot start a session transfer.
 func (e *Engine) xApplicationNativeFactory(cfg xApplicationOwnerConfig, consent *xApplicationManualConsent, prepare xApplicationPostPreparer) xManualApplicationFactory {
 	return func(ctx, parent context.Context) (xManualApplicationPorts, error) {
 		p := xManualApplicationPorts{dispose: func(context.Context) error { return nil }}

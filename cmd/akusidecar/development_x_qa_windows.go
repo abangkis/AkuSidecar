@@ -20,6 +20,9 @@ import (
 )
 
 func dispatchXApplicationQA(options config.Options, input io.Reader, output io.Writer) (bool, error) {
+	if options.DevelopmentXManualPlan != "" && (options.DevelopmentQAPilotPrepare != "" || options.DevelopmentQAPilotPlan != "" || options.DevelopmentSessionReuse == "native-x-manual-qa" || options.DevelopmentSessionReuse == "synthetic-x-manual-qa") {
+		return true, errors.New("application and QA selections cannot be combined")
+	}
 	if options.DevelopmentQAPilotPrepare != "" {
 		if !options.Dev || options.DevelopmentSessionReuse != "" || options.DevelopmentQAPilotPlan != "" || options.AppShell || options.WindowsCaptureSplit || options.BrowserProfilePath != "" || options.DatabasePath != "" || options.DatabaseInspect || options.DatabaseAction != "" {
 			return true, errors.New("QA preparation requires its isolated development-only entry")

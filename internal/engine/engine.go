@@ -81,6 +81,7 @@ type Engine struct {
 	headlessAccess                           []domain.Source
 	bridgeOrigins                            map[string]time.Time
 	active                                   map[string]context.CancelFunc
+	processWorkers                           int
 	pending                                  map[string]bool
 	cancelled                                map[string]bool
 	shuttingDown                             bool
@@ -1440,10 +1441,15 @@ func (e *Engine) launchProcessWithPolicy(runID string, allowPlanning, queueIfAct
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	e.active[runID] = cancel
+	e.processWorkers++
 	e.mu.Unlock()
 	go func() {
 		succeeded := false
 		defer func() {
+			// Retiring active admission is not the end of the worker: deferred
+			// session/capture cleanup below still uses SQLite. Keep shutdown's
+			// drain count until those operations have actually returned.
+			defer func() { e.mu.Lock(); e.processWorkers--; e.mu.Unlock() }()
 			e.mu.Lock()
 			delete(e.active, runID)
 			pendingAllowPlanning, pending := e.pending[runID]
@@ -2813,9 +2819,9 @@ func (e *Engine) WaitForIdle(timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		e.mu.RLock()
-		count := len(e.active)
+		count := len(e.active) + e.processWorkers
 		e.mu.RUnlock()
-		if count == 0 {
+		if count == 0 && !e.xManualStartupPending() {
 			return true
 		}
 		time.Sleep(25 * time.Millisecond)

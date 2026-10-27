@@ -1163,7 +1163,8 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		}
 		entry := &pendingSplitAction{action: a, result: make(chan splitActionResult, 1)}
 		queued := false
-		if a.Type == "open_source" || a.Type == "open_native_post" || a.Type == "revoke_source_access" {
+		manualReader := a.Type == "open_native_post" && a.Source == "x" && s.engine.XManualConfigured()
+		if !manualReader && (a.Type == "open_source" || a.Type == "open_native_post" || a.Type == "revoke_source_access") {
 			borrow := s.engine.BorrowInteractiveCapture
 			if a.Type == "open_native_post" {
 				borrow = s.engine.BorrowNativeReader
@@ -1203,7 +1204,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 				return apiError{Status: 409, Code: "browser_handoff_required", Message: "Close native post windows before using the Browser collector."}
 			}
 		}
-		if a.Type == "open_native_post" && (t.prepareBrokerReader != nil || t.directReader != nil) {
+		if a.Type == "open_native_post" && (manualReader || t.prepareBrokerReader != nil || t.directReader != nil) {
 			if err := (readerbroker.Request{RequestID: a.RequestID, Source: a.Source, URL: a.URL}).Validate(); err != nil {
 				t.mu.Unlock()
 				return badRequest("Native reader requires an explicit UI broker click.")
@@ -1216,13 +1217,13 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			}
 			entry.brokerReady = make(chan struct{})
 			entry.brokerDone = make(chan error, 1)
-			entry.directReader = t.directReader != nil
+			entry.directReader = manualReader || t.directReader != nil
 		}
 		if t.closed || len(t.actions) >= splitActionLimit {
 			t.mu.Unlock()
 			return apiError{Status: 503, Code: "capture_unavailable", Message: "Capture transport is unavailable or busy."}
 		}
-		if t.runtime != nil && entry.runtimeLease == nil {
+		if !manualReader && t.runtime != nil && entry.runtimeLease == nil {
 			lease, err := t.runtime.Acquire()
 			if err != nil {
 				t.mu.Unlock()

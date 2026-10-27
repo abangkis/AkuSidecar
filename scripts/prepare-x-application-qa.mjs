@@ -28,8 +28,8 @@ function command(file,args){
 // Bind an uncommitted implementation to its actual source and binary hashes;
 // the Git commit alone never claims to identify a dirty compiled graph.
 const sourceCommit=command('git',['rev-parse','HEAD']);
-const sourceDirty=command('git',['status','--porcelain','--untracked-files=normal','--','cmd','internal','go.mod','go.sum'])!=='';
-const sourcePaths=command('git',['ls-files','--cached','--others','--exclude-standard','--','cmd','internal','go.mod','go.sum']).split(/\r?\n/u).filter(Boolean).sort();
+const sourceDirty=command('git',['status','--porcelain','--untracked-files=normal','--','cmd','internal','ui-reader-broker','go.mod','go.sum'])!=='';
+const sourcePaths=command('git',['ls-files','--cached','--others','--exclude-standard','--','cmd','internal','ui-reader-broker','go.mod','go.sum']).split(/\r?\n/u).filter(Boolean).sort();
 const sourceDigest=createHash('sha256');
 for(const path of sourcePaths){sourceDigest.update(path+'\0');sourceDigest.update(createHash('sha256').update(await readFile(join(project,path))).digest());}
 const sourceSHA256=sourceDigest.digest('hex');

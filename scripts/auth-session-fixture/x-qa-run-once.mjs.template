@@ -19,7 +19,7 @@ const review=JSON.parse(fs.readFileSync(path.join(root,'prepared-review.json'),'
 const sha=file=>createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const expectedSourceSHA256='@@SOURCE_SHA@@';
 if(review.sourceSHA256!==expectedSourceSHA256)throw new Error('Reviewed source mismatch');
-const sourcePaths=execFileSync('git',['ls-files','--cached','--others','--exclude-standard','--','cmd','internal','go.mod','go.sum'],{cwd:project,encoding:'utf8'}).trim().split(/\r?\n/u).filter(Boolean).sort();
+const sourcePaths=execFileSync('git',['ls-files','--cached','--others','--exclude-standard','--','cmd','internal','ui-reader-broker','go.mod','go.sum'],{cwd:project,encoding:'utf8'}).trim().split(/\r?\n/u).filter(Boolean).sort();
 const digest=createHash('sha256');
 for(const file of sourcePaths){digest.update(file+'\0');digest.update(createHash('sha256').update(fs.readFileSync(path.join(project,file))).digest());}
 if(digest.digest('hex')!==expectedSourceSHA256)throw new Error('Reviewed source drift');

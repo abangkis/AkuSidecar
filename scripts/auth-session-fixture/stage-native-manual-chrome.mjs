@@ -32,7 +32,7 @@ const manifest = { schema: 'aku.native-manual-chrome.staging.v1', copied: [], ex
 // Shared imported code must be pinned even for the named-file staging modes.
 manifest.moduleDependencies=['go.mod','go.sum',...['internal/ownedprocess','internal/ownedrpc','internal/ownedprofile'].flatMap(directory=>
   fs.readdirSync(path.join(project,directory)).filter(file=>file.endsWith('.go')&&!file.endsWith('_test.go')).sort().map(file=>`${directory}/${file}`)
-)].map(source=>({source,sha256:hash(fs.readFileSync(path.join(project,source)))}));
+),'ui-reader-broker/assets.go','ui-reader-broker/manifest.json','ui-reader-broker/content.js','ui-reader-broker/service-worker.js'].map(source=>({source,sha256:hash(fs.readFileSync(path.join(project,source)))}));
 if(mode!==undefined){
   manifest.nodeSources=['x-native-manual-owner-port.mjs','x-native-manual-owner-port.test.mjs','x-native-manual-owner-offline.mjs','x-native-metadata-probe-driver.mjs',
     'x-native-manual-capture.mjs','x-native-manual-capture.test.mjs','x-capture-worker-diagnostic.mjs','x-capture-traffic-diagnostics.mjs','x-capture-traffic-diagnostics.test.mjs',
