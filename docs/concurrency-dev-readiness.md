@@ -28,6 +28,15 @@ remains available. Package tests use synthetic baselines and the real sealed
 transport builder without launching Chrome or opening a database/profile.
 See [package preparation and rollback](x-daily-development-activation.md).
 
+The user has confirmed the minimum main-profile backend plan: common
+collectionMode=browser, with X still using its independent concurrent headless
+collector after process consent. The decision is planning approval only; no
+live settings, activation or transfer is authorized. The
+[current handoff and phase-aware rollback](x-main-dev-handoff.md) records the
+one-field settings change, fresh baseline/no-op handling and restoration of
+the actual before value. It supersedes the preflight's pending backend question
+without changing the sealed package or historical observations.
+
 The target is repeated X capture in ordinary main dev, selectable with
 `capture.xMode: exclusive | concurrent`, initially requiring graceful restart.
 Normal Store, effective provider/settings, Timeline and non-X scheduling remain

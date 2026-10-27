@@ -31,6 +31,12 @@ bundle; it does not activate the package or establish signed-in capture. Keep
 the historical dedicated v1 package separate. See the
 [activation/rollback contract](x-daily-development-activation.md).
 
+The approved backend choice for that handoff is Browser for the common backend
+and independent headless concurrency for X. Keep all active sources, provider
+and Auto Update. This is an approved plan, not a live settings write or runtime
+activation. Follow the [current handoff/rollback supplement](x-main-dev-handoff.md)
+to record the actual settings before value and handle partial handoff failure.
+
 1. Add the restart-required `capture.xMode` selection and ordinary main-dev
    composition, preserving normal Store/settings/provider/UI. Until the batch
    adapter is attached, report not-ready and prohibit legacy X fallback.
