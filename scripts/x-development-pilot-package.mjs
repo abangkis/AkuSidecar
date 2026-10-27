@@ -1,10 +1,42 @@
 // Preparation/verification only. No launch, registry write, network request or
 // account/profile/database reader belongs in this module.
 import {createHash} from 'node:crypto';
-import {lstat,realpath,readdir,readFile,copyFile,mkdir} from 'node:fs/promises';
+import {lstat,realpath,readdir,readFile,writeFile,copyFile,mkdir} from 'node:fs/promises';
 import {resolve,relative,dirname,isAbsolute,sep,join} from 'node:path';
 
 export const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
+// Startup reads these files relative to dirname(dirname(configPath)). Keep this
+// catalog independent of a package's self-reported inventory.
+const schemaContracts=Object.freeze({
+  'acquisition-plan.schema.json':['decision','reason'],
+  'reasoning-result.schema.json':['summary','items','candidateAssessments','repeatedClaimsCollapsed','deferredByBudget','limitations'],
+  'semantic-event-resolution.schema.json':['decisions'],
+  'ai-deep-detection.schema.json':['assessments'],
+  'living-topic-snapshot.schema.json':['status','overview','claims','deltas','evidenceRoles','coverageState'],
+  'living-topic-routing.schema.json':['decisions'],
+});
+export const requiredRuntimeSchemas=Object.freeze(Object.keys(schemaContracts));
+function validateRuntimeSchema(name,bytes){
+  let schema;try{schema=JSON.parse(bytes.toString('utf8'));}catch{throw new Error('package_runtime_schema_json_invalid: '+name);}
+  const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
+  const sameKeys=(actual,expected)=>Array.isArray(actual)&&actual.length===expected.length&&new Set(actual).size===actual.length&&expected.every(key=>actual.includes(key));
+  const fields=schemaContracts[name];
+  if(!object(schema)||(schema.$schema!==undefined&&schema.$schema!=='https://json-schema.org/draft/2020-12/schema')||schema.type!=='object'||
+    schema.additionalProperties!==false||!object(schema.properties)||!sameKeys(Object.keys(schema.properties),fields)||
+    !sameKeys(schema.required,fields)||!fields.every(key=>object(schema.properties[key])))throw new Error('package_runtime_schema_contract_invalid: '+name);
+}
+export async function copyRuntimeSchemas(project,instanceRoot){
+  await ordinary(instanceRoot,true);
+  const directory=join(instanceRoot,'schemas');await mkdir(directory);
+  const files=[];
+  for(const name of requiredRuntimeSchemas){
+    const bytes=await readFile(await ordinary(join(project,'schemas',name)));
+    validateRuntimeSchema(name,bytes);
+    await writeFile(join(directory,name),bytes,{flag:'wx'});
+    files.push({name,sha256:digest(bytes)});
+  }
+  return {root:resolve(instanceRoot),files};
+}
 export async function ordinary(path,directory=false){
   const full=resolve(path),info=await lstat(full);
   if(info.isSymbolicLink()||(directory?!info.isDirectory():!info.isFile()))throw new Error('package_path_not_ordinary');
@@ -80,11 +112,23 @@ export async function verifyPackage(path){
   for(const path of [manifest.plan.path,manifest.config.path,manifest.launch.image]){
     if(!seen.has(resolve(path).toLowerCase()))throw new Error('required_package_asset_missing');
   }
+  const instanceRoot=dirname(dirname(resolve(manifest.config.path)));contained(root,instanceRoot);
+  const schemas=manifest.runtimeSchemas;
+  if(!schemas||resolve(schemas.root)!==instanceRoot||!Array.isArray(schemas.files)||
+    schemas.files.length!==requiredRuntimeSchemas.length||new Set(schemas.files.map(row=>row.name)).size!==requiredRuntimeSchemas.length||
+    !requiredRuntimeSchemas.every(name=>schemas.files.some(row=>row.name===name)))throw new Error('package_runtime_schema_catalog_invalid');
+  for(const name of requiredRuntimeSchemas){
+    const file=join(instanceRoot,'schemas',name);
+    if(!seen.has(file.toLowerCase()))throw new Error('required_runtime_schema_missing: '+name);
+    const bytes=await readFile(await ordinary(file));
+    if(digest(bytes)!==schemas.files.find(row=>row.name===name).sha256)throw new Error('package_runtime_schema_pin_changed: '+name);
+    validateRuntimeSchema(name,bytes);
+  }
   for(const row of manifest.externalAssets){if((await fileRecord(row.path)).sha256!==row.sha256)throw new Error('external_asset_changed');}
   const config=JSON.parse(await readFile(manifest.config.path,'utf8'));
   if(digest(JSON.stringify(config.reasoning))!==manifest.modelPolicySHA256)throw new Error('package_model_change');
   if(config.server.host!=='127.0.0.1'||config.server.port!==manifest.plan.port||config.database.path!==manifest.plan.database)throw new Error('package_instance_scope_changed');
   try{await lstat(manifest.plan.database);throw new Error('package_database_already_consumed');}catch(error){if(error.code!=='ENOENT')throw error;}
-  return {packageId:manifest.packageId,filesVerified:manifest.files.length,sourceCommit:manifest.sourceCommit,
+  return {packageId:manifest.packageId,filesVerified:manifest.files.length,runtimeSchemasVerified:requiredRuntimeSchemas.length,sourceCommit:manifest.sourceCommit,
     preparationOnly:true,executionApproved:false,profileInspected:false,databaseOpened:false};
 }

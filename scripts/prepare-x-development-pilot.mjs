@@ -7,7 +7,7 @@ import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createServer} from 'node:net';
 import {buildNativeOwnerPackage} from './build-x-native-owner.mjs';
-import {ordinary,digest,fileRecord,copyTree,inventory,instanceConfig,activationArguments,verifyPackage} from './x-development-pilot-package.mjs';
+import {ordinary,digest,fileRecord,copyTree,copyRuntimeSchemas,inventory,instanceConfig,activationArguments,verifyPackage} from './x-development-pilot-package.mjs';
 
 const project=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 if(process.platform!=='win32'||process.argv.length!==2)throw new Error('Windows preparation takes no arguments');
@@ -21,7 +21,7 @@ const env={...process.env,TEMP:temp,TMP:temp,GOTMPDIR:temp,GOCACHE:join(project,
 function command(file,args){const r=spawnSync(file,args,{cwd:project,env,encoding:'utf8',windowsHide:true,maxBuffer:1024*1024});
   if(r.error||r.status!==0)throw new Error('package_preparation_command_failed: '+file+' '+args[0]+' exit='+(r.status??'unavailable')+' '+(r.stderr??'').slice(0,800));return r.stdout.trim();}
 const sourceCommit=command('git',['rev-parse','HEAD']);
-if(command('git',['status','--porcelain','--untracked-files=all','--','cmd','internal','ui-reader-broker','go.mod','go.sum'])!=='')throw new Error('compiled_source_must_match_reviewed_commit');
+if(command('git',['status','--porcelain','--untracked-files=all','--','cmd','internal','ui-reader-broker','schemas','go.mod','go.sum'])!=='')throw new Error('compiled_source_must_match_reviewed_commit');
 const configPath=join(project,'config','sidecar.json'),originalBytes=await readFile(await ordinary(configPath));
 const original=JSON.parse(originalBytes),baseline=[];
 for(const [source,name] of [[configPath,'sidecar.json'],[join(project,'runtime','dev','aku-sidecar.exe'),'aku-sidecar.exe'],
@@ -58,6 +58,7 @@ const plan=JSON.parse(await readFile(receipt.plan,'utf8'));
 const configDirectory=join(plan.root,'config');await mkdir(configDirectory);
 const instanceConfigPath=join(configDirectory,'sidecar.json');
 await writeFile(instanceConfigPath,JSON.stringify(instanceConfig(original,plan,project),null,2)+'\n',{flag:'wx'});
+const runtimeSchemas=await copyRuntimeSchemas(project,plan.root);
 // This existing early probe validates complete ordinary config and exits before
 // Store, provider, app-shell or native selection. No opt-in selector is passed.
 const configProbe=JSON.parse(command(image,['--dev','--config='+instanceConfigPath,'--database='+plan.database,'--port='+plan.port,
@@ -76,11 +77,11 @@ try{if(!registry.error&&registry.status===0){const entries=JSON.parse(registry.s
 await writeFile(join(rollback,'native-host-registration.json'),JSON.stringify(registration,null,2)+'\n',{flag:'wx'});
 const preflight=join(root,'preflight.ps1');
 await writeFile(preflight,`$ErrorActionPreference='Stop'\n# Read-only; never opens the pipe or writes registry.\n$target=Join-Path $PSScriptRoot 'bin\\com.akubrowser.reader_activation.json'\nforeach($vendor in @('Google\\Chrome','Chromium')){\n $key="HKCU:\\Software\\$vendor\\NativeMessagingHosts\\com.akubrowser.reader_activation"\n $state='missing'\n try{if(Test-Path -LiteralPath $key){$current=[string](Get-Item -LiteralPath $key).GetValue('');$state=if($current -eq $target){'matches_candidate'}else{'other_runtime_registered'}}}catch{$state='unavailable'}\n Write-Output "$vendor native_host=$state"\n}\ntry{$busy=[IO.Directory]::GetFiles('\\\\.\\pipe\\') -contains '\\\\.\\pipe\\AkuBrowser.reader-activation.11122';Write-Output "reader_pipe_present=$busy"}catch{Write-Output 'reader_pipe_present=unknown'}\nWrite-Output 'No activation or registration performed.'\n`,{flag:'wx'});
-const paths=command('git',['ls-files','--','cmd','internal','ui-reader-broker','go.mod','go.sum']).split(/\r?\n/).filter(Boolean).sort();
+const paths=command('git',['ls-files','--','cmd','internal','ui-reader-broker','schemas','go.mod','go.sum']).split(/\r?\n/).filter(Boolean).sort();
 const sourceDigest=digest(Buffer.concat(await Promise.all(paths.map(async path=>Buffer.concat([Buffer.from(path+'\0'),Buffer.from(digest(await readFile(join(project,path))),'hex')])))));
 const manifest={schema:'aku.x.development-activation-package.v1',packageId:id,sourceCommit,sourceSHA256:sourceDigest,
   buildTags:['auth_session_dev'],preparationOnly:true,executionApproved:false,activationReady:false,defaultOff:true,maxAttemptMS:60000,
-  configProbe,
+  configProbe,runtimeSchemas,
   preparationSources:await Promise.all(['scripts/prepare-x-development-pilot.mjs','scripts/x-development-pilot-package.mjs','docs/x-development-pilot-activation.md'].map(path=>fileRecord(join(project,path)))),
   controls:{manualStart:true,source:'x',maxTransfers:1,cookieNames:['auth_token','ct0'],retry:false},
   plan:{path:receipt.plan,port:plan.port,database:plan.database,chrome:plan.chrome.path},config:await fileRecord(instanceConfigPath),

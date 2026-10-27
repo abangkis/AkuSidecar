@@ -14,7 +14,7 @@ available; unavailable reads remain explicit.
 
 The new instance config explicitly trusts only the packaged UI broker extension
 identity; it does not depend on a main-runtime CLI origin override. An existing
-early candidate probe loads and validates the complete config/schema contract,
+early candidate probe loads and validates the config and database schema version,
 then exits before Store/provider/browser startup. The experimental selector is
 not passed to that probe and no session authority follows from it.
 
@@ -39,6 +39,15 @@ From the checkout: `node scripts/verify-x-development-pilot.mjs <package>/activa
 Or use the packaged Node and `tools/verify-x-development-pilot.mjs` with that
 same manifest. This checks packaged file hashes, the external capture Chrome,
 unchanged model configuration and absent/unconsumed database. It opens no DB.
+The runtime root is derived from the config path, exactly as in `config.Load`.
+All six startup schema assets must be present and inventoried under
+`<instance-root>/schemas/`: acquisition-plan, reasoning-result,
+semantic-event-resolution, ai-deep-detection, living-topic-snapshot and
+living-topic-routing (each with `.schema.json`). Their source bytes are copied
+unchanged, pinned, and covered by the clean source gate and source digest.
+Verification independently requires this catalog even if a missing schema is
+omitted from the file inventory. It checks JSON syntax and root contracts;
+it does not compile recursive JSON Schema semantics or construct providers.
 Run `<package>/preflight.ps1` to read host-registration and pipe-presence
 categories without connecting to the reader pipe or writing registry.
 
@@ -99,3 +108,16 @@ No like/reply/post, automatic renewal, reseed, fallback or retry is authorized.
    login, toggle Auto Update or automatically reopen the one-use pilot plan.
 
 Preparation and rollback-file creation do not grant permission for these actions.
+
+## Failed package retained for evidence (2026-10-27)
+
+Package `fd755aa1904d4f2e80a6c9d25c249b93` failed ordinary startup before
+HTTP/UI readiness because its instance root omitted required schemas. Its
+successful historical early probe did not exercise provider construction.
+The approved handoff was rolled back and the original supervised service,
+native-host mappings and reader pipe ownership were verified restored.
+No session derivation or manual `/start` occurred. Preserve that package and
+its launch/outcome receipts; do not retrofit or retry it. The corrected
+preparation creates a fresh package requiring a new operational approval.
+Only graceful shutdown is authorized; do not invoke a stop path that can
+escalate to forced process-tree termination.
