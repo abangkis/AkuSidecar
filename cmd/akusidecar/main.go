@@ -268,7 +268,7 @@ func main() {
 		if resetErr := discardLegacyProfileResetMarker(state, logger); resetErr != nil {
 			logger.Printf("legacy profile reset marker cleanup failed: %v", resetErr)
 		}
-		shell, capture, collector, initializeCapture = launchAppShell(logger, options, cfg, address.String(), server)
+		shell, capture, collector, initializeCapture = launchAppShell(logger, options, cfg, address.String(), server, runtime, collectionCtx)
 		if capture != nil {
 			fatal(logger, runtime.AttachCaptureRuntime(context.Background(), capture))
 			fatal(logger, server.SetSplitCaptureRuntime(capture))
@@ -320,6 +320,13 @@ func main() {
 	shell.Cancel() // Stop accepting/relaunching windows as soon as shutdown wins.
 	logger.Printf("shutdown requested")
 	runtime.Shutdown()
+	if daily != nil && cfg.Capture.XUsesMainProfile() {
+		// Borrowers and disposable collectors finish before the shared browser
+		// transport/Job is released. SQLite's existing deferred gate remains.
+		if err := daily.Close(); err != nil {
+			logger.Printf("main X borrower cleanup uncertain")
+		}
+	}
 	shell.Terminate()
 	capture.Terminate()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -408,7 +415,7 @@ func discoverChromium(options config.Options) int {
 	return 0
 }
 
-func launchAppShell(logger *log.Logger, options config.Options, cfg config.Config, address string, server *httpapi.Server) (*appshell.Session, *captureruntime.Manager, *collection.Coordinator, func(context.Context) error) {
+func launchAppShell(logger *log.Logger, options config.Options, cfg config.Config, address string, server *httpapi.Server, runtime *engine.Engine, collectionCtx context.Context) (*appshell.Session, *captureruntime.Manager, *collection.Coordinator, func(context.Context) error) {
 	discoveryCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	result, err := appshell.Discover(discoveryCtx, options.ChromiumPath)
 	cancel()
@@ -466,9 +473,12 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 		fatal(logger, err)
 		captureURL, err := server.SplitCaptureLaunchURL(target)
 		fatal(logger, err)
+		mainTransport, err := engine.MainBrowserTransportOptions(cfg)
+		fatal(logger, err)
 		capture, err = appshell.Launch(context.Background(), appshell.LaunchOptions{
 			Executable: result.Executable, ExtensionPath: extensionPath,
 			UserDataDir: captureProfile, URL: captureURL, StartMinimized: true, PrivateCDP: true, ExtraArgs: []string{"--start-minimized", "--profile-directory=" + captureProfileDirectory},
+			MainBrowserTransport: mainTransport, MainProfileDirectory: captureProfileDirectory,
 		})
 		fatal(logger, err)
 		containment, err := capture.StartCaptureContainment(logger)
@@ -533,6 +543,10 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 	if capture != nil {
 		captureManager, err = captureruntime.New(capture)
 		fatal(logger, err)
+		if cfg.Capture.XUsesMainProfile() {
+			fatal(logger, captureManager.RetainForProcess())
+			fatal(logger, engine.ConfigureXMainDailyRuntime(collectionCtx, runtime, capture, captureManager, captureProfilePath(options, cfg), captureProfileDirectory, result.Executable))
+		}
 		captureManager.SetTimingObserver(func(stage string, elapsed time.Duration, ok bool) {
 			logger.Printf("capture_transition_timing stage=%s elapsed_ms=%d ok=%t", stage, elapsed.Milliseconds(), ok)
 		})
@@ -645,8 +659,10 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 			logger.Printf("capture_transition_timing stage=%s elapsed_ms=%d", stage, elapsed.Milliseconds())
 		})
 		initializeCapture = func(ctx context.Context) error {
-			if err := bindQuiet(ctx, capture, captureManager.Snapshot().Generation); err != nil {
-				return err
+			if !cfg.Capture.XUsesMainProfile() {
+				if err := bindQuiet(ctx, capture, captureManager.Snapshot().Generation); err != nil {
+					return err
+				}
 			}
 			url, err := server.SplitCaptureLaunchURL(target)
 			if err != nil {
@@ -656,6 +672,11 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 		}
 	}
 	return window, captureManager, collector, initializeCapture
+}
+
+func captureProfilePath(options config.Options, cfg config.Config) string {
+	profile, _, _ := appshell.SplitProfilePaths(browserProfilePath(options, cfg))
+	return profile
 }
 
 func isolatedChromiumStartupLogPath(profilePath string) string {

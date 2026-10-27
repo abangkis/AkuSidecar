@@ -39,6 +39,7 @@ type captureZOrder struct {
 	job                                  windows.Handle
 	root                                 uint32
 	readerPID                            uint32 // Optional exact borrowed reader process; zero preserves normal containment.
+	retainReaderVisibility               bool   // Main-profile mode keeps explicit reader windows out of capture lowering.
 	logger                               *log.Logger
 	stop, done                           chan struct{}
 	once                                 sync.Once
@@ -77,6 +78,7 @@ func (w *Window) StartCaptureContainment(logger *log.Logger) (CaptureContainment
 	}
 	prop, _ := windows.UTF16PtrFromString("AkuBrowser.ExplicitReader." + fmt.Sprint(w.PID()))
 	c := &captureZOrder{job: w.owner.job, root: uint32(w.PID()), logger: logger, stop: make(chan struct{}), done: make(chan struct{}), readers: make(map[uintptr]captureReaderBinding), property: prop, pending: make(map[uintptr]time.Time)}
+	_, c.retainReaderVisibility = w.captureProtocol.(MainBrowserProtocol)
 	w.containment = c
 	go c.run()
 	return c, nil
@@ -100,6 +102,15 @@ func (c *captureZOrder) owns(hwnd uintptr) bool {
 }
 
 func (c *captureZOrder) isReader(hwnd uintptr) bool {
+	if c.retainReaderVisibility {
+		if _, tracked := c.readerLifetimes[hwnd]; tracked {
+			live, _, _ := captureIsWindow.Call(hwnd)
+			if live != 0 && c.owns(hwnd) {
+				return true
+			}
+			delete(c.readerLifetimes, hwnd)
+		}
+	}
 	binding, ok := c.readers[hwnd]
 	if !ok {
 		return false

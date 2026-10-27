@@ -32,6 +32,7 @@ type RuntimeStatus struct {
 	SyntheticExclusive       bool                 `json:"syntheticExclusive,omitempty"`
 	DevelopmentSession       bool                 `json:"developmentSession,omitempty"`
 	BatchPaused              bool                 `json:"batchPaused,omitempty"`
+	PersistentMain           bool                 `json:"persistentMain,omitempty"`
 }
 
 const (
@@ -152,6 +153,18 @@ func (c *Coordinator) notify() {
 // Bound before Start: retained permissions must be confirmed before handoff.
 func (c *Coordinator) SetHeadlessReadiness(check func() error) { c.readiness = check }
 func (c *Coordinator) ValidateSelection(mode string, sources []domain.Source) error {
+	if c.owner.Persistent() && mode != "browser" {
+		// X uses an independent daily collector; this validation must not
+		// confuse it with replacement of the retained main browser.
+		if mode != "headless" || len(sources) == 0 {
+			return captureruntime.ErrPersistent
+		}
+		for _, source := range sources {
+			if source != domain.SourceX {
+				return captureruntime.ErrPersistent
+			}
+		}
+	}
 	c.mu.Lock()
 	development := c.developmentSession
 	concurrent := c.concurrentSession != nil
@@ -181,6 +194,11 @@ func (c *Coordinator) ValidateSelection(mode string, sources []domain.Source) er
 }
 func (c *Coordinator) Request(mode string) {
 	c.mu.Lock()
+	if c.owner.Persistent() && mode != "browser" {
+		c.failure = "main-profile concurrency requires Browser for non-X sources; headless replacement is unavailable"
+		c.mu.Unlock()
+		return
+	}
 	if (c.developmentSession || c.concurrentSession != nil) && mode != "headless" {
 		c.failure = "development session requires headless collection"
 		c.mu.Unlock()
@@ -227,6 +245,10 @@ func (c *Coordinator) Status() RuntimeStatus {
 	}
 	quietAvailable := captureBackendAvailable(backend) && generation == s.Generation && effective == "browser"
 	status := RuntimeStatus{Available: true, Requested: requested, Effective: effective, Pending: requested != effective || interactive > 0 || collectionBorrow > 0, State: s.State, Failure: failure, Generation: s.Generation, ActiveLeases: s.ActiveLeases, HeadlessAvailable: available, QuietAvailable: quietAvailable, SupportedSources: []domain.Source{domain.SourceX, domain.SourceFacebook, domain.SourceInstagram, domain.SourceLinkedIn}}
+	status.PersistentMain = c.owner.Persistent()
+	if status.PersistentMain {
+		status.HeadlessAvailable = false
+	}
 	if c.fixtureHooks != nil {
 		status.SyntheticExclusive = !development
 		status.DevelopmentSession = development
@@ -301,6 +323,11 @@ func (c *Coordinator) StartWithDone(ctx context.Context) <-chan struct{} {
 	return done
 }
 func (c *Coordinator) reconcile(parent context.Context) {
+	if c.owner.Persistent() {
+		// The main browser's process lifetime cannot follow transient capture or
+		// reader intent. Work borrows targets, never replacement ownership.
+		return
+	}
 	c.mu.Lock()
 	if c.concurrentSession != nil {
 		// Concurrent fixture ownership is fixed. Reader intent and retries cannot

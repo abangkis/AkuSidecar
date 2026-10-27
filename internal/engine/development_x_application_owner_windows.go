@@ -35,6 +35,15 @@ type xApplicationOwnerConfig struct {
 	node, chrome, driver xApplicationOwnerAsset
 	reader, collector    ownedprofile.Descriptor
 	retainedProject      string
+	mainWindow           *appshell.Window
+	mainProfileDirectory string
+}
+
+type xApplicationRPC interface {
+	Call(context.Context, string, map[string]any, func([]byte)) (ownedrpc.Reply, error)
+	Close()
+	Deliver(int64, ownedrpc.Reply) bool
+	Progress(int64, []byte)
 }
 
 func (xApplicationOwnerConfig) String() string     { return "private-x-application-owner-config" }
@@ -52,7 +61,8 @@ type xApplicationOwner struct {
 	assets                      []*os.File
 	worker                      *appshell.OwnedCommand
 	stdin                       io.WriteCloser
-	pipe                        *ownedrpc.Client
+	pipe                        xApplicationRPC
+	mainProtocol                appshell.MainBrowserProtocol
 	ready                       chan error
 	readerDone                  chan struct{}
 	closed                      chan struct{}
@@ -381,6 +391,10 @@ func (b *xApplicationOwner) terminateOwnedTree() {
 	if b == nil {
 		return
 	}
+	if b.mainProtocol != nil {
+		b.closeBorrowedMain()
+		return
+	}
 	b.closeOnce.Do(func() {
 		close(b.stopping)
 		go func() {
@@ -464,7 +478,7 @@ func (b *xApplicationOwner) nativeManualPaths() (string, string) {
 	return b.cfg.node.path, b.cfg.chrome.path
 }
 func (b *xApplicationOwner) nativeManualScope(root, profile string) bool {
-	return !b.isClosed() && (b.readerLease.Matches(root, profile) || b.collectorLease.Matches(root, profile))
+	return !b.isClosed() && (b.readerLease != nil && b.readerLease.Matches(root, profile) || b.collectorLease != nil && b.collectorLease.Matches(root, profile))
 }
 func (b *xApplicationOwner) nativeManualJob(check func(windows.Handle) error) error {
 	return b.worker.WithOwnedJob(check)
@@ -496,9 +510,10 @@ type xApplicationRPCError struct {
 	diagnostic json.RawMessage
 }
 
-func (e *xApplicationRPCError) Error() string          { return e.code }
-func (e *xApplicationRPCError) GoString() string       { return e.Error() }
-func (e *xApplicationRPCError) diagnosticJSON() []byte { return e.diagnostic }
+func (e *xApplicationRPCError) Error() string            { return e.code }
+func (e *xApplicationRPCError) GoString() string         { return e.Error() }
+func (e *xApplicationRPCError) diagnosticJSON() []byte   { return e.diagnostic }
+func (e *xApplicationRPCError) dailyFailureCode() string { return closedXApplicationCode(e.code) }
 
 // initializeNative starts only the fixed packaged recipe. Announced PIDs are
 // candidates until both bindRole calls verify the live OS-owned processes.
@@ -603,6 +618,9 @@ func (b *xApplicationOwner) bindRole(ctx context.Context, role string, pid uint3
 		}
 	}
 	r = xManualPilotWindowsRole{role: role, bridge: b, protocolOwner: protocolOwner, root: d.Root, profile: d.Directory, rootID: d.RootID, profileID: d.DirectoryID, generation: 1}
+	if role == "reader" && b.cfg.mainWindow != nil {
+		r.mainWindow, r.mainProfileDirectory = b.cfg.mainWindow, b.cfg.mainProfileDirectory
+	}
 	valid := false
 	defer func() {
 		if !valid {

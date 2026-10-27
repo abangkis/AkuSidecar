@@ -61,7 +61,7 @@ export function serveDailyOwnerPipe({input,output,createOwner,onClosed=()=>{}}){
         }
         if(Buffer.isBuffer(result)){const raw=result;try{result=parseStrictJSON(raw.toString('utf8'),{maxJSONDepth:4,maxJSONTokens:96});}finally{raw.fill(0);}}
         emit({id:q.id,ok:true,result});
-      }catch(error){if(!processOperation)state='failed';emit(ownerErrorReply(q,error));}
+      }catch(error){if(!processOperation)state='failed';emit(ownerErrorReply(q.op==='daily_batch_seed'?{...q,op:'native_owner_seed'}:q,error));}
       finally{pending--;if(!processOperation)batchPending--;inflight.delete(q.id);}
     }catch{close();}finally{line.fill(0);}
   }

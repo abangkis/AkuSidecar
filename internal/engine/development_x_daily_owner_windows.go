@@ -322,12 +322,16 @@ func (n *xDailyOwner) BeginBatch(ctx, parent context.Context, generation uint64,
 	h.cfg.collector = desc
 	b := &xDailyBatch{owner: n, host: h, generation: generation, run: run}
 	n.batch = b
+	var rpcCause error
 	fail := func(reason string) (xDailyNativeBatch, error) {
 		n.failed = true
 		// A timed-out private RPC may still be acquiring owners in Node. Do not
 		// leave that late startup alive or advertise reader preservation.
 		if ctx.Err() != nil || !b.started.IsZero() && !time.Now().Before(b.Deadline()) {
 			n.host.terminateOwnedTree()
+		}
+		if rpcCause != nil {
+			return b, rpcCause
 		}
 		return b, errors.New(reason)
 	}
@@ -336,7 +340,11 @@ func (n *xDailyOwner) BeginBatch(ctx, parent context.Context, generation uint64,
 		ReaderPID    uint32 `json:"readerPID"`
 		CollectorPID uint32 `json:"collectorPID"`
 	}
-	if n.call(ctx, "daily_batch_begin", map[string]any{"generation": generation, "collectorProfile": profile}, &announced) != nil || announced.Owner <= 0 || announced.ReaderPID != n.reader.chrome.PID || announced.CollectorPID == 0 {
+	if err := n.call(ctx, "daily_batch_begin", map[string]any{"generation": generation, "collectorProfile": profile}, &announced); err != nil {
+		rpcCause = err
+		return fail("daily batch initialization failed")
+	}
+	if announced.Owner <= 0 || announced.ReaderPID != n.reader.chrome.PID || announced.CollectorPID == 0 {
 		return fail("daily batch initialization failed")
 	}
 	reader, err := h.bindRole(ctx, "reader", announced.ReaderPID, announced.Owner)
@@ -353,7 +361,11 @@ func (n *xDailyOwner) BeginBatch(ctx, parent context.Context, generation uint64,
 	seedCtx, cancel := context.WithDeadline(ctx, b.Deadline())
 	defer cancel()
 	var receipt xApplicationSeedReceipt
-	if n.call(seedCtx, "daily_batch_seed", map[string]any{"generation": generation, "owner": announced.Owner}, &receipt) != nil || !nativePilotAccount(receipt.AccountID) || receipt.Seeded == nil || !*receipt.Seeded || receipt.HomeReady == nil || !*receipt.HomeReady || receipt.ReaderPID != reader.chrome.PID || receipt.CollectorPID != collector.chrome.PID || receipt.ReaderProfile != reader.profile || receipt.CollectorProfile != collector.profile || n.account != "" && n.account != receipt.AccountID {
+	if err := n.call(seedCtx, "daily_batch_seed", map[string]any{"generation": generation, "owner": announced.Owner}, &receipt); err != nil {
+		rpcCause = err
+		return fail("daily seed rejected")
+	}
+	if !nativePilotAccount(receipt.AccountID) || receipt.Seeded == nil || !*receipt.Seeded || receipt.HomeReady == nil || !*receipt.HomeReady || receipt.ReaderPID != reader.chrome.PID || receipt.CollectorPID != collector.chrome.PID || receipt.ReaderProfile != reader.profile || receipt.CollectorProfile != collector.profile || n.account != "" && n.account != receipt.AccountID {
 		return fail("daily seed rejected")
 	}
 	n.account = receipt.AccountID
@@ -597,11 +609,16 @@ func (n *xDailyOwner) PrepareReader(ctx context.Context, req readerbroker.Reques
 	}
 	n.host.postMu.Lock()
 	if n.host.postBinding == nil {
-		err := n.host.nativeManualJob(func(job windows.Handle) error {
-			var err error
-			n.host.postBinding, err = appshell.NewOwnedReaderBinding(job, n.reader.chrome.PID)
-			return err
-		})
+		var err error
+		if n.reader.mainWindow != nil {
+			n.host.postBinding, err = n.reader.mainWindow.BorrowMainReaderBinding()
+		} else {
+			err = n.host.nativeManualJob(func(job windows.Handle) error {
+				var e error
+				n.host.postBinding, e = appshell.NewOwnedReaderBinding(job, n.reader.chrome.PID)
+				return e
+			})
+		}
 		if err != nil {
 			n.host.postMu.Unlock()
 			return readerbroker.NativePostPreparation{}, err

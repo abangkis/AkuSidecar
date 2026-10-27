@@ -80,6 +80,9 @@ type LaunchOptions struct {
 	// PrivateCDP opts this managed minimized capture window into a private
 	// inherited-pipe DevTools connection. It never opens a debugging port.
 	PrivateCDP bool
+	// Only explicit daily main-profile wiring supplies the sealed Node lane.
+	MainBrowserTransport *MainBrowserTransportOptions
+	MainProfileDirectory string
 	// Explicit native reader windows need normal Chrome navigation controls.
 	// The product UI and legacy capture host retain app mode by default.
 	NormalWindow bool
@@ -116,6 +119,7 @@ type Window struct {
 	owner                processOwnership
 	capturePipe          captureProtocolLaunch
 	captureProtocol      CaptureProtocol
+	mainProfileDirectory string
 	icon                 windowIcon
 	done                 chan error
 	executable           string
@@ -408,9 +412,30 @@ func launch(ctx context.Context, options LaunchOptions, afterStart func(*exec.Cm
 		}
 	}
 	var capturePipe captureProtocolLaunch
+	if options.MainBrowserTransport != nil {
+		if !options.PrivateCDP || !ValidProfileDirectory(options.MainProfileDirectory) {
+			return nil, errors.New("main browser transport requires an explicit private profile-directory")
+		}
+		matches := 0
+		for _, arg := range options.ExtraArgs {
+			if strings.HasPrefix(arg, "--profile-directory=") {
+				if arg != "--profile-directory="+options.MainProfileDirectory {
+					return nil, errors.New("main browser profile-directory changed")
+				}
+				matches++
+			}
+		}
+		if matches != 1 {
+			return nil, errors.New("main browser profile-directory must be bound exactly once")
+		}
+	}
 	if options.PrivateCDP {
 		var err error
-		capturePipe, err = newCaptureProtocolLaunch()
+		if options.MainBrowserTransport != nil {
+			capturePipe, err = newMainBrowserProtocolLaunch(ctx, *options.MainBrowserTransport)
+		} else {
+			capturePipe, err = newCaptureProtocolLaunch()
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -514,6 +539,7 @@ func launch(ctx context.Context, options LaunchOptions, afterStart func(*exec.Cm
 	}
 	if capturePipe != nil {
 		window.captureProtocol = capturePipe.protocol()
+		window.mainProfileDirectory = options.MainProfileDirectory
 	}
 	go func() {
 		err := command.Wait()

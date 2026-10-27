@@ -26,6 +26,8 @@ type xDailyRouting struct {
 	cancel           context.CancelFunc
 	reason           string
 	failurePhase     string
+	firstFailure     error // Private typed cause; cleanup cannot replace it.
+	failureCode      string
 	factory          func(context.Context, context.Context) (xDailyNativeOwner, error)
 	startUsed        bool
 	cleanupUncertain bool
@@ -52,6 +54,7 @@ type XCaptureStatus struct {
 	MaxBatchMS                   int    `json:"maxBatchMs,omitempty"`
 	DerivationAuthorized         bool   `json:"derivationAuthorized"`
 	FailurePhase                 string `json:"failurePhase,omitempty"`
+	FailureCode                  string `json:"failureCode,omitempty"`
 	Cleanup                      string `json:"cleanup,omitempty"`
 }
 
@@ -66,6 +69,9 @@ func PrepareXDailyDevelopment(cfg config.Config, options config.Options) (*XDail
 	}
 	if !xDailyBuildSupported || !cfg.Dev || !options.Dev || cfg.Deployment.Mode != "" && cfg.Deployment.Mode != "development" {
 		return nil, errors.New("concurrent X capture requires the Windows auth_session_dev development build")
+	}
+	if cfg.Capture.XUsesMainProfile() && (!cfg.WindowsCaptureSplit || !options.AppShell) {
+		return nil, errors.New("main-profile X concurrency requires the ordinary Windows capture/UI split")
 	}
 	if options.DevelopmentSessionReuse != "" || options.DevelopmentXManualPlan != "" || options.DevelopmentQAPilotPlan != "" || options.DevelopmentQAPilotPrepare != "" {
 		return nil, errors.New("daily concurrent X capture cannot mix with manual or QA selectors")
@@ -120,6 +126,7 @@ func (e *Engine) XCaptureStatus() XCaptureStatus {
 	e.xDaily.mu.RLock()
 	defer e.xDaily.mu.RUnlock()
 	status.FailurePhase = e.xDaily.failurePhase
+	status.FailureCode = e.xDaily.failureCode
 	if e.xDaily.owner != nil {
 		status.Cleanup = "verified"
 	}

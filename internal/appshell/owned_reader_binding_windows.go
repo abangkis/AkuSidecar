@@ -18,6 +18,18 @@ import (
 // starts no monitor, adopts no process and never closes a reader window.
 type OwnedReaderBinding struct{ containment *captureZOrder }
 
+// BorrowMainReaderBinding shares the already-running window registry. It
+// creates no second containment monitor and owns no browser/process lifetime.
+func (w *Window) BorrowMainReaderBinding() (*OwnedReaderBinding, error) {
+	w.ownershipMu.Lock()
+	defer w.ownershipMu.Unlock()
+	c, ok := w.containment.(*captureZOrder)
+	if !ok || !c.retainReaderVisibility {
+		return nil, errors.New("main reader containment unavailable")
+	}
+	return &OwnedReaderBinding{containment: c}, nil
+}
+
 var ownedReaderMarker = regexp.MustCompile(`^AkuBrowser reader split_[a-f0-9]{32}$`)
 
 func NewOwnedReaderBinding(job windows.Handle, pid uint32) (*OwnedReaderBinding, error) {
@@ -59,6 +71,18 @@ func (b *OwnedReaderBinding) WaitForForeground(ctx context.Context, marker strin
 		hwnd, err := c.findOwnedMarker(marker)
 		if err != nil {
 			return 0, false, err
+		}
+		if hwnd != 0 && c.retainReaderVisibility {
+			if c.readerLifetimes == nil {
+				c.readerLifetimes = map[uintptr]struct{}{}
+			}
+			retainLiveReaders(c.readerLifetimes, func(h uintptr) bool { live, _, _ := captureIsWindow.Call(h); return live != 0 })
+			if _, exists := c.readerLifetimes[hwnd]; !exists && len(c.readerLifetimes) >= 32 {
+				return 0, false, errors.New("main reader window capacity reached")
+			}
+			// Visibility exemption is not a foreground ticket. Physical focus
+			// and the later short-lived property binding remain independently checked.
+			c.readerLifetimes[hwnd] = struct{}{}
 		}
 		foreground, _, _ := captureForeground.Call()
 		return hwnd, hwnd != 0 && foreground == hwnd, nil

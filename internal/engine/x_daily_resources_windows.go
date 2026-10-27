@@ -32,6 +32,15 @@ func ConfigureXDailyNativeRuntime(parent context.Context, e *Engine, ordinaryPro
 	if !e.XDailyConfigured() {
 		return nil
 	}
+	if e.config.Capture.XUsesMainProfile() {
+		e.xDaily.mu.RLock()
+		configured := e.xDaily.factory != nil
+		e.xDaily.mu.RUnlock()
+		if !configured {
+			return errors.New("main X browser must be composed before scheduling")
+		}
+		return nil
+	}
 	readerPath := e.config.Capture.XReaderProfile
 	if actual, err := filepath.EvalSymlinks(ordinaryProfile); err == nil {
 		ordinaryProfile = actual

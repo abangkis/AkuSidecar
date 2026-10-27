@@ -6,6 +6,23 @@ wording must not override the current checkpoint.
 
 ## Current MVP: daily X capture in main dev (2026-10-27)
 
+Main-profile connection is now the approved next integration: retain one headed
+main owner, delegate the sole private eventful transport to Node, borrow X
+reader capabilities and create disposable X collectors. Preserve ordinary
+Browser/AkuBridge sources; reject conflicting non-X headless replacement.
+Delivery gates are transport/lifecycle, borrowed Engine/Store wiring, then local
+synthetic Chrome ownership acceptance. No real-profile activation is implied.
+See [main-profile responsibilities and acceptance](x-main-profile-connection-design.md).
+
+Implementation is present and default-off. The offline gate passed 30 Node
+checks, seven scoped Go packages and all four build modes, including actual
+Windows IPC with synthetic Chrome endpoints. Main reader and collector Job
+attestation remain independent. One explicitly authorized empty-profile Chrome
+fixture passed real transport, exact Job/subprofile checks, Chrome/window
+survival after fixture Node exit and verified cleanup/profile removal. Physical
+foreground and signed-in capture remain pending; no daily main-profile activation
+is claimed. See the local receipt in the main-profile design for evidence.
+
 1. Add the restart-required `capture.xMode` selection and ordinary main-dev
    composition, preserving normal Store/settings/provider/UI. Until the batch
    adapter is attached, report not-ready and prohibit legacy X fallback.

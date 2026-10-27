@@ -5,9 +5,25 @@ package engine
 import (
 	"context"
 	"errors"
+	"github.com/abangkis/AkuSidecar/internal/appshell"
+	"github.com/abangkis/AkuSidecar/internal/captureruntime"
+	"github.com/abangkis/AkuSidecar/internal/config"
 )
 
 const xDailyBuildSupported = false
+
+func MainBrowserTransportOptions(cfg config.Config) (*appshell.MainBrowserTransportOptions, error) {
+	if cfg.Capture.XUsesMainProfile() {
+		return nil, errors.New("main profile unavailable in this build")
+	}
+	return nil, nil
+}
+func ConfigureXMainDailyRuntime(_ context.Context, e *Engine, _ *appshell.Window, _ *captureruntime.Manager, _, _, _ string) error {
+	if e.config.Capture.XUsesMainProfile() {
+		return errors.New("main profile unavailable in this build")
+	}
+	return nil
+}
 
 func ConfigureXDailyNativeRuntime(_ context.Context, e *Engine, _, _ string) error {
 	if e.XDailyConfigured() {

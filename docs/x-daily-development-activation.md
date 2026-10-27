@@ -1,5 +1,11 @@
 # Daily X main-dev activation and rollback
 
+This preparer and its historical payload describe the dedicated-reader route.
+The newly implemented [main-profile connection](x-main-profile-connection-design.md)
+requires a new candidate containing `main-browser-transport` and an explicit
+`capture.xReaderSource: main` proposal without xReaderProfile. Do not retrofit,
+activate or infer main-profile readiness from the earlier dedicated package.
+
 ## Prepared delivery, not operational approval
 
 This package targets ordinary AkuBrowser development on port 11122, its existing

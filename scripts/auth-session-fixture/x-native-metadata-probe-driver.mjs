@@ -755,6 +755,9 @@ function isHomeTarget(value) {
 
 let executable = '';
 let applicationScope = null;
+// Only the sealed main transport factory can inject this Node-local port.
+// Go owns the existing Chrome lifecycle; this port never grants browser close.
+let borrowedMainTransport = null;
 const manualStartupAllowed=()=>applicationScope?applicationScope.seedGrant?.startupAllowed()===true:process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED==='1';
 const retainedTransferAllowed=()=>applicationScope?applicationScope.seedGrant?.transferAllowed()===true:process.env.AKU_X_MANUAL_RETAINED_TRANSFER_ONCE==='1';
 const shortTransferAllowed=()=>applicationScope?applicationScope.seedGrant?.transferAllowed()===true:process.env.AKU_X_QA_SHORT_TRANSFER_ALLOWED==='1';
@@ -826,6 +829,19 @@ export async function executeManualReply(message,executeCommand=execute,reply=em
 
 function cdpWrite(message) {
   if (cdpFailure) throw probeError(cdpFailure);
+  if (borrowedMainTransport) {
+    if (message.method === 'Browser.close' || !borrowedMainTransport.alive()) throw probeError('borrowed_reader_unavailable');
+    void borrowedMainTransport.call(message.method,message.params,message.sessionId??'',COMMAND_TIMEOUT_MS)
+      .then(result=>{
+        if(message.method==='Target.createTarget')borrowedMainTransport.reserveTarget?.(result.targetId);
+        if(message.method==='Target.attachToTarget')borrowedMainTransport.reserveSession?.(result.sessionId);
+        if(message.method==='Target.closeTarget'&&result.success===true)borrowedMainTransport.releaseTarget?.(message.params.targetId);
+        if(message.method==='Target.detachFromTarget')borrowedMainTransport.releaseSession?.(message.params.sessionId);
+        dispatchCDP({id:message.id,result,...(message.sessionId?{sessionId:message.sessionId}:{})});
+      })
+      .catch(()=>failCDP('borrowed_reader_command_failed'));
+    return;
+  }
   if (!child || childExited || !child.stdio?.[3] || pending.size >= MAX_PENDING_COMMANDS) throw probeError('cdp_unavailable');
   let line;
   try { line = Buffer.from(`${JSON.stringify(message)}\0`, 'utf8'); } catch { throw probeError('cdp_encode_failed'); }
@@ -1222,10 +1238,10 @@ async function launchRetainedQAChrome(message) {
   return initializeChromeSession(processChild, profilePath);
 }
 
-async function initializeChromeSession(processChild, profileReal) {
+async function initializeChromeSession(processChild, profileReal, borrowedTarget = null) {
   const targetDeadline = Date.now() + 10_000;
-  let targetId = null;
-  while (Date.now() <= targetDeadline) {
+  let targetId = borrowedTarget;
+  while (!targetId && Date.now() <= targetDeadline) {
     const targets = await send('Target.getTargets');
     if (!Array.isArray(targets.targetIds)) throw probeError('target_inventory_invalid');
     if (targets.targetIds.length > 1) throw probeError('target_inventory_ambiguous');
@@ -2314,7 +2330,7 @@ export async function createApplicationManualOwner({chromePath,readerProfile,col
 // Daily composition has a persistent, exclusively owned reader and a new
 // actor/session/grant for every disposable collector. No consumed pilot grant
 // is reset, and the manual factory above retains its one-use semantics.
-export async function createApplicationDailyOwner({chromePath,readerProfile,loadAssets,emitProgress=()=>{}}){
+export async function createApplicationDailyOwner({chromePath,readerProfile,loadAssets,emitProgress=()=>{},borrowedReader=null}){
   if(applicationScope||child||protocolOwner||driverMode!=='single_phase'||typeof loadAssets!=='function')throw probeError('daily_owner_unavailable');
   for(const path of [chromePath,readerProfile])if(typeof path!=='string'||!isAbsolute(path)||resolve(path)!==path)throw probeError('daily_owner_path_invalid');
   const info=await lstat(chromePath);
@@ -2325,7 +2341,14 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
   applicationScope={loadAssets,emitProgress};
   let initialized=false,closed=false,failed=false,base,batch,generation=0,account;
   const posts=new Map();
-  const check=async()=>{if(closed||childExited||cdpFailure||!await verifyTwoPhaseDirectories())throw probeError('daily_reader_changed');return{readerPID:child.pid,readerProfile};};
+  let borrowedTarget=null,unsubscribeBorrowed=null;
+  if(borrowedReader){
+    if(!Number.isSafeInteger(borrowedReader.pid)||borrowedReader.pid<1||typeof borrowedReader.profileDirectory!=='string'||!borrowedReader.profileDirectory||/[\\/\u0000-\u001f]/u.test(borrowedReader.profileDirectory)||
+      typeof borrowedReader.transport?.call!=='function'||typeof borrowedReader.transport?.subscribe!=='function'||typeof borrowedReader.transport?.alive!=='function')throw probeError('borrowed_reader_rejected');
+    borrowedMainTransport=borrowedReader.transport;
+    unsubscribeBorrowed=borrowedMainTransport.subscribe(raw=>{try{dispatchCDP(raw);}catch{failCDP('borrowed_reader_event_failed');}});
+  }
+  const check=async()=>{if(closed||childExited||cdpFailure||borrowedReader&&!borrowedMainTransport.alive()||!await verifyTwoPhaseDirectories())throw probeError('daily_reader_changed');return{readerPID:child.pid,readerProfile};};
   const home=async()=>{const end=Date.now()+MANUAL_TIMING.collectorHomeReadyMS;while(!(await loginState({owner:active.owner})).ready){await check();if(Date.now()>=end)throw probeError('daily_reader_login_unavailable');await new Promise(r=>setTimeout(r,200));}};
   const endBatch=async()=>{
     if(!batch)return{closed:true};const current=batch;
@@ -2341,9 +2364,15 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
   return Object.freeze({
     async initialize(){
       if(initialized||closed)throw probeError('daily_reader_replay');initialized=true;
-      child=spawn(executable,twoPhaseChromeArgs(readerProfile,true),{windowsHide:false,stdio:['ignore','ignore','ignore','pipe','pipe']});childExited=false;bindChrome(child);
+      if(borrowedReader){
+        child={pid:borrowedReader.pid};childExited=false;
+        const created=await borrowedMainTransport.call('Target.createTarget',{url:'https://x.com/home',background:true},'',10000);
+        if(!safeId(created.targetId))throw probeError('borrowed_reader_target_failed');borrowedTarget=created.targetId;borrowedMainTransport.reserveTarget?.(borrowedTarget);
+      }else{
+        child=spawn(executable,twoPhaseChromeArgs(readerProfile,true),{windowsHide:false,stdio:['ignore','ignore','ignore','pipe','pipe']});childExited=false;bindChrome(child);
+      }
       if(!Number.isSafeInteger(child.pid)||child.pid<1)throw probeError('daily_reader_launch_failed');
-      const launched=await initializeChromeSession(child,readerProfile);await home();base=active;
+      const launched=await initializeChromeSession(child,readerProfile,borrowedTarget);await home();base=active;
       return{owner:base.owner,readerPID:launched.pid};
     },
     async check(){if(!initialized)throw probeError('daily_reader_unavailable');return check();},
@@ -2391,7 +2420,25 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
       if(!record)throw probeError('daily_reader_request_missing');
       try{return await record.actor.execute(message);}finally{if(message.op!=='manual_prepare_post'){clearTimeout(record.timer);posts.delete(key);await record.actor.close();}}
     },
-    async close(){if(closed)return;closed=true;for(const p of posts.values()){clearTimeout(p.timer);await p.actor.close().catch(()=>{});}posts.clear();try{if(batch)await closeShortCollector(batch);}finally{await closeChrome();}},
+    async close(){
+      if(closed)return;closed=true;
+      for(const p of posts.values()){clearTimeout(p.timer);await p.actor.close().catch(()=>{});}posts.clear();
+      if(!borrowedReader){try{if(batch)await closeShortCollector(batch);}finally{await closeChrome();}return;}
+      // Borrower cleanup may retire only its collector and explicit bootstrap
+      // target. Main Chrome/profile/Job lifetime remains with the Go owner.
+      let cleanupError;
+      try{if(batch)await endBatch();}catch(error){cleanupError=error;}
+      try{
+        if(base?.sessionId){await borrowedMainTransport.call('Target.detachFromTarget',{sessionId:base.sessionId});borrowedMainTransport.releaseSession?.(base.sessionId);}
+        if(borrowedTarget){
+          const result=await borrowedMainTransport.call('Target.closeTarget',{targetId:borrowedTarget});
+          if(result.success!==true)throw probeError('borrowed_reader_cleanup_uncertain');
+          borrowedMainTransport.releaseTarget?.(borrowedTarget);
+        }
+      }catch(error){cleanupError??=error;}
+      unsubscribeBorrowed?.();
+      if(cleanupError)throw cleanupError;
+    },
   });
 }
 

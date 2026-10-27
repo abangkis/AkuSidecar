@@ -19,8 +19,11 @@ export async function buildNativeOwnerPackage(outputDirectory){
 export async function buildNativeDailyOwnerPackage(outputDirectory){
 	return buildOwnerPackage(outputDirectory,true);
 }
-async function buildOwnerPackage(outputDirectory,daily){
-  const entry=daily?'internal/collection/headless/worker/native-pilot/daily-owner.mjs':manualEntry;
+export async function buildMainBrowserTransportPackage(outputDirectory){
+  return buildOwnerPackage(outputDirectory,false,true);
+}
+async function buildOwnerPackage(outputDirectory,daily,main=false){
+  const entry=main?'internal/collection/headless/worker/native-pilot/main-browser-transport.mjs':daily?'internal/collection/headless/worker/native-pilot/daily-owner.mjs':manualEntry;
   const output=resolve(outputDirectory),rel=relative(project,output);
   if(!rel||isAbsolute(rel)||rel==='..'||rel.startsWith('..'+sep))throw new Error('package_output_must_be_project_local');
   const assets=await sourceAssets(resolve(project,'..','AkuBridge'),'x');
@@ -52,7 +55,7 @@ async function buildOwnerPackage(outputDirectory,daily){
   await visit(entry);
   const modules=Object.fromEntries([...graph].sort(([a],[b])=>a.localeCompare(b)));
   const manifest={schema:'aku.x.application-owner-package.v1',entry,nodeMinimum:'22.15.0',capabilities:{sessionSeed:true,readerPost:true},
-    ...(daily?{dailyLifecycle:true}:{}),dataAssets:[{path:timingPath,sha256:hash(timingSource)}],
+    ...(daily?{dailyLifecycle:true}:{}),...(main?{mainLifecycle:true}:{}),dataAssets:[{path:timingPath,sha256:hash(timingSource)}],
     modules:Object.entries(modules).map(([path,source])=>({path,sha256:hash(source)})),
     captureAssets:assetRows.map(({relative:path,sha256})=>({path,sha256}))};
   // The synchronous hook reads embedded bytes only. Runtime relative imports
@@ -77,10 +80,10 @@ registerHooks({resolve(specifier,context,next){
  if(!own(modules,key))throw new Error('application_owner_import_rejected');
  return{format:'module',source:modules[key],shortCircuit:true};
 }});
-import(prefix+${JSON.stringify(entry)}).then(module=>module.${daily?'runDailyOwner':'runApplicationOwner'}()).catch(()=>{process.exitCode=2;process.stdin.destroy();process.stdout.end();});
+import(prefix+${JSON.stringify(entry)}).then(module=>module.${main?'runMainBrowserTransport':daily?'runDailyOwner':'runApplicationOwner'}()).catch(()=>{process.exitCode=2;process.stdin.destroy();process.stdout.end();});
 `;
   await mkdir(output,{recursive:true});
-  const driverName=daily?'x-daily-owner.cjs':'x-application-owner.cjs';
+  const driverName=main?'main-browser-transport.cjs':daily?'x-daily-owner.cjs':'x-application-owner.cjs';
   const driver=joinOutput(output,driverName);
   await writeFile(driver,launcher,{encoding:'utf8'});
   const record={...manifest,driver:{file:driverName,sha256:hash(launcher)}};

@@ -14,6 +14,7 @@ var (
 	ErrBusy        = errors.New("capture runtime has active leases")
 	ErrUnavailable = errors.New("capture runtime is unavailable")
 	ErrStopped     = errors.New("capture runtime is stopped")
+	ErrPersistent  = errors.New("main browser ownership is persistent until process shutdown")
 )
 
 // Process must release its entire owned process tree before CloseForRetry
@@ -64,6 +65,7 @@ type Manager struct {
 	leases              int
 	stopped             bool
 	launchBlocked       bool
+	persistent          bool
 	done                chan error
 	finishOnce          sync.Once
 	transitionReadiness func(context.Context) error
@@ -197,6 +199,10 @@ func (m *Manager) Replace(ctx context.Context, launch Launch) error {
 		return err
 	}
 	m.mu.Lock()
+	if m.persistent {
+		m.mu.Unlock()
+		return ErrPersistent
+	}
 	if m.stopped {
 		m.mu.Unlock()
 		return ErrStopped
@@ -308,6 +314,10 @@ func (m *Manager) Recover(ctx context.Context, launch Launch) error {
 	m.operation.Lock()
 	defer m.operation.Unlock()
 	m.mu.Lock()
+	if m.persistent {
+		m.mu.Unlock()
+		return ErrPersistent
+	}
 	if m.stopped || m.leases != 0 || m.current == nil || (m.state != Blocked && m.state != Failed) {
 		m.mu.Unlock()
 		return ErrUnavailable
@@ -369,6 +379,26 @@ func (m *Manager) Recover(ctx context.Context, launch Launch) error {
 	m.mu.Unlock()
 	go m.watch(value)
 	return nil
+}
+
+// RetainForProcess is a lifecycle policy, not an unreleased work lease.
+// Shutdown still owns final cleanup; mode changes cannot replace this owner.
+func (m *Manager) RetainForProcess() error {
+	m.operation.Lock()
+	defer m.operation.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.persistent || m.stopped || m.state != Ready || m.current == nil || m.current.driver != "browser" {
+		return ErrUnavailable
+	}
+	m.persistent = true
+	return nil
+}
+
+func (m *Manager) Persistent() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.persistent
 }
 
 func (m *Manager) PID() int {

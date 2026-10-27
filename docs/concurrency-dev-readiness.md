@@ -5,6 +5,20 @@ roadmap are evidence, not a new list of prerequisites.
 
 ## Current daily-use MVP target (2026-10-27)
 
+The main-profile connection is approved for offline implementation; the dedicated
+reader package is historical evidence, not proof that the main login is connected.
+Track the [main-profile transport, ownership and compatibility gates](x-main-profile-connection-design.md).
+
+Main-profile code/wiring now passes offline/synthetic regressions (30 Node
+checks, seven Go packages, four main builds). The Windows fixture uses real
+Node/private IPC and fake Chrome endpoints. A separately authorized one-run
+empty-profile Chrome fixture also passed: real projected CDP calls, exact main
+Job/subprofile scope, Chrome/window survival for two seconds after fixture Node
+exit, verified owned cleanup and profile removal. Evidence:
+`build/x-main-chrome-local-76cc3af0942f4ac594d1c9d2709a7e4b/chrome-local.log.txt`.
+Physical foreground and signed-in main-profile capture remain unqualified. No
+activation, real transfer, user-database access or Auto Update change occurred.
+
 The target is repeated X capture in ordinary main dev, selectable with
 `capture.xMode: exclusive | concurrent`, initially requiring graceful restart.
 Normal Store, effective provider/settings, Timeline and non-X scheduling remain

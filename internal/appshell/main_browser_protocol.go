@@ -1,0 +1,32 @@
+package appshell
+
+import (
+	"context"
+	"encoding/json"
+	"time"
+)
+
+// MainBrowserTransportOptions selects an explicitly packaged Node transport.
+// It owns CDP bytes only. The Window remains the sole Chrome lifecycle owner.
+type MainBrowserTransportOptions struct {
+	Node, Driver             string
+	NodeSHA256, DriverSHA256 string
+	StartupTimeout           time.Duration
+}
+
+// MainBrowserProtocol adds a private X lane to the ordinary projected calls.
+// Neither lane exposes raw network events/cookie responses to Go.
+type MainBrowserProtocol interface {
+	CaptureProtocol
+	CallX(context.Context, string, map[string]any) (json.RawMessage, error)
+	TransportWorker() *OwnedCommand
+}
+
+// Diagnostics are a closed, Node-normalized projection. Formatting never emits
+// payloads; callers explicitly decode the private diagnostic when needed.
+type MainBrowserError struct {
+	Code       string
+	Diagnostic json.RawMessage
+}
+
+func (*MainBrowserError) Error() string { return "main browser operation rejected" }

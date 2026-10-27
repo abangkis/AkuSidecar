@@ -14,6 +14,8 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/abangkis/AkuSidecar/internal/appshell"
+
 	"github.com/abangkis/AkuSidecar/internal/ownedprocess"
 
 	"golang.org/x/sys/windows"
@@ -42,6 +44,8 @@ type xManualPilotWindowsRole struct {
 	root, rootID, profile, profileID string
 	rootPin, profilePin              windows.Handle
 	generation                       uint64
+	mainWindow                       *appshell.Window
+	mainProfileDirectory             string
 }
 type xManualPilotWindowsBackend struct {
 	roles map[string]xManualPilotWindowsRole
@@ -139,15 +143,19 @@ func (b *xManualPilotWindowsBackend) snapshot(ctx context.Context, role string) 
 	if err != nil || nodeParent != r.parent.PID {
 		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "node_parent")
 	}
-	if chromeParent != r.node.PID {
+	if r.mainWindow == nil && chromeParent != r.node.PID || r.mainWindow != nil && (r.role != "reader" || chromeParent != r.parent.PID || r.mainWindow.PID() != int(r.chrome.PID)) {
 		return nativePilotOwner{}, xManualPilotCoreFailure(nil, "chrome_parent")
 	}
 	var job windows.Handle
 	checked := false
-	if err := r.bridge.nativeManualJob(func(held windows.Handle) error {
+	checkJob := func(held windows.Handle) error {
 		checked = true
 		job = held
-		for _, pid := range []uint32{r.node.PID, r.chrome.PID} {
+		members := []uint32{r.node.PID, r.chrome.PID}
+		if r.mainWindow != nil {
+			members = []uint32{r.chrome.PID}
+		}
+		for _, pid := range members {
 			h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
 			if err != nil {
 				return xManualPilotCoreFailure(nil, "job_unavailable")
@@ -159,7 +167,30 @@ func (b *xManualPilotWindowsBackend) snapshot(ctx context.Context, role string) 
 			}
 		}
 		return nil
-	}); err != nil {
+	}
+	checkOwnerJob := r.bridge.nativeManualJob
+	if r.mainWindow != nil {
+		// Reader and transport are siblings under Sidecar, with independent
+		// Jobs. Prove each actual boundary rather than forging a shared Job.
+		if err = r.bridge.nativeManualJob(func(held windows.Handle) error {
+			h, e := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, r.node.PID)
+			if e != nil {
+				return e
+			}
+			defer windows.CloseHandle(h)
+			member, e := ownedprocess.Membership(h, held)
+			if e != nil || !member {
+				return errors.New("x-main-transport-job-changed")
+			}
+			return nil
+		}); err != nil {
+			return nativePilotOwner{}, err
+		}
+		checkOwnerJob = func(check func(windows.Handle) error) error {
+			return r.mainWindow.WithMainBrowserJob(r.profile, r.mainProfileDirectory, check)
+		}
+	}
+	if err := checkOwnerJob(checkJob); err != nil {
 		return nativePilotOwner{}, err
 	}
 	if !checked || job == 0 {

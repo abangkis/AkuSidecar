@@ -90,6 +90,8 @@ func (e *Engine) StartXDaily(ctx context.Context, request XDailyStartRequest) er
 		if e.xDaily.reason == "" {
 			e.xDaily.reason = "reader-start-failed"
 			e.xDaily.failurePhase = "reader-startup"
+			e.xDaily.firstFailure = err
+			e.xDaily.failureCode = xDailyClosedFailureCode(err)
 		}
 		e.xDaily.mu.Unlock()
 		return errors.New("daily X reader startup failed")
@@ -205,6 +207,8 @@ func (e *Engine) queueXDailyBatch(run domain.Run, payload map[string]any) error 
 				if e.xDaily.reason == "" {
 					e.xDaily.reason = "batch-failed"
 					e.xDaily.failurePhase = phase
+					e.xDaily.firstFailure = cause
+					e.xDaily.failureCode = xDailyClosedFailureCode(cause)
 				}
 			}
 			// Generation and done identity prevent a late completion retiring a successor.
@@ -258,6 +262,14 @@ func (e *Engine) queueXDailyBatch(run domain.Run, payload map[string]any) error 
 		stop()
 	}()
 	return nil
+}
+
+func xDailyClosedFailureCode(err error) string {
+	var carrier interface{ dailyFailureCode() string }
+	if errors.As(err, &carrier) {
+		return carrier.dailyFailureCode()
+	}
+	return ""
 }
 
 func (e *Engine) stopXDaily(ctx context.Context) error {

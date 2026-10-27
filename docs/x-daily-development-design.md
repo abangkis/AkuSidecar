@@ -2,6 +2,11 @@
 
 ## Target and selected policy (2026-10-27)
 
+The next approved integration adds the existing main profile as a borrowed reader
+through [the main-profile connection](x-main-profile-connection-design.md).
+The dedicated-reader implementation and its prepared package remain intact;
+they do not establish main-profile support or authorize runtime activation.
+
 The MVP is ordinary, repeated X capture in AkuBrowser main dev, with the native
 reader usable during collection and results entering the existing Timeline.
 An isolated QA package is supporting evidence, not the delivered user journey.
