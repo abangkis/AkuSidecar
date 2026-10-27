@@ -18,6 +18,19 @@ roadmap are evidence, not a new list of prerequisites.
 
 ## Current implementation
 
+### SQLite canceled-query ownership fixed by upstream driver (2026-10-27)
+
+The separately authorized driver update now selects `modernc.org/sqlite v1.57.0`
+and matching libc v1.74.4, superseding the tested but uncommitted v1.40.1 choice.
+Schema 30, Store/account policy, deadlines and inference SDK v0.24.0 remain
+unchanged. Current-version validation and the separately dated historical
+v1.40.1 cancellation/pilot evidence are recorded in the linked upgrade note.
+The v1.57.0 public-API stress and old/new/old synthetic database checks passed;
+67 pilot groups, 59 nested cases and all four actual-main builds also passed.
+See [dependency changes, evidence and limits](sqlite-driver-upgrade.md).
+This fixes the old driver cancellation leak independently of the Engine's drain
+correction. No native session transfer or main-dev runtime activation occurred.
+
 ### Native capture-start QA passes the complete selected gate (2026-10-26)
 
 One explicitly authorized execution of preparation
