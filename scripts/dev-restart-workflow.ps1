@@ -64,9 +64,7 @@ function Get-RegisteredDevService {
     $text = & $supervisor status --json --config $supervisorConfig
     if ($LASTEXITCODE -ne 0) { throw 'Unable to verify Supervisor process ownership.' }
     $status = ($text | Out-String) | ConvertFrom-Json
-    $service = @($status.services | Where-Object { $_.id -eq 'akusidecar' })
-    if ($service.Count -ne 1) { throw 'Supervisor did not report exactly one AkuSidecar service.' }
-    return $service[0]
+    return Get-DevRuntimeServiceStatus $status
 }
 $deadline = [DateTime]::UtcNow.AddSeconds($WaitForIdleSeconds)
 $requestedShutdown = $false

@@ -11,6 +11,17 @@ function Get-DevRuntimeEntries {
     )
 }
 
+function Get-DevRuntimeRelativeFilePath([string] $Directory, [string] $File) {
+    # Windows PowerShell 5.1 lacks Path.GetRelativePath. Inventory only needs
+    # descendants, so use the same containment rule on both supported shells.
+    $boundary = [IO.Path]::GetFullPath($Directory).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+    $absoluteFile = [IO.Path]::GetFullPath($File)
+    if (-not $absoluteFile.StartsWith($boundary, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Development inventory file is outside its bundle entry.'
+    }
+    return $absoluteFile.Substring($boundary.Length).Replace([char]92, [char]47)
+}
+
 function Get-DevRuntimeInventory([string] $RuntimeRoot, [switch] $Candidate) {
     $root = Get-WorkerBackupCanonicalRuntimeRoot $RuntimeRoot
     $rows = @()
@@ -24,7 +35,7 @@ function Get-DevRuntimeInventory([string] $RuntimeRoot, [switch] $Candidate) {
             if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Development bundle contains a reparse point.' }
         }
         foreach ($file in $files | Where-Object { -not $_.PSIsContainer }) {
-            $relative = if ($item.PSIsContainer) { $entry.Target + '/' + [IO.Path]::GetRelativePath($path, $file.FullName).Replace([char]92, [char]47) } else { $entry.Target }
+            $relative = if ($item.PSIsContainer) { $entry.Target + '/' + (Get-DevRuntimeRelativeFilePath $path $file.FullName) } else { $entry.Target }
             $rows += [pscustomobject]@{ path = $relative; sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
         }
     }
@@ -35,7 +46,7 @@ function Assert-DevRuntimeBundle([string] $RuntimeRoot, [switch] $Candidate) {
     $name = if ($Candidate) { 'aku-sidecar.next.exe.runtime-state.json' } else { 'aku-sidecar.exe.runtime-state.json' }
     $path = Join-Path $RuntimeRoot $name
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw 'Development bundle provenance is missing.' }
-    $state = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+    $state = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($state.bundleSchema -ne 'aku.dev-runtime-bundle.v1' -or @($state.buildTags).Count -ne 1 -or $state.buildTags[0] -ne 'auth_session_dev') {
         throw 'Development bundle capability/provenance contract is invalid.'
     }
@@ -47,9 +58,51 @@ function Assert-DevRuntimeBundle([string] $RuntimeRoot, [switch] $Candidate) {
     return $state
 }
 
+function Test-DevRuntimeProcessId($Value) {
+    return ($Value -is [int] -or $Value -is [long] -or $Value -is [uint32] -or $Value -is [uint64]) -and
+        $Value -ge 1 -and $Value -le [uint32]::MaxValue
+}
+
+function Get-DevRuntimeServiceStatus($Status) {
+    if ($null -eq $Status -or $Status -is [array] -or $Status -is [string]) {
+        throw 'Supervisor status is not a service response object.'
+    }
+    $responseProperty = $Status.PSObject.Properties['response']
+    $servicesProperty = $Status.PSObject.Properties['services']
+    if ($null -ne $responseProperty) {
+        if ($null -ne $servicesProperty) { throw 'Supervisor status contains ambiguous service collections.' }
+        $response = $responseProperty.Value
+        if ($null -eq $response -or $response -is [array] -or $response -is [string]) {
+            throw 'Supervisor status response is invalid.'
+        }
+        $servicesProperty = $response.PSObject.Properties['services']
+    }
+    if ($null -eq $servicesProperty -or $servicesProperty.Value -isnot [array]) {
+        throw 'Supervisor status has no valid services array.'
+    }
+    $service = @($servicesProperty.Value | Where-Object {
+        $null -ne $_ -and $null -ne $_.PSObject.Properties['id'] -and $_.id -ceq 'akusidecar'
+    })
+    if ($service.Count -ne 1) { throw 'Supervisor did not report exactly one AkuSidecar service.' }
+    $service = $service[0]
+    $rootProperty = $service.PSObject.Properties['rootPid']
+    $ownedProperty = $service.PSObject.Properties['ownedPids']
+    # Missing or malformed ownership must never look like an exited service.
+    if ($null -eq $rootProperty -or $null -eq $ownedProperty -or $ownedProperty.Value -isnot [array]) {
+        throw 'Supervisor service ownership fields are missing or invalid.'
+    }
+    if ($null -ne $rootProperty.Value -and -not (Test-DevRuntimeProcessId $rootProperty.Value)) {
+        throw 'Supervisor service root PID is invalid.'
+    }
+    foreach ($ownedId in $ownedProperty.Value) {
+        if (-not (Test-DevRuntimeProcessId $ownedId)) { throw 'Supervisor service owned PID is invalid.' }
+    }
+    return $service
+}
+
 function Get-DevRuntimeServicePlan([string] $Repository, [string] $ConfigurationPath) {
     if (-not (Test-Path -LiteralPath $ConfigurationPath -PathType Leaf)) { throw 'Supervisor configuration is missing.' }
-    $configuration = Get-Content -LiteralPath $ConfigurationPath -Raw | ConvertFrom-Json
+    $configuration = Get-Content -LiteralPath $ConfigurationPath -Raw -Encoding UTF8 | ConvertFrom-Json
     $service = $configuration.services.akusidecar
     $target = Join-Path $Repository 'runtime\dev\aku-sidecar.exe'
     if ($null -eq $service -or -not [IO.Path]::IsPathRooted([string]$service.command) -or
@@ -113,7 +166,7 @@ function Invoke-DevRuntimePromotion([string] $RuntimeRoot) {
             $step.Installed = $true
         }
         $statePath = Join-Path $root 'aku-sidecar.exe.runtime-state.json'
-        $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+        $state = Get-Content -LiteralPath $statePath -Raw -Encoding UTF8 | ConvertFrom-Json
         $state.binaryFile = 'aku-sidecar.exe'
         $state.headlessWorker.destinationDirectory = Join-Path $root 'headless-worker'
         [IO.File]::WriteAllText($statePath, ($state | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))

@@ -7,6 +7,24 @@ build/restart entry points; concurrency is an optional capability delivered with
 that ordinary runtime. The sealed-package migration procedure below is historical
 reference and does not define a new service-registration step for every rebuild.
 
+The ordinary helpers support Windows PowerShell 5.1 and PowerShell 7. Bundle
+inventory uses a contained descendant path instead of the newer .NET
+`Path.GetRelativePath` API, preserving the same target-layout hashes. JSON
+manifests/configuration are read as UTF-8 on both shells, including after
+promotion, so Unicode filenames do not corrupt provenance checks. Supervisor
+status accepts the current `response.services` envelope and the legacy flat
+`services` array. Ambiguous/malformed collections, non-unique service IDs and
+missing/invalid ownership fields are rejected before shutdown or promotion;
+missing data must never be interpreted as a stopped service.
+
+Run `scripts/test-dev-runtime-compatibility.ps1` with both `powershell.exe` and
+`pwsh.exe` for the synthetic compatibility checks. The existing
+`test-dev-runtime-contract.ps1 -DiagnosticImage <development-diagnostic.exe>`
+also exercises copied build/restart preparation, promotion, rollback and tamper
+rejection. Its diagnostic processes use only synthetic config/database paths;
+it does not restart the registered application. These checks do not authorize
+an operational restart or session derivation.
+
 - `build-dev.ps1` compiles the development capability tag and stages both X
   transports from reviewed source, without enabling either mode or granting
   consent. Release compilation is unchanged.
