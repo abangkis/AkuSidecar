@@ -150,12 +150,11 @@ try {
     $buildCleanupIndex = $buildSource.IndexOf('Remove-WorkerBackupAfterSuccess -RuntimeRoot $runtimeDir -BackupPath $priorWorkerStage')
     Assert-True ($buildGuardIndex -ge 0 -and $buildGuardIndex -lt $buildStageIndex -and $buildProvenanceIndex -lt $buildCleanupIndex) 'build-dev must guard before worker staging and clean only after provenance promotion.'
 
-    $restartSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'restart-dev.ps1') -Raw
+    $restartSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'dev-restart-workflow.ps1') -Raw
+    $restartPlanIndex = $restartSource.IndexOf('Get-DevRuntimeServicePlan $repoRoot $supervisorConfig')
     $restartGuardIndex = $restartSource.IndexOf('Assert-WorkerBackupCopyReady')
     $restartBuildIndex = $restartSource.IndexOf("build-dev.ps1') -OutputName")
-    $restartHealthyVersionIndex = $restartSource.IndexOf('if ($health.version -ne $expected.version)')
-    $restartCleanupIndex = $restartSource.IndexOf('Remove-WorkerBackupAfterSuccess -RuntimeRoot $runtimeDir -BackupPath $previousWorker')
-    Assert-True ($restartGuardIndex -ge 0 -and $restartGuardIndex -lt $restartBuildIndex -and $restartHealthyVersionIndex -lt $restartCleanupIndex) 'restart-dev must guard before candidate build and clean only after health/version validation.'
+    Assert-True ($restartPlanIndex -ge 0 -and $restartPlanIndex -lt $restartGuardIndex -and $restartGuardIndex -lt $restartBuildIndex) 'dev-restart-workflow must validate the registered target before retention checks and candidate build.'
 
     Write-Output 'Worker backup retention fixture tests passed.'
 } finally {

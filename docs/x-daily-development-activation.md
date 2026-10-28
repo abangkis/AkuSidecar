@@ -1,5 +1,54 @@
 # Daily X main-dev activation and rollback
 
+## Current ordinary development procedure (2026-10-28)
+
+The canonical daily executable is `runtime/dev/aku-sidecar.exe`. Keep the existing
+build/restart entry points; concurrency is an optional capability delivered with
+that ordinary runtime. The sealed-package migration procedure below is historical
+reference and does not define a new service-registration step for every rebuild.
+
+- `build-dev.ps1` compiles the development capability tag and stages both X
+  transports from reviewed source, without enabling either mode or granting
+  consent. Release compilation is unchanged.
+- A `.next` build stages its own Sidecar, broker helper, UI broker assets, native
+  host manifest, headless worker and X transports. Provenance pins the complete
+  target-layout file inventory; no active helper/transport is replaced.
+- `restart-dev.ps1 -PlanOnly` resolves the actual service definition read-only.
+  A sealed-experiment target is rejected before a build or registration change;
+  it requires a separately approved one-time handoff to the stable path.
+- `-PrepareOnly` builds and verifies the candidate, runs the early config/schema
+  probe and read-only database inspection with the registered arguments/cwd,
+  then exits without process control or registry writes. It reads the database
+  selected by those arguments: the current authorized tests use only synthetic,
+  absent database paths, never this option against the user runtime.
+- A later authorized restart requires matching stable native-host registration,
+  unchanged service/application config and graceful release. An existing runtime
+  control token may authorize `shutdown-if-idle`; without it the user closes the
+  UI gracefully. Timeout retains the candidate and aborts. Supervisor Stop is
+  used only after independent no-owned-process, OS, port and reader-pipe release
+  checks to normalize an already-exited service; no live-tree force-stop or
+  Supervisor restart is permitted.
+- Whole-bundle promotion retains the previous complete code bundle. A move
+  failure restores all prior components and preserves the first failure;
+  incomplete recovery is reported. Health/image/hash failures retain rollback
+  evidence rather than force-closing a new process or restoring a DB snapshot.
+
+Do not run these operational steps merely because the source/tests pass. The
+current service/native-host still require an approved handoff; this increment
+does not perform it. No config, login/profile, user database, Auto Update or
+process derivation consent is changed by the synthetic acceptance.
+
+Run `.\scripts\test-stable-dev.ps1` for the offline build/CLI/helper regression.
+Its operational entry-point tests execute copied scripts in a synthetic
+checkout with fake compilation/stagers and real diagnostic executables; no
+registered service or signed-in browser is started.
+
+The next increments adapt optional ownership and X routing to ordinary behavior,
+then prove daily use under explicit operational/derivation authorization. See
+the [current design sequence](x-daily-development-design.md).
+
+## Historical sealed-package preparation and handoff
+
 The preparer supports two explicit payload contracts: the historical v1
 dedicated-reader package and the v2 [main-profile connection](x-main-profile-connection-design.md).
 `--reader-source=main` selects v2, containing `main-browser-transport` and a

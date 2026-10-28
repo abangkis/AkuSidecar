@@ -1,16 +1,19 @@
 param(
     [string] $RuntimeDirectory = (Join-Path (Split-Path -Parent $PSScriptRoot) 'runtime\dev'),
     [switch] $Register,
-    [switch] $ReplaceExistingRegistration
+    [switch] $ReplaceExistingRegistration,
+    [switch] $Candidate
 )
 $ErrorActionPreference = 'Stop'
 $runtimePath = [IO.Path]::GetFullPath($RuntimeDirectory)
-$helper = Join-Path $runtimePath 'aku-reader-broker.exe'
-$extension = Join-Path $runtimePath 'ui-reader-broker\manifest.json'
+$suffix = if ($Candidate) { '.next' } else { '' }
+if ($Candidate -and $Register) { throw 'A candidate native host cannot be registered before verified promotion.' }
+$helper = Join-Path $runtimePath ('aku-reader-broker' + $suffix + '.exe')
+$extension = Join-Path $runtimePath ('ui-reader-broker' + $suffix + '\manifest.json')
 if (-not (Test-Path -LiteralPath $helper -PathType Leaf) -or -not (Test-Path -LiteralPath $extension -PathType Leaf)) {
     throw 'Build the reader broker helper and UI extension before registration.'
 }
-$manifestPath = Join-Path $runtimePath 'com.akubrowser.reader_activation.json'
+$manifestPath = Join-Path $runtimePath ('com.akubrowser.reader_activation' + $suffix + '.json')
 $manifest = [ordered]@{
     name = 'com.akubrowser.reader_activation'
     description = 'Explicit Windows AkuBrowser reader activation'

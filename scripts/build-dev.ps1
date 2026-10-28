@@ -7,6 +7,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'worker-backup-retention.ps1')
+. (Join-Path $PSScriptRoot 'dev-runtime-contract.ps1')
 if ($Verify) {
     & (Join-Path $PSScriptRoot 'test-native-reader-regression.ps1')
     if ($LASTEXITCODE -ne 0) { throw 'Native reader regression gate failed.' }
@@ -49,6 +50,8 @@ $env:GOTMPDIR = $goTempRoot
 }
 
 $output = Join-Path $runtimeDir $OutputName
+$candidateBuild = $OutputName -eq 'aku-sidecar.next.exe'
+$suffix = if ($candidateBuild) { '.next' } else { '' }
 $workerDirectoryName = if ($OutputName -eq 'aku-sidecar.next.exe') { 'headless-worker.next' } else { 'headless-worker' }
 $provenancePath = "$output.runtime-state.json"
 $workerDestination = [IO.Path]::GetFullPath((Join-Path $runtimeDir $workerDirectoryName))
@@ -58,19 +61,22 @@ $workerBackupPrefix = ".build-dev-$workerDirectoryName-rollback-"
 Assert-WorkerBackupCopyReady -RuntimeRoot $runtimeDir -WorkerRoot $workerDestination -BackupPrefix $workerBackupPrefix
 Push-Location $repoRoot
 try {
-    & go build -trimpath -o $output .\cmd\akusidecar
+    # Compile development capabilities once; config and process consent still
+    # select whether any X concurrency is used. Release builds are unchanged.
+    & go build -trimpath -tags auth_session_dev -o $output .\cmd\akusidecar
     if ($LASTEXITCODE -ne 0) {
         throw "Go build failed with exit code $LASTEXITCODE."
     }
 
-    & go build -trimpath -ldflags '-H=windowsgui' -o (Join-Path $runtimeDir 'aku-reader-broker.exe') .\cmd\aku-reader-broker
+    & go build -trimpath -ldflags '-H=windowsgui' -o (Join-Path $runtimeDir ('aku-reader-broker' + $suffix + '.exe')) .\cmd\aku-reader-broker
     if ($LASTEXITCODE -ne 0) { throw 'Reader broker helper build failed.' }
-    $brokerDirectory = Join-Path $runtimeDir 'ui-reader-broker'
+    $brokerDirectory = Join-Path $runtimeDir ('ui-reader-broker' + $suffix)
     New-Item -ItemType Directory -Path $brokerDirectory -Force | Out-Null
     foreach ($asset in @('manifest.json', 'content.js', 'service-worker.js')) {
         Copy-Item -LiteralPath (Join-Path $repoRoot "ui-reader-broker\$asset") -Destination (Join-Path $brokerDirectory $asset) -Force
     }
-    & (Join-Path $PSScriptRoot 'register-reader-broker-dev.ps1') -RuntimeDirectory $runtimeDir
+    # A candidate build must not overwrite the active helper or host manifest.
+    & (Join-Path $PSScriptRoot 'register-reader-broker-dev.ps1') -RuntimeDirectory $runtimeDir -Candidate:$candidateBuild
 
     # Quiet and Headless resolve their pinned worker beside the Sidecar binary.
     # Use the release stager so development keeps the same runtime contract.
@@ -94,6 +100,17 @@ try {
     }
     $workerProvenance.destinationDirectory = $workerDestination
 
+    $nativeStage = Join-Path $repoRoot ('build\dev-native-stage-' + [Guid]::NewGuid().ToString('N'))
+    $null = & (Join-Path $workerDestination 'node.exe') (Join-Path $PSScriptRoot 'stage-dev-x-assets.mjs') $nativeStage
+    if ($LASTEXITCODE -ne 0) { throw 'Development X capability staging failed.' }
+    foreach ($name in @('main-browser-transport', 'x-daily-owner')) {
+        $destination = Join-Path $runtimeDir ($name + $suffix)
+        if (Test-Path -LiteralPath $destination) {
+            Move-Item -LiteralPath $destination -Destination (Join-Path $nativeStage ($name + '.previous'))
+        }
+        Move-Item -LiteralPath (Join-Path $nativeStage $name) -Destination $destination
+    }
+
     $domainSource = Get-Content -LiteralPath (Join-Path $repoRoot 'internal\domain\types.go') -Raw
     if ($domainSource -notmatch 'ApplicationVersion\s*=\s*"([^"]+)"') {
         throw 'AkuSidecar ApplicationVersion could not be read for development provenance.'
@@ -115,6 +132,9 @@ try {
         binaryFile = $OutputName
         binarySha256 = $binaryHash
         headlessWorker = $workerProvenance
+        buildTags = @('auth_session_dev')
+        bundleSchema = 'aku.dev-runtime-bundle.v1'
+        artifacts = @(Get-DevRuntimeInventory $runtimeDir -Candidate:$candidateBuild)
     }
     $temporaryProvenance = "$provenancePath.tmp"
     [IO.File]::WriteAllText(

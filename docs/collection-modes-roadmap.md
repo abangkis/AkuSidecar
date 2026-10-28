@@ -6,6 +6,33 @@ wording must not override the current checkpoint.
 
 ## Current MVP: daily X capture in main dev (2026-10-27)
 
+### Current integration order: stable development lifecycle first (2026-10-28)
+
+Keep the established development entry points and `runtime/dev` executable.
+Adapt concurrency to that lifecycle rather than making each daily rebuild
+another sealed-package/service/native-host migration. Earlier package and
+native QA evidence is retained; its old delivery instructions are superseded
+by the [ordinary procedure](x-daily-development-activation.md).
+
+1. **Build/restart compatibility (current offline increment):** capability-tagged
+   dev build; complete isolated candidate bundle; real service argument/cwd
+   validation; diagnostics independent of optional capture startup; graceful
+   release, file-hash proof and complete code rollback. Test the actual ordinary
+   helper chain in synthetic checkouts, not just component fixtures.
+2. **Optional ownership and X-only routing:** preserve the ordinary non-X
+   Browser path and existing scheduler/parser/reasoning/Store/Timeline; adapt
+   persistent transport/reader ownership only where the old exclusive flow has
+   no equivalent. Keep exclusive as default and test both selected modes.
+3. **One-time approved handoff and daily acceptance:** establish the stable
+   service/native-host paths once, then use ordinary dev rebuilds. Separately
+   authorize process derivation and verify repeated <=60-second X batches,
+   reader overlap, Stop and config rollback.
+
+No new feasibility/refresh investigation is added. These are remaining delivery
+increments, not a reset of MVP-1. Source/tests do not authorize runtime, login,
+user database, Auto Update or session-transfer changes. Current scope stops at
+offline/synthetic toolchain validation.
+
 Main-profile connection is now the approved next integration: retain one headed
 main owner, delegate the sole private eventful transport to Node, borrow X
 reader capabilities and create disposable X collectors. Preserve ordinary

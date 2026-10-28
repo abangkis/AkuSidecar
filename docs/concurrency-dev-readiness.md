@@ -5,6 +5,49 @@ roadmap are evidence, not a new list of prerequisites.
 
 ## Current daily-use MVP target (2026-10-27)
 
+### Delivery correction: ordinary dev first (2026-10-28)
+
+Daily concurrency must use the established `build-dev.ps1`/`restart-dev.ps1`
+and `runtime/dev` contract. Prior sealed packages remain immutable historical
+or QA evidence. They do not establish compatibility with the user's normal
+manual rebuild/restart, and are no longer the repeated daily delivery route.
+
+The current offline correction stages a complete tagged development candidate,
+keeps candidate broker/worker/transport files separate from active files, pins
+the full bundle, validates the actual registered service arguments/cwd, and
+keeps config/schema diagnostics before optional capture composition. A wrong
+registered image requires an explicit one-time handoff, without automatic
+service/config/native-host rewriting. Graceful release and whole-bundle rollback
+are required. Native ownership/transport adaptation and X-only capture routing
+remain the following increments; no runtime activation is implied.
+
+Validation executes the ordinary helper chain against copied fixture checkouts,
+plus actual diagnostic CLIs on synthetic config/databases, in addition to the
+existing component fixtures. Build success, file hashing and source publication
+do not demonstrate main-dev acceptance.
+
+The canonical offline command is `.\scripts\test-stable-dev.ps1`. It passed
+four actual main builds, default/dev main-package tests, source-only native
+capability staging, complete marker-bundle promotion/rollback/tamper cases and
+legacy worker-retention regressions. Evidence:
+`build/stable-dev-regression-f83eaa8faa654c04b1cc448a01463eed/offline.log.txt`.
+After reusing the existing native-host manifest helper for candidate staging,
+the copied build/restart regression passed again in
+`build/stable-dev-offline-7cbd50c0111841f9bd8df628196d5e56/final-bundle-regression.log.txt`.
+The copied helper fixture replaces compilation/stagers with synthetic tools,
+while actual compiled diagnostic CLIs and real source-only native packaging
+are validated separately. No real Supervisor, browser/profile, user DB or
+runtime startup is exercised. This closes the offline toolchain increment;
+it is not daily capture acceptance or an operational activation.
+
+Release-scope verification also passed against a snapshot of the staged Git
+index, with the unrelated source-cache changes and untracked cache helper
+excluded. The copied ordinary build/restart fixture still passed both modes;
+evidence is `build/stable-dev-release-review-8503aeb-28/staged-regression.log.txt`.
+
+See [design](x-daily-development-design.md) and
+[ordinary procedure](x-daily-development-activation.md).
+
 ### Daily-X Browser admission correction (offline, not activated)
 
 The first main-dev mixed update persisted its Instagram/LinkedIn/X queue, then

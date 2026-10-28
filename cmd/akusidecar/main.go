@@ -71,11 +71,6 @@ func main() {
 	}
 	cfg, err := config.Load(options)
 	fatal(logger, err)
-	daily, err := engine.PrepareXDailyDevelopment(cfg, options)
-	fatal(logger, err)
-	if daily != nil {
-		defer daily.Close()
-	}
 	if manual != nil {
 		fatal(logger, manual.ValidateConfig(cfg))
 	}
@@ -88,6 +83,13 @@ func main() {
 	if options.DatabaseInspect {
 		fatal(logger, json.NewEncoder(os.Stdout).Encode(store.InspectDatabase(cfg.Database.Path)))
 		return
+	}
+	// Diagnostics above validate/read their own inputs without constructing the
+	// optional capture composition, opening profiles or requiring process consent.
+	daily, err := engine.PrepareXDailyDevelopment(cfg, options)
+	fatal(logger, err)
+	if daily != nil {
+		defer daily.Close()
 	}
 	if version, running := existingInstance(fmt.Sprintf("http://%s/api/health", cfg.Server.HostPort()), time.Second); running {
 		logger.Printf("another AkuSidecar instance version=%s is already serving this address; start cancelled to avoid a second instance", version)

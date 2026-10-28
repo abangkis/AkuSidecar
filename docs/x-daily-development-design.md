@@ -1,5 +1,48 @@
 # Daily X concurrency in ordinary development
 
+## Current delivery direction: preserve the stable development route (2026-10-28)
+
+Concurrency must be adapted to the existing development lifecycle. The daily
+entry points remain `scripts/build-dev.ps1`, `scripts/restart-dev.ps1` and
+`runtime/dev/aku-sidecar.exe`. Sealed experiment directories are validation and
+historical rollback evidence; switching the service/native-host to a new sealed
+directory for each rebuild is superseded as the daily delivery mechanism.
+
+The integration sequence is:
+
+1. **Ordinary toolchain compatibility, offline first.** Build development
+   capabilities with `auth_session_dev`, stage the complete `.next` code bundle,
+   preserve ordinary registered arguments, and verify configuration, schema and
+   hashes before replacement. Config/schema diagnostics must not initialize the
+   optional capture composition. Candidate preparation does not overwrite the
+   active broker, UI assets, worker or native transports. Promotion rolls back
+   the whole code bundle if a move fails. Mode defaults remain exclusive.
+2. **Adapt optional ownership and X routing.** Keep the existing scheduler,
+   ordinary non-X Browser admission, parser, reasoning, Store and Timeline.
+   Change only the X capture adapter. Main-profile transport/persistent ownership
+   is an explicit startup composition, not process consent; its compatibility
+   with ordinary operations must be proved separately. Do not broaden the
+   legacy Facebook hybrid exception or reopen refresh/rotation qualification.
+3. **One approved handoff, then ordinary daily restarts.** A service still
+   pointing at a sealed experiment must be migrated once through the existing
+   approval workflow. Normal rebuilds then retain the stable executable and
+   native-host paths. Require graceful release and source-specific acceptance,
+   including two X batches/reader overlap, before claiming daily readiness.
+
+Compilation/staging does not grant session derivation. Config selects the
+backend, process consent authorizes derivation, and each batch retains its
+separate account/ownership/Store authority and 60-second ceiling. There is no
+silent fallback from a failed authorized route. Changing ownership composition
+still requires restart; hot switching remains deferred.
+
+Returning to exclusive must also clear/reset `xReaderSource: main` according to
+the existing config contract. Neither build nor restart rewrites those fields,
+source settings, login, database contents or Auto Update.
+
+The first correction is implemented and validated synthetically only. It does
+not activate a runtime, inspect the user database or transfer a real session.
+See the [ordinary activation procedure](x-daily-development-activation.md).
+
 ## Target and selected policy (2026-10-27)
 
 The next approved integration adds the existing main profile as a borrowed reader
