@@ -933,6 +933,18 @@ h3 { letter-spacing: -0.02em; }
 .settings-group { min-width: 0; margin: 0; padding: 0; border: 0; }
 .settings-group legend { margin: 0 0 10px 4px; color: var(--text); font-size: 0.88rem; font-weight: 700; letter-spacing: -0.01em; }
 .settings-card { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(145deg, rgba(23,29,26,0.86), rgba(15,20,18,0.9)); box-shadow: 0 12px 30px rgba(2,8,5,0.12); }
+.x-daily-controls { margin: 12px 18px 18px; padding: 16px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel); }
+.x-daily-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; font-size: 0.85rem; }
+.x-daily-controls p { margin: 10px 0; line-height: 1.55; font-size: 0.78rem; }
+.x-daily-consent-row { display: flex; align-items: start; gap: 10px; margin: 14px 0; font-size: 0.8rem; line-height: 1.5; }
+.x-daily-consent-row input { flex: 0 0 auto; margin-top: 3px; }
+.x-daily-consent-row:has(input:disabled) { display: none; }
+.x-daily-permission-details { margin: 12px 0; color: var(--muted); font-size: 0.76rem; line-height: 1.55; }
+.x-daily-permission-details summary { cursor: pointer; }
+.x-daily-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.x-daily-actions button:disabled { opacity: 0.45; cursor: not-allowed; filter: saturate(0.55); }
+.x-daily-status { font-size: 0.76rem; color: var(--muted); }
+.x-daily-controls #x-daily-feedback:empty { display: none; }
 .settings-storage-card { padding: 18px; }
 .settings-storage-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
 .settings-storage-badge { flex: 0 0 auto; padding: 5px 9px; border: 1px solid rgba(183,242,108,0.34); border-radius: 999px; color: var(--accent); font-size: 0.68rem; font-weight: 750; }

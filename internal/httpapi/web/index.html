@@ -341,6 +341,27 @@
                 <select id="collection-mode" name="collectionMode"><option value="browser">Browser</option><option value="headless">Headless (opt-in)</option></select>
               </label>
               <p id="collection-runtime-status" class="field-note" role="status"></p>
+              <section id="x-daily-controls" class="x-daily-controls" hidden aria-labelledby="x-daily-heading">
+                <div class="x-daily-heading">
+                  <strong id="x-daily-heading">X concurrent capture</strong>
+                  <span id="x-daily-status" class="settings-detail" role="status" aria-live="polite"></span>
+                </div>
+                <p id="x-daily-detail" class="settings-detail"></p>
+                <p class="settings-detail">Start X enables normal manual and automatic X checks; it does not start a batch now. Your reader stays open, and other sources keep their current capture mode.</p>
+                <label class="x-daily-consent-row" for="x-daily-consent">
+                  <input id="x-daily-consent" type="checkbox" autocomplete="off" />
+                  <span>Allow reuse of my X login for this running AkuBrowser process.</span>
+                </label>
+                <details class="x-daily-permission-details">
+                  <summary>Permission and limits</summary>
+                  <p>Only auth_token and ct0 may be copied to temporary X collectors, for at most 60 seconds per batch. Account and login are checked at startup; a later session change may be missed. Permission is not saved across restarts. Stop X ends permission until the next restart, keeps your reader open, and does not turn off Auto Update.</p>
+                </details>
+                <div class="x-daily-actions">
+                  <button id="x-daily-start" type="button" class="primary-button" disabled>Start X</button>
+                  <button id="x-daily-stop" type="button" class="secondary-button" disabled>Stop X</button>
+                </div>
+                <p id="x-daily-feedback" class="settings-detail" role="status" aria-live="polite"></p>
+              </section>
               <label class="settings-row" for="capture-visibility-policy">
                 <span class="settings-copy"><strong>Capture visibility</strong><small id="capture-visibility-description">Single-window Quiet shares one background window; multi-window Quiet remains available for trial; Adaptive uses a canonical tab in your normal Chrome window.</small></span>
                 <select id="capture-visibility-policy" name="captureVisibility">

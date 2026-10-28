@@ -3,6 +3,43 @@
 This page is the current checkpoint. Historical experiments in the design and
 roadmap are evidence, not a new list of prerequisites.
 
+## Daily-use Settings controls: offline implementation (2026-10-28)
+
+Settings > Live settings now includes an X concurrent capture panel for a
+development process explicitly configured for concurrency. It is hidden in
+ordinary exclusive mode and non-development UI contexts. Bootstrap exposes the
+existing bounded X status; the existing runtime poll keeps it current.
+
+Start requires an unchecked-by-default, process-only permission checkbox, then
+an explicit Start X click. It sends the existing exact consent body and pins
+the current process epoch. It does not save consent, change source selection or
+Auto Update, or force a capture. Normal manual/automatic scheduling remains the
+only batch entry. Stop uses the existing endpoint and retains terminal Stop and
+one-start-per-process semantics: a normal restart and new consent are needed
+before starting again. No UI control restarts a process automatically.
+
+Polling/rendering do not grant permission. Mutation replies and poll tickets are
+fenced against context changes and older reads. A failed or malformed status
+closes Start and clears pending checkbox consent; previously authorized Stop
+remains available for explicit cleanup. Failed actions cause one read-only
+status reconciliation, never an automatic mutation retry. Consent is excluded
+from the settings payload and is cleared on bootstrap/context reset.
+
+Offline tests cover exact consent/epoch transport, double clicks, terminal Stop,
+stale replies, failed polling, hidden/default-off states and unchanged settings.
+An opt-in Go-owned Chrome fixture uses a fresh empty profile, only loopback
+content and fake Start/Stop responses to test desktop/mobile interaction and
+native form serialization. Screenshots and fixture receipts are retained under
+`build/x-daily-ui-offline-20261028/`. This fixture makes zero real-session
+requests and does not open the user's profile/database or control their runtime.
+
+This source increment is not activated. The earlier native two-batch backend
+acceptance below remains valid for its source and scope; it does not establish
+the new UI's live operation. Next: review/publish the UI increment, prepare the
+ordinary candidate, then obtain operational handoff/process-consent approval
+before using these controls against a real X session. Shared reservation remains
+deferred and is not an activation prerequisite.
+
 ## Main-dev two-batch acceptance passed (2026-10-28)
 
 The user authorized the ordinary `runtime/dev` handoff of `0991fa2`, followed
@@ -38,13 +75,10 @@ The reader evidence is the ordinary Open source X window. This run does not
 establish a new native-post foreground action, long-running stability or full
 session rotation qualification.
 
-The predecessor blocker is closed for this accepted main-dev path. The next
-proposed increment is daily-use controls in the existing UI: process consent,
-Start/Stop X and status, so operation does not require a disposable operator
-script. Preserve current one-start-per-process and terminal Stop semantics;
-re-enabling after Stop requires an ordinary restart and new process consent.
-No UI implementation or new operational run is authorized by this record.
-Shared reservation remains deferred rather than a renewed MVP gate.
+The predecessor blocker is closed for this accepted main-dev path. Daily-use
+controls subsequently received implementation approval; their offline source
+checkpoint is recorded above. This acceptance does not authorize a new native
+run or imply long-running qualification. Shared reservation remains deferred.
 
 ## Latest offline increment: daily-X predecessor admission (2026-10-28)
 

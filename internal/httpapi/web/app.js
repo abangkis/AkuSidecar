@@ -7,6 +7,7 @@ import { createNativePostRouter } from "./native-post-routing.js";
 import { nativePostWaitReason, syncNativePostAvailability } from "./native-post-availability.js";
 import { nativeReaderNotice, nativeReaderResumeMessage } from "./native-reader-notice.js";
 import { setSettingsText, setSettingsClass } from "./settings-render.js";
+import { createXDailyControls } from "./x-daily-controls.js";
 import { createFrameTaskQueue, setInlineStyle } from "./ui-frame.js";
 import { backToTopHorizontalPosition, createScrollIdleGate } from "./timeline-scroll-layout.js";
 import { formatTimelineCheckSummary } from "./timeline-check-summary.js";
@@ -284,6 +285,21 @@ const settingsDirty = createDirtyStateTracker({
   onChange: renderSettingsDirtyState,
 });
 const $ = (selector) => document.querySelector(selector);
+const xDailyControls = createXDailyControls({
+  panel: $("#x-daily-controls"),
+  status: $("#x-daily-status"),
+  detail: $("#x-daily-detail"),
+  consent: $("#x-daily-consent"),
+  startButton: $("#x-daily-start"),
+  stopButton: $("#x-daily-stop"),
+  feedback: $("#x-daily-feedback"),
+  api: (path, options) => api(path, options),
+  readContext: () => ({
+    epoch: state.bootstrap?.instanceEpoch,
+    development: state.bootstrap?.deployment?.mode === "development",
+  }),
+  onStatus: (status) => { if (state.bootstrap) state.bootstrap.xCapture = status; },
+});
 const postScreenshotUI = createPostScreenshotUI({
   request: (path, options) => api(path, options),
   getOriginalUrl: (entry) => originalPostUrl(entry),
@@ -693,6 +709,7 @@ async function bootstrap(options = {}) {
     clearNotice();
     window.dispatchEvent(new CustomEvent("aku-startup-stage", { detail: "rendering" }));
     state.bootstrap = restored;
+    xDailyControls.reset(restored.xCapture);
     state.bootstrapError = null;
     state.releasedCaptureSources.clear();
     state.lastUIActivitySentAt = 0;
@@ -3371,14 +3388,19 @@ function renderCollectionRuntime() {
 async function pollCollectionRuntime() {
   if (!state.bootstrap || state.collectionPollInFlight) return;
   state.collectionPollInFlight = true;
+  const xDailyRead = xDailyControls.beginRead();
   try {
     const response = await api("/api/collection/runtime");
     state.bootstrap.collectionRuntime = response.collectionRuntime;
+    xDailyControls.applyRead(xDailyRead, response.xCapture);
     renderCollectionRuntime();
     renderSourceSessionReadiness();
     syncRunButtons();
     if (response.collectionRuntime.effective === "headless") setPill("#bridge-status", "Headless collection ready", "ok");
-  } catch { /* Existing connection recovery owns transient failures. */ }
+  } catch {
+    xDailyControls.rejectRead(xDailyRead);
+    // Existing connection recovery owns transient failures.
+  }
   finally { state.collectionPollInFlight = false; }
 }
 function renderSettings(settings) {
@@ -9792,6 +9814,7 @@ function safePlaybackUrl(value, source) {
 
 async function api(path, options = {}) {
   const init = { method: options.method || "GET", cache: "no-store", headers: {} };
+  if (options.instanceEpoch) init.headers["X-Aku-Split-Epoch"] = options.instanceEpoch;
   if (options.signal) init.signal = options.signal;
   if (options.feedbackTraceId) init.headers["X-Aku-Feedback-Trace"] = options.feedbackTraceId;
   if (options.body !== undefined) {
