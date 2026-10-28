@@ -43,6 +43,21 @@ The first correction is implemented and validated synthetically only. It does
 not activate a runtime, inspect the user database or transfer a real session.
 See the [ordinary activation procedure](x-daily-development-activation.md).
 
+### Conservative daily-X predecessor admission
+
+Daily-X now uses the existing predecessor-drain rule before worker registration,
+StartRun or native startup. Earlier runs must be terminal, active/pending
+reasoning must retire, and predecessor capture commands must drain. While
+blocked, X remains queued without starting a collector or deriving a session.
+This intentionally waits for predecessor reasoning; it does not change ordinary
+Browser ownership or the independent reader route. Store authorization and the
+60-second clock from seed remain unchanged.
+
+The check is not an atomic reservation across all entry points. The deferred
+[shared capture reservation plan](shared-capture-reservation-plan.md) specifies
+the structural follow-up and its offline/recovery acceptance criteria. It is not
+an additional prerequisite for testing this conservative MVP correction.
+
 ## Target and selected policy (2026-10-27)
 
 The next approved integration adds the existing main profile as a borrowed reader

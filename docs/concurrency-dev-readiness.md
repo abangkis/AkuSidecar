@@ -3,7 +3,44 @@
 This page is the current checkpoint. Historical experiments in the design and
 roadmap are evidence, not a new list of prerequisites.
 
-## Current operational checkpoint (2026-10-28)
+## Latest offline increment: daily-X predecessor admission (2026-10-28)
+
+Retained startup diagnostics from `ccb55b3` identified Store authorization
+unavailability while an earlier LinkedIn capture command was still claimed.
+The daily-X scheduler branch bypassed the ordinary predecessor admission rule;
+Store correctly retained its capture exclusion.
+
+The source correction now checks predecessor run, reasoning and command drain
+before registering the daily worker, StartRun, collector startup or seed. A
+blocked X run remains queued. The separate reader route, Store authority,
+account checks and original 60-second attempt limit are unchanged. This
+conservative boundary waits for predecessor reasoning as well as capture.
+
+Offline validation passed five new top-level daily-X regressions (seven leaf
+cases) covering claimed/queued predecessor commands, active/pending reasoning,
+automatic worker-retirement wakeup, cancellation and retained reader ownership.
+The claimed-LinkedIn regression fails against the pre-patch `engine.go` through
+a Go source overlay (`X was started before predecessor drain`) and passes with
+the correction. Evidence: `build/daily-predecessor-offline-20261028/` contains
+`before-regression.log.txt` and `after-regression.log.txt`.
+
+The scoped Engine/HTTP regressions also passed in default and `auth_session_dev`
+builds (`TestXDaily`, `TestXManualStatusAndStopDefaultOff`, `TestHybrid` and
+`TestProgressiveWait`), as did development Store authority regressions
+(`TestDailyPilot` and `TestManualPilot`). Synthetic native-owner cases used the
+accountless fake driver/test-process fixture; no real browser or transfer ran.
+
+Native mixed-source acceptance still requires a separately approved ordinary dev handoff
+and process derivation. No restart, transfer or Auto Update change is authorized
+by this source correction. The next operational acceptance remains two mixed
+source batches with the reader open, followed by Stop, without automatic retry
+after failure.
+
+The [shared capture reservation plan](shared-capture-reservation-plan.md) is a
+deferred structural follow-up. It must not silently become a prerequisite for
+testing the conservative MVP correction.
+
+## Prior operational and diagnostic checkpoint (2026-10-28)
 
 The ordinary `runtime/dev` handoff of `6105725` completed. Open source and native
 post reader actions worked before process consent. In the subsequently approved

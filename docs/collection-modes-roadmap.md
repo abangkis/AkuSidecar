@@ -4,6 +4,16 @@
 The dated entries below preserve experiment history. Their old blocker/next-step
 wording must not override the current checkpoint.
 
+### Deferred architecture follow-up: shared capture reservation
+
+The conservative daily-X predecessor correction retains the existing Store
+exclusion and waits before collector startup/seed. It also waits for predecessor
+reasoning. A future atomic reservation shared by ordinary, manual and daily
+capture paths can restore safe capture/reasoning overlap and close admission
+races across entry points. See the [implementation and acceptance plan](shared-capture-reservation-plan.md).
+This is deferred architecture work, not an additional gate for the current MVP
+acceptance; live/runtime operations remain separately authorized.
+
 ## Current MVP: daily X capture in main dev (2026-10-27)
 
 ### Current integration order: stable development lifecycle first (2026-10-28)

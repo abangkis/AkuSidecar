@@ -857,6 +857,17 @@ func (e *Engine) startNextLocked(ctx context.Context, sessionID string) (*domain
 		return nil, nil
 	}
 	if run.Source == domain.SourceX && e.XDailyConfigured() && e.xDailyReady() {
+		// The daily collector owns a separate browser, but Store still serializes
+		// this session's capture commands. Drain predecessors before registering
+		// a worker or starting native derivation; do not borrow the ordinary owner.
+		// This conservative MVP boundary also waits for predecessor reasoning.
+		drained, err := e.hybridPredecessorsDrained(ctx, session, *run)
+		if err != nil {
+			return nil, err
+		}
+		if !drained {
+			return nil, nil
+		}
 		settings, err := e.store.GetSettings(ctx)
 		if err != nil {
 			return nil, err
