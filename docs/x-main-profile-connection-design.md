@@ -65,6 +65,28 @@ and existing reader windows remain separate. Capability loss/overflow revokes X.
 
 ## Delivery and acceptance
 
+### Ordinary X window actions (offline, 2026-10-28)
+
+In a supported development build, concurrent/main separates `open_source` and
+`open_native_post` from batch consent. These actions borrow the existing Browser
+through the ordinary Bridge queue and native broker, before batch consent and
+after batch Stop. They require the exact retained main Manager shared by Engine
+and Coordinator, a ready Browser driver and a current lease generation. Equal
+generation numbers from different Managers do not establish ownership. A lost
+owner is rejected; it cannot trigger browser replacement or an unowned fallback.
+
+The ordinary native-reader path retains request/URL matching, epoch checks,
+cancellation, lease cleanup and independent broker/foreground verification.
+Opening a window grants no session derivation or capture permission. Legacy X
+capture claims remain blocked; account proof, per-batch Store authority and the
+60-second ceiling are unchanged. Dedicated mode retains its existing readiness
+gates. Settings, source selection, scheduler state and Auto Update are unchanged.
+
+The HTTP fixture exercises the old Bridge/broker conversation with fake process
+and foreground adapters. It does not prove physical foreground or signed-in
+capture overlap. The private Node transport still excludes ordinary operations
+during exclusive seed phases; this patch changes no transport guard.
+
 The code now composes this mode through main/broker/Coordinator and the daily
 Engine/Store ports. It does not activate or alter the running service. The
 packaged executable requires a sealed `bin/main-browser-transport/` with

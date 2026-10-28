@@ -136,13 +136,21 @@ func (e *Engine) StopXManual(ctx context.Context) error {
 }
 
 // PrepareXManualReader is called only from the existing validated split-action
-// conversation. A selected X route fails closed instead of borrowing the
-// ordinary capture profile. The existing OS broker still proves foreground.
+// conversation. Main-profile UI interaction uses the ordinary owned Browser,
+// independently of batch authority. Dedicated routes still fail closed.
+// The existing OS broker must prove foreground for either path.
 func (e *Engine) PrepareXManualReader(ctx context.Context, req readerbroker.Request, marker string) (readerbroker.NativePostPreparation, bool, error) {
 	if err := req.Validate(); err != nil {
 		return readerbroker.NativePostPreparation{}, true, errors.New("manual reader request rejected")
 	}
 	if req.Source == "x" && e.XDailyConfigured() {
+		if e.XUsesOrdinaryBrowserActions() {
+			_, _, err := e.xMainBrowserActionOwner()
+			if err != nil {
+				return readerbroker.NativePostPreparation{}, true, err
+			}
+			return readerbroker.NativePostPreparation{}, false, nil
+		}
 		if e.xDailyReady() {
 			p, err := e.prepareXDailyReader(ctx, req, marker)
 			return p, true, err

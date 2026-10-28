@@ -105,7 +105,12 @@ the persistent reader belongs to increment 2.
 
 Until that adapter is connected, status reports selected `concurrent`, effective
 `unavailable`, state `not-ready`, reason `batch-adapter-required`, and no granted
-derivation authority. Legacy X claims, dispatch and reader borrowing fail closed.
+derivation authority. Legacy X capture claims and dispatch fail closed.
+Dedicated reader borrowing also remains gated. In supported concurrent/main
+composition, ordinary Open source/native reader actions instead borrow the exact
+retained main Browser through the existing Bridge/broker path, independently of
+batch consent. They grant no capture authority; missing/stale ownership rejects
+the action. See the [ordinary action boundary](x-main-profile-connection-design.md#ordinary-x-window-actions-offline-2026-10-28).
 Mixed-source updates continue eligible non-X sources without rewriting saved
 source choices or Auto Update. Queued X runs encountered after restart receive
 an explicit readiness failure so later non-X work is not stranded. Closing or

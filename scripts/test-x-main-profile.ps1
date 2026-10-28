@@ -19,7 +19,7 @@ try {
  if($LASTEXITCODE -ne 0){throw 'Main/dedicated Node regressions failed'}
  foreach($mode in @('default','auth_session_dev')) {
   $args=@('test');if($mode -ne 'default'){$args+=@('-tags',$mode)}
-  $args+=@('./internal/config','./internal/appshell','./internal/captureruntime','./internal/collection','./internal/engine','./internal/httpapi','./internal/store','-run','^(TestMain|TestPersistent|TestXDaily|TestHybrid|TestXManualStatusAndStopDefaultOff|TestDailyPilot|TestManualPilot)','-count=1','-timeout=120s','-v')
+  $args+=@('./internal/config','./internal/appshell','./internal/captureruntime','./internal/collection','./internal/engine','./internal/httpapi','./internal/store','-run','^(TestMain|TestPersistent|TestXDaily|TestXMainBrowser|TestHybrid|TestXManualStatusAndStopDefaultOff|TestDailyPilot|TestManualPilot)','-count=1','-timeout=120s','-v')
   & go @args 2>&1 | Tee-Object -FilePath $log -Append
   if($LASTEXITCODE -ne 0){throw ('Main-profile regression failed: '+$mode)}
  }

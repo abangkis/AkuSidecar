@@ -23,6 +23,10 @@ by the [ordinary procedure](x-daily-development-activation.md).
    Browser path and existing scheduler/parser/reasoning/Store/Timeline; adapt
    persistent transport/reader ownership only where the old exclusive flow has
    no equivalent. Keep exclusive as default and test both selected modes.
+   The current offline correction separates ordinary X Open source/reader
+   actions from batch consent in concurrent/main, using the exact retained
+   Browser owner and existing Bridge/broker. Synthetic checks pass; capture
+   authority remains separate. See the [current action checkpoint](concurrency-dev-readiness.md#ordinary-x-window-actions-offline-not-activated-2026-10-28).
 3. **One-time approved handoff and daily acceptance:** establish the stable
    service/native-host paths once, then use ordinary dev rebuilds. Separately
    authorize process derivation and verify repeated <=60-second X batches,

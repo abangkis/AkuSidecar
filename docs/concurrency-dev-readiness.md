@@ -48,6 +48,34 @@ evidence is `build/stable-dev-release-review-8503aeb-28/staged-regression.log.tx
 See [design](x-daily-development-design.md) and
 [ordinary procedure](x-daily-development-activation.md).
 
+### Ordinary X window actions (offline, not activated; 2026-10-28)
+
+Concurrent/main now routes Open source and native post reader actions through
+the existing Browser/Bridge/broker independently of batch consent. Engine and
+Coordinator must share the exact retained Browser Manager; missing/dead or
+mismatched owners reject admission without replacing the browser. Batch Stop
+preserves ordinary reader availability. Dedicated mode remains gated.
+
+Synthetic regressions cover successful Bridge/broker requests, rejected
+foreground, invalid/missing/mismatched broker requests, owner loss, equal
+generation numbers on different Managers and lease/queue cleanup. They also
+prove that these UI actions grant neither derivation consent nor legacy X
+capture claims, and preserve settings, scheduler state and Auto Update. Account
+proof, Store authority and the 60-second batch ceiling remain unchanged.
+
+The canonical `scripts/test-x-main-profile.ps1` passed 30 Node tests, selected
+regressions in seven Go packages under default and development builds, and four
+actual main builds. Evidence:
+`build/x-main-offline-697d999fc00e4602938af20ed8d741d9/offline.log.txt`.
+Existing HTTP split/reader/broker regressions also passed in both builds. Their
+loopback tests require normal-user socket access outside the restricted sandbox.
+
+These tests use synthetic browser/process/foreground adapters; real Chrome
+tests are explicitly skipped. No activation, session transfer, main login,
+user database, runtime or Auto Update change occurred. Private transport seed
+phases still exclude ordinary operations. Actual window/collection overlap
+remains an operational acceptance gate, not a result of these offline tests.
+
 ### Daily-X Browser admission correction (offline, not activated)
 
 The first main-dev mixed update persisted its Instagram/LinkedIn/X queue, then
