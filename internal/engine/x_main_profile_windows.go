@@ -204,7 +204,7 @@ type xMainBorrowedRPC struct {
 	closed   bool
 }
 
-func (r *xMainBorrowedRPC) Call(ctx context.Context, op string, fields map[string]any, _ func([]byte)) (ownedrpc.Reply, error) {
+func (r *xMainBorrowedRPC) Call(ctx context.Context, op string, fields map[string]any, progress func([]byte)) (ownedrpc.Reply, error) {
 	r.mu.Lock()
 	closed := r.closed
 	r.mu.Unlock()
@@ -214,12 +214,85 @@ func (r *xMainBorrowedRPC) Call(ctx context.Context, op string, fields map[strin
 	if fields == nil {
 		fields = map[string]any{}
 	}
-	raw, err := r.protocol.CallX(ctx, op, fields)
+	var raw json.RawMessage
+	var err error
+	if observed, ok := r.protocol.(appshell.MainBrowserProgressProtocol); ok && progress != nil && xMainStartupProgressOperation(op) {
+		var mu sync.Mutex
+		count, terminal := 0, false
+		forward := func(value []byte) {
+			if len(value) > 512 || !xMainStartupProgressValid(op, value) {
+				return
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if terminal || count >= 32 {
+				return
+			}
+			count++
+			progress(append([]byte(nil), value...))
+		}
+		raw, err = observed.CallXWithProgress(ctx, op, fields, forward)
+		mu.Lock()
+		terminal = true
+		mu.Unlock()
+	} else {
+		raw, err = r.protocol.CallX(ctx, op, fields)
+	}
 	var failure *appshell.MainBrowserError
 	if errors.As(err, &failure) {
 		return ownedrpc.Reply{Code: closedXApplicationCode(failure.Code), Diagnostic: failure.Diagnostic}, nil
 	}
 	return ownedrpc.Reply{Result: raw}, err
+}
+
+func xMainStartupProgressOperation(operation string) bool {
+	switch operation {
+	case "manual_acquire", "manual_inspect", "manual_inventory":
+		return true
+	default:
+		return false
+	}
+}
+
+func xMainStartupProgressValid(operation string, raw []byte) bool {
+	if !xMainStartupProgressOperation(operation) {
+		return false
+	}
+	if len(raw) == 0 || len(raw) > 512 {
+		return false
+	}
+	var value struct {
+		Operation    string  `json:"operation"`
+		ElapsedMS    int64   `json:"elapsedMS"`
+		Cause        string  `json:"cause"`
+		SettingsWait *string `json:"settingsWait"`
+	}
+	if !nativePilotProgressDecode(raw, &value) || value.ElapsedMS < 0 || value.ElapsedMS > nativePilotLife.Milliseconds() {
+		return false
+	}
+	switch value.Operation {
+	case "inspect_rpc", "inventory_rpc", "acquire_rpc", "identity", "rendezvous", "settings_wait", "cleanup", "root_restore", "complete":
+	default:
+		return false
+	}
+	if value.Cause != "" {
+		if _, ok := nativePilotInitialCode(value.Cause); !ok {
+			return false
+		}
+	}
+	if value.SettingsWait != nil {
+		found := false
+		for _, state := range nativePilotSettingsWaitStates {
+			if state == *value.SettingsWait {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 func (r *xMainBorrowedRPC) Close()                           { r.mu.Lock(); r.closed = true; r.mu.Unlock() }
 func (*xMainBorrowedRPC) Deliver(int64, ownedrpc.Reply) bool { return false }

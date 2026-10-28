@@ -3,9 +3,11 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"testing"
@@ -27,6 +29,7 @@ type syntheticDailyOwner struct {
 	hold                          chan struct{}
 	captureStarted                chan struct{}
 	check                         func(context.Context) error
+	begin                         func(context.Context, context.Context, uint64, domain.Run) (xDailyNativeBatch, error)
 }
 
 func (o *syntheticDailyOwner) CheckReader(ctx context.Context) error {
@@ -55,7 +58,10 @@ type syntheticDailyBatch struct {
 	permit *store.ManualPilotPermit
 }
 
-func (o *syntheticDailyOwner) BeginBatch(ctx, _ context.Context, g uint64, r domain.Run) (xDailyNativeBatch, error) {
+func (o *syntheticDailyOwner) BeginBatch(ctx, parent context.Context, g uint64, r domain.Run) (xDailyNativeBatch, error) {
+	if o.begin != nil {
+		return o.begin(ctx, parent, g, r)
+	}
 	o.mu.Lock()
 	o.generations = append(o.generations, g)
 	o.mu.Unlock()
@@ -236,6 +242,86 @@ func TestXDailyCleanupFailureLatchesProcess(t *testing.T) {
 	if _, err := e.StartVisibleUpdate(ctx, "must not derive"); err == nil {
 		t.Fatal("cleanup failure allowed a successor")
 	}
+}
+
+type syntheticFailedStartupBatch struct {
+	cleanup func() error
+}
+
+func (*syntheticFailedStartupBatch) StartedAt() time.Time { return time.Time{} }
+func (*syntheticFailedStartupBatch) Deadline() time.Time  { return time.Time{} }
+func (*syntheticFailedStartupBatch) Capture(context.Context, string) (domain.Run, error) {
+	return domain.Run{}, errors.New("capture must not run after failed startup")
+}
+func (b *syntheticFailedStartupBatch) Close(context.Context) error { return b.cleanup() }
+
+func TestXDailyStartupCauseSurvivesStopAndCleanupFailure(t *testing.T) {
+	e, o := dailyRuntimeFixture(t)
+	var output bytes.Buffer
+	e.logger = log.New(&output, "", 0)
+	entered, release := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	releaseCleanup := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseCleanup()
+	private := errors.New("private account and cookie error")
+	original := xDailyStartupFail(private, "seed_rpc", "rpc")
+	o.begin = func(context.Context, context.Context, uint64, domain.Run) (xDailyNativeBatch, error) {
+		return &syntheticFailedStartupBatch{cleanup: func() error {
+			close(entered)
+			<-release
+			return errors.New("secondary cleanup error")
+		}}, original
+	}
+	if _, err := e.StartVisibleUpdate(context.Background(), "startup failure"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("startup cleanup did not start")
+	}
+	// Stop can publish its own state while cleanup is pending. It must not erase
+	// the startup predicate already returned by the owner.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if err := e.StopXManual(ctx); err == nil {
+		t.Fatal("pending cleanup reported stopped")
+	}
+	status := e.XCaptureStatus()
+	if status.FailurePhase != "startup" || status.StartupDiagnostic == nil || status.StartupDiagnostic.Stage != "seed_rpc" {
+		t.Fatalf("first failure missing during cleanup: %+v", status)
+	}
+	status.StartupDiagnostic.Stage = "mutated"
+	e.xDaily.mu.RLock()
+	drain := e.xDaily.drain
+	e.xDaily.mu.RUnlock()
+	e.rememberXDailyFailure(errors.New("late secondary failure"), "cleanup")
+	if e.WaitForIdle(time.Millisecond) {
+		t.Fatal("pending cleanup reported idle")
+	}
+	releaseCleanup()
+	select {
+	case <-drain:
+	case <-time.After(time.Second):
+		t.Fatal("cleanup worker did not drain")
+	}
+	status = e.XCaptureStatus()
+	if status.StartupDiagnostic.Stage != "seed_rpc" || status.Cleanup != "uncertain" || status.DerivationAuthorized {
+		t.Fatalf("cleanup replaced startup diagnostic or restored authority: %+v", status)
+	}
+	e.xDaily.mu.RLock()
+	retained := e.xDaily.firstFailure
+	e.xDaily.mu.RUnlock()
+	if !errors.Is(retained, private) {
+		t.Fatal("private first cause was discarded")
+	}
+	if strings.Contains(output.String(), "private account") || !strings.Contains(output.String(), "x_daily_startup stage=seed_rpc condition=rpc cause=unavailable") {
+		t.Fatal("terminal log lost safe predicate or exposed private cause")
+	}
+	// Test teardown may now finish the intentionally uncertain synthetic cleanup.
+	e.xDaily.mu.Lock()
+	e.xDaily.cleanupUncertain = false
+	e.xDaily.mu.Unlock()
 }
 
 func TestXDailyStopJoinsStartupAndRejectsLateOwner(t *testing.T) {

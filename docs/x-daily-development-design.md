@@ -171,6 +171,37 @@ worker drain covers the final scheduling continuation before database release;
 capture completion alone is not idle. Closed first-failure phase and cleanup
 state remain separate in the status projection.
 
+### Startup diagnostics and bounded progress (2026-10-28)
+
+`BeginBatch` preserves a private unwrap-able operational error and exposes only
+the closed `xCapture.startupDiagnostic` projection: `stage`, `condition`, `cause`,
+and optional catalog-only `origin` / `brokerReason`. Substages distinguish
+admission, reader check, fresh collector creation/identity/lease, batch-begin
+RPC/decode/receipt, reader/collector binding, seed RPC/decode/receipt, broker
+creation/start, Managers, runtime and Store admission. Receipt predicates are
+reported separately; an unknown exception is never used as a public label.
+
+The worker records its first operational failure before cancellation and cleanup.
+A subsequent Stop or cleanup error cannot replace that diagnostic. Cleanup
+pending/uncertainty and revoked authority remain separate status fields. The
+terminal `x_daily_startup` log uses the same closed projection. Private errors
+retain `errors.Is` / `errors.As` support but their arbitrary message, paths,
+account values, cookies and raw replies are never formatted into this output.
+
+Main-profile startup progress crosses the borrowed Node/control/Go path only
+for correlated startup inspection, inventory and acquisition RPCs. Each pending
+RPC admits at most 32 exact catalog-validated progress DTOs, each at most 512
+bytes. Unknown/duplicate/extra fields, malformed envelopes, retired IDs and
+post-terminal events are dropped. Progress remains diagnostic only: it cannot
+grant Store/account/ownership authority, extend a deadline or replace the first
+terminal cause. Existing ordinary Browser actions retain their protocol.
+
+The shared telemetry library integration and relocation are deferred until the
+user identifies that repository. This increment uses existing local diagnostics
+and logging; it does not create a replacement telemetry library. Offline evidence
+does not identify the earlier live failure retrospectively or authorize another
+session transfer, restart or activation.
+
 ### Explicit activation resources and MVP limit
 
 An explicitly selected `capture.xReaderProfile` must be an existing canonical,

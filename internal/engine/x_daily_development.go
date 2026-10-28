@@ -45,17 +45,18 @@ type XDailySelection struct {
 }
 
 type XCaptureStatus struct {
-	SelectedMode                 string `json:"selectedMode"`
-	EffectiveMode                string `json:"effectiveMode"`
-	State                        string `json:"state"`
-	Reason                       string `json:"reason"`
-	RestartRequiredForModeChange bool   `json:"restartRequiredForModeChange"`
-	AuthorizationPolicy          string `json:"authorizationPolicy,omitempty"`
-	MaxBatchMS                   int    `json:"maxBatchMs,omitempty"`
-	DerivationAuthorized         bool   `json:"derivationAuthorized"`
-	FailurePhase                 string `json:"failurePhase,omitempty"`
-	FailureCode                  string `json:"failureCode,omitempty"`
-	Cleanup                      string `json:"cleanup,omitempty"`
+	SelectedMode                 string                   `json:"selectedMode"`
+	EffectiveMode                string                   `json:"effectiveMode"`
+	State                        string                   `json:"state"`
+	Reason                       string                   `json:"reason"`
+	RestartRequiredForModeChange bool                     `json:"restartRequiredForModeChange"`
+	AuthorizationPolicy          string                   `json:"authorizationPolicy,omitempty"`
+	MaxBatchMS                   int                      `json:"maxBatchMs,omitempty"`
+	DerivationAuthorized         bool                     `json:"derivationAuthorized"`
+	FailurePhase                 string                   `json:"failurePhase,omitempty"`
+	FailureCode                  string                   `json:"failureCode,omitempty"`
+	StartupDiagnostic            *XDailyStartupDiagnostic `json:"startupDiagnostic,omitempty"`
+	Cleanup                      string                   `json:"cleanup,omitempty"`
 }
 
 // Prepare runs after config loading but before the ordinary Store/provider/UI.
@@ -127,6 +128,7 @@ func (e *Engine) XCaptureStatus() XCaptureStatus {
 	defer e.xDaily.mu.RUnlock()
 	status.FailurePhase = e.xDaily.failurePhase
 	status.FailureCode = e.xDaily.failureCode
+	status.StartupDiagnostic = xDailyStartupDetail(e.xDaily.firstFailure)
 	if e.xDaily.owner != nil {
 		status.Cleanup = "verified"
 	}

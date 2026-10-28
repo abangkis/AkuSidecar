@@ -5,12 +5,13 @@ import {mkdir,mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {resolve,join,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createApplicationDailyOwner} from '../../../../../scripts/auth-session-fixture/x-native-metadata-probe-driver.mjs';
-import {createMainCDP,createMainPublicFacade,serveMainBrowserTransport,MAIN_TRANSPORT_SCHEMA,mainOwnerFailure} from './main-browser-transport-protocol.mjs';
+import {createMainCDP,createMainPublicFacade,serveMainBrowserTransport,MAIN_TRANSPORT_SCHEMA,mainOwnerFailure,mainStartupProgress,mainStartupProgressForOwnerOperation} from './main-browser-transport-protocol.mjs';
 import {createBorrowedDailyControl} from './main-browser-transport.mjs';
 import {ownerErrorReply} from './owner-protocol.mjs';
 import {manualCaptureFailure} from '../../../../../scripts/auth-session-fixture/x-native-manual-capture.mjs';
 
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+async function waitFor(predicate){for(let i=0;i<100;i++){if(predicate())return;await tick();}assert.fail('synthetic transport did not settle');}
 function cdpFixture(t){
   const input=new PassThrough(),output=new PassThrough(),requests=[];
   output.on('data',bytes=>requests.push(JSON.parse(bytes.subarray(0,-1).toString())));
@@ -101,6 +102,24 @@ test('main X preserves normalized first-phase diagnostics but never arbitrary ex
   assert.deepEqual(f.replies.find(r=>r.id===3).error,{code:'main_transport_rejected'});
   assert.ok(!JSON.stringify(f.replies).includes('synthetic-secret'));
 });
+test('startup progress accepts only the closed bounded diagnostic DTO',()=>{
+  const valid={operation:'settings_wait',elapsedMS:12,cause:'manual_initial_reader_settings_source_unavailable_primary',settingsWait:'response_pending'};
+  assert.deepEqual(mainStartupProgress(valid),valid);
+  assert.deepEqual(mainStartupProgressForOwnerOperation('manual_acquire',valid),valid);
+  assert.equal(mainStartupProgressForOwnerOperation('manual_capture',valid),null);
+  for(const value of [
+    'synthetic-secret',
+    {...valid,operation:'synthetic-secret'},
+    {...valid,cause:'synthetic-secret'},
+    {...valid,settingsWait:'synthetic-secret'},
+    {...valid,extra:'synthetic-secret'},
+    {...valid,elapsedMS:60001},
+    {operation:'settings_wait',elapsedMS:12},
+    {operation:'settings_wait',cause:''},
+    {...valid,cause:null},
+    {...valid,settingsWait:null},
+  ])assert.equal(mainStartupProgress(value),null);
+});
 test('borrowed daily control requires process consent and keeps generation/seed replay checks',async()=>{
   const params={chromePath:'C:\\synthetic\\chrome.exe',readerProfile:'C:\\synthetic\\profile',readerPID:123,
     profileDirectory:'Profile 2',acknowledgeLimitations:true,allowProcessSessionDerivation:true};
@@ -115,6 +134,83 @@ test('borrowed daily control requires process consent and keeps generation/seed 
   await c.execute('daily_batch_seed',{generation:1,owner:2});
   await assert.rejects(c.execute('daily_batch_seed',{generation:1,owner:2}));
   await c.execute('daily_owner_close',{});assert.ok(closed>=1);
+});
+
+test('borrowed measured startup RPC progress stays correlated, capped and private',async t=>{
+  const params={chromePath:'C:\\synthetic\\chrome.exe',readerProfile:'C:\\synthetic\\profile',readerPID:123,
+    profileDirectory:'Profile 2',acknowledgeLimitations:true,allowProcessSessionDerivation:true};
+  const expectedProgress={manual_acquire:['acquire_rpc','identity','rendezvous','settings_wait','cleanup','root_restore','complete'],
+    manual_inspect:['acquire_rpc','inspect_rpc','complete'],manual_inventory:['acquire_rpc','inventory_rpc','complete']};
+  let releaseAcquire,lateProgress;
+  const f=controlFixture(t,async(p,transport)=>createBorrowedDailyControl(p,transport,{
+    loadAssets:async()=>[],
+    createOwner:async scope=>({
+      initialize:async()=>({owner:1,readerPID:123}),
+      begin:async()=>({owner:2}),
+      seed:async()=>({seeded:true}),
+      check:async()=>({checked:true}),
+      execute:async q=>{
+        const stages=expectedProgress[q.op];assert.ok(stages);
+        if(q.op==='manual_acquire'){
+          const valid={operation:'acquire_rpc',elapsedMS:0,cause:''};
+          scope.emitProgress('synthetic-secret');
+          scope.emitProgress({event:'manual_startup_progress',id:q.id,result:{...valid,cause:'synthetic-secret'}});
+          scope.emitProgress({event:'manual_startup_progress',id:q.id,result:{...valid,extra:'synthetic-secret'}});
+          scope.emitProgress({event:'manual_startup_progress',id:q.id,result:valid,secret:'synthetic-secret'});
+          scope.emitProgress({event:'unknown_private_event',id:q.id,result:'synthetic-secret'});
+          for(let i=0;i<40;i++){
+            const operation=stages[i%stages.length],result={operation,elapsedMS:i,cause:''};
+            if(operation==='settings_wait')result.settingsWait='response_pending';
+            scope.emitProgress({event:'manual_startup_progress',id:q.id,result});
+          }
+          lateProgress=()=>scope.emitProgress({event:'manual_startup_progress',id:q.id,result:{...valid,elapsedMS:40}});
+          await new Promise(resolve=>{releaseAcquire=resolve;});
+          setImmediate(lateProgress);
+        }else{
+          for(let i=0;i<3;i++)scope.emitProgress({event:'manual_startup_progress',id:q.id,result:{operation:stages[i],elapsedMS:i,cause:''}});
+        }
+        return{executed:q.op};
+      },
+      end:async()=>({closed:true}),post:async()=>({ok:true}),close:async()=>{},
+    }),
+  }));
+  await waitFor(()=>f.replies.some(r=>r.ready===true));
+  f.send({id:1,op:'main_x',operation:'daily_owner_bootstrap',params});
+  await waitFor(()=>f.replies.some(r=>r.id===1));
+  f.send({id:2,op:'main_x',operation:'daily_reader_initialize',params:{}});
+  await waitFor(()=>f.replies.some(r=>r.id===2));
+  f.send({id:3,op:'main_x',operation:'daily_batch_begin',params:{generation:1,collectorProfile:'C:\\synthetic\\collector'}});
+  await waitFor(()=>f.replies.some(r=>r.id===3));
+  f.send({id:4,op:'main_x',operation:'daily_batch_seed',params:{generation:1,owner:2}});
+  await waitFor(()=>f.replies.some(r=>r.id===4));
+  const request={challenge:'synthetic-challenge',role:'reader',ownerId:'synthetic-owner',profileId:'synthetic-profile',
+    contextId:'synthetic-context',targetId:'synthetic-target',frameId:'synthetic-frame',documentId:'synthetic-document'};
+  f.send({id:5,op:'main_x',operation:'manual_acquire',params:{generation:1,owner:2,role:'reader',handle:'synthetic-handle',request,startupBudgetMS:1000}});
+  await waitFor(()=>typeof releaseAcquire==='function');
+  f.send({id:6,op:'main_x',operation:'daily_reader_check',params:{}});
+  await waitFor(()=>f.replies.some(r=>r.id===6));
+  const progressEvents=f.replies.filter(r=>r.event==='main_x_progress');
+  const acquire=progressEvents.filter(r=>r.id===5);
+  assert.equal(acquire.length,32);
+  assert.ok(acquire.every(r=>expectedProgress.manual_acquire.includes(r.result.operation)&&r.result.elapsedMS>=0&&r.result.elapsedMS<40&&r.result.cause===''));
+  assert.ok(acquire.some(r=>r.result.operation==='settings_wait'&&r.result.settingsWait==='response_pending'));
+  assert.ok(expectedProgress.manual_acquire.every(operation=>acquire.some(r=>r.result.operation===operation)));
+  assert.ok(f.replies.some(r=>r.id===6&&r.ok&&r.result.checked===true));
+  assert.ok(!JSON.stringify(f.replies).includes('synthetic-secret'));
+  releaseAcquire();
+  await waitFor(()=>f.replies.some(r=>r.id===5&&Object.hasOwn(r,'ok')));
+  await tick();
+  assert.equal(f.replies.filter(r=>r.event==='main_x_progress').length,32);
+  assert.ok(f.replies.find(r=>r.id===5&&Object.hasOwn(r,'ok'))?.ok,JSON.stringify(f.replies));
+  for(const [id,operation] of [[7,'manual_inspect'],[8,'manual_inventory']]){
+    f.send({id,op:'main_x',operation,params:{generation:1,owner:2,role:'reader'}});
+    await waitFor(()=>f.replies.some(r=>r.id===id&&Object.hasOwn(r,'ok')));
+    const entries=f.replies.filter(r=>r.event==='main_x_progress'&&r.id===id);
+    assert.equal(entries.length,3);
+    assert.ok(entries.every((r,i)=>r.result.operation===expectedProgress[operation][i]&&r.result.elapsedMS===i));
+  }
+  assert.ok(!f.replies.some(r=>r.event==='main_x_progress'&&[3,4,6].includes(r.id)));
+  assert.ok(!JSON.stringify(f.replies).includes('synthetic-secret'));
 });
 
 test('actual borrowed factory attaches only its new target and never launches or closes main Chrome',async t=>{

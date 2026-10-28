@@ -180,6 +180,9 @@ func (e *Engine) queueXDailyBatch(run domain.Run, payload map[string]any) error 
 		var cause error
 		phase := "reader-check"
 		defer func() {
+			// Freeze the operational cause before cancellation or cleanup can
+			// produce a secondary failure. Diagnostics never grant authority.
+			e.rememberXDailyFailure(cause, phase)
 			cancel()
 			cleanup, stop := context.WithTimeout(context.Background(), 30*time.Second)
 			cleanupFailed := false
@@ -198,6 +201,7 @@ func (e *Engine) queueXDailyBatch(run domain.Run, payload map[string]any) error 
 				}
 			}
 			stop()
+			e.rememberXDailyFailure(cause, phase)
 			e.xDaily.mu.Lock()
 			if cleanupFailed {
 				e.xDaily.cleanupUncertain = true
@@ -206,9 +210,6 @@ func (e *Engine) queueXDailyBatch(run domain.Run, payload map[string]any) error 
 				e.xDaily.authorized = false
 				if e.xDaily.reason == "" {
 					e.xDaily.reason = "batch-failed"
-					e.xDaily.failurePhase = phase
-					e.xDaily.firstFailure = cause
-					e.xDaily.failureCode = xDailyClosedFailureCode(cause)
 				}
 			}
 			// Generation and done identity prevent a late completion retiring a successor.
@@ -221,13 +222,16 @@ func (e *Engine) queueXDailyBatch(run domain.Run, payload map[string]any) error 
 			e.xDaily.mu.Unlock()
 			if cause != nil {
 				e.logger.Printf("x_daily_batch phase=terminal reason=batch-failed generation=%d", generation)
+				if detail := e.XCaptureStatus().StartupDiagnostic; detail != nil {
+					e.logger.Printf("x_daily_startup stage=%s condition=%s cause=%s broker_reason=%s %s", detail.Stage, detail.Condition, detail.Cause, detail.BrokerReason, detail.Origin)
+				}
 			}
 			if !cleanupFailed {
 				_, _ = e.startNext(context.Background(), run.SessionID)
 			}
 		}()
 		if err := owner.CheckReader(work); err != nil {
-			cause = err
+			cause = xDailyStartupFail(err, "reader_check", "ownership")
 			return
 		}
 		// Register the cancel/join worker before persisting its command. Stop
@@ -246,7 +250,7 @@ func (e *Engine) queueXDailyBatch(run domain.Run, payload map[string]any) error 
 		stop()
 		if cause != nil || batch == nil {
 			if cause == nil {
-				cause = errors.New("daily X batch absent")
+				cause = xDailyStartupFail(nil, "batch_begin_reply", "unavailable")
 			}
 			return
 		}

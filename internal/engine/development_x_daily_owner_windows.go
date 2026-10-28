@@ -29,6 +29,8 @@ import (
 
 const xDailyOwnerSchema = "aku.x.daily-owner.v1"
 
+var errXDailyOwnerReply = errors.New("daily owner response invalid")
+
 // The process owner exclusively leases the reader. Each batch leases a fresh
 // collector directory and owns separate pins; normal batch disposal cannot
 // terminate the enclosing Job or release the reader lease.
@@ -241,7 +243,7 @@ func (n *xDailyOwner) call(ctx context.Context, op string, fields map[string]any
 		return &xApplicationRPCError{code: r.Code, diagnostic: r.Diagnostic}
 	}
 	if out != nil && xManualPilotDecode(r.Result, out) != nil {
-		return errors.New("daily owner response invalid")
+		return errXDailyOwnerReply
 	}
 	return nil
 }
@@ -284,37 +286,57 @@ func (n *xDailyOwner) Close(ctx context.Context) error {
 func (n *xDailyOwner) BeginBatch(ctx, parent context.Context, generation uint64, run domain.Run) (xDailyNativeBatch, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if n.failed || n.batch != nil || generation != n.generation+1 || run.Source != domain.SourceX || run.ID == "" || run.SessionID == "" || ctx == nil || parent == nil || ctx.Err() != nil || parent.Err() != nil {
-		return nil, errors.New("daily batch unavailable")
+	admission := []struct {
+		failed    bool
+		condition string
+	}{
+		{n.failed, "owner_failed"}, {n.batch != nil, "batch_active"}, {generation != n.generation+1, "generation"},
+		{run.Source != domain.SourceX, "source"}, {run.ID == "", "run_id"}, {run.SessionID == "", "session_id"},
+		{ctx == nil, "context"}, {parent == nil, "parent"},
+	}
+	for _, check := range admission {
+		if check.failed {
+			return nil, xDailyStartupFail(nil, "admission", check.condition)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, xDailyStartupFail(err, "admission", "context")
+	}
+	if err := parent.Err(); err != nil {
+		return nil, xDailyStartupFail(err, "admission", "parent")
 	}
 	if err := n.CheckReader(ctx); err != nil {
 		n.failed = true
-		return nil, err
+		return nil, xDailyNativeStartupFail(err, "reader_check", "ownership", nil, nativePilotDiagnostic{})
 	}
 	n.generation = generation
 	var nonce [24]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
-		return nil, err
+		return nil, xDailyStartupFail(err, "nonce", "random")
 	}
 	root := filepath.Join(n.root, "batch-"+hex.EncodeToString(nonce[:]))
 	profile := filepath.Join(root, "profile")
-	if os.Mkdir(root, 0700) != nil || os.Mkdir(profile, 0700) != nil {
+	if err := os.Mkdir(root, 0700); err != nil {
 		n.failed = true
-		return nil, errors.New("daily fresh collector unavailable")
+		return nil, xDailyStartupFail(err, "collector_root", "create")
+	}
+	if err := os.Mkdir(profile, 0700); err != nil {
+		n.failed = true
+		return nil, xDailyStartupFail(err, "collector_profile", "create")
 	}
 	rootID, err := ownedprocess.DirectoryID(root)
 	if err != nil {
-		return nil, err
+		return nil, xDailyStartupFail(err, "root_identity", "identity")
 	}
 	profileID, err := ownedprocess.DirectoryID(profile)
 	if err != nil {
-		return nil, err
+		return nil, xDailyStartupFail(err, "profile_identity", "identity")
 	}
 	desc := ownedprofile.Descriptor{Root: root, Directory: profile, RootID: rootID, DirectoryID: profileID}
 	lease, err := ownedprofile.Acquire(desc)
 	if err != nil {
 		n.failed = true
-		return nil, err
+		return nil, xDailyStartupFail(err, "collector_lease", "lease")
 	}
 	// Per-batch hosts borrow transport and reader lease; their Close is never
 	// invoked. Only their independent role pins and collector lease are released.
@@ -322,18 +344,19 @@ func (n *xDailyOwner) BeginBatch(ctx, parent context.Context, generation uint64,
 	h.cfg.collector = desc
 	b := &xDailyBatch{owner: n, host: h, generation: generation, run: run}
 	n.batch = b
-	var rpcCause error
-	fail := func(reason string) (xDailyNativeBatch, error) {
+	fail := func(cause error, stage, condition string, diagnostic nativePilotDiagnostic) (xDailyNativeBatch, error) {
 		n.failed = true
+		if condition == "rpc" && errors.Is(cause, errXDailyOwnerReply) {
+			condition = "decode"
+		}
+		// Freeze the first safe domain projection before cancellation/cleanup.
+		failure := xDailyNativeStartupFail(cause, stage, condition, b.broker, diagnostic)
 		// A timed-out private RPC may still be acquiring owners in Node. Do not
 		// leave that late startup alive or advertise reader preservation.
 		if ctx.Err() != nil || !b.started.IsZero() && !time.Now().Before(b.Deadline()) {
 			n.host.terminateOwnedTree()
 		}
-		if rpcCause != nil {
-			return b, rpcCause
-		}
-		return b, errors.New(reason)
+		return b, failure
 	}
 	var announced struct {
 		Owner        int    `json:"owner"`
@@ -341,19 +364,25 @@ func (n *xDailyOwner) BeginBatch(ctx, parent context.Context, generation uint64,
 		CollectorPID uint32 `json:"collectorPID"`
 	}
 	if err := n.call(ctx, "daily_batch_begin", map[string]any{"generation": generation, "collectorProfile": profile}, &announced); err != nil {
-		rpcCause = err
-		return fail("daily batch initialization failed")
+		return fail(err, "batch_begin_rpc", "rpc", nativePilotDiagnostic{})
 	}
-	if announced.Owner <= 0 || announced.ReaderPID != n.reader.chrome.PID || announced.CollectorPID == 0 {
-		return fail("daily batch initialization failed")
+	for _, check := range []struct {
+		failed    bool
+		condition string
+	}{
+		{announced.Owner <= 0, "owner"}, {announced.ReaderPID != n.reader.chrome.PID, "reader_pid"}, {announced.CollectorPID == 0, "collector_pid"},
+	} {
+		if check.failed {
+			return fail(nil, "batch_begin_reply", check.condition, nativePilotDiagnostic{})
+		}
 	}
 	reader, err := h.bindRole(ctx, "reader", announced.ReaderPID, announced.Owner)
 	if err != nil {
-		return fail("daily reader pin failed")
+		return fail(err, "reader_bind", "ownership", nativePilotDiagnostic{})
 	}
 	collector, err := h.bindRole(ctx, "collector", announced.CollectorPID, announced.Owner)
 	if err != nil {
-		return fail("daily collector pin failed")
+		return fail(err, "collector_bind", "ownership", nativePilotDiagnostic{})
 	}
 	reader.bridge = b
 	collector.bridge = b
@@ -362,11 +391,20 @@ func (n *xDailyOwner) BeginBatch(ctx, parent context.Context, generation uint64,
 	defer cancel()
 	var receipt xApplicationSeedReceipt
 	if err := n.call(seedCtx, "daily_batch_seed", map[string]any{"generation": generation, "owner": announced.Owner}, &receipt); err != nil {
-		rpcCause = err
-		return fail("daily seed rejected")
+		return fail(err, "seed_rpc", "rpc", nativePilotDiagnostic{})
 	}
-	if !nativePilotAccount(receipt.AccountID) || receipt.Seeded == nil || !*receipt.Seeded || receipt.HomeReady == nil || !*receipt.HomeReady || receipt.ReaderPID != reader.chrome.PID || receipt.CollectorPID != collector.chrome.PID || receipt.ReaderProfile != reader.profile || receipt.CollectorProfile != collector.profile || n.account != "" && n.account != receipt.AccountID {
-		return fail("daily seed rejected")
+	for _, check := range []struct {
+		failed    bool
+		condition string
+	}{
+		{!nativePilotAccount(receipt.AccountID), "account"}, {receipt.Seeded == nil || !*receipt.Seeded, "seeded"},
+		{receipt.HomeReady == nil || !*receipt.HomeReady, "home_ready"}, {receipt.ReaderPID != reader.chrome.PID, "reader_pid"},
+		{receipt.CollectorPID != collector.chrome.PID, "collector_pid"}, {receipt.ReaderProfile != reader.profile, "reader_profile"},
+		{receipt.CollectorProfile != collector.profile, "collector_profile"}, {n.account != "" && n.account != receipt.AccountID, "account_changed"},
+	} {
+		if check.failed {
+			return fail(nil, "seed_receipt", check.condition, nativePilotDiagnostic{})
+		}
 	}
 	n.account = receipt.AccountID
 	key := hex.EncodeToString(nonce[:])
@@ -376,27 +414,27 @@ func (n *xDailyOwner) BeginBatch(ctx, parent context.Context, generation uint64,
 	policy := func(call context.Context) (nativePilotBrokerState, error) {
 		return nativePilotBrokerState{account: binding.account, enrollment: binding.enrollment, pair: binding.pair, attempt: binding.attempt, derivation: binding.derivation, policy: 1, consent: 1, completeInventory: true, parentAlive: parent.Err() == nil, channelHealthy: !n.host.isClosed(), invalidationsReady: true, optedIn: parent.Err() == nil}, call.Err()
 	}
-	broker, ports, _ := newXManualPilotOwnerCaptureBroker(parent, xManualPilotOwnerConfig{enabled: true, pilot: nativePilotConfig{enabled: true, contract: nativePilotContract, limitationAcknowledged: true, binding: binding, attemptStarted: b.started}, policy: policy}, reader, collector)
+	broker, ports, diagnostic := newXManualPilotOwnerCaptureBroker(parent, xManualPilotOwnerConfig{enabled: true, pilot: nativePilotConfig{enabled: true, contract: nativePilotContract, limitationAcknowledged: true, binding: binding, attemptStarted: b.started}, policy: policy}, reader, collector)
 	if broker == nil {
-		return fail("daily broker unavailable")
+		return fail(nil, "broker_create", "configuration", diagnostic)
 	}
 	b.broker = broker
-	if !broker.start(seedCtx).ManualEligible {
-		return fail("daily startup rejected")
+	if diagnostic = broker.start(seedCtx); !diagnostic.ManualEligible {
+		return fail(nil, "broker_start", "eligibility", diagnostic)
 	}
 	rm, cm, stop, err := b.managers(parent, reader, collector)
 	if err != nil {
-		return fail("daily managers unavailable")
+		return fail(err, "managers", "manager", nativePilotDiagnostic{})
 	}
 	b.stopManagers = stop
 	rm.SetExitObserver(func(uint64) { broker.invalidate("reader-lost") })
 	cm.SetExitObserver(func(uint64) { broker.invalidate("owner-or-policy-changed") })
 	b.runtime, err = newXNativePilotRuntime(seedCtx, broker, ports, rm, cm, func(call context.Context, _ readerbroker.Request) error { return n.CheckReader(call) })
 	if err != nil {
-		return fail("daily runtime unavailable")
+		return fail(err, "runtime", "runtime", nativePilotDiagnostic{})
 	}
 	if err = n.e.bindNativePilotStoreAdmission(seedCtx, b.runtime, run.SessionID, run.ID, nativePilotDailyStoreAdmission{broker: broker, store: n.e.store}); err != nil {
-		return fail("daily Store admission rejected")
+		return fail(err, "store_admission", "authorization", nativePilotDiagnostic{})
 	}
 	return b, nil
 }

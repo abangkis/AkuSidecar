@@ -9,13 +9,43 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"sync"
 	"testing"
 	"time"
 	"unsafe"
 
+	"github.com/abangkis/AkuSidecar/internal/ownedrpc"
 	"golang.org/x/sys/windows"
 )
+
+type mainBrowserTestWriter func([]byte) (int, error)
+
+func (write mainBrowserTestWriter) Write(raw []byte) (int, error) { return write(raw) }
+
+func syntheticMainBrowserClient(t *testing.T) (*mainBrowserClient, *io.PipeWriter, <-chan []byte) {
+	t.Helper()
+	reader, writer := io.Pipe()
+	writes := make(chan []byte, 64)
+	client := &mainBrowserClient{rpc: ownedrpc.New(mainBrowserTestWriter(func(raw []byte) (int, error) {
+		writes <- append([]byte(nil), raw...)
+		return len(raw), nil
+	})), ready: make(chan error, 1), nonce: "synthetic-main-nonce"}
+	go client.read(reader)
+	if _, err := io.WriteString(writer, `{"ready":true,"schema":"`+mainBrowserSchema+`","nonce":"synthetic-main-nonce"}`+"\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-client.ready; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = writer.Close(); client.rpc.Close() })
+	return client, writer, writes
+}
+
+func mainProgressFrame(id int64, result string) []byte {
+	return []byte(fmt.Sprintf(`{"event":"main_x_progress","id":%d,"result":%s}`+"\n", id, result))
+}
 
 // Explicit fixtures run the real Windows control handshake and sealed Node
 // entry. The Chrome-facing endpoints are synthetic; no browser is launched.
@@ -154,5 +184,124 @@ func TestMainBrowserTransportWindowsSynthetic(t *testing.T) {
 	_ = chromeWrite.Close()
 	if err := p.closeAfterOwnerExit(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMainBrowserProgressEnvelopeCorrelationBoundsAndRetirement(t *testing.T) {
+	client, writer, writes := syntheticMainBrowserClient(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	progressCount := 0
+	result := make(chan json.RawMessage, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		raw, err := client.CallXWithProgress(ctx, "daily_batch_begin", map[string]any{}, func([]byte) { progressCount++ })
+		result <- raw
+		errCh <- err
+	}()
+	var request struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(<-writes, &request); err != nil || request.ID < 1 {
+		t.Fatal("synthetic X request missing correlation ID")
+	}
+	valid := `{"operation":"settings_wait","elapsedMS":12,"cause":""}`
+	for _, raw := range [][]byte{
+		mainProgressFrame(request.ID+100, valid),
+		[]byte(fmt.Sprintf(`{"event":"main_x_progress","id":%d,"result":%s,"extra":"synthetic-secret"}`+"\n", request.ID, valid)),
+		[]byte(fmt.Sprintf(`{"event":"main_x_progress","id":%d,"id":%d,"result":%s}`+"\n", request.ID, request.ID, valid)),
+		[]byte(fmt.Sprintf(`{"event":"unknown_private_event","id":%d,"result":%s}`+"\n", request.ID, valid)),
+		mainProgressFrame(request.ID, `"synthetic-secret"`),
+	} {
+		if _, err := writer.Write(raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 40; i++ {
+		if _, err := writer.Write(mainProgressFrame(request.ID, valid)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	terminal := fmt.Sprintf(`{"id":%d,"ok":true,"result":{"closed":true}}`+"\n", request.ID)
+	if _, err := io.WriteString(writer, terminal); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Write(mainProgressFrame(request.ID, valid)); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-errCh; err != nil {
+		t.Fatal(err)
+	}
+	if raw := <-result; string(raw) != `{"closed":true}` || progressCount != 32 {
+		t.Fatal("progress was not bounded or terminal reply changed")
+	}
+}
+
+func TestMainBrowserConcurrentProgressUsesEachCallCorrelation(t *testing.T) {
+	client, writer, writes := syntheticMainBrowserClient(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	var mu sync.Mutex
+	seen := map[string]bool{}
+	results := make(chan string, 2)
+	start := func(operation string) {
+		go func() {
+			raw, err := client.CallXWithProgress(ctx, operation, map[string]any{}, func(raw []byte) {
+				mu.Lock()
+				want := `"operation":"settings_wait"`
+				if operation == "daily_batch_begin_collector" {
+					want = `"operation":"rendezvous"`
+				}
+				seen[operation] = bytes.Contains(raw, []byte(want))
+				mu.Unlock()
+			})
+			if err != nil {
+				results <- "error"
+				return
+			}
+			var reply struct {
+				Value string `json:"value"`
+			}
+			_ = json.Unmarshal(raw, &reply)
+			results <- reply.Value
+		}()
+	}
+	start("daily_batch_begin_reader")
+	start("daily_batch_begin_collector")
+	var ids = map[string]int64{}
+	for range 2 {
+		var request struct {
+			Operation string `json:"operation"`
+			ID        int64  `json:"id"`
+		}
+		if err := json.Unmarshal(<-writes, &request); err != nil {
+			t.Fatal(err)
+		}
+		ids[request.Operation] = request.ID
+	}
+	reader := `{"operation":"settings_wait","elapsedMS":12,"cause":""}`
+	collector := `{"operation":"rendezvous","elapsedMS":13,"cause":""}`
+	if _, err := writer.Write(mainProgressFrame(ids["daily_batch_begin_collector"], collector)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Write(mainProgressFrame(ids["daily_batch_begin_reader"], reader)); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct {
+		id    int64
+		value string
+	}{{ids["daily_batch_begin_collector"], "collector"}, {ids["daily_batch_begin_reader"], "reader"}} {
+		if _, err := io.WriteString(writer, fmt.Sprintf(`{"id":%d,"ok":true,"result":{"value":%q}}`+"\n", item.id, item.value)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := map[string]bool{}
+	for range 2 {
+		got[<-results] = true
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !got["reader"] || !got["collector"] || !seen["daily_batch_begin_reader"] || !seen["daily_batch_begin_collector"] {
+		t.Fatal("concurrent progress or terminal replies crossed correlations")
 	}
 }

@@ -4,6 +4,7 @@ package appshell
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -293,6 +294,15 @@ func (c *mainBrowserClient) read(input io.Reader) {
 			c.ready <- nil
 			continue
 		}
+		if id, progress, found, valid := mainBrowserProgressFrame(scan.Bytes()); found {
+			if valid {
+				c.rpc.Progress(id, progress)
+			}
+			continue
+		}
+		if !mainBrowserTerminalFrame(scan.Bytes()) {
+			continue
+		}
 		var r struct {
 			ID     int64           `json:"id"`
 			OK     bool            `json:"ok"`
@@ -324,8 +334,107 @@ func (c *mainBrowserClient) read(input io.Reader) {
 	}
 	// Failure revokes callers only. Unread endpoint copies preserve Chrome.
 }
+
+// Progress frames have an exact top-level envelope. Unknown, duplicate, late,
+// and malformed frames are ignored and cannot retire or replace a terminal reply.
+func mainBrowserProgressFrame(raw []byte) (id int64, progress []byte, found, valid bool) {
+	d := json.NewDecoder(bytes.NewReader(raw))
+	token, err := d.Token()
+	if err != nil || token != json.Delim('{') {
+		return 0, nil, false, false
+	}
+	fields := make(map[string]json.RawMessage, 3)
+	seen := make(map[string]bool, 3)
+	malformed := false
+	for d.More() {
+		token, err = d.Token()
+		key, ok := token.(string)
+		if err != nil || !ok {
+			return 0, nil, found, false
+		}
+		if key == "event" {
+			found = true
+		}
+		var value json.RawMessage
+		if d.Decode(&value) != nil {
+			return 0, nil, found, false
+		}
+		if seen[key] || key != "event" && key != "id" && key != "result" {
+			malformed = true
+		}
+		seen[key] = true
+		fields[key] = value
+	}
+	if token, err = d.Token(); err != nil || token != json.Delim('}') {
+		return 0, nil, found, false
+	}
+	if _, err = d.Token(); err != io.EOF {
+		return 0, nil, found, false
+	}
+	if !found {
+		return 0, nil, false, false
+	}
+	if malformed || len(fields) != 3 || !seen["id"] || !seen["result"] {
+		return 0, nil, true, false
+	}
+	var event string
+	if json.Unmarshal(fields["event"], &event) != nil || event != "main_x_progress" || json.Unmarshal(fields["id"], &id) != nil || id < 1 {
+		return 0, nil, true, false
+	}
+	progress = bytes.TrimSpace(fields["result"])
+	if len(progress) == 0 || len(progress) > 512 || progress[0] != '{' {
+		return 0, nil, true, false
+	}
+	return id, append([]byte(nil), progress...), true, true
+}
+
+func mainBrowserTerminalFrame(raw []byte) bool {
+	d := json.NewDecoder(bytes.NewReader(raw))
+	token, err := d.Token()
+	if err != nil || token != json.Delim('{') {
+		return false
+	}
+	fields := make(map[string]json.RawMessage, 3)
+	seen := make(map[string]bool, 3)
+	malformed := false
+	for d.More() {
+		token, err = d.Token()
+		key, ok := token.(string)
+		if err != nil || !ok {
+			return false
+		}
+		var value json.RawMessage
+		if d.Decode(&value) != nil {
+			return false
+		}
+		if seen[key] || key != "id" && key != "ok" && key != "result" && key != "error" {
+			malformed = true
+		}
+		seen[key] = true
+		fields[key] = value
+	}
+	if token, err = d.Token(); err != nil || token != json.Delim('}') {
+		return false
+	}
+	if _, err = d.Token(); err != io.EOF || malformed || !seen["id"] || !seen["ok"] {
+		return false
+	}
+	var id int64
+	var ok bool
+	if json.Unmarshal(fields["id"], &id) != nil || id < 1 || json.Unmarshal(fields["ok"], &ok) != nil {
+		return false
+	}
+	if ok {
+		return len(fields) == 3 && seen["result"] && !seen["error"]
+	}
+	return len(fields) == 3 && seen["error"] && !seen["result"]
+}
+
 func (c *mainBrowserClient) request(ctx context.Context, op string, fields map[string]any) (json.RawMessage, error) {
-	r, err := c.rpc.Call(ctx, op, fields, nil)
+	return c.requestWithProgress(ctx, op, fields, nil)
+}
+func (c *mainBrowserClient) requestWithProgress(ctx context.Context, op string, fields map[string]any, progress func([]byte)) (json.RawMessage, error) {
+	r, err := c.rpc.Call(ctx, op, fields, progress)
 	if err != nil {
 		return nil, err
 	}
@@ -350,5 +459,22 @@ func (c *mainBrowserClient) Call(ctx context.Context, method string, params any,
 }
 func (c *mainBrowserClient) CallX(ctx context.Context, operation string, params map[string]any) (json.RawMessage, error) {
 	return c.request(ctx, "main_x", map[string]any{"operation": operation, "params": params})
+}
+func (c *mainBrowserClient) CallXWithProgress(ctx context.Context, operation string, params map[string]any, progress func([]byte)) (json.RawMessage, error) {
+	var mu sync.Mutex
+	count := 0
+	boundedProgress := func(raw []byte) {
+		if progress == nil || len(raw) > 512 {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if count >= 32 {
+			return
+		}
+		count++
+		progress(append([]byte(nil), raw...))
+	}
+	return c.requestWithProgress(ctx, "main_x", map[string]any{"operation": operation, "params": params}, boundedProgress)
 }
 func (c *mainBrowserClient) TransportWorker() *OwnedCommand { return c.worker }

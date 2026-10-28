@@ -22,6 +22,13 @@ type MainBrowserProtocol interface {
 	TransportWorker() *OwnedCommand
 }
 
+// MainBrowserProgressProtocol is optional so existing protocol implementations
+// and test doubles remain source-compatible. Progress stays a bounded private
+// diagnostic callback on a single X operation.
+type MainBrowserProgressProtocol interface {
+	CallXWithProgress(context.Context, string, map[string]any, func([]byte)) (json.RawMessage, error)
+}
+
 // Diagnostics are a closed, Node-normalized projection. Formatting never emits
 // payloads; callers explicitly decode the private diagnostic when needed.
 type MainBrowserError struct {

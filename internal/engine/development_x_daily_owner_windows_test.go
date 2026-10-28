@@ -80,6 +80,10 @@ func TestXDailyNativeOwnerExplicitResourcesAndScopedFailureCleanup(t *testing.T)
 	if err == nil || batch == nil {
 		t.Fatal("synthetic transport qualified or partial ownership lost")
 	}
+	diagnostic := xDailyStartupDetail(err)
+	if diagnostic == nil || diagnostic.Stage != "broker_start" || diagnostic.Condition != "eligibility" || diagnostic.Origin == "" || diagnostic.BrokerReason == "" {
+		t.Fatalf("broker startup failure lost domain diagnostic: %+v", diagnostic)
+	}
 	if err = batch.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -94,6 +98,68 @@ func TestXDailyNativeOwnerExplicitResourcesAndScopedFailureCleanup(t *testing.T)
 	}
 	if _, err = owner.BeginBatch(ctx, parent, 2, session.Runs[0]); err == nil {
 		t.Fatal("failed batch silently retried")
+	}
+}
+
+func TestXDailyNativeBeginBatchRejectsWithExactPredicate(t *testing.T) {
+	for _, tc := range []struct {
+		name, old, replacement, stage, condition string
+	}{
+		{"begin-owner", "result={owner:generation+1,readerPID:reader.pid,collectorPID:collector.pid}", "result={owner:0,readerPID:reader.pid,collectorPID:collector.pid}", "batch_begin_reply", "owner"},
+		{"begin-shape", "result={owner:generation+1,readerPID:reader.pid,collectorPID:collector.pid}", "result={owner:'invalid',readerPID:reader.pid,collectorPID:collector.pid}", "batch_begin_rpc", "decode"},
+		{"seed-home", "seeded:true,homeReady:true", "seeded:true,homeReady:false", "seed_receipt", "home_ready"},
+		{"seed-profile", "readerProfile:scope.readerProfile,collectorPID:collector.pid", "readerProfile:'private-invalid-profile',collectorPID:collector.pid", "seed_receipt", "reader_profile"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := dailySyntheticConfig(t)
+			changed := strings.Replace(dailySyntheticDriver, tc.old, tc.replacement, 1)
+			if changed == dailySyntheticDriver {
+				t.Fatal("synthetic fault not injected")
+			}
+			if err := os.WriteFile(cfg.driver.path, []byte(changed), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg.driver = applicationAsset(t, cfg.driver.path)
+			e, _ := testEngine(t)
+			e.config.Dev = true
+			e.config.Capture.XMode = config.XCaptureConcurrent
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			owner, err := newXDailyNativeOwner(context.Background(), ctx, cfg, e, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
+				defer stop()
+				if err := owner.Close(cleanup); err != nil {
+					t.Error(err)
+				}
+			}()
+			batch, err := owner.BeginBatch(ctx, context.Background(), 1, domain.Run{ID: "synthetic-run", SessionID: "synthetic-session", Source: domain.SourceX})
+			d := xDailyStartupDetail(err)
+			wantCause := "rejected"
+			if tc.condition == "decode" {
+				wantCause = "unavailable"
+			}
+			if d == nil || d.Stage != tc.stage || d.Condition != tc.condition || d.Cause != wantCause || batch == nil {
+				t.Fatalf("failed predicate not retained: %+v", d)
+			}
+			if err := batch.Close(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if owner.CheckReader(ctx) != nil {
+				t.Fatal("failed collector retired reader")
+			}
+		})
+	}
+}
+
+func TestXDailyNativeBeginBatchAdmissionDiagnostic(t *testing.T) {
+	n := &xDailyOwner{}
+	_, err := n.BeginBatch(context.Background(), context.Background(), 1, domain.Run{ID: "run", SessionID: "session", Source: domain.SourceLinkedIn})
+	if d := xDailyStartupDetail(err); d == nil || d.Stage != "admission" || d.Condition != "source" {
+		t.Fatal("admission predicate was not reported before native work")
 	}
 }
 

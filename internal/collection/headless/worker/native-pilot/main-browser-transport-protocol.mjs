@@ -1,5 +1,8 @@
 import {createHash} from 'node:crypto';
 import {parseStrictJSON} from '../../../../../scripts/auth-session-fixture/x-evidence-ingress.mjs';
+import {MANUAL_TIMING} from '../../../../../scripts/auth-session-fixture/x-manual-timing-policy.mjs';
+import {STARTUP_PHASES,STARTUP_REASONS,STARTUP_ROLES,STARTUP_TRACE} from '../../../../../scripts/auth-session-fixture/x-manual-startup-diagnostic.mjs';
+import {SETTINGS_WAIT_STATES} from '../../../../../scripts/auth-session-fixture/x-settings-wait-state.mjs';
 
 export const MAIN_TRANSPORT_SCHEMA='aku.main-browser-transport.v1';
 const rejected=()=>new Error('main_transport_rejected');
@@ -8,6 +11,39 @@ const exact=(v,keys)=>{if(!object(v)||Object.keys(v).length!==keys.length||keys.
 const bounded=(v,n=4096)=>typeof v==='string'&&v.length<=n&&!/[\u0000-\u001f\u007f]/u.test(v);
 const hash=s=>createHash('sha256').update(s).digest('hex');
 const parse=b=>parseStrictJSON(new TextDecoder('utf-8',{fatal:true}).decode(b),{maxJSONDepth:64,maxJSONTokens:500000});
+const startupProgressOperations=new Set(['inspect_rpc','inventory_rpc','acquire_rpc','identity','rendezvous','settings_wait','cleanup','root_restore','complete']);
+const startupProgressOwnerOperations=new Set(['manual_acquire','manual_inspect','manual_inventory']);
+const startupCauseCatalogs=[STARTUP_ROLES,STARTUP_PHASES,STARTUP_REASONS,['primary','peer'],...Object.values(STARTUP_TRACE)];
+function startupCause(value){
+  if(value==='')return true;
+  for(const role of STARTUP_ROLES)for(const phase of STARTUP_PHASES)for(const reason of STARTUP_REASONS)for(const kind of ['primary','peer'])
+    if(value===`manual_initial_${role}_${phase}_${reason}_${kind}`)return true;
+  const prefix='manual_initial_v9_';
+  if(!value.startsWith(prefix)||value.length>80)return false;
+  const parts=value.slice(prefix.length).split('_');
+  return parts.length===startupCauseCatalogs.length&&parts.every((part,index)=>/^(?:0|[1-9][0-9]*)$/u.test(part)&&Number(part)<startupCauseCatalogs[index].length);
+}
+// Progress is diagnostic-only. Normalize it against the current closed catalogs
+// before it crosses the Node/Go control channel.
+export function mainStartupProgress(value){
+  try{
+    if(!object(value))return null;
+    const keys=Object.keys(value),required=['operation','elapsedMS','cause'];
+    if((keys.length!==3&&keys.length!==4)||required.some(k=>!Object.hasOwn(value,k))||keys.some(k=>!['operation','elapsedMS','cause','settingsWait'].includes(k)))return null;
+    if(!startupProgressOperations.has(value.operation)||!Number.isSafeInteger(value.elapsedMS)||value.elapsedMS<0||value.elapsedMS>MANUAL_TIMING.attemptAuthorizationMaxMS||
+      typeof value.cause!=='string'||!startupCause(value.cause))return null;
+    const out={operation:value.operation,elapsedMS:value.elapsedMS,cause:value.cause};
+    if(Object.hasOwn(value,'settingsWait')){
+      if(typeof value.settingsWait!=='string'||!SETTINGS_WAIT_STATES.includes(value.settingsWait))return null;
+      out.settingsWait=value.settingsWait;
+    }
+    return Buffer.byteLength(JSON.stringify(out),'utf8')<=512?out:null;
+  }catch{return null;}
+}
+export function mainStartupProgressForOwnerOperation(operation,value){
+  if(!startupProgressOwnerOperations.has(operation))return null;
+  return mainStartupProgress(value);
+}
 const ownerFailures=new WeakMap();
 // Called only for replies produced by the in-process daily owner validator,
 // whose code/diagnostic originates in the existing closed diagnostic catalogs.
@@ -164,7 +200,15 @@ export function serveMainBrowserTransport({input,output,connect,createX,recipes=
           const exclusive=['daily_owner_bootstrap','daily_reader_initialize','daily_batch_begin','daily_batch_seed','daily_batch_end','daily_owner_close'].includes(q.operation);
           if(exclusive&&publicPending)throw rejected();if(exclusive)busy=true;
           try{if(!x){if(q.operation!=='daily_owner_bootstrap'||xAttempted)throw rejected();xAttempted=true;x=await createX(q.params,transport);result={bound:true};}
-            else result=await x.execute(q.operation,q.params,q.id);
+            else{
+              let terminal=false,progressCount=0;
+              const report=value=>{
+                if(terminal||progressCount>=32)return;
+                const progress=mainStartupProgressForOwnerOperation(q.operation,value);if(!progress)return;
+                progressCount++;emit({event:'main_x_progress',id:q.id,result:progress});
+              };
+              try{result=await x.execute(q.operation,q.params,q.id,report);}finally{terminal=true;}
+            }
           }finally{if(exclusive)busy=false;}
         }else throw rejected();
         emit({id:q.id,ok:true,result});

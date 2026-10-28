@@ -3,6 +3,40 @@
 This page is the current checkpoint. Historical experiments in the design and
 roadmap are evidence, not a new list of prerequisites.
 
+## Current operational checkpoint (2026-10-28)
+
+The ordinary `runtime/dev` handoff of `6105725` completed. Open source and native
+post reader actions worked before process consent. In the subsequently approved
+mixed-source acceptance, Instagram and LinkedIn completed; the first X batch
+failed during `startup` after 6,830 ms. Batch two was not attempted. Stop revoked
+X authority and verified collector cleanup while the reader/main Browser stayed
+open. The retained evidence does not establish the failed startup predicate or
+whether cookie transfer was reached; elapsed time alone is not a timeout finding.
+Receipt: `build/main-dev-two-batches-6105725-20261028/acceptance-result.json`.
+
+The next source increment adds closed `BeginBatch` stage/condition diagnostics,
+first-cause retention before cleanup, and correlated bounded startup progress
+through the main-profile transport. It does not change account evidence,
+ownership, Store admission, deadlines, login or Auto Update. Telemetry-library
+adoption/relocation is deferred at the user's request until its path is known.
+See the [diagnostic contract](x-daily-development-design.md#startup-diagnostics-and-bounded-progress-2026-10-28).
+
+The final `scripts/test-x-main-profile.ps1` run passed 32 Node tests, the scoped
+seven-package Go suite in default and `auth_session_dev` builds, and all four
+main build/tag combinations. Synthetic cases cover wrong/malformed startup
+receipts, first cause surviving Stop plus cleanup failure, closed diagnostics,
+the real inspect/inventory/acquire progress route, per-RPC caps, concurrent
+reader-check correlation and late/terminal event rejection. Real Chrome is
+explicitly skipped. Evidence:
+`build/x-main-offline-3654273701784c5db4ffb94b8314a654/offline.log.txt`.
+
+After offline validation and source publication, the next operational proposal
+is an ordinary graceful development rebuild/restart with these diagnostics,
+followed by separately authorized process derivation and the two-batch/reader
+acceptance. On the first failure, preserve the new diagnostic, Stop and inspect
+offline; do not automatically retry or reopen a QA-package delivery route.
+No runtime restart or new transfer occurs in this source increment.
+
 ## Current daily-use MVP target (2026-10-27)
 
 ### Delivery correction: ordinary dev first (2026-10-28)
