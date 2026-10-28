@@ -178,6 +178,10 @@ func TestXDailyRepeatedBatchesPersistAndStop(t *testing.T) {
 			t.Fatal(err)
 		}
 		awaitDailyBatch(t, e, session.ID)
+		status := e.XCaptureStatus()
+		if status.Cleanup != "verified" || status.CleanupScope != "batch_collector" || status.ReaderBootstrapLifetime != "process" {
+			t.Fatalf("collector cleanup lost process bootstrap lifetime: %+v", status)
+		}
 	}
 	o.mu.Lock()
 	if len(o.generations) != 2 || o.generations[0] != 1 || o.generations[1] != 2 || o.readerCloses != 0 || o.collectorCloses != 2 {

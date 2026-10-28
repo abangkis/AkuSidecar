@@ -51,7 +51,7 @@ func TestAuthenticatedSourceReloadUsesRealMaintenanceAction(t *testing.T) {
 			workerResult <- errors.New("real split result rejected")
 			return
 		}
-		s.engine.RecordHeartbeat(domain.BridgeHeartbeat{BuildID: engine.ExpectedBridgeBuildID})
+		s.engine.RecordHeartbeat(engine.ExpectedHeartbeat())
 		workerResult <- nil
 	}()
 	if err := reloadAuthJourneyControl(ctx, server.URL, token, s.engine.Epoch()); err != nil {

@@ -18,6 +18,7 @@ import { mediaRecaptureTransport, waitForMediaRecapture } from "./media-recaptur
 import { createPlaybackRecoveryQueue } from "./playback-recovery-queue.js";
 import { videoPlaybackMissing } from "./video-recapture-policy.js";
 import { releaseCompletedSourceSurfaces } from "./capture-surface-release-barrier.js";
+import { isVerifiedSurfaceCleanupReceipt } from "./capture-surface-cleanup-receipt.js";
 import { bridgeRecoveryState, bridgeReloadVerified, bridgeCaptureBusy } from "./bridge-recovery-state.js";
 import {
   boundedTimelineMedia,
@@ -114,6 +115,8 @@ import {
 const endpoint = location.origin;
 const defaultIntent = "What materially changed since my last check?";
 const terminalStatuses = new Set(["completed", "partial", "failed", "cancelled"]);
+const CAPTURE_CLEANUP_PENDING_MESSAGE = "Capture cleanup is pending. Keep related tabs unchanged until ownership is verified.";
+const CAPTURE_CLEANUP_PENDING_DETAIL = "Cleanup ownership is unverified. Leave related tabs unchanged while cleanup retries.";
 const BACK_TO_TOP_THRESHOLD_PX = 480;
 const SOURCE_TEXT_COLLAPSE_CHARACTERS = 420;
 const SOURCE_TEXT_COLLAPSE_LINES = 6;
@@ -159,6 +162,7 @@ const state = {
   dispatchRetryAfter: new Map(),
   poller: null,
   pollInFlight: false,
+  captureCleanupPending: null,
   sessionProgress: { sessionId: null, value: 0 },
   currentView: "timeline",
   library: {
@@ -5013,7 +5017,7 @@ async function retryBootstrap() {
 }
 
 async function startVisibleUpdate() {
-  if (state.session || state.bootstrap?.calibration?.active || state.bootstrap?.onboarding?.status !== "completed" || !collectionModeState(state.bootstrap?.collectionRuntime,state.bootstrap?.bridge?.compatible).canCollect) return;
+  if (state.captureCleanupPending || state.session || state.bootstrap?.calibration?.active || state.bootstrap?.onboarding?.status !== "completed" || !collectionModeState(state.bootstrap?.collectionRuntime,state.bootstrap?.bridge?.compatible).canCollect) return;
   hideFailure();
   clearNotice();
   setPill("#sidecar-status", "AkuSidecar ready", "ok");
@@ -5043,9 +5047,16 @@ async function cancelSession() {
     stopPolling();
     state.dispatchKey = null;
     state.dispatchRetryAfter.clear();
-    await releaseCaptureSurface(leaseId).catch((error) => {
+    try {
+      await releaseCaptureSurface(leaseId);
+    } catch (error) {
+      state.captureCleanupPending = leaseId;
       console.warn("Capture-surface cleanup after cancellation failed", error);
-    });
+      renderSession();
+      startPolling();
+      return;
+    }
+    if (state.captureCleanupPending === leaseId) state.captureCleanupPending = null;
     state.session = null;
     renderSession();
   } catch (error) {
@@ -5085,12 +5096,18 @@ async function pollSession() {
     const captureRun = session.runs?.find((run) => run.status === "waiting_for_bridge" && (!run.bridgeCommandStatus || run.bridgeCommandStatus === "queued"));
     if (!captureActive && captureRun && captureSurfaceBarrier.ready) dispatch(captureRun);
     if (terminalStatuses.has(session.status)) {
-      stopPolling();
       state.dispatchKey = null;
       state.dispatchRetryAfter.clear();
-      await releaseCaptureSurface(session.id).catch((error) => {
+      try {
+        await releaseCaptureSurface(session.id);
+      } catch (error) {
+        state.captureCleanupPending = session.id;
         console.warn("Capture-surface cleanup after session completion failed", error);
-      });
+        renderSession();
+        return;
+      }
+      if (state.captureCleanupPending === session.id) state.captureCleanupPending = null;
+      stopPolling();
       if (session.delivery === "prepared") {
         const { autoUpdate } = await api("/api/auto-update/status");
         renderAutoUpdateStatus(autoUpdate);
@@ -5112,6 +5129,15 @@ async function pollSession() {
     }
   } catch (error) {
     if (/not found/i.test(error.message)) {
+      try {
+        await releaseCaptureSurface(sessionId);
+      } catch (cleanupError) {
+        state.captureCleanupPending = sessionId;
+        console.warn("Capture-surface cleanup for a missing session is still pending.", cleanupError);
+        renderSession();
+        return;
+      }
+      if (state.captureCleanupPending === sessionId) state.captureCleanupPending = null;
       stopPolling();
       state.dispatchKey = null;
       state.dispatchRetryAfter.clear();
@@ -5157,7 +5183,11 @@ function releaseCaptureSurfaceOnce(leaseId, source = null) {
           finish(reject, new Error("AkuBridge rejected cleanup because the capture lease changed."));
           return;
         }
-        finish(resolve, event.data.outcome ?? null);
+        if (!isVerifiedSurfaceCleanupReceipt(event.data.outcome, leaseId, source)) {
+          finish(reject, new Error("AkuBridge did not provide a verified capture-surface cleanup receipt."));
+          return;
+        }
+        finish(resolve, event.data.outcome);
       } else if (event.data.type === "AKU_BROWSER_CAPTURE_SURFACE_RELEASE_FAILED") {
         finish(reject, new Error(event.data.message || "AkuBridge capture-surface cleanup failed."));
       }
@@ -5184,7 +5214,8 @@ function dispatch(run) {
 function renderSession() {
   syncNativePostLinks();
   const session = state.session;
-  $("#processing-panel").classList.toggle("hidden", !session || terminalStatuses.has(session.status));
+  const cleanupPending = Boolean(state.captureCleanupPending);
+  $("#processing-panel").classList.toggle("hidden", !cleanupPending && (!session || terminalStatuses.has(session.status)));
   const modeBadge = $("#processing-mode-badge");
   const badge = updatePolicyBadge(session);
   modeBadge.classList.toggle("hidden", !badge);
@@ -5192,6 +5223,11 @@ function renderSession() {
   modeBadge.setAttribute("aria-label", badge?.label || "");
   syncOnboardingLearning(shouldShowOnboardingLearning(session));
   syncRunButtons();
+  if (cleanupPending) {
+    $("#processing-title").textContent = "Capture cleanup pending";
+    $("#processing-detail").textContent = CAPTURE_CLEANUP_PENDING_DETAIL;
+    return;
+  }
   if (!session || terminalStatuses.has(session.status)) return;
   const progress = describeSessionProgress(session);
   if (state.sessionProgress.sessionId !== session.id) {
@@ -5430,11 +5466,11 @@ async function closeNativeReadersAndResume() {
 function syncRunButtons() {
   drainPlaybackRecovery();
   renderNativeReaderNotice(state.bootstrap?.autoUpdate);
-  const reason = runDisabledReason();
-  const canRetryBootstrap = state.bootstrapLoading && Boolean(state.bootstrapError);
+  const reason = state.captureCleanupPending ? CAPTURE_CLEANUP_PENDING_MESSAGE : runDisabledReason();
+  const canRetryBootstrap = state.bootstrapLoading && Boolean(state.bootstrapError) && !state.captureCleanupPending;
   const disabled = Boolean(reason);
   const prepared = state.bootstrap?.autoUpdate?.preparedBatches?.length ?? 0;
-  const preparedReason = preparedBatchDisabledReason(prepared);
+  const preparedReason = state.captureCleanupPending ? CAPTURE_CLEANUP_PENDING_MESSAGE : preparedBatchDisabledReason(prepared);
   $("#timeline-runner-button").disabled = disabled && !canRetryBootstrap;
   $("#timeline-prepared-button").disabled = Boolean(preparedReason);
   $("#done-button").disabled = prepared > 0 ? Boolean(preparedReason) : disabled;
@@ -5477,6 +5513,7 @@ function renderTimelineCalibrationProgress() {
 }
 
 function preparedBatchDisabledReason(prepared) {
+  if (state.captureCleanupPending) return CAPTURE_CLEANUP_PENDING_MESSAGE;
   if (prepared < 1) return "No prepared batch is available.";
   if (state.bootstrapLoading || !state.bootstrap) return "Restoring prepared batches…";
   if (state.revealingPreparedBatch) return "Loading the prepared batch…";
@@ -5484,6 +5521,7 @@ function preparedBatchDisabledReason(prepared) {
 }
 
 function runDisabledReason() {
+  if (state.captureCleanupPending) return CAPTURE_CLEANUP_PENDING_MESSAGE;
   if (state.closingNativeReaders) return "Closing native post windows and restoring collection…";
   if (state.bootstrapLoading && state.bootstrapError) return "Timeline restore was interrupted. Retry now or wait for automatic recovery.";
   if (state.bootstrapLoading) return "Restoring your Timeline and active check…";
@@ -6489,7 +6527,14 @@ function buildCaptureSurfaceTelemetry(events) {
   for (const event of events) {
     counts.set(event.event, (counts.get(event.event) || 0) + 1);
   }
+  const cleanup = events.filter((event) => event.detail?.cleanup?.schema === "aku.surface-cleanup.v1")
+    .at(-1)?.detail.cleanup;
+  const cleanupSummary = cleanup && [cleanup.expected, cleanup.closed, cleanup.retained, cleanup.pending]
+    .every((value) => Number.isInteger(value) && value >= 0 && value <= 4096)
+    ? `${cleanup.closed} closed / ${cleanup.expected} tracked · ${cleanup.retained} lease-retained · ${cleanup.pending} pending`
+    : null;
   rollup.textContent = [
+    cleanupSummary,
     ...new Set(events.map((event) => event.detail?.focusPolicyRevision).filter(Boolean)),
     counts.get("created") ? `${counts.get("created")} created` : null,
     counts.get("reused") ? `${counts.get("reused")} reused` : null,
@@ -6514,10 +6559,12 @@ function buildCaptureSurfaceTelemetry(events) {
     const row = document.createElement("li");
     const copy = document.createElement("span");
     const label = document.createElement("strong");
-    label.textContent = labels[event.event] || humanize(event.event);
+    label.textContent = event.detail?.cleanup ? "Capture cleanup receipt" : labels[event.event] || humanize(event.event);
     const context = document.createElement("small");
     context.textContent = [
       humanize(event.outcome),
+      event.detail?.captureSurfacePolicy?.fingerprint
+        ? `policy ${String(event.detail.captureSurfacePolicy.fingerprint).slice(0, 12)}` : null,
       event.detail?.isolation ? humanize(event.detail.isolation) : null,
       event.detail?.restored === true ? "working focus restored" : null,
       event.detail?.containmentApplied === true ? "capture minimized; rendering may be throttled" : null,

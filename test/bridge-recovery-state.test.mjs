@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { bridgeRecoveryState, bridgeReloadVerified, bridgeCaptureBusy } from "../internal/httpapi/web/bridge-recovery-state.js";
 
-const identity = { runtimeRevision: "source-adapters-v116", buildId: "aku-bridge-0.9.2-source-adapters-v116", focusPolicyRevision: "quiet-containment-only-v2" };
+const identity = { runtimeRevision: "source-adapters-v116", buildId: "aku-bridge-0.9.2-source-adapters-v116", focusPolicyRevision: "quiet-containment-only-v2", captureSurfacePolicy: { schema: "aku.surface-policy.v1", fingerprint: "a".repeat(64) } };
 const healthy = () => ({ state: "ready", compatible: true, expected: { ...identity }, actual: { ...identity, extensionVersion: "0.9.2" } });
 const drifted = () => ({ ...healthy(), state: "degraded", actual: { ...identity, runtimeRevision: "source-adapters-v108", buildId: "aku-bridge-0.9.2-source-adapters-v108" } });
 const source = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
@@ -58,7 +58,19 @@ test("focus mismatch permits recovery, exact parity hides it, missing identity s
   assert.equal(bridgeRecoveryState(drifted(), false).showReload, false);
 });
 
-const completed = () => ({ status: "completed", heartbeatObservedAt: "2026-09-20T00:00:00Z", expectedBuildId: identity.buildId, observedBuildId: identity.buildId });
+const completed = () => ({ status: "completed", heartbeatObservedAt: "2026-09-20T00:00:00Z", expectedBuildId: identity.buildId, observedBuildId: identity.buildId, expectedSurfacePolicy: identity.captureSurfacePolicy.fingerprint, observedSurfacePolicy: identity.captureSurfacePolicy.fingerprint });
+
+test("same build with missing or stale imported policy exposes reload and cannot claim success", () => {
+  for (const policy of [undefined, { ...identity.captureSurfacePolicy, fingerprint: "b".repeat(64) }]) {
+    const health = { ...healthy(), actual: { ...identity, captureSurfacePolicy: policy }, compatible: false, state: "incompatible" };
+    const app = fixture();
+    app.render(health);
+    assert.equal(app.element("#bridge-reload").classList.contains("hidden"), false);
+    assert.match(app.element("#bridge-status").textContent, /capture policy mismatch/);
+    assert.equal(bridgeReloadVerified(health, completed()), false);
+  }
+  assert.equal(bridgeReloadVerified(healthy(), { ...completed(), observedSurfacePolicy: "b".repeat(64) }), false);
+});
 test("reload succeeds only after expected heartbeat and exact compatible identity readback", async () => {
   const app = fixture(healthy(), completed()); app.render(drifted()); await app.reload();
   assert.equal(app.element("#bridge-reload").textContent, "AkuBridge reloaded");

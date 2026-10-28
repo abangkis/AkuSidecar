@@ -32,7 +32,11 @@ func TestReloadActionCompletesOnlyOnExpectedBuild(t *testing.T) {
 	if mismatch == nil || mismatch.Status != "accepted" || mismatch.ObservedBuildID != "unexpected-build" {
 		t.Fatalf("mismatch=%+v", mismatch)
 	}
-	completed := actions.Observe(domain.BridgeHeartbeat{BuildID: ExpectedBridgeBuildID})
+	stalePolicy := actions.Observe(domain.BridgeHeartbeat{BuildID: ExpectedBridgeBuildID})
+	if stalePolicy == nil || stalePolicy.Status != "accepted" || stalePolicy.CompletedAt != nil {
+		t.Fatalf("build label without executing policy must not complete reload: %+v", stalePolicy)
+	}
+	completed := actions.Observe(ExpectedHeartbeat())
 	if completed == nil || completed.Status != "completed" || completed.CompletedAt == nil {
 		t.Fatalf("completed=%+v", completed)
 	}

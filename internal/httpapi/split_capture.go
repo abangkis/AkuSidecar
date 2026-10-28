@@ -1116,7 +1116,9 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		}
 		if runtimeStatus.Effective == "headless" {
 			switch a.Type {
-			case "dispatch", "configure_background", "release":
+			case "release":
+				return writeJSON(w, 200, splitActionResult{OK: true, Result: noOwnedSurfaceCleanupOutcome(a.LeaseID, a.Source)})
+			case "dispatch", "configure_background":
 				return writeJSON(w, 200, splitActionResult{OK: true, Result: json.RawMessage(`{}`)})
 			case "media_recapture":
 				job, err := s.store.MediaRecapture(r.Context(), a.RecaptureID)
@@ -1205,7 +1207,9 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		if t.directReader != nil && a.Type != "open_native_post" {
 			t.mu.Unlock()
 			switch a.Type {
-			case "dispatch", "configure_background", "release":
+			case "release":
+				return writeJSON(w, 200, splitActionResult{OK: true, Result: noOwnedSurfaceCleanupOutcome(a.LeaseID, a.Source)})
+			case "dispatch", "configure_background":
 				return writeJSON(w, 200, splitActionResult{OK: true, Result: json.RawMessage(`{}`)})
 			case "media_evidence":
 				return writeJSON(w, 200, splitActionResult{OK: true, Result: json.RawMessage(`{"evidence":[]}`)})

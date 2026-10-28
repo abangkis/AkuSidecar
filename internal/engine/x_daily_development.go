@@ -57,6 +57,8 @@ type XCaptureStatus struct {
 	FailureCode                  string                   `json:"failureCode,omitempty"`
 	StartupDiagnostic            *XDailyStartupDiagnostic `json:"startupDiagnostic,omitempty"`
 	Cleanup                      string                   `json:"cleanup,omitempty"`
+	CleanupScope                 string                   `json:"cleanupScope,omitempty"`
+	ReaderBootstrapLifetime      string                   `json:"readerBootstrapLifetime,omitempty"`
 }
 
 // Prepare runs after config loading but before the ordinary Store/provider/UI.
@@ -131,6 +133,8 @@ func (e *Engine) XCaptureStatus() XCaptureStatus {
 	status.StartupDiagnostic = xDailyStartupDetail(e.xDaily.firstFailure)
 	if e.xDaily.owner != nil {
 		status.Cleanup = "verified"
+		status.CleanupScope = "batch_collector"
+		status.ReaderBootstrapLifetime = "process"
 	}
 	if e.xDaily.done != nil {
 		status.Cleanup = "pending"

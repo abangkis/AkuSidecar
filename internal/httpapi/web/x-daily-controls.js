@@ -105,7 +105,7 @@ function statusDetail(status) {
     return "Use your existing X login for batches up to 60 seconds. Stop ends permission until AkuBrowser restarts.";
   }
   if (status.state === "ready") {
-    return "Process permission is active. Stop ends it, and a restart is required before permission can be granted again.";
+    return "Process permission is active. Collector windows close after each batch; the X Home bootstrap remains until Stop X. A restart is required before permission can be granted again.";
   }
   if (status.state === "failed") return "Daily X failed. Restart AkuSidecar before requesting process permission again.";
   if (status.state === "stopped") {

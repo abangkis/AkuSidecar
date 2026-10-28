@@ -1158,25 +1158,33 @@ type PassiveXMediaCandidate struct {
 }
 
 type BridgeHeartbeat struct {
-	BridgeID                     string              `json:"bridgeId"`
-	ExtensionVersion             string              `json:"extensionVersion"`
-	RuntimeRevision              string              `json:"runtimeRevision"`
-	BuildID                      string              `json:"buildId"`
-	FocusPolicyRevision          string              `json:"focusPolicyRevision,omitempty"`
-	ProtocolMajor                int                 `json:"protocolMajor,omitempty"`
-	ProtocolMinor                int                 `json:"protocolMinor,omitempty"`
-	UpdateCapabilities           []string            `json:"updateCapabilities,omitempty"`
-	AdapterVersions              map[string]string   `json:"adapterVersions"`
-	MediaEvidenceAdapterVersions map[string]string   `json:"mediaEvidenceAdapterVersions"`
-	ContractVersion              string              `json:"contractVersion"`
-	ManifestVersion              int                 `json:"manifestVersion"`
-	Sources                      []string            `json:"sources"`
-	Actions                      []string            `json:"actions"`
-	Authority                    string              `json:"authority"`
-	CaptureLimits                BridgeCaptureLimits `json:"captureLimits"`
-	SourceAccess                 BridgeSourceAccess  `json:"sourceAccess"`
-	ExtensionOrigin              string              `json:"extensionOrigin,omitempty"`
-	ReceivedAt                   string              `json:"receivedAt,omitempty"`
+	CaptureSurfacePolicy         BridgeCaptureSurfacePolicy `json:"captureSurfacePolicy"`
+	BridgeID                     string                     `json:"bridgeId"`
+	ExtensionVersion             string                     `json:"extensionVersion"`
+	RuntimeRevision              string                     `json:"runtimeRevision"`
+	BuildID                      string                     `json:"buildId"`
+	FocusPolicyRevision          string                     `json:"focusPolicyRevision,omitempty"`
+	ProtocolMajor                int                        `json:"protocolMajor,omitempty"`
+	ProtocolMinor                int                        `json:"protocolMinor,omitempty"`
+	UpdateCapabilities           []string                   `json:"updateCapabilities,omitempty"`
+	AdapterVersions              map[string]string          `json:"adapterVersions"`
+	MediaEvidenceAdapterVersions map[string]string          `json:"mediaEvidenceAdapterVersions"`
+	ContractVersion              string                     `json:"contractVersion"`
+	ManifestVersion              int                        `json:"manifestVersion"`
+	Sources                      []string                   `json:"sources"`
+	Actions                      []string                   `json:"actions"`
+	Authority                    string                     `json:"authority"`
+	CaptureLimits                BridgeCaptureLimits        `json:"captureLimits"`
+	SourceAccess                 BridgeSourceAccess         `json:"sourceAccess"`
+	ExtensionOrigin              string                     `json:"extensionOrigin,omitempty"`
+	ReceivedAt                   string                     `json:"receivedAt,omitempty"`
+}
+
+// BridgeCaptureSurfacePolicy identifies imported feed and lifecycle policy in
+// the executing worker. It contains no browser, account, or session data.
+type BridgeCaptureSurfacePolicy struct {
+	Schema      string `json:"schema"`
+	Fingerprint string `json:"fingerprint"`
 }
 
 type SoftwareUpdateMetadata struct {

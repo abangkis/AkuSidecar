@@ -3,6 +3,16 @@
 This page is the current checkpoint. Historical experiments in the design and
 roadmap are evidence, not a new list of prerequisites.
 
+## Capture surface lifecycle correction: offline implementation
+
+The [surface lifecycle contract](capture-surface-lifecycle-contract.md) now keeps
+ambiguous cleanup pending, verifies scoped receipts at producer/consumer
+boundaries, and pins the executing Bridge policy fingerprint. Revision v118
+requires coordinated Bridge/Sidecar activation and a matching worker heartbeat;
+ordinary browser restart alone is not activation proof. X collector cleanup and
+the process-lifetime reader bootstrap are reported separately. This correction
+has not been operationally activated by its offline implementation.
+
 ## Daily-use delivery checkpoint (2026-10-28)
 
 The Settings controls from `058dda4` were published and activated through the

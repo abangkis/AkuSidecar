@@ -11,31 +11,34 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
-const ExpectedBridgeBuildID = "aku-bridge-0.9.2-source-adapters-v117"
+const ExpectedBridgeBuildID = "aku-bridge-0.9.2-source-adapters-v118"
 const ExpectedBridgeFocusPolicyRevision = "quiet-containment-only-v2"
 
 var ErrActionNotFound = errors.New("bridge action not found")
 var ErrActionConflict = errors.New("bridge action conflict")
 
 type ReloadAction struct {
-	ID                  string  `json:"id"`
-	RequestID           string  `json:"requestId"`
-	Type                string  `json:"type"`
-	Actor               any     `json:"actor"`
-	Reason              string  `json:"reason"`
-	Status              string  `json:"status"`
-	CreatedAt           string  `json:"createdAt"`
-	ExpiresAt           string  `json:"expiresAt"`
-	DeliveredAt         *string `json:"deliveredAt"`
-	AcceptedAt          *string `json:"acceptedAt"`
-	HeartbeatObservedAt *string `json:"heartbeatObservedAt"`
-	CompletedAt         *string `json:"completedAt"`
-	PreviousBuildID     string  `json:"previousBuildId"`
-	ExpectedBuildID     string  `json:"expectedBuildId"`
-	ObservedBuildID     string  `json:"observedBuildId"`
-	ErrorCategory       string  `json:"errorCategory"`
-	Message             string  `json:"message"`
-	expires             time.Time
+	ID                    string  `json:"id"`
+	RequestID             string  `json:"requestId"`
+	Type                  string  `json:"type"`
+	Actor                 any     `json:"actor"`
+	Reason                string  `json:"reason"`
+	Status                string  `json:"status"`
+	CreatedAt             string  `json:"createdAt"`
+	ExpiresAt             string  `json:"expiresAt"`
+	DeliveredAt           *string `json:"deliveredAt"`
+	AcceptedAt            *string `json:"acceptedAt"`
+	HeartbeatObservedAt   *string `json:"heartbeatObservedAt"`
+	CompletedAt           *string `json:"completedAt"`
+	PreviousBuildID       string  `json:"previousBuildId"`
+	ExpectedBuildID       string  `json:"expectedBuildId"`
+	ObservedBuildID       string  `json:"observedBuildId"`
+	ExpectedSurfacePolicy string  `json:"expectedSurfacePolicy"`
+	ObservedSurfacePolicy string  `json:"observedSurfacePolicy"`
+	ErrorCategory         string  `json:"errorCategory"`
+	Message               string  `json:"message"`
+	expires               time.Time
+	observedPolicyMatches bool
 }
 
 type ReloadActions struct {
@@ -72,7 +75,7 @@ func (r *ReloadActions) Request(requestID string, actor any, reason, previousBui
 		return ReloadAction{}, ErrActionConflict
 	}
 	now := time.Now().UTC()
-	action := &ReloadAction{ID: domain.NewID("bridge_action"), RequestID: requestID, Type: "reload_self", Actor: actor, Reason: reason, Status: "pending", CreatedAt: now.Format(time.RFC3339Nano), ExpiresAt: now.Add(r.timeout).Format(time.RFC3339Nano), PreviousBuildID: previousBuild, ExpectedBuildID: ExpectedBridgeBuildID, expires: now.Add(r.timeout)}
+	action := &ReloadAction{ID: domain.NewID("bridge_action"), RequestID: requestID, Type: "reload_self", Actor: actor, Reason: reason, Status: "pending", CreatedAt: now.Format(time.RFC3339Nano), ExpiresAt: now.Add(r.timeout).Format(time.RFC3339Nano), PreviousBuildID: previousBuild, ExpectedBuildID: ExpectedBridgeBuildID, ExpectedSurfacePolicy: ExpectedBridgeSurfacePolicyFingerprint, expires: now.Add(r.timeout)}
 	r.active = action
 	r.retain(action)
 	return *action, nil
@@ -131,8 +134,11 @@ func (r *ReloadActions) Observe(heartbeat domain.BridgeHeartbeat) *ReloadAction 
 	}
 	now := domain.Now()
 	r.active.ObservedBuildID = heartbeat.BuildID
+	r.active.ExpectedSurfacePolicy = ExpectedBridgeSurfacePolicyFingerprint
+	r.active.ObservedSurfacePolicy = heartbeat.CaptureSurfacePolicy.Fingerprint
+	r.active.observedPolicyMatches = bridgeSurfacePolicyMatches(heartbeat.CaptureSurfacePolicy)
 	r.active.HeartbeatObservedAt = &now
-	if heartbeat.BuildID == r.active.ExpectedBuildID {
+	if heartbeat.BuildID == r.active.ExpectedBuildID && r.active.observedPolicyMatches {
 		r.active.Status = "completed"
 		r.active.CompletedAt = &now
 		r.active.Message = "AkuBridge reload_self completed and the expected build heartbeat was observed."
@@ -170,7 +176,9 @@ func (r *ReloadActions) expire() {
 	case "delivered":
 		category = "extension_not_accepted"
 	case "accepted":
-		if r.active.ObservedBuildID != "" {
+		if r.active.ObservedBuildID == r.active.ExpectedBuildID && !r.active.observedPolicyMatches {
+			category = "surface_policy_mismatch"
+		} else if r.active.ObservedBuildID != "" {
 			category = "build_mismatch"
 		}
 	}
@@ -178,7 +186,7 @@ func (r *ReloadActions) expire() {
 	r.active.Status = "failed"
 	r.active.CompletedAt = &now
 	r.active.ErrorCategory = category
-	r.active.Message = map[string]string{"relay_page_stale": "AkuBrowser relay page did not request the cooperative action before the deadline.", "relay_not_delivered": "AkuBrowser relay did not claim reload_self before the deadline.", "extension_not_accepted": "AkuBridge did not accept the delivered reload_self action before the deadline.", "reload_heartbeat_timeout": "AkuBridge accepted reload_self but no post-reload heartbeat arrived before the deadline.", "build_mismatch": "AkuBridge reloaded but did not announce the expected build identity before the deadline."}[category]
+	r.active.Message = map[string]string{"surface_policy_mismatch": "AkuBridge announced the expected build but its executing surface policy did not match; reload remains unverified.", "relay_page_stale": "AkuBrowser relay page did not request the cooperative action before the deadline.", "relay_not_delivered": "AkuBrowser relay did not claim reload_self before the deadline.", "extension_not_accepted": "AkuBridge did not accept the delivered reload_self action before the deadline.", "reload_heartbeat_timeout": "AkuBridge accepted reload_self but no post-reload heartbeat arrived before the deadline.", "build_mismatch": "AkuBridge reloaded but did not announce the expected build identity before the deadline."}[category]
 	r.retain(r.active)
 }
 func (r *ReloadActions) retain(value *ReloadAction) {
