@@ -3,6 +3,31 @@
 This page is the current checkpoint. Historical experiments in the design and
 roadmap are evidence, not a new list of prerequisites.
 
+## Daily-use delivery checkpoint (2026-10-28)
+
+The Settings controls from `058dda4` were published and activated through the
+ordinary `runtime/dev` graceful handoff. Five served UI assets matched the
+reviewed source, the UI window was present, and startup status was Consent
+required with Start disabled until explicit permission. Settings, login,
+Supervisor identity and Auto Update were preserved; activation did not grant
+derivation. Receipt: `build/main-dev-handoff-058dda4-20261028/ui-verification.json`.
+
+`ec32b4a` corrected PowerShell 5.1/7 inventory/UTF-8 and Supervisor response
+compatibility. `d6dc397` added verified tokenless UI close to the ordinary restart
+workflow, replacing the print-and-wait behavior. Compatibility checks passed
+56 assertions per shell; graceful-phase checks passed 74 assertions in 17 cases
+per shell, including the actual workflow call. The operator subsequently
+confirmed that manual restart works. This last result is operator-reported, not
+a new independently sampled runtime/hash receipt.
+
+Next is daily operation through Settings > Live settings: grant permission and
+click Start X in the current process, then use an ordinary manual check or Auto
+Update. Verify the X result in Inbox/Timeline while the reader remains open.
+Permission is not restored by restart, and Stop remains terminal for its process.
+This is the existing main-dev backend and UI, not another isolated QA delivery.
+Stability observation, full session rotation and shared reservation remain
+follow-up work; they do not reopen the accepted two-batch MVP gate.
+
 ## Daily-use Settings controls: offline implementation (2026-10-28)
 
 Settings > Live settings now includes an X concurrent capture panel for a
@@ -33,12 +58,11 @@ native form serialization. Screenshots and fixture receipts are retained under
 `build/x-daily-ui-offline-20261028/`. This fixture makes zero real-session
 requests and does not open the user's profile/database or control their runtime.
 
-This source increment is not activated. The earlier native two-batch backend
-acceptance below remains valid for its source and scope; it does not establish
-the new UI's live operation. Next: review/publish the UI increment, prepare the
-ordinary candidate, then obtain operational handoff/process-consent approval
-before using these controls against a real X session. Shared reservation remains
-deferred and is not an activation prerequisite.
+This increment was subsequently activated as recorded above. The earlier
+native two-batch backend acceptance remains valid for its source and scope;
+the first daily-use check should exercise consent and Start through the real UI
+rather than the disposable operator. No new derivation or operational action
+is authorized by this document. Shared reservation remains deferred.
 
 ## Main-dev two-batch acceptance passed (2026-10-28)
 

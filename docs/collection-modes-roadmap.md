@@ -14,11 +14,12 @@ Supervisor and Auto Update were preserved. See the [acceptance scope and receipt
 
 The capture/Store predecessor blocker is closed for that bounded main-dev path.
 Existing-UI process consent and Start/Stop/status controls are now implemented
-and tested offline for daily operation without the disposable test operator.
-See the [UI source checkpoint](concurrency-dev-readiness.md#daily-use-settings-controls-offline-implementation-2026-10-28).
-Next: review/publish, prepare the ordinary candidate, then separately approve
-handoff/process consent. Ordinary manual and Auto Update usage then exercise
-the same accepted backend. Stop remains terminal for that process; restart
+and activated in ordinary main dev. Manual restart was subsequently confirmed
+working by the operator after the compatibility/graceful-close corrections.
+See the [delivery checkpoint and evidence scope](concurrency-dev-readiness.md#daily-use-delivery-checkpoint-2026-10-28).
+Next: grant process permission through the real Settings controls and use normal
+manual/Auto Update capture, observing the X result in Inbox/Timeline while the
+reader stays open. Stop remains terminal for that process; restart
 requires new consent. The UI does not restart or grant permission automatically.
 This is not a reset to another isolated QA-package MVP.
 Long-running stability and complete rotation qualification remain follow-up
