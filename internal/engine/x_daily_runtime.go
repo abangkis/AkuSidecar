@@ -2,7 +2,12 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"errors"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -29,9 +34,19 @@ type XDailyStartRequest struct {
 	AllowProcessSessionDerivation bool `json:"allowProcessSessionDerivation"`
 }
 
-func (e *Engine) configureXDailyFactory(parent context.Context, factory func(context.Context, context.Context) (xDailyNativeOwner, error)) error {
+func (e *Engine) configureXDailyFactory(parent context.Context, factory func(context.Context, context.Context) (xDailyNativeOwner, error), profileScopes ...string) error {
 	if !e.XDailyConfigured() || !e.config.Dev || parent == nil || factory == nil || parent.Err() != nil {
 		return errors.New("daily X factory rejected")
+	}
+	if len(profileScopes) > 1 {
+		return errors.New("daily X factory profile scope rejected")
+	}
+	profileScope := xDailyProfileScope(e.config.Root, e.config.Database.Path, "synthetic-root", "synthetic-directory")
+	if len(profileScopes) == 1 {
+		profileScope = profileScopes[0]
+	}
+	if !validXDailyProfileScope(profileScope) {
+		return errors.New("daily X factory profile scope rejected")
 	}
 	e.xDaily.mu.Lock()
 	defer e.xDaily.mu.Unlock()
@@ -40,20 +55,36 @@ func (e *Engine) configureXDailyFactory(parent context.Context, factory func(con
 	}
 	e.xDaily.parent = parent
 	e.xDaily.factory = factory
+	e.xDaily.profileScope = profileScope
 	return nil
 }
 
 func (e *Engine) StartXDaily(ctx context.Context, request XDailyStartRequest) error {
+	_, err := e.startXDaily(ctx, request, nil)
+	return err
+}
+
+// startXDaily checks a restore's read revision in the same critical section
+// that claims startup. A newer explicit decision supersedes the restore.
+func (e *Engine) startXDaily(ctx context.Context, request XDailyStartRequest, restoreRevision *uint64) (bool, error) {
 	if !e.XDailyConfigured() || !e.config.Dev || ctx == nil || ctx.Err() != nil || !request.AcknowledgeLimitations || !request.AllowProcessSessionDerivation {
-		return errors.New("daily X process consent required")
+		return false, errors.New("daily X process consent required")
 	}
+	e.xDaily.permissionMu.Lock()
 	e.xDaily.mu.Lock()
+	if restoreRevision != nil && e.xDaily.permissionRevision != *restoreRevision {
+		e.xDaily.mu.Unlock()
+		e.xDaily.permissionMu.Unlock()
+		return false, nil
+	}
 	if e.xDaily.closed || e.xDaily.reason != "" || e.xDaily.startUsed || e.xDaily.factory == nil {
 		e.xDaily.mu.Unlock()
-		return errors.New("daily X process start unavailable or consumed")
+		e.xDaily.permissionMu.Unlock()
+		return false, errors.New("daily X process start unavailable or consumed")
 	}
 	e.xDaily.startUsed = true
-	factory, parent := e.xDaily.factory, e.xDaily.parent
+	e.xDaily.permissionRevision++
+	factory, parent, profileScope := e.xDaily.factory, e.xDaily.parent, e.xDaily.profileScope
 	call, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	e.xDaily.startDone = done
@@ -64,10 +95,23 @@ func (e *Engine) StartXDaily(ctx context.Context, request XDailyStartRequest) er
 		stopParent()
 		cancel()
 		e.xDaily.mu.Lock()
-		e.xDaily.cancelStart = nil
+		if e.xDaily.startDone == done {
+			e.xDaily.cancelStart = nil
+		}
 		close(done)
 		e.xDaily.mu.Unlock()
 	}()
+	if err := e.store.SaveXDailyPermission(ctx, profileScope, true); err != nil {
+		e.xDaily.mu.Lock()
+		e.xDaily.startUsed = false
+		e.xDaily.mu.Unlock()
+		e.xDaily.permissionMu.Unlock()
+		return true, errors.New("daily X permission could not be saved")
+	}
+	e.xDaily.mu.Lock()
+	e.xDaily.rememberedPermission = true
+	e.xDaily.mu.Unlock()
+	e.xDaily.permissionMu.Unlock()
 	owner, err := factory(call, parent)
 	if err == nil && call.Err() != nil {
 		err = call.Err()
@@ -94,7 +138,43 @@ func (e *Engine) StartXDaily(ctx context.Context, request XDailyStartRequest) er
 			e.xDaily.failureCode = xDailyClosedFailureCode(err)
 		}
 		e.xDaily.mu.Unlock()
-		return errors.New("daily X reader startup failed")
+		return true, errors.New("daily X reader startup failed")
+	}
+	return true, nil
+}
+
+// RevokeXDailyPermission persists explicit opt-out before ending the current
+// process grant. Ordinary shutdown intentionally leaves the preference intact.
+func (e *Engine) RevokeXDailyPermission(ctx context.Context) error {
+	if ctx == nil {
+		return errors.New("daily X revocation context required")
+	}
+	if !e.XDailyConfigured() {
+		return nil
+	}
+	if e.store == nil {
+		return errors.New("daily X permission store unavailable")
+	}
+	e.xDaily.permissionMu.Lock()
+	e.xDaily.mu.Lock()
+	profileScope := e.xDaily.profileScope
+	e.xDaily.permissionRevision++
+	e.xDaily.mu.Unlock()
+	if !validXDailyProfileScope(profileScope) {
+		stopErr := e.stopXDaily(ctx)
+		e.xDaily.permissionMu.Unlock()
+		return errors.Join(errors.New("daily X profile scope unavailable"), stopErr)
+	}
+	saveErr := e.store.SaveXDailyPermission(ctx, profileScope, false)
+	if saveErr == nil {
+		e.xDaily.mu.Lock()
+		e.xDaily.rememberedPermission = false
+		e.xDaily.mu.Unlock()
+	}
+	stopErr := e.stopXDaily(ctx)
+	e.xDaily.permissionMu.Unlock()
+	if saveErr != nil || stopErr != nil {
+		return errors.Join(saveErr, stopErr)
 	}
 	return nil
 }
@@ -274,6 +354,35 @@ func xDailyClosedFailureCode(err error) string {
 		return carrier.dailyFailureCode()
 	}
 	return ""
+}
+
+func xDailyProfileScope(root, directory, rootID, directoryID string) string {
+	hash := sha256.New()
+	for _, value := range []string{
+		"aku.x.daily-profile.v1",
+		strings.ToLower(filepath.Clean(root)),
+		strings.ToLower(filepath.Clean(directory)),
+		strings.ToLower(rootID),
+		strings.ToLower(directoryID),
+	} {
+		var size [8]byte
+		binary.BigEndian.PutUint64(size[:], uint64(len(value)))
+		_, _ = hash.Write(size[:])
+		_, _ = hash.Write([]byte(value))
+	}
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+func validXDailyProfileScope(profileScope string) bool {
+	if len(profileScope) != 64 {
+		return false
+	}
+	for _, char := range profileScope {
+		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func (e *Engine) stopXDaily(ctx context.Context) error {

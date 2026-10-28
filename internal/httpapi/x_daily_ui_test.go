@@ -90,8 +90,8 @@ func TestXDailyUIBootstrapStatusDoesNotGrantConsentOrChangeSettings(t *testing.T
 			if bootstrap.InstanceEpoch != s.engine.Epoch() || !reflect.DeepEqual(bootstrap.XCapture, s.engine.XCaptureStatus()) || bootstrap.XCapture.DerivationAuthorized {
 				t.Fatal("bootstrap status changed process authority or lost its current binding")
 			}
-			if concurrent && (bootstrap.XCapture.AuthorizationPolicy != "process" || bootstrap.XCapture.MaxBatchMS != 60000) {
-				t.Fatal("bootstrap did not expose the exact process/batch limits")
+			if concurrent && (bootstrap.XCapture.AuthorizationPolicy != "profile" || bootstrap.XCapture.MaxBatchMS != 60000) {
+				t.Fatal("bootstrap did not expose the profile permission and exact batch limit")
 			}
 			after, err := s.store.GetSettings(context.Background())
 			if err != nil || !reflect.DeepEqual(before, after) {

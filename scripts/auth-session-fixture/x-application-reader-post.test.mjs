@@ -4,13 +4,13 @@ import {applicationPostOperation,createApplicationReaderPost} from './x-applicat
 const request={requestId:'broker_'+'a'.repeat(32),source:'x',url:'https://x.com/example/status/123'};
 const marker='http://127.0.0.1:12345/split-reader-intent?id=split_'+'b'.repeat(32);
 const prepare={id:1,op:'manual_prepare_post',owner:1,request,marker};
-function fixture(){
+function fixture({processScopedOwner=false}={}){
   const calls=[];let clock=1000,postURL=marker,window=2,document='doc',pendingInventory,pendingWrite,blankFrames=0;
   const command=async(method,params={},session,beforeDispatch=()=>{})=>{
     if(pendingWrite?.method===method){const wait=pendingWrite.wait;pendingWrite=null;await wait;}
     beforeDispatch();
     calls.push({method,params,session});
-    if(method==='Target.getTargets'){if(pendingInventory){const wait=pendingInventory;pendingInventory=null;await wait;}return{targetInfos:[{targetId:'bootstrap',type:'page',url:'https://x.com/home'},...calls.some(call=>call.method==='Target.createTarget')?[{targetId:'post',type:'page',url:postURL}]:[]]};}
+    if(method==='Target.getTargets'){if(pendingInventory){const wait=pendingInventory;pendingInventory=null;await wait;}return{targetInfos:[{targetId:'bootstrap',type:'page',url:processScopedOwner?'https://example.com/user-work':'https://x.com/home'},...calls.some(call=>call.method==='Target.createTarget')?[{targetId:'post',type:'page',url:postURL}]:[]]};}
     if(method==='Browser.getWindowForTarget')return{windowId:params.targetId==='bootstrap'?1:window};
     if(method==='Target.createTarget'){assert.deepEqual(params,{url:marker,newWindow:true,background:true});return{targetId:'post'};}
     if(method==='Target.attachToTarget')return{sessionId:'post-session'};
@@ -19,9 +19,21 @@ function fixture(){
     if(['Page.enable','Target.detachFromTarget'].includes(method))return{};
     throw new Error('UNEXPECTED_RAW_COMMAND');
   };
-  const port=createApplicationReaderPost({owner:1,bootstrapTarget:'bootstrap',command,assertCurrent:()=>{},now:()=>clock,token:()=>'c'.repeat(48)});
+  const port=createApplicationReaderPost({owner:1,bootstrapTarget:processScopedOwner?undefined:'bootstrap',allowMainOrigin:processScopedOwner,processScopedOwner,command,assertCurrent:()=>{},now:()=>clock,token:()=>'c'.repeat(48)});
   return{port,calls,get clock(){return clock;},set clock(value){clock=value;},set url(value){postURL=value;},set window(value){window=value;},set document(value){document=value;},set inventory(value){pendingInventory=value;},set write(value){pendingWrite=value;},set blank(value){blankFrames=value;}};
 }
+
+test('borrowed process owner opens an idle reader without Home and preserves existing user windows',async()=>{
+  const f=fixture({processScopedOwner:true}),ready=await f.port.execute(prepare);
+  assert.equal(ready.windowId,2);
+  await f.port.execute({id:2,op:'manual_complete_post',owner:1,handle:ready.handle,requestId:request.requestId});
+  assert(!f.calls.some(call=>call.method==='Target.closeTarget'||call.params?.url==='https://x.com/home'));
+  await f.port.close();
+  const collision=fixture({processScopedOwner:true});collision.window=1;
+  await assert.rejects(collision.port.execute(prepare));
+  assert(!collision.calls.some(call=>call.method==='Page.navigate'));await collision.port.close();
+  assert.throws(()=>createApplicationReaderPost({owner:1,processScopedOwner:true,command:async()=>{},assertCurrent:()=>{}}));
+});
 test('post operations reject open shapes, raw commands, noncanonical posts and changed local marker policy',()=>{
   applicationPostOperation(prepare);
   for(const value of [{...prepare,script:'arbitrary'},{...prepare,marker:marker+'&extra=1'},{...prepare,marker:marker.replace('12345','11122')},{...prepare,request:{...request,url:request.url+'?token=SECRET'}},{...prepare,request:{...request,url:'https://x.com/home'}},{id:2,op:'Page.navigate',owner:1},{...prepare,request:{...request,source:'facebook'}}])assert.throws(()=>applicationPostOperation(value));

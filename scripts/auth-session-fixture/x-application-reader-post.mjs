@@ -28,15 +28,15 @@ export function applicationPostOperation(message,{allowMainOrigin=false}={}){
   }
   return message;
 }
-export function createApplicationReaderPost({owner,bootstrapTarget,command,assertCurrent,now=()=>Date.now(),token=()=>randomBytes(24).toString('hex'),allowMainOrigin=false}={}){
-  if(!Number.isSafeInteger(owner)||owner<1||!ref(bootstrapTarget)||![command,assertCurrent,now,token].every(v=>typeof v==='function'))throw fail();
+export function createApplicationReaderPost({owner,bootstrapTarget,command,assertCurrent,now=()=>Date.now(),token=()=>randomBytes(24).toString('hex'),allowMainOrigin=false,processScopedOwner=false}={}){
+  if(!Number.isSafeInteger(owner)||owner<1||(processScopedOwner?!allowMainOrigin:!ref(bootstrapTarget))||![command,assertCurrent,now,token].every(v=>typeof v==='function'))throw fail();
   const requests=new Set(),held=new Map(),byRequest=new Map();let origin;
   const inventory=async()=>{
     const reply=await command('Target.getTargets',{});
     if(!Array.isArray(reply?.targetInfos)||reply.targetInfos.length>128)throw fail();
     const ids=new Set();for(const row of reply.targetInfos){if(!ref(row?.targetId)||ids.has(row.targetId))throw fail();ids.add(row.targetId);}
     const rows=reply.targetInfos.filter(row=>row?.type==='page');
-    if(!rows.some(row=>row.targetId===bootstrapTarget&&row.url==='https://x.com/home'))throw fail();
+    if(!processScopedOwner&&!rows.some(row=>row.targetId===bootstrapTarget&&row.url==='https://x.com/home'))throw fail();
     return rows;
   };
   const windowOf=async target=>{const reply=await command('Browser.getWindowForTarget',{targetId:target});if(!Number.isSafeInteger(reply?.windowId)||reply.windowId<1)throw fail();return reply.windowId;};
@@ -77,10 +77,12 @@ export function createApplicationReaderPost({owner,bootstrapTarget,command,asser
         const live=()=>{assertCurrent();if(state.invalid||state.used||now()>=state.expires)throw fail();};
         state.timer=setTimeout(()=>{state.invalid=true;void detach(state).catch(()=>{});},POST_PREPARATION_MS);state.timer.unref?.();
         try{
-          live();await inventory();live();const bootstrapWindow=await windowOf(bootstrapTarget);live();
+          live();const before=await inventory();live();
+          const previousWindows=new Set();
+          for(const row of processScopedOwner?before:[{targetId:bootstrapTarget}]){previousWindows.add(await windowOf(row.targetId));live();}
           const created=await command('Target.createTarget',{url:state.marker,newWindow:true,background:true},undefined,live);
-          if(!ref(created?.targetId)||created.targetId===bootstrapTarget)throw fail();state.target=created.targetId;
-          live();state.window=await windowOf(state.target);live();if(state.window===bootstrapWindow)throw fail();
+          if(!ref(created?.targetId)||created.targetId===bootstrapTarget||before.some(row=>row.targetId===created.targetId))throw fail();state.target=created.targetId;
+          live();state.window=await windowOf(state.target);live();if(previousWindows.has(state.window))throw fail();
           state.session=(await command('Target.attachToTarget',{targetId:state.target,flatten:true},undefined,live))?.sessionId;
           live();if(!ref(state.session))throw fail();
           await command('Page.enable',{},state.session,live);live();

@@ -69,7 +69,7 @@ func TestXDailyOrdinaryDatabaseAndImmutableSelection(t *testing.T) {
 		t.Fatal("duplicate attachment accepted")
 	}
 	st := e.XCaptureStatus()
-	if st.SelectedMode != "concurrent" || st.EffectiveMode != "unavailable" || st.Reason != "batch-adapter-required" || st.DerivationAuthorized || st.MaxBatchMS != 60000 || st.AuthorizationPolicy != "process" {
+	if st.SelectedMode != "concurrent" || st.EffectiveMode != "unavailable" || st.Reason != "batch-adapter-required" || st.DerivationAuthorized || st.MaxBatchMS != 60000 || st.AuthorizationPolicy != "profile" || st.ReaderBootstrapLifetime != "process" {
 		t.Fatalf("status %+v", st)
 	}
 	if err = s.Close(); err != nil {
@@ -91,6 +91,18 @@ func TestXDailyOrdinaryDatabaseAndImmutableSelection(t *testing.T) {
 	release()
 	if !ok {
 		t.Fatal("restart rollback did not restore exclusive route")
+	}
+}
+
+func TestXDailyStatusSeparatesMainProfilePermissionFromBatchAuthority(t *testing.T) {
+	e, _ := testEngine(t)
+	e.config.Dev = true
+	e.config.Capture.XMode = config.XCaptureConcurrent
+	e.config.Capture.XReaderSource = "main"
+	e.config.WindowsCaptureSplit = true
+	status := e.XCaptureStatus()
+	if status.AuthorizationPolicy != "profile" || status.ReaderBootstrapLifetime != "batch" || status.RememberedPermission || status.DerivationAuthorized {
+		t.Fatalf("main-profile status conflated saved permission with runtime authority: %+v", status)
 	}
 }
 
@@ -289,7 +301,9 @@ func TestXDailyRestartPreservesAcceptedObservation(t *testing.T) {
 	if err != nil || after.Status != "reasoning" {
 		t.Fatalf("accepted run lost %+v %v", after, err)
 	}
-	if drained,err:=state.SessionCaptureCommandsDrained(ctx,session.ID,nil);err!=nil || !drained{t.Fatal("follow-up command not terminalized",err)}
+	if drained, err := state.SessionCaptureCommandsDrained(ctx, session.ID, nil); err != nil || !drained {
+		t.Fatal("follow-up command not terminalized", err)
+	}
 	observations, err := state.Observations(ctx, run.ID)
 	if err != nil || len(observations) != 1 {
 		t.Fatal("accepted observation lost", err)

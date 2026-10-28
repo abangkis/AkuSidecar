@@ -111,6 +111,7 @@ func ConfigureXDailyNativeRuntime(parent context.Context, e *Engine, ordinaryPro
 	if err != nil {
 		return err
 	}
+	profileScope := xDailyProfileScope(root, readerPath, readerRoot, readerID)
 	return e.configureXDailyFactory(parent, func(startup, process context.Context) (xDailyNativeOwner, error) {
 		collectorParent := filepath.Join(e.config.Root, "runtime", "x-daily-collectors")
 		if err := os.MkdirAll(collectorParent, 0700); err != nil {
@@ -128,5 +129,5 @@ func ConfigureXDailyNativeRuntime(parent context.Context, e *Engine, ordinaryPro
 			reader:    ownedprofile.Descriptor{Root: root, Directory: readerPath, RootID: readerRoot, DirectoryID: readerID},
 			collector: ownedprofile.Descriptor{Root: collectorRoot, Directory: filepath.Join(collectorRoot, "unopened"), RootID: id}}
 		return newXDailyNativeOwner(process, startup, cfg, e, nil)
-	})
+	}, profileScope)
 }

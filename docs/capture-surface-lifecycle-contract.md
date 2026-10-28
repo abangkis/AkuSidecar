@@ -16,7 +16,8 @@ unverified generation boundary, not proof that old windows disappeared.
 | --- | --- | --- |
 | `batch_capture` | Source/batch lease | Bridge managed capture runtime |
 | `lease_placeholder` | Shared Browser lease | Bridge terminal lease cleanup |
-| Process X bootstrap | X process authorization | Native daily owner, on Stop/owner close |
+| Main-profile X bootstrap | One batch | Native daily owner, after collector/enrollment cleanup |
+| Dedicated fixture bootstrap | X process authorization | Existing dedicated owner, on Stop/owner close |
 | User source/reader | Explicit user interaction | Existing source/reader owner; never the batch sweep |
 
 Navigation outside a recognized feed preserves the tab and records pending
@@ -51,9 +52,35 @@ an explicit `null` source for terminal release), because neither path can own
 Bridge Browser capture surfaces. This bypass is limited to those known owner
 modes; it does not make an empty response or a reason string sufficient proof.
 
-The X status reports its cleanup scope as `batch_collector` and its bootstrap
-lifetime as `process`. Collector cleanup does not claim that the persistent
-bootstrap or a user reader was closed.
+The X status reports its cleanup scope as `batch_collector` and the main-profile
+bootstrap lifetime as `batch`. Enabling X creates no Home target. A batch creates
+its own exact Home target and closes it with verified absence before returning
+idle. Explicit reader preparation uses process ownership plus fresh marker,
+target, window, frame and document proof; it does not require a Home target to
+remain open. A user reader is never part of automatic batch cleanup.
+
+## Remembered permission and fresh authorization
+
+Main-dev Settings remembers an explicit opt-in for the selected reader profile
+across application restarts. The independent versioned `meta` record stores only
+the enabled flag and a profile-scope fingerprint; it does not contain credentials,
+cookies, account identifiers, actor handles or session evidence. Saving ordinary
+Settings cannot accidentally erase this record. An absent, changed or invalid
+scope never enables X by default.
+
+After factory registration, startup scheduling restores the preference once and
+creates a new process owner. The first and every subsequent batch must obtain
+fresh account/login/session evidence and a fresh disposable collector. Neither
+old runtime permission nor verification evidence is restored. The 60-second
+batch boundary is unchanged. Restoration failure disables only X and is visible
+in status; it does not turn off Auto Update or other sources.
+
+Stop X durably revokes the preference before ending current work. Ordinary
+shutdown closes runtime resources without revoking the saved preference. A
+permission granted by an older build was memory-only: deployment must either
+explicitly migrate that active user choice during an approved handoff, or ask
+the user to enable X once in the new build. The new preference then survives
+later restarts; selecting concurrency mode alone is not permission.
 
 ## Executing policy and activation
 

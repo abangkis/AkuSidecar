@@ -3,6 +3,22 @@
 This page is the current checkpoint. Historical experiments in the design and
 roadmap are evidence, not a new list of prerequisites.
 
+## Remembered X permission and batch Home target: offline implementation
+
+Main-profile X permission is now a profile-bound saved preference. Ordinary
+restart restores it once into a fresh process owner; each batch still obtains
+fresh account/session evidence and retains the 60-second limit. Stop X revokes
+the preference, while ordinary shutdown preserves it. No Home target is created
+when permission is enabled. A batch owns its temporary Home target and verifies
+its closure after collector cleanup; explicit readers work independently and
+are preserved. Dedicated fixture lifetime remains unchanged.
+
+An older process-only opt-in has no durable record to restore. The first enable
+in this new build creates that record unless an operational handoff explicitly
+migrates the active choice. [Contract and rollout details](capture-surface-lifecycle-contract.md#remembered-permission-and-fresh-authorization).
+This increment is not activated; offline fixtures and compilation do not prove a
+successful live X batch with the new target lifetime.
+
 ## Capture surface lifecycle correction: offline implementation
 
 The [surface lifecycle contract](capture-surface-lifecycle-contract.md) now keeps

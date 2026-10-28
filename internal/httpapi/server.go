@@ -279,7 +279,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err := readJSON(r, &request); err != nil {
 			return err
 		}
-		if err := s.engine.StopXManual(ctx); err != nil {
+		if err := s.engine.RevokeXDailyPermission(ctx); err != nil {
 			return apiError{Status: 409, Code: "daily_cleanup_uncertain", Message: "Daily X cleanup has not been verified."}
 		}
 		return writeJSON(w, 200, map[string]any{"xCapture": s.engine.XCaptureStatus()})

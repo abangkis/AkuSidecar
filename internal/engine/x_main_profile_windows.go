@@ -70,6 +70,21 @@ func MainBrowserTransportOptions(cfg config.Config) (*appshell.MainBrowserTransp
 	return &appshell.MainBrowserTransportOptions{Node: node.path, Driver: driver.path, NodeSHA256: node.digest, DriverSHA256: driver.digest, StartupTimeout: nativePilotStartup}, nil
 }
 
+func xMainDailyProfileScope(descriptor ownedprofile.Descriptor, subprofile string) (string, error) {
+	if !appshell.ValidProfileDirectory(subprofile) {
+		return "", errors.New("main-profile subprofile rejected")
+	}
+	path := filepath.Join(descriptor.Directory, subprofile)
+	id, err := ownedprocess.DirectoryID(path)
+	if err != nil {
+		return "", err
+	}
+	// Keep the enclosing owned directories in the permission scope while binding
+	// consent to the selected Chromium profile and its stable directory identity.
+	parentScope := xDailyProfileScope(descriptor.Root, descriptor.Directory, descriptor.RootID, descriptor.DirectoryID)
+	return xDailyProfileScope(descriptor.Directory, path, parentScope, id), nil
+}
+
 // Composition binds an existing owned browser, never an external browser/profile.
 // It installs a factory only; the ordinary process-consent endpoint starts X.
 func ConfigureXMainDailyRuntime(parent context.Context, e *Engine, window *appshell.Window, manager *captureruntime.Manager, profile, subprofile, chrome string) error {
@@ -100,6 +115,10 @@ func ConfigureXMainDailyRuntime(parent context.Context, e *Engine, window *appsh
 		return err
 	}
 	descriptor := ownedprofile.Descriptor{Root: root, Directory: profile, RootID: rootID, DirectoryID: profileID}
+	profileScope, err := xMainDailyProfileScope(descriptor, subprofile)
+	if err != nil {
+		return err
+	}
 	generation := manager.Snapshot().Generation
 	return e.configureXDailyFactory(parent, func(startup, process context.Context) (xDailyNativeOwner, error) {
 		if !manager.Accepts(generation) {
@@ -174,7 +193,7 @@ func ConfigureXMainDailyRuntime(parent context.Context, e *Engine, window *appsh
 			e.xDaily.mu.Unlock()
 		}()
 		return n, nil
-	})
+	}, profileScope)
 }
 
 type xMainBorrowedLease struct {

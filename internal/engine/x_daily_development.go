@@ -13,26 +13,32 @@ import (
 const xDailyBatchLimitMS = 60000
 
 type xDailyRouting struct {
-	mu               sync.RWMutex
-	attached, closed bool
-	owner            xDailyNativeOwner
-	parent           context.Context
-	authorized       bool
-	generation       uint64
-	done             chan struct{}
-	runID            string
-	workers          int
-	drain            chan struct{}
-	cancel           context.CancelFunc
-	reason           string
-	failurePhase     string
-	firstFailure     error // Private typed cause; cleanup cannot replace it.
-	failureCode      string
-	factory          func(context.Context, context.Context) (xDailyNativeOwner, error)
-	startUsed        bool
-	cleanupUncertain bool
-	startDone        chan struct{}
-	cancelStart      context.CancelFunc
+	mu                         sync.RWMutex
+	permissionMu               sync.Mutex
+	attached, closed           bool
+	owner                      xDailyNativeOwner
+	parent                     context.Context
+	authorized                 bool
+	generation                 uint64
+	done                       chan struct{}
+	runID                      string
+	workers                    int
+	drain                      chan struct{}
+	cancel                     context.CancelFunc
+	reason                     string
+	failurePhase               string
+	firstFailure               error // Private typed cause; cleanup cannot replace it.
+	failureCode                string
+	factory                    func(context.Context, context.Context) (xDailyNativeOwner, error)
+	profileScope               string
+	rememberedPermission       bool
+	permissionRevision         uint64
+	permissionRestoreAttempted bool
+	permissionRestoreDone      chan struct{}
+	startUsed                  bool
+	cleanupUncertain           bool
+	startDone                  chan struct{}
+	cancelStart                context.CancelFunc
 }
 
 // XDailySelection owns only the restart-required routing selection. Step two
@@ -51,6 +57,7 @@ type XCaptureStatus struct {
 	Reason                       string                   `json:"reason"`
 	RestartRequiredForModeChange bool                     `json:"restartRequiredForModeChange"`
 	AuthorizationPolicy          string                   `json:"authorizationPolicy,omitempty"`
+	RememberedPermission         bool                     `json:"rememberedPermission"`
 	MaxBatchMS                   int                      `json:"maxBatchMs,omitempty"`
 	DerivationAuthorized         bool                     `json:"derivationAuthorized"`
 	FailurePhase                 string                   `json:"failurePhase,omitempty"`
@@ -125,16 +132,20 @@ func (e *Engine) XCaptureStatus() XCaptureStatus {
 		return status
 	}
 	status.EffectiveMode, status.State, status.Reason = "unavailable", "not-ready", "batch-adapter-required"
-	status.AuthorizationPolicy, status.MaxBatchMS = "process", xDailyBatchLimitMS
+	status.AuthorizationPolicy, status.MaxBatchMS = "profile", xDailyBatchLimitMS
+	status.ReaderBootstrapLifetime = "process"
+	if e.config.Capture.XUsesMainProfile() {
+		status.ReaderBootstrapLifetime = "batch"
+	}
 	e.xDaily.mu.RLock()
 	defer e.xDaily.mu.RUnlock()
+	status.RememberedPermission = e.xDaily.rememberedPermission
 	status.FailurePhase = e.xDaily.failurePhase
 	status.FailureCode = e.xDaily.failureCode
 	status.StartupDiagnostic = xDailyStartupDetail(e.xDaily.firstFailure)
 	if e.xDaily.owner != nil {
 		status.Cleanup = "verified"
 		status.CleanupScope = "batch_collector"
-		status.ReaderBootstrapLifetime = "process"
 	}
 	if e.xDaily.done != nil {
 		status.Cleanup = "pending"
@@ -158,7 +169,10 @@ func (e *Engine) XCaptureStatus() XCaptureStatus {
 			}
 		}
 	}
-	if e.xDaily.owner == nil && e.xDaily.factory != nil && !e.xDaily.startUsed {
+	if e.xDaily.owner == nil && e.xDaily.reason != "" {
+		status.State, status.Reason = "disabled", e.xDaily.reason
+	}
+	if e.xDaily.owner == nil && e.xDaily.factory != nil && !e.xDaily.startUsed && e.xDaily.reason == "" {
 		status.State, status.Reason = "disabled", "process-consent-required"
 	}
 	if e.xDaily.closed {
@@ -224,10 +238,78 @@ func (e *Engine) ResumeXDailyScheduling(ctx context.Context) error {
 	if !e.XDailyConfigured() {
 		return nil
 	}
+	if ctx == nil {
+		return errors.New("daily X scheduling context required")
+	}
+	e.xDaily.mu.Lock()
+	shouldRestore := e.xDaily.factory != nil && !e.xDaily.permissionRestoreAttempted
+	profileScope := e.xDaily.profileScope
+	revision := e.xDaily.permissionRevision
+	var restoreDone chan struct{}
+	if shouldRestore {
+		e.xDaily.permissionRestoreAttempted = true
+		restoreDone = make(chan struct{})
+		e.xDaily.permissionRestoreDone = restoreDone
+	} else {
+		restoreDone = e.xDaily.permissionRestoreDone
+	}
+	e.xDaily.mu.Unlock()
+	if shouldRestore {
+		func() {
+			defer func() {
+				e.xDaily.mu.Lock()
+				if e.xDaily.permissionRestoreDone == restoreDone {
+					e.xDaily.permissionRestoreDone = nil
+				}
+				close(restoreDone)
+				e.xDaily.mu.Unlock()
+			}()
+			remembered, permissionErr := e.store.XDailyPermission(ctx, profileScope)
+			if !e.publishRestoredXDailyPermission(revision, remembered, permissionErr) {
+				return
+			}
+			if permissionErr == nil && remembered {
+				e.restoreXDailyStart(ctx, revision)
+			}
+		}()
+	} else if restoreDone != nil {
+		select {
+		case <-restoreDone:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	session, err := e.store.ActiveSession(ctx)
 	if err != nil || session == nil {
 		return err
 	}
 	_, err = e.startNext(ctx, session.ID)
 	return err
+}
+
+func (e *Engine) restoreXDailyStart(ctx context.Context, revision uint64) {
+	admitted, err := e.startXDaily(ctx, XDailyStartRequest{AcknowledgeLimitations: true, AllowProcessSessionDerivation: true}, &revision)
+	if !admitted || err == nil {
+		return
+	}
+	e.xDaily.mu.Lock()
+	defer e.xDaily.mu.Unlock()
+	if e.xDaily.permissionRevision == revision+1 && e.xDaily.reason == "" {
+		e.xDaily.startUsed = true
+		e.xDaily.reason = "permission-start-failed"
+	}
+}
+
+func (e *Engine) publishRestoredXDailyPermission(revision uint64, remembered bool, readErr error) bool {
+	e.xDaily.mu.Lock()
+	defer e.xDaily.mu.Unlock()
+	if e.xDaily.permissionRevision != revision {
+		return false
+	}
+	e.xDaily.rememberedPermission = remembered && readErr == nil
+	if readErr != nil {
+		e.xDaily.authorized = false
+		e.xDaily.reason = "permission-read-failed"
+	}
+	return true
 }

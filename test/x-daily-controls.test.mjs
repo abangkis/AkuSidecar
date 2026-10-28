@@ -46,6 +46,11 @@ const dailyStatus = (overrides = {}) => ({
   ...overrides,
 });
 
+const rememberedStatus = (overrides = {}) => dailyStatus({
+  authorizationPolicy: "profile", rememberedPermission: true,
+  state: "ready", reason: "", derivationAuthorized: true, ...overrides,
+});
+
 function deferred() {
   let resolve;
   let reject;
@@ -91,6 +96,43 @@ test("render, poll ticket, and reset never issue requests; missing status fails 
   assert.equal(f.calls.length, 0);
   assert.equal(f.consent.checked, false);
   f.controller.destroy();
+});
+
+test("saved profile permission is restored from fresh status across an epoch change without UI replay", () => {
+  const f = setup();
+  f.controller.reset(rememberedStatus());
+  assert.equal(f.consent.checked, true);
+  assert.equal(f.consent.disabled, true);
+  assert.equal(f.stopButton.disabled, false);
+  assert.match(f.detail.textContent, /saved.*profile.*verifies.*again/);
+  f.setContext({ epoch: "epoch-b", development: true });
+  const ticket = f.controller.beginRead();
+  assert.equal(f.consent.checked, false, "old runtime status must not carry across epochs");
+  assert.equal(f.controller.applyRead(ticket, { xCapture: rememberedStatus() }), true);
+  assert.equal(f.consent.checked, true);
+  assert.equal(f.calls.length, 0, "restoring saved status must not replay an old Start POST");
+});
+
+test("a failed poll keeps the saved choice visible but never enables unverified startup", () => {
+  const f = setup();
+  f.controller.reset(rememberedStatus());
+  f.controller.rejectRead(f.controller.beginRead());
+  assert.equal(f.consent.checked, true);
+  assert.equal(f.startButton.disabled, true);
+  assert.equal(f.stopButton.disabled, false);
+});
+
+test("Stop clears remembered profile permission from the confirmed server response", async () => {
+  const f = setup({ request: async () => ({ xCapture: rememberedStatus({
+    state: "stopped", reason: "opted-out", derivationAuthorized: false, rememberedPermission: false,
+  }) }) });
+  f.controller.reset(rememberedStatus());
+  f.stopButton.click();
+  await flush();
+  assert.equal(f.consent.checked, false);
+  assert.match(f.feedback.textContent, /saved permission has been removed/);
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0].path, "/api/development/x-daily/stop");
 });
 
 test("requires process consent and posts exact payload pinned to the captured epoch", async () => {

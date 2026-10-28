@@ -1,5 +1,6 @@
 import {registerFreshStartupSession,startupRootControls,allowsStartupControl,mustRetireStartupOwner,markStartupControlAttempt} from './x-manual-root-controls.mjs';
 import {createStartupTiming} from './x-manual-startup-timing.mjs';
+import {createBatchBootstrap} from './x-batch-bootstrap.mjs';
 // Opt-in, headful X QA. Default modes export metadata only. The fixed
 // account-settings mode may read one completed response body and immediately
 // project it to value-free shape diagnostics before resolving the CDP promise.
@@ -2342,22 +2343,33 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
   let initialized=false,closed=false,failed=false,base,batch,generation=0,account;
   const posts=new Map();
   let borrowedTarget=null,unsubscribeBorrowed=null;
+  let batchBootstrap;
   if(borrowedReader){
     if(!Number.isSafeInteger(borrowedReader.pid)||borrowedReader.pid<1||typeof borrowedReader.profileDirectory!=='string'||!borrowedReader.profileDirectory||/[\\/\u0000-\u001f]/u.test(borrowedReader.profileDirectory)||
       typeof borrowedReader.transport?.call!=='function'||typeof borrowedReader.transport?.subscribe!=='function'||typeof borrowedReader.transport?.alive!=='function')throw probeError('borrowed_reader_rejected');
     borrowedMainTransport=borrowedReader.transport;
+    batchBootstrap=createBatchBootstrap({call:(method,params)=>borrowedMainTransport.call(method,params,'',10000),
+      reserveTarget:id=>borrowedMainTransport.reserveTarget?.(id),releaseTarget:id=>borrowedMainTransport.releaseTarget?.(id)});
     unsubscribeBorrowed=borrowedMainTransport.subscribe(raw=>{try{dispatchCDP(raw);}catch{failCDP('borrowed_reader_event_failed');}});
   }
   const check=async()=>{if(closed||childExited||cdpFailure||borrowedReader&&!borrowedMainTransport.alive()||!await verifyTwoPhaseDirectories())throw probeError('daily_reader_changed');return{readerPID:child.pid,readerProfile};};
   const home=async()=>{const end=Date.now()+MANUAL_TIMING.collectorHomeReadyMS;while(!(await loginState({owner:active.owner})).ready){await check();if(Date.now()>=end)throw probeError('daily_reader_login_unavailable');await new Promise(r=>setTimeout(r,200));}};
   const endBatch=async()=>{
-    if(!batch)return{closed:true};const current=batch;
+    if(!batch){
+      if(batchBootstrap){await batchBootstrap.close();borrowedTarget=null;active=base;protocolOwner=base.owner;}
+      return{closed:true};
+    }
+    const current=batch;
     // A restored source-control envelope is required before keeping the reader.
     if(mustRetireStartupOwner(current)){failed=true;throw probeError('daily_reader_cleanup_uncertain');}
     if(!await closeShortCollector(current)){failed=true;throw probeError('daily_collector_cleanup_uncertain');}
     current.manualCollectorUnsubscribe?.();current.shortFeasibility?.manualCookieUnsubscribe?.();
     await current.manualEnrollment?.close();
     for(const sessionId of new Set([current.manualObserver?.sessionId,current.sessionId].filter(Boolean)))await sendApplicationPost('Target.detachFromTarget',{sessionId});
+    if(batchBootstrap){
+      try{await batchBootstrap.close();borrowedTarget=null;}
+      catch(error){failed=true;throw error;}
+    }
     batch=null;active=base;protocolOwner=base.owner;applicationScope={loadAssets,emitProgress};
     return{closed:true};
   };
@@ -2366,8 +2378,9 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
       if(initialized||closed)throw probeError('daily_reader_replay');initialized=true;
       if(borrowedReader){
         child={pid:borrowedReader.pid};childExited=false;
-        const created=await borrowedMainTransport.call('Target.createTarget',{url:'https://x.com/home',background:true},'',10000);
-        if(!safeId(created.targetId))throw probeError('borrowed_reader_target_failed');borrowedTarget=created.targetId;borrowedMainTransport.reserveTarget?.(borrowedTarget);
+        base={owner:++nextOwner,pid:child.pid,profileId:readerProfile,gate:new LoginObservationGate(),metadata:null};active=base;protocolOwner=base.owner;
+        await check();
+        return{owner:base.owner,readerPID:child.pid};
       }else{
         child=spawn(executable,twoPhaseChromeArgs(readerProfile,true),{windowsHide:false,stdio:['ignore','ignore','ignore','pipe','pipe']});childExited=false;bindChrome(child);
       }
@@ -2383,10 +2396,17 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
       if(typeof path!=='string'||!isAbsolute(path)||resolve(path)!==path)throw probeError('daily_collector_path_invalid');
       for(const [left,right]of [[readerProfile,path],[path,readerProfile]]){const rel=relative(left,right);if(!rel||!isAbsolute(rel)&&rel!=='..'&&!rel.startsWith('..'+sep))throw probeError('daily_profiles_overlap');}
       const collectorIdentity=await ordinaryDirectoryIdentity(path);
-      const attached=await sendApplicationPost('Target.attachToTarget',{targetId:base.targetId,flatten:true});
+      if(batchBootstrap){
+        try{
+          borrowedTarget=await batchBootstrap.begin();
+          await initializeChromeSession(child,readerProfile,borrowedTarget);
+          batch=active;
+        }catch(error){failed=true;throw error;}
+      }
+      const attached=batchBootstrap?{sessionId:batch.sessionId}:await sendApplicationPost('Target.attachToTarget',{targetId:base.targetId,flatten:true});
       if(!safeId(attached.sessionId))throw probeError('daily_reader_attachment_failed');
       // Fresh object and attachment: old actor capabilities remain consumed.
-      batch=active={owner:++nextOwner,pid:base.pid,profileId:base.profileId,targetId:base.targetId,sessionId:attached.sessionId,
+      if(!batchBootstrap)batch=active={owner:++nextOwner,pid:base.pid,profileId:base.profileId,targetId:base.targetId,sessionId:attached.sessionId,
         gate:new LoginObservationGate(),pageLoad:null,metadata:null,observationEndsAt:0,networkEventCount:0,eventLimitReached:false};protocolOwner=batch.owner;
       registerFreshStartupSession(batch,batch.sessionId,'reader');await send('Page.enable',{},batch.sessionId);await home();
       applicationScope={collectorProfile:path,loadAssets,emitProgress,expectedAccount:account,seedGrant:createApplicationSeedGrant({runSeed:seedRetainedManualPilot})};
@@ -2412,7 +2432,7 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
       const key=message.request?.requestId??message.requestId;let record=posts.get(key);
       if(message.op==='manual_prepare_post'){
         if(record||posts.size>=32)throw probeError('daily_reader_busy');
-        const actor=createApplicationReaderPost({owner:base.owner,bootstrapTarget:base.targetId,allowMainOrigin:true,
+        const actor=createApplicationReaderPost({owner:base.owner,bootstrapTarget:base.targetId,allowMainOrigin:true,processScopedOwner:Boolean(borrowedReader),
           command:async(method,params,session,before=()=>{})=>{await check();before();return sendApplicationPost(method,params,session);},
           assertCurrent:()=>{if(closed||childExited||cdpFailure)throw probeError('daily_reader_changed');}});
         record={actor,timer:setTimeout(()=>{posts.delete(key);void actor.close().catch(()=>{failed=true;});},35000)};posts.set(key,record);
@@ -2430,11 +2450,7 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
       try{if(batch)await endBatch();}catch(error){cleanupError=error;}
       try{
         if(base?.sessionId){await borrowedMainTransport.call('Target.detachFromTarget',{sessionId:base.sessionId});borrowedMainTransport.releaseSession?.(base.sessionId);}
-        if(borrowedTarget){
-          const result=await borrowedMainTransport.call('Target.closeTarget',{targetId:borrowedTarget});
-          if(result.success!==true)throw probeError('borrowed_reader_cleanup_uncertain');
-          borrowedMainTransport.releaseTarget?.(borrowedTarget);
-        }
+        await batchBootstrap?.close();borrowedTarget=null;
       }catch(error){cleanupError??=error;}
       unsubscribeBorrowed?.();
       if(cleanupError)throw cleanupError;

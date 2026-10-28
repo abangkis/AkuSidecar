@@ -213,7 +213,7 @@ test('borrowed measured startup RPC progress stays correlated, capped and privat
   assert.ok(!JSON.stringify(f.replies).includes('synthetic-secret'));
 });
 
-test('actual borrowed factory attaches only its new target and never launches or closes main Chrome',async t=>{
+test('actual borrowed factory initializes process ownership without creating Home or closing main Chrome',async t=>{
   const project=resolve(dirname(fileURLToPath(import.meta.url)),'../../../../..');
   const parent=join(project,'build');await mkdir(parent,{recursive:true});
   const root=await mkdtemp(join(parent,'test-main-borrowed-'));
@@ -233,9 +233,6 @@ test('actual borrowed factory attaches only its new target and never launches or
     borrowedReader:{pid:12345,profileDirectory:'Profile 2',transport}});
   const result=await owner.initialize();assert.equal(result.readerPID,12345);
   await owner.close();
-  assert.equal(calls.filter(c=>c.method==='Target.createTarget').length,1);
-  assert.equal(calls.filter(c=>c.method==='Target.closeTarget').length,1);
-  assert.equal(calls.find(c=>c.method==='Target.closeTarget').params.targetId,'synthetic-owned-target');
-  assert.ok(!calls.some(c=>['Browser.close','Target.getTargets'].includes(c.method)));
+  assert.deepEqual(calls,[]);
   assert.equal(unsubscribed,true);
 });

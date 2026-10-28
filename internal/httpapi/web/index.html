@@ -350,11 +350,11 @@
                 <p class="settings-detail">Start X enables normal manual and automatic X checks; it does not start a batch now. Your reader stays open, and other sources keep their current capture mode.</p>
                 <label class="x-daily-consent-row" for="x-daily-consent">
                   <input id="x-daily-consent" type="checkbox" autocomplete="off" />
-                  <span>Allow reuse of my X login for this running AkuBrowser process.</span>
+                  <span>Allow reuse of my X login for this browser profile, including after restart.</span>
                 </label>
                 <details class="x-daily-permission-details">
                   <summary>Permission and limits</summary>
-                  <p>Only auth_token and ct0 may be copied to temporary X collectors, for at most 60 seconds per batch. Account and login are checked at startup; a later session change may be missed. Permission is not saved across restarts. Stop X ends permission until the next restart, keeps your reader open, and does not turn off Auto Update.</p>
+                  <p>Only auth_token and ct0 may be copied to temporary X collectors, for at most 60 seconds per batch. Permission is saved for this browser profile. Each new process and batch must establish fresh account and session evidence; a later session change may be missed. Stop X removes saved permission, keeps your reader open, and does not turn off Auto Update. Temporary Home and collector targets close after each update.</p>
                 </details>
                 <div class="x-daily-actions">
                   <button id="x-daily-start" type="button" class="primary-button" disabled>Start X</button>

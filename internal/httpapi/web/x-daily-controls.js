@@ -31,6 +31,7 @@ function normalizeStatus(value) {
   ) return null;
   const cleanup = status.cleanup ?? "";
   if (typeof cleanup !== "string" || !VALID_CLEANUP.has(cleanup)) return null;
+  if (status.rememberedPermission !== undefined && typeof status.rememberedPermission !== "boolean") return null;
   return {
     selectedMode: status.selectedMode,
     authorizationPolicy: status.authorizationPolicy,
@@ -39,6 +40,7 @@ function normalizeStatus(value) {
     reason: status.reason,
     derivationAuthorized: status.derivationAuthorized,
     cleanup,
+    rememberedPermission: status.rememberedPermission === true,
   };
 }
 
@@ -88,6 +90,23 @@ function statusLabel(status) {
 
 function statusDetail(status) {
   if (!status) return "Daily X controls are available only for a development concurrent-mode session.";
+  if (status.authorizationPolicy === "profile") {
+    if (status.cleanup === "pending" || status.cleanup === "uncertain") {
+      return "X cleanup is not yet verified. Your saved permission is unchanged; no new batch can start until cleanup completes.";
+    }
+    if (status.state === "ready" || status.state === "capturing") {
+      return "X permission is saved for this browser profile. Each batch verifies the account and session again. Temporary Home and collector targets close after the update; your reader stays open.";
+    }
+    if (status.state === "disabled") {
+      return "Enable X to save permission for this browser profile across restarts. Each batch is limited to 60 seconds and requires fresh account and session verification.";
+    }
+    if (status.state === "stopped" && !status.rememberedPermission) {
+      return "X is off and saved permission has been removed. Restart AkuBrowser before enabling X again.";
+    }
+    if (status.state === "failed" || status.state === "stopped") {
+      return "X is unavailable in this process. Saved permission is not a successful account or session verification; inspect the startup status before retrying.";
+    }
+  }
   if (status.cleanup === "uncertain") return "Cleanup could not be confirmed. Stop can request cleanup again; starting remains disabled.";
   if (status.state === "stopped" && ["reader-start-failed", "batch-failed"].includes(status.reason)) {
     return status.cleanup === "pending"
@@ -119,18 +138,19 @@ export function xDailyView(statusValue, contextValue, consentChecked, busy = fal
   const status = normalizeStatus(statusValue);
   const context = contextValue ?? { epoch: "", development: false };
   const visible = context.development === true && typeof context.epoch === "string" && context.epoch.trim() !== "" &&
-    status?.selectedMode === "concurrent" && status.authorizationPolicy === "process" && status.maxBatchMs === 60000;
+    status?.selectedMode === "concurrent" && ["process", "profile"].includes(status.authorizationPolicy) && status.maxBatchMs === 60000;
   const cleanupUnresolved = status?.cleanup === "pending" || status?.cleanup === "uncertain";
   const terminal = !cleanupUnresolved && (status?.state === "stopped" || status?.state === "failed" || status?.reason === "opted-out" ||
     status?.reason === "process-authorization-ended");
   const canStart = visible && !busy && !needsRefresh && consentChecked === true && status.state === "disabled" &&
-    status.reason === "process-consent-required" && status.derivationAuthorized === false && !cleanupUnresolved;
+    ["process-consent-required", "profile-consent-required"].includes(status.reason) && status.derivationAuthorized === false && !cleanupUnresolved;
   const canStop = visible && !busy && (status.state === "ready" || status.state === "capturing" ||
-    status.state === "starting" || status.state === "startup-in-progress" || status.state === "stopping" || cleanupUnresolved);
+    status.state === "starting" || status.state === "startup-in-progress" || status.state === "stopping" || cleanupUnresolved ||
+    status.rememberedPermission);
   return {
     visible,
     startEnabled: canStart,
-    stopEnabled: canStop && !terminal,
+    stopEnabled: canStop && (!terminal || status.rememberedPermission),
     statusText: statusLabel(status),
     detailText: statusDetail(status),
     terminal,
@@ -181,6 +201,7 @@ export function createXDailyControls({
 
   function publishStatus(nextStatus) {
     latestStatus = nextStatus;
+    if (nextStatus.authorizationPolicy === "profile") setChecked(consent, nextStatus.rememberedPermission);
     needsRefresh = false;
     try {
       onStatus(nextStatus);
@@ -195,7 +216,7 @@ export function createXDailyControls({
     const view = xDailyView(latestStatus, context, consent?.checked === true, busy, needsRefresh);
     setHidden(panel, !view.visible);
     setDisabled(consent, !view.visible || busy || view.terminal || !latestStatus ||
-      latestStatus.state !== "disabled" || latestStatus.reason !== "process-consent-required" ||
+      latestStatus.state !== "disabled" || !["process-consent-required", "profile-consent-required"].includes(latestStatus.reason) ||
       latestStatus.derivationAuthorized !== false || latestStatus.cleanup === "pending" ||
       latestStatus.cleanup === "uncertain" || needsRefresh);
     setDisabled(startButton, !view.startEnabled);
@@ -241,7 +262,7 @@ export function createXDailyControls({
     const context = syncContext();
     if (!ticket || busy || ticket.epoch !== context.epoch || ticket.revision !== revision) return false;
     needsRefresh = true;
-    setChecked(consent, false);
+    setChecked(consent, latestStatus?.authorizationPolicy === "profile" && latestStatus.rememberedPermission);
     render();
     return true;
   }
@@ -334,7 +355,9 @@ export function createXDailyControls({
     if (!failed && adoptMutationStatus(result)) {
       if (kind === "stop" && latestStatus.state === "stopped" &&
           latestStatus.cleanup !== "pending" && latestStatus.cleanup !== "uncertain") {
-        showFeedback(["reader-start-failed", "batch-failed"].includes(latestStatus.reason)
+        showFeedback(latestStatus.authorizationPolicy === "profile" && !latestStatus.rememberedPermission
+          ? "X is stopped and saved permission has been removed. Restart AkuBrowser before enabling X again."
+          : ["reader-start-failed", "batch-failed"].includes(latestStatus.reason)
           ? "Daily X failed. Restart AkuSidecar before requesting permission again."
           : "Daily X stopped. Restart AkuSidecar before requesting permission again.");
       } else if (kind === "start") {

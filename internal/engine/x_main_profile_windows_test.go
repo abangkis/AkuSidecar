@@ -222,3 +222,97 @@ func TestMainXFirstFailureKeepsTypedCauseWhenCleanupAlsoFails(t *testing.T) {
 		t.Fatal("typed diagnostic lost")
 	}
 }
+
+func TestXDailyMainPermissionBindsSelectedSubprofile(t *testing.T) {
+	root := t.TempDir()
+	userData := filepath.Join(root, "user-data")
+	selected := filepath.Join(userData, "Default")
+	for _, path := range []string{selected, filepath.Join(userData, "Profile 1")} {
+		if err := os.MkdirAll(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rootID, err := ownedprocess.DirectoryID(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userDataID, err := ownedprocess.DirectoryID(userData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor := ownedprofile.Descriptor{Root: root, Directory: userData, RootID: rootID, DirectoryID: userDataID}
+	original, err := xMainDailyProfileScope(descriptor, "Default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	same, err := xMainDailyProfileScope(descriptor, "Default")
+	if err != nil || same != original {
+		t.Fatalf("unchanged selected subprofile lost its scope: %v", err)
+	}
+	other, err := xMainDailyProfileScope(descriptor, "Profile 1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Retain the original directory so Windows cannot reuse its identity.
+	if err := os.Rename(selected, filepath.Join(userData, "retired-default")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(selected, 0700); err != nil {
+		t.Fatal(err)
+	}
+	replaced, err := xMainDailyProfileScope(descriptor, "Default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedRoot := descriptor
+	changedRoot.RootID += "-replacement"
+	rootReplaced, err := xMainDailyProfileScope(changedRoot, "Default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedUserData := descriptor
+	changedUserData.DirectoryID += "-replacement"
+	userDataReplaced, err := xMainDailyProfileScope(changedUserData, "Default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rootReplaced == replaced || userDataReplaced == replaced {
+		t.Fatal("selected subprofile scope lost an enclosing directory identity guard")
+	}
+	for _, tc := range []struct {
+		name    string
+		scope   string
+		restore bool
+	}{
+		{"unchanged selected profile", same, true},
+		{"different selected profile", other, false},
+		{"replaced selected directory", replaced, false},
+		{"replaced enclosing root", rootReplaced, false},
+		{"replaced user-data directory", userDataReplaced, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e, state := testEngine(t)
+			ctx := context.Background()
+			if err := state.SaveXDailyPermission(ctx, original, true); err != nil {
+				t.Fatal(err)
+			}
+			owner := &syntheticDailyOwner{}
+			attachDailyPermissionRuntime(t, e, state, tc.scope, owner)
+			if err := e.ResumeXDailyScheduling(ctx); err != nil {
+				t.Fatal(err)
+			}
+			owner.mu.Lock()
+			checks := owner.readerChecks
+			owner.mu.Unlock()
+			status := e.XCaptureStatus()
+			if status.RememberedPermission != tc.restore || e.xDailyReady() != tc.restore || (checks > 0) != tc.restore {
+				t.Fatalf("wrong profile restoration: status=%+v readerChecks=%d", status, checks)
+			}
+		})
+	}
+	for _, name := range []string{"../Default", "Missing"} {
+		if _, err := xMainDailyProfileScope(descriptor, name); err == nil {
+			t.Fatalf("invalid or missing subprofile %q received a permission scope", name)
+		}
+	}
+}

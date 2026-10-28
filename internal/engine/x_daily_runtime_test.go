@@ -5,9 +5,12 @@ package engine
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -23,6 +26,7 @@ type syntheticDailyOwner struct {
 	mu                            sync.Mutex
 	e                             *Engine
 	generations                   []uint64
+	readerChecks                  int
 	readerCloses, collectorCloses int
 	failCleanup                   bool
 	failOwnerCleanup              bool
@@ -33,10 +37,557 @@ type syntheticDailyOwner struct {
 }
 
 func (o *syntheticDailyOwner) CheckReader(ctx context.Context) error {
+	o.mu.Lock()
+	o.readerChecks++
+	o.mu.Unlock()
 	if o.check != nil {
 		return o.check(ctx)
 	}
 	return nil
+}
+
+func attachDailyPermissionRuntime(t *testing.T, e *Engine, state *store.Store, profileScope string, owner *syntheticDailyOwner) (*XDailySelection, func()) {
+	t.Helper()
+	e.config.Dev = true
+	e.config.Database.Path = state.Path()
+	e.config.Capture.XMode = config.XCaptureConcurrent
+	selection, err := PrepareXDailyDevelopment(e.config, config.Options{Dev: true, AppShell: e.config.Capture.XUsesMainProfile()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = selection.Attach(e); err != nil {
+		t.Fatal(err)
+	}
+	owner.e = e
+	if err = e.configureXDailyFactory(context.Background(), func(context.Context, context.Context) (xDailyNativeOwner, error) {
+		return owner, nil
+	}, profileScope); err != nil {
+		t.Fatal(err)
+	}
+	closed := false
+	closeSelection := func() {
+		if closed {
+			return
+		}
+		closed = true
+		if err := selection.Close(); err != nil {
+			t.Error(err)
+		}
+		if !e.WaitForIdle(time.Second) {
+			t.Error("daily worker not drained")
+		}
+	}
+	t.Cleanup(closeSelection)
+	return selection, closeSelection
+}
+
+func TestXDailyPermissionDefaultsOffUntilExplicitStart(t *testing.T) {
+	e, state := testEngine(t)
+	scope := xDailyProfileScope(`C:\synthetic\reader-root`, `C:\synthetic\reader-root\profile`, "synthetic-root", "synthetic-directory")
+	owner := &syntheticDailyOwner{}
+	attachDailyPermissionRuntime(t, e, state, scope, owner)
+	if err := e.ResumeXDailyScheduling(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	allowed, err := state.XDailyPermission(context.Background(), scope)
+	if err != nil || allowed {
+		t.Fatalf("default permission=(%t,%v), want false,nil", allowed, err)
+	}
+	status := e.XCaptureStatus()
+	owner.mu.Lock()
+	checks := owner.readerChecks
+	owner.mu.Unlock()
+	if status.RememberedPermission || status.Reason != "process-consent-required" || e.xDailyReady() || checks != 0 {
+		t.Fatalf("default X state activated: status=%+v readerChecks=%d", status, checks)
+	}
+}
+
+func TestXDailyStaleRestoreCannotOverwriteExplicitRevocation(t *testing.T) {
+	ctx := context.Background()
+	e, state := testEngine(t)
+	scope := xDailyProfileScope(`C:\synthetic\reader-root`, `C:\synthetic\reader-root\profile`, "synthetic-root", "synthetic-directory")
+	owner := &syntheticDailyOwner{}
+	attachDailyPermissionRuntime(t, e, state, scope, owner)
+	e.xDaily.mu.RLock()
+	readRevision := e.xDaily.permissionRevision
+	e.xDaily.mu.RUnlock()
+	if err := e.RevokeXDailyPermission(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if e.publishRestoredXDailyPermission(readRevision, true, nil) {
+		t.Fatal("stale permission read overwrote newer explicit revocation")
+	}
+	permitted, err := state.XDailyPermission(ctx, scope)
+	if err != nil || permitted || e.XCaptureStatus().RememberedPermission {
+		t.Fatalf("stale restore changed revoked permission: stored=(%t,%v) status=%+v", permitted, err, e.XCaptureStatus())
+	}
+}
+
+func TestXDailyStaleRestoreDoesNotPoisonConcurrentExplicitStart(t *testing.T) {
+	for _, startupErr := range []error{nil, errors.New("synthetic explicit startup failure")} {
+		name := "success"
+		if startupErr != nil {
+			name = "first failure preserved"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			e, state := testEngine(t)
+			scope := xDailyProfileScope(`C:\synthetic\reader-root`, `C:\synthetic\reader-root\profile`, "synthetic-root", "synthetic-directory")
+			owner := &syntheticDailyOwner{}
+			attachDailyPermissionRuntime(t, e, state, scope, owner)
+			if err := state.SaveXDailyPermission(ctx, scope, true); err != nil {
+				t.Fatal(err)
+			}
+			e.xDaily.mu.RLock()
+			revision := e.xDaily.permissionRevision
+			e.xDaily.mu.RUnlock()
+			if !e.publishRestoredXDailyPermission(revision, true, nil) {
+				t.Fatal("current restore read was rejected")
+			}
+			entered, release := make(chan struct{}), make(chan struct{})
+			releaseStartup := sync.OnceFunc(func() { close(release) })
+			defer releaseStartup()
+			e.xDaily.mu.Lock()
+			e.xDaily.factory = func(startup, _ context.Context) (xDailyNativeOwner, error) {
+				close(entered)
+				select {
+				case <-release:
+					return owner, startupErr
+				case <-startup.Done():
+					return owner, startup.Err()
+				}
+			}
+			e.xDaily.mu.Unlock()
+			started := make(chan error, 1)
+			go func() { started <- e.StartXDaily(ctx, XDailyStartRequest{true, true}) }()
+			select {
+			case <-entered:
+			case <-ctx.Done():
+				t.Fatal("explicit startup did not enter factory")
+			}
+			restored := make(chan struct{})
+			go func() {
+				e.restoreXDailyStart(ctx, revision)
+				close(restored)
+			}()
+			select {
+			case <-restored:
+			case <-ctx.Done():
+				t.Fatal("stale restore blocked behind explicit startup factory")
+			}
+			if status := e.XCaptureStatus(); status.Reason == "permission-start-failed" {
+				t.Fatal("stale restore poisoned the admitted explicit startup")
+			}
+			releaseStartup()
+			select {
+			case err := <-started:
+				if (err != nil) != (startupErr != nil) {
+					t.Fatalf("explicit startup error=%v, factory error=%v", err, startupErr)
+				}
+			case <-ctx.Done():
+				t.Fatal("explicit startup did not finish")
+			}
+			if startupErr == nil {
+				if !e.xDailyReady() || !e.XCaptureStatus().RememberedPermission {
+					t.Fatalf("explicit startup lost its grant: %+v", e.XCaptureStatus())
+				}
+			} else {
+				e.xDaily.mu.RLock()
+				firstFailure := e.xDaily.firstFailure
+				e.xDaily.mu.RUnlock()
+				if e.XCaptureStatus().Reason != "reader-start-failed" || !errors.Is(firstFailure, startupErr) {
+					t.Fatalf("stale restore replaced the explicit first failure: status=%+v cause=%v", e.XCaptureStatus(), firstFailure)
+				}
+			}
+		})
+	}
+}
+
+func TestXDailyRevokeCancelsRestoreFactoryAndRejectsStaleAdmission(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	e, state := testEngine(t)
+	scope := xDailyProfileScope(`C:\synthetic\reader-root`, `C:\synthetic\reader-root\profile`, "synthetic-root", "synthetic-directory")
+	owner := &syntheticDailyOwner{}
+	attachDailyPermissionRuntime(t, e, state, scope, owner)
+	if err := state.SaveXDailyPermission(ctx, scope, true); err != nil {
+		t.Fatal(err)
+	}
+	e.xDaily.mu.RLock()
+	revision := e.xDaily.permissionRevision
+	e.xDaily.mu.RUnlock()
+	if !e.publishRestoredXDailyPermission(revision, true, nil) {
+		t.Fatal("current restore read was rejected")
+	}
+	entered, canceled, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	releaseStartup := sync.OnceFunc(func() { close(release) })
+	defer releaseStartup()
+	e.xDaily.mu.Lock()
+	e.xDaily.factory = func(startup, _ context.Context) (xDailyNativeOwner, error) {
+		close(entered)
+		<-startup.Done()
+		close(canceled)
+		<-release
+		return owner, nil
+	}
+	e.xDaily.mu.Unlock()
+	restored := make(chan struct{})
+	go func() {
+		e.restoreXDailyStart(ctx, revision)
+		close(restored)
+	}()
+	select {
+	case <-entered:
+	case <-ctx.Done():
+		t.Fatal("restore startup did not enter factory")
+	}
+	revoked := make(chan error, 1)
+	go func() { revoked <- e.RevokeXDailyPermission(ctx) }()
+	select {
+	case <-canceled:
+	case <-ctx.Done():
+		t.Fatal("revocation could not cancel the admitted restore factory")
+	}
+	staleRestored := make(chan struct{})
+	go func() {
+		e.restoreXDailyStart(ctx, revision)
+		close(staleRestored)
+	}()
+	releaseStartup()
+	for _, done := range []<-chan struct{}{restored, staleRestored} {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			t.Fatal("restore did not join after revocation")
+		}
+	}
+	select {
+	case err := <-revoked:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("revocation did not finish")
+	}
+	allowed, err := state.XDailyPermission(ctx, scope)
+	status := e.XCaptureStatus()
+	owner.mu.Lock()
+	checks, closes := owner.readerChecks, owner.readerCloses
+	owner.mu.Unlock()
+	if err != nil || allowed || status.RememberedPermission || e.xDailyReady() || status.Reason != "opted-out" || checks != 0 || closes != 1 {
+		t.Fatalf("restore escaped revocation: stored=(%t,%v) status=%+v checks=%d closes=%d", allowed, err, status, checks, closes)
+	}
+}
+
+func TestXDailyAdmittedRestoreSurvivesConcurrentExplicitStart(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	e, state := testEngine(t)
+	scope := xDailyProfileScope(`C:\synthetic\reader-root`, `C:\synthetic\reader-root\profile`, "synthetic-root", "synthetic-directory")
+	owner := &syntheticDailyOwner{}
+	attachDailyPermissionRuntime(t, e, state, scope, owner)
+	if err := state.SaveXDailyPermission(ctx, scope, true); err != nil {
+		t.Fatal(err)
+	}
+	entered, release := make(chan struct{}), make(chan struct{})
+	releaseStartup := sync.OnceFunc(func() { close(release) })
+	defer releaseStartup()
+	e.xDaily.mu.Lock()
+	e.xDaily.factory = func(startup, _ context.Context) (xDailyNativeOwner, error) {
+		close(entered)
+		select {
+		case <-release:
+			return owner, nil
+		case <-startup.Done():
+			return owner, startup.Err()
+		}
+	}
+	e.xDaily.mu.Unlock()
+	resumed := make(chan error, 1)
+	go func() { resumed <- e.ResumeXDailyScheduling(ctx) }()
+	select {
+	case <-entered:
+	case <-ctx.Done():
+		t.Fatal("restore startup did not enter factory")
+	}
+	if err := e.StartXDaily(ctx, XDailyStartRequest{true, true}); err == nil {
+		t.Fatal("explicit request admitted a second startup")
+	}
+	releaseStartup()
+	select {
+	case err := <-resumed:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("admitted restore did not finish")
+	}
+	if status := e.XCaptureStatus(); !e.xDailyReady() || !status.RememberedPermission || status.Reason != "" {
+		t.Fatalf("concurrent explicit request poisoned the admitted restore: %+v", status)
+	}
+}
+
+func TestXDailyRevokeWithoutFactoryReportsMissingProfileScope(t *testing.T) {
+	e, _ := testEngine(t)
+	e.config.Capture.XMode = config.XCaptureConcurrent
+	if err := e.RevokeXDailyPermission(context.Background()); err == nil || !strings.Contains(err.Error(), "profile scope unavailable") {
+		t.Fatalf("revoke without factory returned %v, want known scope error", err)
+	}
+}
+
+func TestXDailyMainProfileStatusKeepsBatchBootstrapLifetime(t *testing.T) {
+	ctx := context.Background()
+	e, state := testEngine(t)
+	e.config.Capture.XReaderSource = "main"
+	e.config.WindowsCaptureSplit = true
+	scope := xDailyProfileScope(`C:\synthetic\main-root`, `C:\synthetic\main-root\profile`, "synthetic-root", "synthetic-directory")
+	owner := &syntheticDailyOwner{}
+	_, closeSelection := attachDailyPermissionRuntime(t, e, state, scope, owner)
+	if err := e.StartXDaily(ctx, XDailyStartRequest{AcknowledgeLimitations: true, AllowProcessSessionDerivation: true}); err != nil {
+		t.Fatal(err)
+	}
+	status := e.XCaptureStatus()
+	if status.AuthorizationPolicy != "profile" || status.ReaderBootstrapLifetime != "batch" || !status.RememberedPermission || !status.DerivationAuthorized {
+		t.Fatalf("main-profile status lost permission/bootstrap boundary: %+v", status)
+	}
+	closeSelection()
+}
+
+func TestXDailyPermissionRestoresAfterReopenWithFreshProcessVerification(t *testing.T) {
+	ctx := context.Background()
+	e, state := testEngine(t)
+	scope := xDailyProfileScope(`C:\synthetic\reader-root`, `C:\synthetic\reader-root\profile`, "synthetic-root", "synthetic-directory")
+	firstOwner := &syntheticDailyOwner{}
+	_, closeFirst := attachDailyPermissionRuntime(t, e, state, scope, firstOwner)
+	if err := e.StartXDaily(ctx, XDailyStartRequest{AcknowledgeLimitations: true, AllowProcessSessionDerivation: true}); err != nil {
+		t.Fatal(err)
+	}
+	if permitted, err := state.XDailyPermission(ctx, scope); err != nil || !permitted {
+		t.Fatalf("explicit consent=(%t,%v), want true,nil", permitted, err)
+	}
+	dbPath, cfg, provider, logger := state.Path(), e.config, e.provider, e.logger
+	e.Shutdown()
+	closeFirst()
+	if err := state.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := store.Open(dbPath, domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	restarted := New(reopened, provider, cfg, logger)
+	secondOwner := &syntheticDailyOwner{}
+	_, closeSecond := attachDailyPermissionRuntime(t, restarted, reopened, scope, secondOwner)
+	if err := restarted.ResumeXDailyScheduling(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !restarted.xDailyReady() || !restarted.XCaptureStatus().RememberedPermission {
+		t.Fatalf("saved profile permission did not restore a fresh process grant: %+v", restarted.XCaptureStatus())
+	}
+	secondOwner.mu.Lock()
+	checks := secondOwner.readerChecks
+	secondOwner.mu.Unlock()
+	if checks != 1 {
+		t.Fatalf("fresh process reader verification count=%d, want 1", checks)
+	}
+	if err := restarted.ResumeXDailyScheduling(ctx); err != nil {
+		t.Fatal(err)
+	}
+	secondOwner.mu.Lock()
+	checks = secondOwner.readerChecks
+	secondOwner.mu.Unlock()
+	if checks != 1 {
+		t.Fatalf("startup restore ran more than once: reader checks=%d", checks)
+	}
+	restarted.Shutdown()
+	closeSecond()
+}
+
+func TestXDailyPermissionScopeChangeDoesNotRestore(t *testing.T) {
+	ctx := context.Background()
+	e, state := testEngine(t)
+	oldScope := xDailyProfileScope(`C:\synthetic\reader-root`, `C:\synthetic\reader-root\profile`, "synthetic-root", "old-directory")
+	newScope := xDailyProfileScope(`C:\synthetic\reader-root`, `C:\synthetic\reader-root\profile`, "synthetic-root", "new-directory")
+	if err := state.SaveXDailyPermission(ctx, oldScope, true); err != nil {
+		t.Fatal(err)
+	}
+	dbPath, cfg, provider, logger := state.Path(), e.config, e.provider, e.logger
+	if err := state.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := store.Open(dbPath, domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	restarted := New(reopened, provider, cfg, logger)
+	owner := &syntheticDailyOwner{}
+	_, closeSelection := attachDailyPermissionRuntime(t, restarted, reopened, newScope, owner)
+	if err := restarted.ResumeXDailyScheduling(ctx); err != nil {
+		t.Fatal(err)
+	}
+	status := restarted.XCaptureStatus()
+	owner.mu.Lock()
+	checks := owner.readerChecks
+	owner.mu.Unlock()
+	if status.RememberedPermission || status.Reason != "process-consent-required" || restarted.xDailyReady() || checks != 0 {
+		t.Fatalf("permission crossed profile scopes: status=%+v readerChecks=%d", status, checks)
+	}
+	closeSelection()
+}
+
+func TestXDailyExplicitRevocationSurvivesShutdownAndReopen(t *testing.T) {
+	ctx := context.Background()
+	e, state := testEngine(t)
+	scope := xDailyProfileScope(`C:\synthetic\reader-root`, `C:\synthetic\reader-root\profile`, "synthetic-root", "synthetic-directory")
+	firstOwner := &syntheticDailyOwner{}
+	_, closeFirst := attachDailyPermissionRuntime(t, e, state, scope, firstOwner)
+	if err := e.StartXDaily(ctx, XDailyStartRequest{AcknowledgeLimitations: true, AllowProcessSessionDerivation: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.RevokeXDailyPermission(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if e.XCaptureStatus().RememberedPermission || e.xDailyReady() {
+		t.Fatalf("explicit revocation did not disable X: %+v", e.XCaptureStatus())
+	}
+	dbPath, cfg, provider, logger := state.Path(), e.config, e.provider, e.logger
+	e.Shutdown()
+	closeFirst()
+	if err := state.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := store.Open(dbPath, domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	restarted := New(reopened, provider, cfg, logger)
+	secondOwner := &syntheticDailyOwner{}
+	_, closeSecond := attachDailyPermissionRuntime(t, restarted, reopened, scope, secondOwner)
+	if err := restarted.ResumeXDailyScheduling(ctx); err != nil {
+		t.Fatal(err)
+	}
+	secondOwner.mu.Lock()
+	checks := secondOwner.readerChecks
+	secondOwner.mu.Unlock()
+	if status := restarted.XCaptureStatus(); status.RememberedPermission || restarted.xDailyReady() || checks != 0 {
+		t.Fatalf("revoked profile permission restored after reopen: status=%+v readerChecks=%d", status, checks)
+	}
+	restarted.Shutdown()
+	closeSecond()
+}
+
+func TestXDailyStartupFailureKeepsRememberedPermissionWithoutFailingResume(t *testing.T) {
+	ctx := context.Background()
+	e, state := testEngine(t)
+	scope := xDailyProfileScope(`C:\synthetic\reader-root`, `C:\synthetic\reader-root\profile`, "synthetic-root", "synthetic-directory")
+	if err := state.SaveXDailyPermission(ctx, scope, true); err != nil {
+		t.Fatal(err)
+	}
+	e.config.Dev = true
+	e.config.Database.Path = state.Path()
+	e.config.Capture.XMode = config.XCaptureConcurrent
+	selection, err := PrepareXDailyDevelopment(e.config, config.Options{Dev: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := selection.Attach(e); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = selection.Close() })
+	factoryCalls := 0
+	if err := e.configureXDailyFactory(ctx, func(context.Context, context.Context) (xDailyNativeOwner, error) {
+		factoryCalls++
+		return nil, errors.New("synthetic fresh process startup failure")
+	}, scope); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.ResumeXDailyScheduling(ctx); err != nil {
+		t.Fatalf("X restoration failure escaped into app startup: %v", err)
+	}
+	allowed, err := state.XDailyPermission(ctx, scope)
+	status := e.XCaptureStatus()
+	if err != nil || !allowed || !status.RememberedPermission || status.Reason != "reader-start-failed" || e.xDailyReady() || factoryCalls != 1 {
+		t.Fatalf("failed fresh startup state: permission=(%t,%v) status=%+v factoryCalls=%d", allowed, err, status, factoryCalls)
+	}
+}
+
+func TestXDailyExplicitStartPersistsConsentBeforeFactoryFailure(t *testing.T) {
+	ctx := context.Background()
+	e, state := testEngine(t)
+	scope := xDailyProfileScope(`C:\synthetic\reader-root`, `C:\synthetic\reader-root\profile`, "synthetic-root", "synthetic-directory")
+	e.config.Dev = true
+	e.config.Database.Path = state.Path()
+	e.config.Capture.XMode = config.XCaptureConcurrent
+	selection, err := PrepareXDailyDevelopment(e.config, config.Options{Dev: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := selection.Attach(e); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = selection.Close() })
+	factoryCalls := 0
+	if err := e.configureXDailyFactory(ctx, func(context.Context, context.Context) (xDailyNativeOwner, error) {
+		factoryCalls++
+		allowed, readErr := state.XDailyPermission(ctx, scope)
+		if readErr != nil || !allowed {
+			return nil, errors.New("explicit permission was not durable before startup")
+		}
+		return nil, errors.New("synthetic fresh process startup failure")
+	}, scope); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.StartXDaily(ctx, XDailyStartRequest{AcknowledgeLimitations: true, AllowProcessSessionDerivation: true}); err == nil {
+		t.Fatal("synthetic factory failure was accepted")
+	}
+	allowed, err := state.XDailyPermission(ctx, scope)
+	status := e.XCaptureStatus()
+	if err != nil || !allowed || !status.RememberedPermission || status.Reason != "reader-start-failed" || factoryCalls != 1 {
+		t.Fatalf("failed explicit start lost saved permission: permission=(%t,%v) status=%+v factoryCalls=%d", allowed, err, status, factoryCalls)
+	}
+}
+
+func TestXDailyPermissionReadFailureDisablesOnlyX(t *testing.T) {
+	ctx := context.Background()
+	e, state := testEngine(t)
+	scope := xDailyProfileScope(`C:\synthetic\reader-root`, `C:\synthetic\reader-root\profile`, "synthetic-root", "synthetic-directory")
+	owner := &syntheticDailyOwner{}
+	attachDailyPermissionRuntime(t, e, state, scope, owner)
+	absolutePath, err := filepath.Abs(state.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	uriPath := filepath.ToSlash(absolutePath)
+	if !strings.HasPrefix(uriPath, "/") {
+		uriPath = "/" + uriPath
+	}
+	probe, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: uriPath}).String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer probe.Close()
+	if _, err := probe.ExecContext(ctx, `DROP TABLE meta`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := probe.ExecContext(ctx, `CREATE TABLE meta(key TEXT PRIMARY KEY)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.ResumeXDailyScheduling(ctx); err != nil {
+		t.Fatalf("permission read failure escaped into app startup: %v", err)
+	}
+	status := e.XCaptureStatus()
+	owner.mu.Lock()
+	checks := owner.readerChecks
+	owner.mu.Unlock()
+	if status.RememberedPermission || status.Reason != "permission-read-failed" || e.xDailyReady() || checks != 0 {
+		t.Fatalf("X permission read failure state: status=%+v readerChecks=%d", status, checks)
+	}
 }
 func (o *syntheticDailyOwner) PrepareReader(context.Context, readerbroker.Request, string) (readerbroker.NativePostPreparation, error) {
 	return readerbroker.NativePostPreparation{}, nil
