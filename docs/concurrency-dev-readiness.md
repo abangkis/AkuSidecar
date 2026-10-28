@@ -3,6 +3,49 @@
 This page is the current checkpoint. Historical experiments in the design and
 roadmap are evidence, not a new list of prerequisites.
 
+## Main-dev two-batch acceptance passed (2026-10-28)
+
+The user authorized the ordinary `runtime/dev` handoff of `0991fa2`, followed
+by process-scoped derivation of only `auth_token` and `ct0`, at most 60 seconds
+per X attempt. Two normal mixed Instagram/LinkedIn/X updates completed in the
+same Sidecar process. X remained queued until LinkedIn capture and reasoning
+finished, then used its separate disposable collector.
+
+| X batch | Captured | Evaluated | Added to Timeline | Total X run |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 2 | 2 | 2 | 22,234 ms |
+| 2 | 2 | 2 | 0 | 20,260 ms |
+
+Both X runs completed without error. No Timeline addition in batch two is not a
+capture failure. The ordinary predecessors also completed. These total run
+durations include startup and reasoning; they are not isolated seed/capture
+timings. The observed collector cleanup finished before reasoning completed,
+so the attempt was bounded by the total X run in both cases. Predecessor queue
+waiting is outside the original seed clock.
+
+The same headed X source window remained visible across all 566 native window
+samples. Independent process samples during batch two observed the disposable
+headless collector and retained reader alive together. Stop X then revoked
+derivation authorization and verified cleanup; no headless collector remained.
+Sidecar epoch, Supervisor identity, application settings and Auto Update were
+unchanged throughout the acceptance. There was no retry, login mutation or
+runtime restart during the two-batch test.
+
+Evidence: `build/main-dev-two-batches-0991fa2-20261028/acceptance-result.json`,
+`reader-monitor.json`, `overlap-proof.json` and `after-stop-os.json`. Operational
+receipts remain local; this document records their bounded, content-free result.
+The reader evidence is the ordinary Open source X window. This run does not
+establish a new native-post foreground action, long-running stability or full
+session rotation qualification.
+
+The predecessor blocker is closed for this accepted main-dev path. The next
+proposed increment is daily-use controls in the existing UI: process consent,
+Start/Stop X and status, so operation does not require a disposable operator
+script. Preserve current one-start-per-process and terminal Stop semantics;
+re-enabling after Stop requires an ordinary restart and new process consent.
+No UI implementation or new operational run is authorized by this record.
+Shared reservation remains deferred rather than a renewed MVP gate.
+
 ## Latest offline increment: daily-X predecessor admission (2026-10-28)
 
 Retained startup diagnostics from `ccb55b3` identified Store authorization
@@ -30,11 +73,10 @@ builds (`TestXDaily`, `TestXManualStatusAndStopDefaultOff`, `TestHybrid` and
 (`TestDailyPilot` and `TestManualPilot`). Synthetic native-owner cases used the
 accountless fake driver/test-process fixture; no real browser or transfer ran.
 
-Native mixed-source acceptance still requires a separately approved ordinary dev handoff
-and process derivation. No restart, transfer or Auto Update change is authorized
-by this source correction. The next operational acceptance remains two mixed
-source batches with the reader open, followed by Stop, without automatic retry
-after failure.
+The separately authorized handoff and native mixed-source acceptance for this
+correction subsequently passed as recorded above. Source validation alone did
+not authorize those operations. Future operational runs retain their explicit
+process-consent boundary and stop on failure without automatic retry.
 
 The [shared capture reservation plan](shared-capture-reservation-plan.md) is a
 deferred structural follow-up. It must not silently become a prerequisite for

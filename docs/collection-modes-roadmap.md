@@ -4,6 +4,23 @@
 The dated entries below preserve experiment history. Their old blocker/next-step
 wording must not override the current checkpoint.
 
+### Accepted main-dev path and next daily-use increment (2026-10-28)
+
+The ordinary `runtime/dev` deployment of `0991fa2` passed two explicitly
+authorized mixed-source updates in one process. Both X captures completed
+with the reader preserved; process evidence observed headless/reader overlap.
+Stop revoked derivation and left no headless collector, while login, settings,
+Supervisor and Auto Update were preserved. See the [acceptance scope and receipt](concurrency-dev-readiness.md#main-dev-two-batch-acceptance-passed-2026-10-28).
+
+The capture/Store predecessor blocker is closed for that bounded main-dev path.
+Next, propose existing-UI process consent and Start/Stop/status controls for
+daily operation without the disposable test operator. After separately approved
+implementation/activation, ordinary manual and Auto Update usage can exercise
+the same accepted backend. Stop remains terminal for that process; restart
+requires new consent. This is not a reset to another isolated QA-package MVP.
+Long-running stability and complete rotation qualification remain follow-up
+work, and shared reservation remains the deferred architecture increment below.
+
 ### Deferred architecture follow-up: shared capture reservation
 
 The conservative daily-X predecessor correction retains the existing Store
