@@ -269,16 +269,23 @@ func (n *xDailyOwner) Close(ctx context.Context) error {
 	batch := n.batch
 	n.failed = true
 	n.mu.Unlock()
+	var batchErr, pinErr error
 	if batch != nil {
-		_ = batch.Close(ctx)
+		batchErr = batch.Close(ctx)
 	}
-	if err := n.host.Close(ctx); err != nil {
-		return err
-	}
+	hostErr := n.host.Close(ctx)
 	// EOF/parent shutdown also proves the collector exited. Release retained
 	// batch pins only after the complete process Job has drained successfully.
-	if batch != nil {
-		return batch.releasePins()
+	// This does not prove that a target in borrowed Chrome was retired.
+	if batch != nil && hostErr == nil {
+		pinErr = batch.releasePins()
+	}
+	if joined := errors.Join(batchErr, hostErr, pinErr); joined != nil {
+		var known *xDailyCleanupError
+		if errors.As(joined, &known) {
+			return &xDailyCleanupError{detail: known.detail.closed(), cause: joined}
+		}
+		return xDailyCleanupFail(joined, "owner_close", "unverified")
 	}
 	return nil
 }
@@ -455,44 +462,85 @@ func (b *xDailyBatch) Capture(ctx context.Context, command string) (domain.Run, 
 }
 func (b *xDailyBatch) Close(ctx context.Context) error {
 	b.once.Do(func() {
+		detail := XDailyCleanupDiagnostic{Broker: "not_needed", BatchEnd: "not_attempted", CollectorExit: "not_attempted", PinRelease: "not_attempted", StoreReconcile: "not_needed"}
+		var first error
+		fail := func(stage, condition string, err error) {
+			if first == nil {
+				first = err
+				detail.Stage, detail.Condition = stage, condition
+			}
+		}
 		if b.broker != nil {
 			b.broker.stop("batch-complete")
 			b.broker.mu.Lock()
 			uncertain := b.broker.cleanupFailed
 			b.broker.mu.Unlock()
 			if uncertain {
-				b.closeErr = errors.New("daily broker cleanup uncertain")
+				detail.Broker = "uncertain"
+				fail("broker_stop", "unverified", errors.New("daily broker cleanup uncertain"))
+			} else {
+				detail.Broker = "verified"
 			}
 		}
 		if b.stopManagers != nil {
 			b.stopManagers()
 		}
 		var receipt struct {
-			Closed bool `json:"closed"`
+			Closed  bool                    `json:"closed"`
+			Cleanup *XDailyCleanupResources `json:"cleanup"`
 		}
-		if b.owner.call(ctx, "daily_batch_end", map[string]any{"generation": b.generation}, &receipt) != nil || !receipt.Closed {
-			b.closeErr = errors.New("daily batch cleanup uncertain")
-			return
+		if err := b.owner.call(ctx, "daily_batch_end", map[string]any{"generation": b.generation}, &receipt); err != nil {
+			detail.BatchEnd = "uncertain"
+			fail("batch_end", "rpc", err)
+		} else {
+			detail.Resources = receipt.Cleanup
+			if receipt.Cleanup == nil || !receipt.Cleanup.valid() || receipt.Closed != receipt.Cleanup.complete() {
+				detail.BatchEnd = "uncertain"
+				fail("batch_end", "receipt", errors.New("daily cleanup receipt invalid"))
+			} else if !receipt.Closed {
+				detail.BatchEnd = "uncertain"
+				fail("batch_end", "unverified", errors.New("daily batch cleanup uncertain"))
+			} else {
+				detail.BatchEnd = "verified"
+			}
 		}
+		// A failed control/target retirement cannot skip independent confirmation
+		// of collector exit. Pins/profile may be released only after that proof.
+		exited, seenCollector := true, false
 		for _, r := range b.host.roles {
 			if r.role == "collector" {
+				seenCollector = true
 				state, err := windows.WaitForSingleObject(r.chromeHandle, 0)
 				if err != nil || state != uint32(windows.WAIT_OBJECT_0) {
-					b.closeErr = errors.New("daily collector still alive")
-					return
+					exited = false
+					fail("collector_exit", "alive", errors.New("daily collector still alive"))
 				}
 			}
 		}
-		if b.closeErr == nil {
-			b.closeErr = b.releasePins()
+		if !seenCollector && detail.BatchEnd != "verified" {
+			exited = false
+			fail("collector_exit", "unavailable", errors.New("daily collector exit not observed"))
 		}
-		if b.closeErr == nil {
+		if exited {
+			detail.CollectorExit = "verified"
+			if err := b.releasePins(); err != nil {
+				detail.PinRelease = "uncertain"
+				fail("pin_release", "release", err)
+			} else {
+				detail.PinRelease = "verified"
+			}
+		} else {
+			detail.CollectorExit = "uncertain"
+		}
+		if first == nil {
 			b.host.roles = nil
 			b.owner.mu.Lock()
 			if b.owner.batch == b {
 				b.owner.batch = nil
 			}
 			b.owner.mu.Unlock()
+		} else {
+			b.closeErr = &xDailyCleanupError{detail: detail.closed(), cause: first}
 		}
 	})
 	return b.closeErr

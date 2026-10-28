@@ -7,6 +7,7 @@ import {startupFailureLatch,startupPrepareFailure} from './x-manual-startup-diag
 import {consumeFreshnessPublication} from './x-identity-freshness-ledger.mjs';
 import {createStartupWaitBudget} from './x-manual-startup-wait-budget.mjs';
 import {MANUAL_STARTUP_MAX_MS} from './x-manual-startup-limits.mjs';
+import {ManualObservationDeadline} from './x-manual-observation-deadline.mjs';
 
 const FIELDS = ['ownerId', 'profileId', 'contextId', 'targetId', 'frameId', 'documentId'];
 const unavailable = () => new Error('manual_startup_owner_unavailable');
@@ -35,7 +36,7 @@ export function createManualStartupOwner({ run, role='unknown',diagnostics=start
   if (typeof run !== 'function'||typeof requireFreshness!=='boolean') throw unavailable();
   const ready = deferred(), release = deferred(), abort = new AbortController();
   const handle = randomBytes(24).toString('hex');
-  let state = 'new', actual = null, running = null, sink = null, waitBudget = null;
+  let state = 'new', actual = null, running = null, sink = null, waitBudget = null, observationDeadline=null;
   const close = () => {
     state = 'closed'; abort.abort(); ready.reject(unavailable()); release.reject(unavailable());
   };
@@ -51,19 +52,23 @@ export function createManualStartupOwner({ run, role='unknown',diagnostics=start
   };
   const capture = createManualStartupCapture({ role,diagnostics,now, wallNow, run: async (request, output) => {
     if (state !== 'ready' || !actual || FIELDS.some(k => actual[k] !== request[k])) throw unavailable();
+    observationDeadline.acquired();
     state = 'acquiring'; sink = output.onPrivateStartup; release.resolve();
     await running;
     if (abort.signal.aborted || state !== 'acquiring') throw unavailable();
     state = 'complete';
   } });
   return Object.freeze({
-    async prepare(signal) {
+    async prepare(signal, deadlineMS=(wallNow??Date.now)()+MANUAL_STARTUP_MAX_MS) {
       if (state !== 'new') throw diagnostics.record(startupPrepareFailure(null,role,'actor_entry','state_invalid'),role,'prepare','unavailable','manual_startup_owner_unavailable');
       let detach;
       try { detach = attach(signal); }
       catch(error) { throw diagnostics.record(startupPrepareFailure(error,role,'actor_entry','state_invalid'),role,'prepare','unavailable','manual_startup_owner_unavailable'); }
+      try{observationDeadline=new ManualObservationDeadline(deadlineMS,{now,wallNow,role});}
+      catch(error){detach();close();throw diagnostics.record(error,role,'prepare','deadline');}
       state = 'preparing';
       running = Promise.resolve().then(() => run({ signal: abort.signal,
+        observationDeadline,
         waitForSettings: promise => {
           if (!waitBudget || state !== 'acquiring') throw unavailable();
           return waitBudget.wait(promise);
@@ -72,6 +77,7 @@ export function createManualStartupOwner({ run, role='unknown',diagnostics=start
           let observed;
           try { observed = pins(value); }
           catch(error) { throw state==='preparing'?startupPrepareFailure(error,role,'actor_pins','pins_invalid'):error; }
+          observationDeadline.prepared();
           if (state === 'preparing') { actual = observed; state = 'ready'; ready.resolve(); }
           else if (state !== 'acquiring' || FIELDS.some(k => actual[k] !== observed[k])) throw unavailable();
           await release.promise;
@@ -94,7 +100,7 @@ export function createManualStartupOwner({ run, role='unknown',diagnostics=start
       if (token !== handle || state !== 'ready') { close(); throw unavailable(); }
       const detach = attach(signal);
       try {
-        waitBudget = createStartupWaitBudget(startupBudgetMS, { role: request.role, signal: abort.signal });
+        waitBudget = createStartupWaitBudget(Math.min(startupBudgetMS,observationDeadline.remaining()), { role: request.role, signal: abort.signal });
         return await capture(request, signal);
       }
       catch(error) { const failure=diagnostics.record(error,role,'acquire_rpc','unavailable','manual_startup_owner_unavailable');close();throw failure; }

@@ -3,6 +3,46 @@
 This page is the current checkpoint. Historical experiments in the design and
 roadmap are evidence, not a new list of prerequisites.
 
+## Shared prepared-observation deadline and independent cleanup (2026-10-29)
+
+Status: offline implementation only; no runtime activation or session transfer.
+
+The live batch after `cd43d47` reported reader `stale_observation` and uncertain
+cleanup. Its 305 ms trace measured acquisition after both PREPARE operations,
+not the full observation age. PREPARE creates and pauses the observation before
+ACQUIRE releases identity evaluation. The former implicit 10-second observation
+limit could therefore expire while waiting for the other prepared owner. The
+retained log does not contain that run's preparation age, so this mechanism must
+not be presented as a measured explanation of its exact elapsed time.
+
+The private PREPARE request now carries the orchestration deadline, capped by
+the original 60-second attempt. The actor converts it once to monotonic time,
+retains it across the held pause, and rejects expired acquisition before identity
+evaluation. Acquisition uses the smaller remaining budget. Existing account,
+cookie, identity/settings and paired-evidence freshness requirements remain
+unchanged. Generic standalone QA observations retain their original limit.
+
+Root-control restoration runs on success and failure. Batch cleanup independently
+attempts collector, enrollment, attachment and exact bootstrap retirement and
+returns six closed resource outcomes. Uncertain restoration remains visible even
+when a later target close succeeds. Go separately confirms collector exit before
+releasing its pins/profile, and retains startup and cleanup diagnostics in
+separate status/log channels. Diagnostic V10 adds a closed deadline condition and
+bounded relative observation, preparation, paused and acquisition ages; it never
+exports absolute clock values, account IDs, targets or raw exception messages.
+
+Offline coverage composes the real prepared actor and observation with virtual
+time and drives the exported daily owner's begin/end composition with synthetic
+CDP/collector transports. It does not establish real native seed/enrollment or
+end-to-end X capture. The last main-dev activation remains separate from this
+uncommitted increment.
+
+Validation: 166 focused Node regressions passed. Selected Engine/HTTP/Store
+regressions passed in ordinary and `auth_session_dev` builds, including private
+Node/Go V10 catalog parity and synthetic Windows process cleanup. The dev binary
+compiled under `build/x-deadline-cleanup-offline`; both source-only owner packages
+include the deadline and cleanup modules. Those packages were not executed.
+
 ## Remembered X permission and batch Home target: offline implementation
 
 Main-profile X permission is now a profile-bound saved preference. Ordinary

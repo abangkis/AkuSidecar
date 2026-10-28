@@ -9,7 +9,7 @@ import {manualOwnerSnapshot} from './x-native-metadata-probe-driver.mjs';
 import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 
 let id=0;
-const command=(op,role='reader',extra={})=>({id:++id,op,owner:1,role,...extra});
+const command=(op,role='reader',extra={})=>({id:++id,op,owner:1,role,...(op==='manual_prepare'?{observationDeadlineMS:Date.now()+18000}:{}),...extra});
 async function prepared(port){return Promise.all(['reader','collector'].map(role=>port.execute(command('manual_prepare',role))));}
 const acquire=(port,role,ready)=>port.execute(command('manual_acquire',role,{handle:ready.handle,startupBudgetMS:MANUAL_TIMING.evidenceMaxAgeMS,request:{challenge:'c'.repeat(48),role,...ready.pins}}));
 

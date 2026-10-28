@@ -73,3 +73,35 @@ test('actual borrowed begin failure retires its exact bootstrap on owner close w
   assert.equal(calls.filter(call=>call.method==='Target.createTarget').length,1);
   assert(!calls.some(call=>call.method==='Browser.close'));
 });
+
+test('actual daily begin/end composition creates fresh reader and collector sessions and preserves user targets',async()=>{
+ const {createApplicationDailyOwner:create}=await import('./x-native-metadata-probe-driver.mjs?composed-batches');
+ const calls=[],targets=new Set(['user-reader']);let serial=0,collectorCloses=0,failDispose=false;
+ const transport={alive:()=>true,subscribe:()=>()=>{},call:async(method,params)=>{
+   calls.push(method);
+   if(method==='Target.getTargets')return{targetInfos:[...targets].map(targetId=>({targetId}))};
+   if(method==='Target.createTarget'){const targetId=`home-${++serial}`;targets.add(targetId);return{targetId};}
+   if(method==='Target.attachToTarget')return{sessionId:`session-${params.targetId}`};
+   if(method==='Page.enable'||method==='Target.detachFromTarget')return{};
+   if(method==='Runtime.evaluate')return{result:{type:'boolean',value:true}};
+   if(method==='Browser.getWindowForTarget')return{windowId:1};
+   if(method==='Target.closeTarget'){assert.notEqual(params.targetId,'user-reader');targets.delete(params.targetId);return{success:true};}
+   throw Error('unexpected');
+ }};
+ const collectorFactory=()=>({launch:async()=>({pid:process.pid+1}),close:async()=>{collectorCloses++;},send:async(method,params,session,project)=>{
+   if(failDispose&&method==='Target.disposeBrowserContext')throw Error('PRIVATE');
+   const raw=method==='Target.createBrowserContext'?{browserContextId:'context'}:method==='Target.createTarget'?{targetId:'collector'}:method==='Target.attachToTarget'?{sessionId:'collector-session'}:method==='Target.getBrowserContexts'?{browserContextIds:[]}:{};
+   return project(raw);
+ }});
+ const profile=dirname(fileURLToPath(import.meta.url));
+ const owner=await create({chromePath:fileURLToPath(import.meta.url),readerProfile:profile,loadAssets:async()=>({}),collectorFactory,borrowedReader:{pid:process.pid,profileDirectory:'Default',transport}});
+ await owner.initialize();const owners=[];
+ for(let generation=1;generation<=2;generation++){
+   const batch=await owner.begin({generation,collectorProfile:resolve(profile,'../../internal')});owners.push(batch.owner);
+   const result=await owner.end({generation});assert.equal(result.closed,true);assert.equal(result.cleanup.collector,'verified');assert.equal(result.cleanup.attachments,'verified');assert.equal(result.cleanup.bootstrap,'verified');assert.deepEqual([...targets],['user-reader']);
+ }
+ assert.notEqual(owners[0],owners[1]);assert.equal(collectorCloses,2);
+ await owner.begin({generation:3,collectorProfile:resolve(profile,'../../internal')});failDispose=true;
+ const failed=await owner.end({generation:3});assert.equal(failed.closed,false);assert.equal(failed.cleanup.collector,'uncertain');assert.equal(failed.cleanup.bootstrap,'verified');assert.equal(failed.cleanup.attachments,'verified');assert.deepEqual([...targets],['user-reader']);assert.equal(collectorCloses,3);
+ await assert.rejects(owner.close());assert(!calls.includes('Browser.close'));
+});

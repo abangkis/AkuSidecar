@@ -17,7 +17,7 @@ export function offlineStartupOwner(role) {
     frameId: 'offline-frame-' + role, documentId: 'offline-document-' + role });
 }
 
-export async function runOfflineStartupRecipe(request, { onPrivateStartup }, { now = () => performance.now(), change = () => {}, beforeIdentityRead } = {}) {
+export async function runOfflineStartupRecipe(request, { onPrivateStartup, observationDeadline }, { now = () => performance.now(), change = () => {}, beforeIdentityRead } = {}) {
   // Fixed independent ownership values; never echo challenge pins as evidence.
   const actual = offlineStartupOwner(request.role);
   const scope = { owner: Number(actual.ownerId), profileId: actual.profileId, sessionId: 'offline-session-' + request.role, targetId: actual.targetId };
@@ -26,7 +26,7 @@ export async function runOfflineStartupRecipe(request, { onPrivateStartup }, { n
     if (!binder.capture.consumeRead(id)) throw new Error('offline_startup_invalid');
     return projectQADirectBody({ base64Encoded: false, body: JSON.stringify({ language: 'en', time_zone: null,
       protected: false, always_use_https: true, discoverable_by_email: false, discoverable_by_mobile_phone: false }) });
-  }, now, undefined, { deferCookieMutation: false, onPrivateResult: () => {}, onPrivateStartup });
+  }, now, undefined, { deferCookieMutation: false, onPrivateResult: () => {}, onPrivateStartup },undefined,undefined,undefined,{observationDeadline});
   const emit = (method, params) => binder.observe({ method, params, sessionId: scope.sessionId }, scope);
   emit('Page.frameNavigated', { frame: { id: actual.frameId, loaderId: actual.documentId, url: 'https://x.com/home' } });
   emit('Runtime.executionContextCreated', { context: { id: Number(actual.contextId), origin: 'https://x.com', auxData: { isDefault: true, frameId: actual.frameId } } });

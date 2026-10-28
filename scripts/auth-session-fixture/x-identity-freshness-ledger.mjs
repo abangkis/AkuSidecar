@@ -1,6 +1,7 @@
 import {rootSourceVerdict,ROOT_SOURCE_POLICY} from './x-manual-root-source-policy.mjs';
 // Private, owner-local authority. No IO, timers, serialized identity, or recovery.
 import {ManualStartupObservation} from './x-manual-startup-cookie-guard.mjs';
+import {ManualObservationDeadline} from './x-manual-observation-deadline.mjs';
 
 export const IDENTITY_FRESHNESS_POLICY=Object.freeze({version:'manual-v2.691875d',identitySettingsMS:5000,observationMS:10000,jointMS:2000,pilotMS:60000});
 const invalid=()=>new Error('identity_freshness_invalid');
@@ -23,13 +24,15 @@ export function consumeFreshnessPublication(value,role,pins){
 }
 
 export class IdentityFreshnessLedger {
-  #binding; #generation=Symbol(); #revision=0; #start; #last; #failure=null;
+  #binding; #generation=Symbol(); #revision=0; #start; #last; #failure=null; #deadline;
   #document=null; #identity=null; #identityAt=null; #settingsAt=null; #settingsRequestId=null; #login=false;
   #root=null; #control=Object.freeze({state:'unknown',requestedAt:'unknown',acknowledgedAt:'unknown'}); #published=false; #sampleAt=null; #rootReceiptAt=null;
-  constructor(binding,now,guard){
+  constructor(binding,now,guard,deadline){
     const b=record(binding,['owner','profileId','sessionId','targetId','frameId','role']);
     if(!Number.isSafeInteger(b.owner)||b.owner<=0||!['profileId','sessionId','targetId','frameId'].every(k=>ref(b[k]))||!['reader','collector','unknown'].includes(b.role)||!finite(now)||now<0)throw invalid();
     if(!(guard instanceof ManualStartupObservation))throw invalid();
+    if(deadline!==undefined&&!(deadline instanceof ManualObservationDeadline))throw invalid();
+    this.#deadline=deadline?.expiresAt??now+IDENTITY_FRESHNESS_POLICY.observationMS;
     guard.bindFreshnessGeneration(this.#generation,b.frameId,b.sessionId);
     this.#binding=Object.freeze(b);this.#start=this.#last=now;
   }
@@ -91,7 +94,7 @@ export class IdentityFreshnessLedger {
     const rootDecision=this.#root===null?null:rootSourceVerdict(this.#root);
     const rootAccepted=rootDecision?.status==='accepted_under_policy';
     const rootPolicyVerdict=this.#root===null?'unknown':rootAccepted?'accepted_under_policy':rootDecision.status==='pending'?'pending':'rejected';
-    const state=this.#failure||!clock?'invalidated':now-this.#start>IDENTITY_FRESHNESS_POLICY.observationMS?'expired':!this.#document||!this.#identity||this.#settingsAt===null||this.#root===null?'unknown':!rootAccepted||!this.#login?'excluded':!fresh?'stale':'ready';
+    const state=this.#failure||!clock?'invalidated':now>=this.#deadline?'expired':!this.#document||!this.#identity||this.#settingsAt===null||this.#root===null?'unknown':!rootAccepted||!this.#login?'excluded':!fresh?'stale':'ready';
     const missingProof=Object.freeze([!this.#document&&'document',!this.#identity&&'identity',this.#settingsAt===null&&'settings',this.#root===null&&'root_verdict',this.#root&&!rootAccepted&&'root_policy',this.#settingsAt!==null&&!this.#login&&'settings_proof',this.#settingsAt!==null&&!fresh&&'age','server_freshness'].filter(Boolean));
     return Object.freeze({policyVersion:IDENTITY_FRESHNESS_POLICY.version,rootPolicyVersion:ROOT_SOURCE_POLICY.version,revision:this.#revision,state,invalidationReason:this.#failure??'unknown',bindingState:!this.#document?'provisional':this.#root?.armed&&rootAccepted?'root_bound':'document_bound',rootPolicyVerdict,readyUnderPolicy:state==='ready',sourceFreshnessProven:'unknown',sampleAge,identityCaptureAge,withinIdentitySettingsWindow:fresh,cacheControl:this.#control,rootCache:this.#root?.cache??null,rootObservedAt:this.#root?.observedAt??'unknown',rootReceiptAt:this.#rootReceiptAt??'unknown',missingProof});
   }

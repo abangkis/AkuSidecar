@@ -4,6 +4,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -27,7 +28,7 @@ for await(const line of createInterface({input:process.stdin})){
  else if(q.op==='daily_reader_check')result={readerPID:reader.pid,readerProfile:scope.readerProfile};
  else if(q.op==='daily_batch_begin'){generation=q.generation;collector=launch();scope.collectorProfile=q.collectorProfile;result={owner:generation+1,readerPID:reader.pid,collectorPID:collector.pid};}
  else if(q.op==='daily_batch_seed')result={accountId:'1908123456789012345',readerPID:reader.pid,readerProfile:scope.readerProfile,collectorPID:collector.pid,collectorProfile:scope.collectorProfile,seeded:true,homeReady:true};
- else if(q.op==='daily_batch_end'){if(collector&&collector.exitCode===null){const ended=once(collector,'exit');collector.kill();await ended;}result={closed:true};}
+ else if(q.op==='daily_batch_end'){if(collector&&collector.exitCode===null){const ended=once(collector,'exit');collector.kill();await ended;}result={closed:true,cleanup:{readerControls:'verified',collectorControls:'verified',collector:'verified',enrollment:'verified',attachments:'verified',bootstrap:'not_needed'}};}
  else {console.log(JSON.stringify({id:q.id,ok:false,code:'manual_inspection_failed'}));continue;}
  console.log(JSON.stringify({id:q.id,ok:true,result}));
 }
@@ -41,6 +42,68 @@ func dailySyntheticConfig(t *testing.T) xApplicationOwnerConfig {
 	}
 	cfg.driver = applicationAsset(t, cfg.driver.path)
 	return cfg
+}
+
+func TestXDailyNativeCleanupUncertaintyStillReleasesExitedCollector(t *testing.T) {
+	cfg := dailySyntheticConfig(t)
+	source := strings.Replace(dailySyntheticDriver, "closed:true,cleanup:{readerControls:'verified'", "closed:false,cleanup:{readerControls:'uncertain'", 1)
+	if source == dailySyntheticDriver {
+		t.Fatal("synthetic cleanup failure not injected")
+	}
+	if err := os.WriteFile(cfg.driver.path, []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg.driver = applicationAsset(t, cfg.driver.path)
+	e, state := testEngine(t)
+	e.config.Dev = true
+	e.config.Capture.XMode = config.XCaptureConcurrent
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	owner, err := newXDailyNativeOwner(ctx, ctx, cfg, e, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var closeChecked bool
+	t.Cleanup(func() {
+		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
+		defer stop()
+		if err := owner.Close(cleanup); err != nil && !closeChecked {
+			t.Error(err)
+		}
+	})
+	settings, _ := state.GetSettings(ctx)
+	settings.ActiveSources = []domain.Source{domain.SourceX}
+	session, err := state.CreateUpdateSession(ctx, "synthetic cleanup separation", settings, domain.UpdatePolicy{Trigger: domain.UpdateTriggerUser, Delivery: domain.UpdateDeliveryVisible, BudgetAuthority: domain.BudgetAuthorityUser})
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch, startErr := owner.BeginBatch(ctx, ctx, 1, session.Runs[0])
+	if startErr == nil || batch == nil {
+		t.Fatal("fake transport manufactured startup authority or lost its partial batch")
+	}
+	cleanupErr := batch.Close(ctx)
+	var diagnostic *xDailyCleanupError
+	if !errors.As(cleanupErr, &diagnostic) || diagnostic.detail.Resources == nil || diagnostic.detail.Resources.ReaderControls != "uncertain" || diagnostic.detail.Resources.Bootstrap != "not_needed" || diagnostic.detail.CollectorExit != "verified" || diagnostic.detail.PinRelease != "verified" {
+		t.Fatalf("independent cleanup did not complete: %v", cleanupErr)
+	}
+	if _, err := os.Stat(batch.(*xDailyBatch).host.cfg.collector.Root); !os.IsNotExist(err) {
+		t.Fatal("an exited collector profile was retained after unrelated control failure")
+	}
+	if err := owner.CheckReader(ctx); err != nil {
+		t.Fatal("cleanup retired the process reader")
+	}
+	e.rememberXDailyFailure(startErr, "startup")
+	e.rememberXDailyCleanup(cleanupErr)
+	status := e.XCaptureStatus()
+	if status.StartupDiagnostic == nil || status.CleanupDiagnostic == nil || status.FailurePhase != "startup" {
+		t.Fatal("primary and cleanup diagnostics were not both retained")
+	}
+	closeErr := owner.Close(ctx)
+	closeChecked = true
+	var closedDetail *xDailyCleanupError
+	if !errors.As(closeErr, &closedDetail) || closedDetail.detail.Resources.ReaderControls != "uncertain" {
+		t.Fatal("owner shutdown erased prior batch cleanup uncertainty")
+	}
 }
 
 func TestXDailyNativeOwnerExplicitResourcesAndScopedFailureCleanup(t *testing.T) {

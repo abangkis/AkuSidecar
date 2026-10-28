@@ -5,7 +5,7 @@ import { QADirectCapture } from './x-qa-direct-ab.mjs';
 import { qaSourceRoute } from './x-qa-source-qualification.mjs';
 import { ManualStartupObservation } from './x-manual-startup-cookie-guard.mjs';
 import { IdentityFreshnessLedger } from './x-identity-freshness-ledger.mjs';
-import { closedStartupTrace, rememberBoundStartup, STARTUP_GUARD_CAUSES } from './x-manual-startup-diagnostic.mjs';
+import { closedStartupTrace, rememberBoundStartup, STARTUP_GUARD_CAUSES, startupDiagnostic } from './x-manual-startup-diagnostic.mjs';
 
 const own = (v, k) => Object.getOwnPropertyDescriptor(v, k)?.value;
 const stableId = v => typeof v === 'string' && /^[1-9][0-9]{0,19}$/.test(v);
@@ -68,7 +68,7 @@ export function projectBoundBootstrap(value, accept) {
 
 export const QA_BOUND_QUALIFICATION = 'api_v1.cookie-auth-rejection.2026-10-20';
 export class QABoundObservation {
-  #scope; #now; #last; #start; #frame; #loader = null; #context = null; #id = null;
+  #scope; #now; #last; #start; #frame; #loader = null; #context = null; #id = null; #observationDeadline;
   #identityAt = null; #sourceAt = null; #projection = null; #failure = null; #events = 0; #closed = false;
   #startupCookieWriteObserved = false;
   #manualCookieGuard;
@@ -96,9 +96,10 @@ export class QABoundObservation {
     this.#externalCookieGuard = provenance !== undefined;
     this.#onManualFailure = onManualFailure;
     this.#start = this.#last = now();
+    this.#observationDeadline=freshnessOptions?.observationDeadline;
     if (!Number.isFinite(this.#start)) throw error();
     if(this.#manualCookieGuard){
-      this.#freshness=new IdentityFreshnessLedger({...scope,frameId,role:freshnessOptions?.role??'unknown'},this.#start,this.#manualCookieGuard);
+      this.#freshness=new IdentityFreshnessLedger({...scope,frameId,role:freshnessOptions?.role??'unknown'},this.#start,this.#manualCookieGuard,this.#observationDeadline);
       if(freshnessOptions?.cacheControl!==undefined)this.#freshness.observeCacheControl(this.#freshness.revision,this.#freshness.generation,freshnessOptions.cacheControl,this.#start);
     }
     this.capture = new QADirectCapture('a', frameId, readBody, now);
@@ -135,9 +136,10 @@ export class QABoundObservation {
       for (const listener of this.#waitListeners) { try { listener(state); } catch {} }
     }
   }
-  #tick() {
+  #tick(reject = true) {
     const t = this.#now();
-    if (!Number.isFinite(t) || t < this.#last || t - this.#start > 10000) this.invalidate('stale_observation','stale_observation');
+    if(this.#observationDeadline)try{this.#observationDeadline.remaining('observation_expired');}catch(error){const d=startupDiagnostic(error);if(!this.#hasFirst){this.#hasFirst=true;try{this.#onManualFailure?.(d.reason,d.trace,this.settingsWaitState());}catch{}}this.invalidate(d.reason);if(reject)throw error;return this.#last;}
+    else if (!Number.isFinite(t) || t < this.#last || t - this.#start > 10000) this.invalidate('stale_observation','stale_observation');
     this.#last = t; return t;
   }
   #noteCause(reason, cause) {
@@ -204,7 +206,10 @@ export class QABoundObservation {
   }
   observe(raw, scope) {
     if (this.#closed) return;
-    this.#tick();
+    this.#tick(false);
+    // Domain expiry must not escape the CDP event subscriber and poison the
+    // transport needed to restore controls and retire owned resources.
+    if(this.#failure==='deadline'||this.#failure==='time_invalid')return;
     if (!scope || Object.keys(this.#scope).some(k => scope[k] !== this.#scope[k])) { this.invalidate('scope_lost','owner_scope'); return; }
     const p = raw.params ?? {};
     // Manual V2's guard inspects every owned-session network header separately.
@@ -288,12 +293,12 @@ export class QABoundObservation {
       else if (this.#needsExtra === true && this.capture.status !== null && this.#extraStatus !== this.capture.status) this.invalidate('scope_lost','extra_status');
     }
     if (raw.method === 'Network.requestWillBeSent' && requestRef(this.capture.chosen) && p.requestId === this.capture.chosen && this.#requestAt === null) {
-      this.#requestAt = this.#tick();
+      this.#requestAt = this.#tick(false);
       if (Number.isFinite(p.timestamp) && Number.isFinite(p.wallTime) && p.timestamp > 0 && p.wallTime > 0 &&
           Math.abs(Date.now() - p.wallTime * 1000) <= 5000) this.#networkRequest = { timestamp: p.timestamp, wallTime: p.wallTime };
     }
     if (raw.method === 'Network.loadingFinished' && requestRef(this.capture.chosen) && p.requestId === this.capture.chosen) {
-      this.#sourceAt = this.#tick();
+      this.#sourceAt = this.#tick(false);
       const n = this.#networkRequest;
       if (n && Number.isFinite(p.timestamp) && p.timestamp > n.timestamp && p.timestamp - n.timestamp <= 5) {
         this.#networkInterval = { start: n.wallTime * 1000, end: (n.wallTime + p.timestamp - n.timestamp) * 1000 };

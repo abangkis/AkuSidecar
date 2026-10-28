@@ -18,10 +18,12 @@ function startupCause(value){
   if(value==='')return true;
   for(const role of STARTUP_ROLES)for(const phase of STARTUP_PHASES)for(const reason of STARTUP_REASONS)for(const kind of ['primary','peer'])
     if(value===`manual_initial_${role}_${phase}_${reason}_${kind}`)return true;
-  const prefix='manual_initial_v9_';
-  if(!value.startsWith(prefix)||value.length>80)return false;
+  const current=value.startsWith('manual_initial_v10_'),prefix=current?'manual_initial_v10_':'manual_initial_v9_';
+  if(!value.startsWith(prefix)||value.length>(current?128:80))return false;
   const parts=value.slice(prefix.length).split('_');
-  return parts.length===startupCauseCatalogs.length&&parts.every((part,index)=>/^(?:0|[1-9][0-9]*)$/u.test(part)&&Number(part)<startupCauseCatalogs[index].length);
+  const enums=current?startupCauseCatalogs.length:startupCauseCatalogs.length-1;
+  return parts.length===enums+(current?4:0)&&parts.every((part,index)=>/^(?:0|[1-9][0-9]*)$/u.test(part)&&
+    (index<enums?Number(part)<startupCauseCatalogs[index].length:Number.isSafeInteger(Number(part))&&Number(part)<=60001));
 }
 // Progress is diagnostic-only. Normalize it against the current closed catalogs
 // before it crosses the Node/Go control channel.

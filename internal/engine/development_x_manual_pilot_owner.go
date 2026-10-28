@@ -324,8 +324,12 @@ func (p *xManualPilotOwnerPorts) prepare(ctx context.Context, req nativePilotPre
 	if req.attempt != p.cfg.pilot.binding.attempt {
 		return nativePilotPreparedRole{}, nativePilotPrepareFailure(nil, req.role, "go_request", "attempt_mismatch")
 	}
+	observationDeadline, err := xManualPilotObservationDeadline(ctx, p.backend.now(), p.cfg.pilot)
+	if err != nil {
+		return nativePilotPreparedRole{}, nativePilotInitialWrap(err, req.role, "prepare")
+	}
 	var raw json.RawMessage
-	if err := p.backend.rpc(ctx, req.role, "manual_prepare", nil, &raw); err != nil {
+	if err := p.backend.rpc(ctx, req.role, "manual_prepare", map[string]any{"observationDeadlineMS": observationDeadline}, &raw); err != nil {
 		return p.failedPrepare(core, nativePilotPrepareFailure(err, req.role, "go_rpc", "command_failed"))
 	}
 	defer clear(raw)
@@ -559,6 +563,25 @@ func xManualPilotParentPair(node, chrome uint32, walk func(func(uint32, uint32) 
 		return 0, 0, errors.New("x-owner-parent-unavailable")
 	}
 	return nodeParent, chromeParent, nil
+}
+
+// The held document keeps one deadline across PREPARE and ACQUIRE. UTC is used
+// only on the private wire; the Node actor converts it once to monotonic time.
+func xManualPilotObservationDeadline(ctx context.Context, now time.Time, pilot nativePilotConfig) (int64, error) {
+	if ctx == nil || ctx.Err() != nil || now.IsZero() || pilot.attemptStarted.IsZero() {
+		return 0, context.DeadlineExceeded
+	}
+	deadline := pilot.attemptStarted.Add(nativePilotLife)
+	if limit := pilot.attemptValidUntil; !limit.IsZero() && limit.Before(deadline) {
+		deadline = limit
+	}
+	if limit, ok := ctx.Deadline(); ok && limit.Before(deadline) {
+		deadline = limit
+	}
+	if !deadline.After(now) || deadline.Sub(now) > nativePilotLife || deadline.UnixMilli() <= 0 || deadline.UnixMilli() > 9007199254740991 {
+		return 0, context.DeadlineExceeded
+	}
+	return deadline.UnixMilli(), nil
 }
 
 func xManualPilotStartupBudget(ctx context.Context) (int64, error) {

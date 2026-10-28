@@ -799,7 +799,7 @@ func TestXManualPilotRetainedTraceCodes(t *testing.T) {
 			}
 			code := payload.Codes[cursor]
 			detail, ok := nativePilotInitialCode(code)
-			if !ok || len(code) > 80 || detail.trace == nil {
+			if !ok || len(code) > 128 || detail.trace == nil {
 				t.Fatal("valid bounded trace code rejected")
 			}
 			for i, got := range detail.trace.values() {
@@ -818,11 +818,11 @@ func TestXManualPilotRetainedTraceCodes(t *testing.T) {
 		t.Fatal("Node emitted unexpected extra trace wire values")
 	}
 	combined, ok := nativePilotInitialCode(payload.CombinedCode)
-	if !ok || len(payload.CombinedCode) > 80 || combined.trace.guardCondition != "response_cache" || combined.trace.guardEpoch != "before_seed" || combined.trace.guardDiskCache != "true" || combined.trace.guardServiceWorker != "false" || combined.trace.guardPrefetchCache != "absent" || combined.trace.guardRequestFrame != "matching" || !strings.Contains(combined.String(), "disk_cache=true service_worker=false prefetch_cache=absent request_frame=matching header_reason=unknown") {
+	if !ok || len(payload.CombinedCode) > 128 || combined.trace.guardCondition != "response_cache" || combined.trace.guardEpoch != "before_seed" || combined.trace.guardDiskCache != "true" || combined.trace.guardServiceWorker != "false" || combined.trace.guardPrefetchCache != "absent" || combined.trace.guardRequestFrame != "matching" || !strings.Contains(combined.String(), "disk_cache=true service_worker=false prefetch_cache=absent request_frame=matching header_reason=unknown") {
 		t.Fatal("Node-to-Go request-frame trace rendering diverged")
 	}
 	headerReason, ok := nativePilotInitialCode(payload.HeaderReasonCode)
-	if !ok || len(payload.HeaderReasonCode) > 80 || headerReason.trace == nil || headerReason.trace.firstCause != "guard_header_classification" || headerReason.trace.guardHeaderReason != "attribute_unsupported" || !strings.Contains(headerReason.String(), "header_reason=attribute_unsupported") {
+	if !ok || len(payload.HeaderReasonCode) > 128 || headerReason.trace == nil || headerReason.trace.firstCause != "guard_header_classification" || headerReason.trace.guardHeaderReason != "attribute_unsupported" || !strings.Contains(headerReason.String(), "header_reason=attribute_unsupported") {
 		t.Fatal("Node-branded startup failure did not carry its known header reason through RPC to Go")
 	}
 	if len(payload.RootCodes) != 2 {
@@ -830,7 +830,7 @@ func TestXManualPilotRetainedTraceCodes(t *testing.T) {
 	}
 	for _, code := range payload.RootCodes {
 		detail, ok := nativePilotInitialCode(code)
-		if !ok || len(code) > 80 || detail.trace == nil || detail.trace.guardCondition != "root_response_disk_cache" || detail.trace.guardEpoch != "reload_armed" || detail.trace.guardRequestFrame != "matching" || detail.trace.guardDiskCache != "true" || detail.trace.guardServiceWorker != "false" || detail.trace.guardPrefetchCache != "absent" || !strings.Contains(detail.String(), "condition=root_response_disk_cache") || !strings.Contains(detail.String(), "domain=root_policy") || strings.Contains(detail.String(), "private") {
+		if !ok || len(code) > 128 || detail.trace == nil || detail.trace.guardCondition != "root_response_disk_cache" || detail.trace.guardEpoch != "reload_armed" || detail.trace.guardRequestFrame != "matching" || detail.trace.guardDiskCache != "true" || detail.trace.guardServiceWorker != "false" || detail.trace.guardPrefetchCache != "absent" || !strings.Contains(detail.String(), "condition=root_response_disk_cache") || !strings.Contains(detail.String(), "domain=root_policy") || strings.Contains(detail.String(), "private") {
 			t.Fatal("actual root trace did not survive Node-to-Go RPC/log projection")
 		}
 	}
@@ -844,7 +844,7 @@ func TestXManualPilotRetainedTraceCodes(t *testing.T) {
 		}
 	}
 	maximum, ok := nativePilotInitialCode(payload.MaximumCode)
-	if !ok || len(payload.MaximumCode) > 80 || maximum.trace == nil || maximum.trace.guardHeaderReason != "capacity" {
+	if !ok || len(payload.MaximumCode) > 128 || maximum.trace == nil || maximum.trace.guardHeaderReason != "capacity" {
 		t.Fatal("maximum V7 catalog indices exceeded the bounded wire contract")
 	}
 	for _, code := range []string{"manual_initial_v3_0_0_0_0_0_0_0_0_0_0", "manual_initial_v3_0_0_0_0_0_0_0_0_0_0_99_0", "manual_initial_v3_0_0_0_0_0_0_0_0_0_0_0_99", "manual_initial_v3_0_0_0_0_0_0_0_0_0_0_00_0", "manual_initial_v3_0_0_0_0_0_0_0_0_0_0_0_0_extra"} {

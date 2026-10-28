@@ -59,6 +59,29 @@ idle. Explicit reader preparation uses process ownership plus fresh marker,
 target, window, frame and document proof; it does not require a Home target to
 remain open. A user reader is never part of automatic batch cleanup.
 
+### Prepared observations and failed batch cleanup
+
+PREPARE owns the observation's original deadline, including time held before
+ACQUIRE. The private request carries an absolute orchestration deadline capped
+by the original attempt; the Node actor converts it once to monotonic time.
+ACQUIRE cannot reset or enlarge it and must reject expiry before releasing the
+identity pause. Relative phase ages are diagnostics, never authorization.
+
+Root controls must be restored through a failure-safe release path. Failure to
+restore one control does not skip the second control or independent retirement
+of the batch's collector, enrollment, attachments and exact Home target. The end
+receipt contains `readerControls`, `collectorControls`, `collector`, `enrollment`,
+`attachments` and `bootstrap`, each `verified`, `uncertain` or `not_needed`.
+`closed` is true only when all six outcomes are known and none is uncertain.
+Missing/malformed outcomes are not proof of completion. A later target close
+does not erase an earlier restoration failure.
+
+Go retains startup's first cause and reports cleanup separately. It attempts
+independent collector-exit confirmation even when the end receipt is uncertain;
+collector pins/profile may be released only after exit has been proved. Unknown
+collector ownership cannot be treated as an empty process inventory. Borrowed
+main Chrome and explicit user readers are outside batch retirement authority.
+
 ## Remembered permission and fresh authorization
 
 Main-dev Settings remembers an explicit opt-in for the selected reader profile

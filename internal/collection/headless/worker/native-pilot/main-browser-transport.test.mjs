@@ -11,6 +11,18 @@ import {ownerErrorReply} from './owner-protocol.mjs';
 import {manualCaptureFailure} from '../../../../../scripts/auth-session-fixture/x-native-manual-capture.mjs';
 
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+test('startup progress preserves bounded v10 phase ages and legacy v9 without raw clock data',()=>{
+  const parts=Array(28).fill('0');parts[23]='4';parts.splice(24,4,'11201','101','11001','101');
+  const value={operation:'identity',elapsedMS:100,cause:'manual_initial_v10_'+parts.join('_')};
+  assert.deepEqual(mainStartupProgress(value),value);
+  const legacy={...value,cause:'manual_initial_v9_'+parts.slice(0,23).join('_')};
+  assert.deepEqual(mainStartupProgress(legacy),legacy);
+  for(const age of ['-1','60002','00','1700000000000','private-token']){
+    const bad=[...parts];bad[24]=age;
+    assert.equal(mainStartupProgress({...value,cause:'manual_initial_v10_'+bad.join('_')}),null);
+  }
+  assert.equal(mainStartupProgress({...value,cause:value.cause+'_0'}),null);
+});
 async function waitFor(predicate){for(let i=0;i<100;i++){if(predicate())return;await tick();}assert.fail('synthetic transport did not settle');}
 function cdpFixture(t){
   const input=new PassThrough(),output=new PassThrough(),requests=[];

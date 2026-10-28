@@ -77,6 +77,81 @@ func TestXManualPilotOwnerStartupBudget(t *testing.T) {
 	}
 }
 
+func TestXManualPilotObservationDeadlineIsSharedAndCapped(t *testing.T) {
+	now := time.Now().Truncate(time.Millisecond)
+	pilot := nativePilotConfig{attemptStarted: now.Add(-5 * time.Second)}
+	first, err := xManualPilotObservationDeadline(context.Background(), now, pilot)
+	if err != nil || first != pilot.attemptStarted.Add(nativePilotLife).UnixMilli() {
+		t.Fatalf("attempt deadline not preserved: %d %v", first, err)
+	}
+	later, err := xManualPilotObservationDeadline(context.Background(), now.Add(15*time.Second), pilot)
+	if err != nil || later != first {
+		t.Fatal("a later operation extended the held observation deadline")
+	}
+	ctx, cancel := context.WithDeadline(context.Background(), now.Add(3*time.Second))
+	defer cancel()
+	bounded, err := xManualPilotObservationDeadline(ctx, now, pilot)
+	if err != nil || bounded != now.Add(3*time.Second).UnixMilli() {
+		t.Fatal("parent deadline was not carried to PREPARE")
+	}
+	pilot.attemptValidUntil = now.Add(time.Second)
+	bounded, err = xManualPilotObservationDeadline(ctx, now, pilot)
+	if err != nil || bounded != pilot.attemptValidUntil.UnixMilli() {
+		t.Fatal("shorter attempt validity was enlarged")
+	}
+	for _, sample := range []struct {
+		ctx context.Context
+		now time.Time
+		cfg nativePilotConfig
+	}{
+		{nil, now, pilot},
+		{context.Background(), time.Time{}, pilot},
+		{context.Background(), now.Add(2 * time.Second), pilot},
+		{context.Background(), now, nativePilotConfig{attemptStarted: now.Add(time.Second)}},
+	} {
+		if _, err := xManualPilotObservationDeadline(sample.ctx, sample.now, sample.cfg); err == nil {
+			t.Fatal("invalid or expired PREPARE received a new deadline")
+		}
+	}
+}
+
+func TestXManualPilotV10RelativeAgesAreBoundedAndLegacyCodesRemainValid(t *testing.T) {
+	parts := make([]string, 28)
+	for i := range parts {
+		parts[i] = "0"
+	}
+	parts[1] = "8" // bound_finish
+	parts[2] = "5" // stale_observation
+	parts[4] = strconv.Itoa(slices.Index(nativePilotTraceCatalogs[0], "stale_observation"))
+	parts[23] = "4" // observation_expired
+	copy(parts[24:], []string{"11201", "101", "11001", "101"})
+	code := "manual_initial_v10_" + strings.Join(parts, "_")
+	d, ok := nativePilotInitialCode(code)
+	if !ok || d.trace == nil || d.trace.deadlineCondition != "observation_expired" || d.trace.ages == nil || d.trace.ages.observation != 11200 || d.trace.ages.prepare != 100 || d.trace.ages.paused != 11000 || d.trace.ages.acquire != 100 {
+		t.Fatal("phase ages were lost or treated as enum indexes")
+	}
+	if !strings.Contains(d.String(), "observation_age_ms=11200 prepare_age_ms=100 paused_age_ms=11000 acquire_age_ms=100") {
+		t.Fatal("safe relative ages absent from diagnostics")
+	}
+	for _, bad := range []string{"-1", "60002", "00", "1.5", "PRIVATE_COOKIE"} {
+		copyParts := append([]string(nil), parts...)
+		copyParts[24] = bad
+		if _, ok := nativePilotInitialCode("manual_initial_v10_" + strings.Join(copyParts, "_")); ok {
+			t.Fatalf("invalid age token accepted: %q", bad)
+		}
+	}
+	for _, n := range []int{27, 29} {
+		p := append(append([]string(nil), parts...), "0")[:n]
+		if _, ok := nativePilotInitialCode("manual_initial_v10_" + strings.Join(p, "_")); ok {
+			t.Fatal("wrong diagnostic arity accepted")
+		}
+	}
+	legacy, ok := nativePilotInitialCode("manual_initial_v9_" + strings.Join(parts[:23], "_"))
+	if !ok || legacy.trace.ages != nil || legacy.trace.deadlineCondition != "unknown" {
+		t.Fatal("legacy trace unexpectedly acquired observation ages")
+	}
+}
+
 type testXManualOwnerBackend struct {
 	mu              sync.Mutex
 	core            map[string]nativePilotOwner

@@ -1,6 +1,7 @@
 import {registerFreshStartupSession,startupRootControls,allowsStartupControl,mustRetireStartupOwner,markStartupControlAttempt} from './x-manual-root-controls.mjs';
 import {createStartupTiming} from './x-manual-startup-timing.mjs';
 import {createBatchBootstrap} from './x-batch-bootstrap.mjs';
+import {cleanupDailyBatch} from './x-daily-batch-cleanup.mjs';
 // Opt-in, headful X QA. Default modes export metadata only. The fixed
 // account-settings mode may read one completed response body and immediately
 // project it to value-free shape diagnostics before resolving the CDP promise.
@@ -39,7 +40,7 @@ import { manualCaptureRPCCode, manualCaptureRPCDiagnostic } from './x-native-man
 import { createRetainedManualSetup, manualSeedFailure, manualSeedDiagnosticCode } from './x-manual-retained-setup.mjs';
 import { ManualEnrollmentCapture } from './x-manual-enrollment-capture.mjs';
 import { ManualStartupObservation } from './x-manual-startup-cookie-guard.mjs';
-import {startupFailure,startupFailureLatch,startupRPCCode,requireBoundStartup,startupInspectionFailure,startupPrepareFailure} from './x-manual-startup-diagnostic.mjs';
+import {startupFailure,startupFailureLatch,startupRPCCode,requireBoundStartup,startupInspectionFailure,startupPrepareFailure,startupDiagnostic} from './x-manual-startup-diagnostic.mjs';
 import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 import {createApplicationSeedGrant} from './x-application-seed-grant.mjs';
 import {createApplicationReaderPost,applicationPostOperation} from './x-application-reader-post.mjs';
@@ -1740,6 +1741,7 @@ async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, 
   const bound = current.bound = { running: true, sampling: false, binder: null, networkDisabled: false };
   let detachSettings = () => {};
   const controls=current.manualStartupSelected?startupRootControls(current,send,'reader'):null;
+  let checkpointFailure;
   try {
     const { frameId, loaderId: oldLoader } = await send('Page.getFrameTree', {}, current.sessionId);
     const writes = cookieWriteScope ? new QACookieWriteCapture(frameId) : null;
@@ -1796,14 +1798,17 @@ async function boundCheckpoint(current, cookieWriteScope = false, pointOptions, 
     await send('Network.disable', {}, current.sessionId);
     bound.networkDisabled = true;
     const observation = continuousObservation ?? await bound.binder.finish(early.cleanupVerified && !handoff.handoffRejected);
-    if(controls){progress('root_restore');await controls.restore();}
     return writes ? finishQACookieWriteScope(observation, writes.finish()) : observation;
+  } catch(error) { checkpointFailure=error;throw error;
   } finally {
     detachSettings();
     bound.sampling = false;
     if (!bound.networkDisabled) await send('Network.disable', {}, current.sessionId).catch(() => { bound.binder?.invalidate('scope_lost','cleanup_failed'); });
+    let restoreFailure;
+    if(controls){progress('root_restore');try{await controls.restore();current.manualControlsCleanup='verified';}catch(error){current.manualControlsCleanup='uncertain';initialFailure?.(error,'cleanup');restoreFailure=error;}}
     bound.running = false; current.earlyRunning = false; current.earlyCapture = null;
     current.gate.setLoginVisible(false);
+    if(restoreFailure&&!checkpointFailure)throw restoreFailure;
   }
 }
 
@@ -1819,7 +1824,7 @@ async function prepareShortConcurrency(message) {
   const current = requireOwner(message);
   if (!qualificationMode(driverMode) || !retainedQAScope?.reuse || !current.gate.loginVisible ||
       current.gate.observationStarted || current.shortFeasibility) throw probeError('qa_short_gate_closed');
-  const transport = createQAFeasibilityCollector({ executable, root: process.env.AKU_CHROME_FIXTURE_ROOT,
+  const transport = (applicationScope?.collectorFactory??createQAFeasibilityCollector)({ executable, root: process.env.AKU_CHROME_FIXTURE_ROOT,
     ...(applicationScope?{applicationProfile:applicationScope.collectorProfile,loadAssets:applicationScope.loadAssets}:{}),
     FrameDecoder: CDPFrameDecoder, allowedExpressions: [ACCOUNT_READY_EXPRESSION, QA_BOUND_BOOTSTRAP_EXPRESSION] });
   const state = current.shortFeasibility = { transport, exportIssued: false, exporting: false, contextId: null, closed: false, ran: false };
@@ -1939,6 +1944,7 @@ export async function collectorShortCheckpoint(current, afterIdentity, onPrivate
     return result;
   };
   const controls=current.manualStartupSelected?startupRootControls(s,(method,params)=>command(method,params,'manual_root_control'),'collector'):null;
+  let checkpointFailure;
   const unsubscribe = s.transport.subscribe(raw => {
     if (!sampling) return;
     try {
@@ -1981,12 +1987,13 @@ export async function collectorShortCheckpoint(current, afterIdentity, onPrivate
     await command('Network.disable');
     networkDisabled = true;
     const observation = continuousObservation ?? await binder.finish(early.cleanupVerified && !rejected);
-    if(controls){progress('root_restore');await controls.restore();}
     return { checkpoint: shortQACheckpoint(observation), ...privateResult };
+  } catch(error) { checkpointFailure=error;throw error;
   } finally {
     detachSettings();
     sampling = false; unsubscribe();s.manualCookieUnsubscribe?.();
     if (!networkDisabled) await command('Network.disable').catch(() => {});
+    if(controls){progress('root_restore');try{await controls.restore();s.manualControlsCleanup='verified';}catch(error){s.manualControlsCleanup='uncertain';initialFailure?.(error,'cleanup');if(!checkpointFailure)throw error;}}
   }
 }
 
@@ -2017,6 +2024,8 @@ export function createOwnedManualStartupOwners(message,diagnostics=startupFailur
     const abort = () => rendezvous.cancel();
     sink.signal?.addEventListener('abort', abort, { once: true });
     const failure=(error,phase,reason='unavailable',state)=>{
+      const detail=startupDiagnostic(error);
+      if(sink.observationDeadline)error=startupFailure(detail?.role??role,detail?.phase??phase,detail?.reason??reason,detail?.peer??false,undefined,{...detail?.trace,...sink.observationDeadline.snapshot()});
       const cause=diagnostics.record(phase==='prepare'?startupPrepareFailure(error,role,'driver_setup','command_failed'):error,role,phase,reason);
       current.manualTiming?.[role]?.failure(cause,state);
       return cause;
@@ -2025,7 +2034,7 @@ export function createOwnedManualStartupOwners(message,diagnostics=startupFailur
       const phase=reason==='source_unavailable'?'settings':'bound_finish';
       failure(startupFailure(role,phase,reason,false,undefined,trace),phase,reason,state);
     },role==='reader'?current.manualCookieGuard:collector.manualCookieGuard,
-    {role,cacheControl:(role==='reader'?current:collector).manualFreshnessCacheControl});
+    {role,cacheControl:(role==='reader'?current:collector).manualFreshnessCacheControl,observationDeadline:sink.observationDeadline});
     const together=async()=>{progress('rendezvous');try{await rendezvous.arrive(role);}catch{throw diagnostics.record(startupFailure('pair','rendezvous','deadline'),'pair','rendezvous');}};
     try {
       let observation;
@@ -2089,6 +2098,7 @@ export async function manualOwnerSnapshot({current,collector,role,document,pins,
 // Fixed private owner RPCs are intentionally concurrent: the two actors meet at
 // the existing post-identity rendezvous. Serializing ACQUIRE would deadlock it.
 async function retireManualReader(current,preserveReader,close=closeChrome){
+  if(borrowedMainTransport){if(mustRetireStartupOwner(current))current.manualControlsCleanup='uncertain';return;}
   if(!preserveReader||mustRetireStartupOwner(current)){const closed=await close();if(!closed.exited)throw probeError('chrome_exit_unverified');}
 }
 export async function executeManualOwnerRPC(message) {
@@ -2331,7 +2341,7 @@ export async function createApplicationManualOwner({chromePath,readerProfile,col
 // Daily composition has a persistent, exclusively owned reader and a new
 // actor/session/grant for every disposable collector. No consumed pilot grant
 // is reset, and the manual factory above retains its one-use semantics.
-export async function createApplicationDailyOwner({chromePath,readerProfile,loadAssets,emitProgress=()=>{},borrowedReader=null}){
+export async function createApplicationDailyOwner({chromePath,readerProfile,loadAssets,emitProgress=()=>{},borrowedReader=null,collectorFactory=createQAFeasibilityCollector}){
   if(applicationScope||child||protocolOwner||driverMode!=='single_phase'||typeof loadAssets!=='function')throw probeError('daily_owner_unavailable');
   for(const path of [chromePath,readerProfile])if(typeof path!=='string'||!isAbsolute(path)||resolve(path)!==path)throw probeError('daily_owner_path_invalid');
   const info=await lstat(chromePath);
@@ -2344,6 +2354,7 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
   const posts=new Map();
   let borrowedTarget=null,unsubscribeBorrowed=null;
   let batchBootstrap;
+  let lastBatchCleanup;
   if(borrowedReader){
     if(!Number.isSafeInteger(borrowedReader.pid)||borrowedReader.pid<1||typeof borrowedReader.profileDirectory!=='string'||!borrowedReader.profileDirectory||/[\\/\u0000-\u001f]/u.test(borrowedReader.profileDirectory)||
       typeof borrowedReader.transport?.call!=='function'||typeof borrowedReader.transport?.subscribe!=='function'||typeof borrowedReader.transport?.alive!=='function')throw probeError('borrowed_reader_rejected');
@@ -2355,23 +2366,18 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
   const check=async()=>{if(closed||childExited||cdpFailure||borrowedReader&&!borrowedMainTransport.alive()||!await verifyTwoPhaseDirectories())throw probeError('daily_reader_changed');return{readerPID:child.pid,readerProfile};};
   const home=async()=>{const end=Date.now()+MANUAL_TIMING.collectorHomeReadyMS;while(!(await loginState({owner:active.owner})).ready){await check();if(Date.now()>=end)throw probeError('daily_reader_login_unavailable');await new Promise(r=>setTimeout(r,200));}};
   const endBatch=async()=>{
-    if(!batch){
-      if(batchBootstrap){await batchBootstrap.close();borrowedTarget=null;active=base;protocolOwner=base.owner;}
-      return{closed:true};
-    }
     const current=batch;
-    // A restored source-control envelope is required before keeping the reader.
-    if(mustRetireStartupOwner(current)){failed=true;throw probeError('daily_reader_cleanup_uncertain');}
-    if(!await closeShortCollector(current)){failed=true;throw probeError('daily_collector_cleanup_uncertain');}
-    current.manualCollectorUnsubscribe?.();current.shortFeasibility?.manualCookieUnsubscribe?.();
-    await current.manualEnrollment?.close();
-    for(const sessionId of new Set([current.manualObserver?.sessionId,current.sessionId].filter(Boolean)))await sendApplicationPost('Target.detachFromTarget',{sessionId});
-    if(batchBootstrap){
-      try{await batchBootstrap.close();borrowedTarget=null;}
-      catch(error){failed=true;throw error;}
-    }
+    if(!current&&lastBatchCleanup)return lastBatchCleanup;
+    const controlState=owner=>owner?.manualControlsCleanup??(owner&&mustRetireStartupOwner(owner)?'uncertain':'not_needed');
+    const result=await cleanupDailyBatch({readerControls:controlState(current),collectorControls:controlState(current?.shortFeasibility),
+      collector:current?async()=>{if(!await closeShortCollector(current))throw probeError('daily_collector_cleanup_uncertain');}:undefined,
+      enrollment:current?async()=>{let first;for(const release of [()=>current.manualCollectorUnsubscribe?.(),()=>current.shortFeasibility?.manualCookieUnsubscribe?.(),()=>current.manualEnrollment?.close()])try{await release();}catch(error){first??=error;}if(first)throw first;}:undefined,
+      attachments:current?async()=>{let first;for(const sessionId of new Set([current.manualObserver?.sessionId,current.sessionId].filter(Boolean)))try{await sendApplicationPost('Target.detachFromTarget',{sessionId});borrowedMainTransport?.releaseSession?.(sessionId);}catch(error){first??=error;}if(first)throw first;}:undefined,
+      bootstrap:batchBootstrap?async()=>{await batchBootstrap.close();borrowedTarget=null;}:undefined});
+    if(!result.closed)failed=true;
+    lastBatchCleanup=result;
     batch=null;active=base;protocolOwner=base.owner;applicationScope={loadAssets,emitProgress};
-    return{closed:true};
+    return result;
   };
   return Object.freeze({
     async initialize(){
@@ -2392,6 +2398,7 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
     async begin(message){
       if(!initialized||failed||batch||message.generation!==generation+1)throw probeError('daily_batch_unavailable');
       generation=message.generation;await check();
+      lastBatchCleanup=null;
       const path=message.collectorProfile;
       if(typeof path!=='string'||!isAbsolute(path)||resolve(path)!==path)throw probeError('daily_collector_path_invalid');
       for(const [left,right]of [[readerProfile,path],[path,readerProfile]]){const rel=relative(left,right);if(!rel||!isAbsolute(rel)&&rel!=='..'&&!rel.startsWith('..'+sep))throw probeError('daily_profiles_overlap');}
@@ -2409,7 +2416,7 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
       if(!batchBootstrap)batch=active={owner:++nextOwner,pid:base.pid,profileId:base.profileId,targetId:base.targetId,sessionId:attached.sessionId,
         gate:new LoginObservationGate(),pageLoad:null,metadata:null,observationEndsAt:0,networkEventCount:0,eventLimitReached:false};protocolOwner=batch.owner;
       registerFreshStartupSession(batch,batch.sessionId,'reader');await send('Page.enable',{},batch.sessionId);await home();
-      applicationScope={collectorProfile:path,loadAssets,emitProgress,expectedAccount:account,seedGrant:createApplicationSeedGrant({runSeed:seedRetainedManualPilot})};
+      applicationScope={collectorProfile:path,loadAssets,emitProgress,collectorFactory,expectedAccount:account,seedGrant:createApplicationSeedGrant({runSeed:seedRetainedManualPilot})};
       try{const collector=await prepareShortConcurrency({owner:batch.owner});if(!sameDirectoryIdentity(await ordinaryDirectoryIdentity(path),collectorIdentity))throw probeError('daily_collector_changed');return{owner:batch.owner,readerPID:base.pid,collectorPID:collector.collectorPID};}
       catch(error){failed=true;throw error;}
     },
@@ -2426,7 +2433,7 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
       if(message.op==='manual_capture')applicationScope.seedGrant.assertCaptureDeadline(message.request?.deadlineMS);
       try{return await executeManualOwnerRPC(message);}catch(error){if(!cleanup)failed=true;throw error;}
     },
-    async end(message){if(message.generation!==generation)throw probeError('daily_batch_stale');await check();return endBatch();},
+    async end(message){if(message.generation!==generation)throw probeError('daily_batch_stale');return endBatch();},
     async post(message){
       await check();applicationPostOperation(message,{allowMainOrigin:true});if(message.owner!==base.owner)throw probeError('daily_reader_scope');
       const key=message.request?.requestId??message.requestId;let record=posts.get(key);
@@ -2446,8 +2453,8 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
       if(!borrowedReader){try{if(batch)await closeShortCollector(batch);}finally{await closeChrome();}return;}
       // Borrower cleanup may retire only its collector and explicit bootstrap
       // target. Main Chrome/profile/Job lifetime remains with the Go owner.
-      let cleanupError;
-      try{if(batch)await endBatch();}catch(error){cleanupError=error;}
+      let cleanupError=lastBatchCleanup?.closed===false?probeError('daily_batch_cleanup_uncertain'):undefined;
+      try{if(batch&&!(await endBatch()).closed)throw probeError('daily_batch_cleanup_uncertain');}catch(error){cleanupError=error;}
       try{
         if(base?.sessionId){await borrowedMainTransport.call('Target.detachFromTarget',{sessionId:base.sessionId});borrowedMainTransport.releaseSession?.(base.sessionId);}
         await batchBootstrap?.close();borrowedTarget=null;

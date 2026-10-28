@@ -123,7 +123,10 @@ func (e *Engine) startXDaily(ctx context.Context, request XDailyStartRequest, re
 		cleanupFailed := false
 		if owner != nil {
 			cleanup, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			cleanupFailed = owner.Close(cleanup) != nil
+			if cleanupErr := owner.Close(cleanup); cleanupErr != nil {
+				cleanupFailed = true
+				e.rememberXDailyCleanup(xDailyCleanupFail(cleanupErr, "owner_close", "unverified"))
+			}
 			cancel()
 		}
 		e.xDaily.mu.Lock()
@@ -268,6 +271,7 @@ func (e *Engine) queueXDailyBatch(run domain.Run, payload map[string]any) error 
 			cleanupFailed := false
 			if batch != nil {
 				if err := batch.Close(cleanup); err != nil {
+					e.rememberXDailyCleanup(err)
 					cleanupFailed = true
 					if cause == nil {
 						cause = errors.New("daily X collector cleanup uncertain")
@@ -277,6 +281,7 @@ func (e *Engine) queueXDailyBatch(run domain.Run, payload map[string]any) error 
 			}
 			if cause != nil && !cleanupFailed {
 				if err := e.store.ReconcileClosedDailyXCapture(cleanup, run.ID); err != nil {
+					e.rememberXDailyCleanup(xDailyCleanupFail(err, "store_reconcile", "unverified"))
 					cleanupFailed = true
 				}
 			}
@@ -305,6 +310,9 @@ func (e *Engine) queueXDailyBatch(run domain.Run, payload map[string]any) error 
 				if detail := e.XCaptureStatus().StartupDiagnostic; detail != nil {
 					e.logger.Printf("x_daily_startup stage=%s condition=%s cause=%s broker_reason=%s %s", detail.Stage, detail.Condition, detail.Cause, detail.BrokerReason, detail.Origin)
 				}
+			}
+			if detail := e.XCaptureStatus().CleanupDiagnostic; detail != nil {
+				e.logger.Printf("x_daily_cleanup %s", detail.String())
 			}
 			if !cleanupFailed {
 				_, _ = e.startNext(context.Background(), run.SessionID)
@@ -430,6 +438,7 @@ func (e *Engine) closeXDaily(ctx context.Context) error {
 	e.xDaily.mu.Unlock()
 	if owner != nil {
 		if err := owner.Close(ctx); err != nil {
+			e.rememberXDailyCleanup(xDailyCleanupFail(err, "owner_close", "unverified"))
 			return err
 		}
 		e.xDaily.mu.RLock()

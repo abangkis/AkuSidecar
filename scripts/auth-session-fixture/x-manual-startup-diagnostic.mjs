@@ -25,7 +25,9 @@ export const STARTUP_TRACE=Object.freeze({
   inspectCondition:Object.freeze(['unknown','command_failed','snapshot_shape','owner_dead','reference_invalid','headless_mismatch','window_count','bootstrap_count','reader_windows','reader_bootstrap','collector_windows','owner_mismatch','profile_mismatch','target_mismatch','session_mismatch','frame_mismatch','document_mismatch','context_mismatch','lifecycle_unready','handle_mismatch','os_snapshot','reply_invalid','invalid_flag','paused_missing','pause_required','inventory_missing','pins_mismatch','os_changed']),
   prepareStage:Object.freeze(['unknown','go_admission','go_core_before','go_request','go_rpc','go_decode','go_core_after','go_bind','node_actor','node_reply','node_snapshot','node_validate','node_distinct','actor_entry','actor_pins','actor_ready','actor_runner','driver_setup','snapshot_attach','snapshot_page','snapshot_runtime','snapshot_frame','snapshot_inventory']),
   prepareCondition:Object.freeze(['unknown','replay','os_snapshot','owner_shape','reference_invalid','profile_mismatch','parent_mismatch','attempt_mismatch','command_failed','reply_invalid','handle_invalid','pins_invalid','os_changed','owner_mismatch','state_invalid','ready_missing','roles_not_distinct','snapshot_shape','owner_dead','headless_mismatch','window_count','bootstrap_count','reader_windows','reader_bootstrap','collector_windows','target_mismatch','session_mismatch','frame_mismatch','document_mismatch','context_mismatch','lifecycle_unready','windows_scope','parent_changed','chrome_changed','image_changed','node_parent','chrome_parent','job_unavailable','job_changed','directory_changed','collector_not_headless']),
+  deadlineCondition:Object.freeze(['unknown','clock_nonfinite','clock_regressed','prepared_expired','observation_expired']),
 });
+export const STARTUP_AGES=Object.freeze(['observationAgeMS','prepareAgeMS','pausedAgeMS','acquireAgeMS']);
 const boundTraces=new WeakMap();
 export function closedStartupTrace(input={}){
   const result={};
@@ -33,6 +35,7 @@ export function closedStartupTrace(input={}){
     const d=input!==null&&typeof input==='object'?Object.getOwnPropertyDescriptor(input,key):null;
     result[key]=d&&Object.hasOwn(d,'value')&&values.includes(d.value)?d.value:'unknown';
   }
+  for(const key of STARTUP_AGES){const d=input&&typeof input==='object'?Object.getOwnPropertyDescriptor(input,key):null;const n=d&&Object.hasOwn(d,'value')?d.value:-1;result[key]=Number.isSafeInteger(n)&&n>=0&&n<=60000?n:-1;}
   return Object.freeze(result);
 }
 export function rememberBoundStartup(report,trace){boundTraces.set(report,closedStartupTrace(trace));return report;}
@@ -63,7 +66,7 @@ export function startupRPCCode(error){
   if(d.trace){
     const head=[STARTUP_ROLES.indexOf(d.role),STARTUP_PHASES.indexOf(d.phase),STARTUP_REASONS.indexOf(d.reason),d.peer?1:0];
     const tail=Object.entries(STARTUP_TRACE).map(([key,values])=>values.indexOf(d.trace[key]));
-    return 'manual_initial_v9_'+[...head,...tail].join('_');
+    return 'manual_initial_v10_'+[...head,...tail,...STARTUP_AGES.map(key=>d.trace[key]+1)].join('_');
   }
   return `manual_initial_${d.role}_${d.phase}_${d.reason}_${d.peer?'peer':'primary'}`;
 }
@@ -81,6 +84,7 @@ export function startupFailureLatch(){
           if(key==='guardCondition'&&d.trace.guardCondition==='response_cache'&&trace.guardCondition!=='response_cache')continue;
           if(trace[key]==='unknown'&&d.trace[key]!=='unknown')trace[key]=d.trace[key];
         }
+        for(const key of STARTUP_AGES)if(trace[key]===-1&&d.trace[key]>=0)trace[key]=d.trace[key];
         first=Object.freeze({...first,trace:closedStartupTrace(trace)});
       }
       return startupFailure(first.role,first.phase,first.reason,role!==first.role&&role!=='pair'||d.peer,message,first.trace);

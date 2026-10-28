@@ -37,6 +37,7 @@ type xDailyRouting struct {
 	permissionRestoreDone      chan struct{}
 	startUsed                  bool
 	cleanupUncertain           bool
+	cleanupDiagnostic          *XDailyCleanupDiagnostic
 	startDone                  chan struct{}
 	cancelStart                context.CancelFunc
 }
@@ -63,6 +64,7 @@ type XCaptureStatus struct {
 	FailurePhase                 string                   `json:"failurePhase,omitempty"`
 	FailureCode                  string                   `json:"failureCode,omitempty"`
 	StartupDiagnostic            *XDailyStartupDiagnostic `json:"startupDiagnostic,omitempty"`
+	CleanupDiagnostic            *XDailyCleanupDiagnostic `json:"cleanupDiagnostic,omitempty"`
 	Cleanup                      string                   `json:"cleanup,omitempty"`
 	CleanupScope                 string                   `json:"cleanupScope,omitempty"`
 	ReaderBootstrapLifetime      string                   `json:"readerBootstrapLifetime,omitempty"`
@@ -140,6 +142,10 @@ func (e *Engine) XCaptureStatus() XCaptureStatus {
 	e.xDaily.mu.RLock()
 	defer e.xDaily.mu.RUnlock()
 	status.RememberedPermission = e.xDaily.rememberedPermission
+	if e.xDaily.cleanupDiagnostic != nil {
+		detail := e.xDaily.cleanupDiagnostic.closed()
+		status.CleanupDiagnostic = &detail
+	}
 	status.FailurePhase = e.xDaily.failurePhase
 	status.FailureCode = e.xDaily.failureCode
 	status.StartupDiagnostic = xDailyStartupDetail(e.xDaily.firstFailure)

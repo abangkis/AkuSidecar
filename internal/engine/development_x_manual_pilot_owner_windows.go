@@ -216,7 +216,7 @@ func (b *xManualPilotWindowsBackend) rpc(ctx context.Context, role, op string, f
 	}
 	input := map[string]any{"owner": r.protocolOwner, "role": role}
 	for key, value := range fields {
-		if key != "handle" && key != "request" && key != "preserveReader" && !(op == "manual_acquire" && key == "startupBudgetMS") {
+		if key != "handle" && key != "request" && key != "preserveReader" && !(op == "manual_acquire" && key == "startupBudgetMS") && !(op == "manual_prepare" && key == "observationDeadlineMS") {
 			return errors.New("x-owner-operation-unavailable")
 		}
 		input[key] = value

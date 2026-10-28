@@ -113,7 +113,7 @@ test('the first failure carries its terminal prerequisite in the same frozen pro
   const f=fixture({onFailure:(reason,trace,state)=>timing.failure(startupFailure('collector','settings',reason,false,undefined,trace),state)});
   f.b.onSettingsWait(state=>timing.settings(state));timing.step('settings_wait');
   f.identity();f.request();f.emit('Network.loadingFailed',{requestId:'settings'});
-  assert.equal(output.at(-1).settingsWait,'network_failed');assert.match(output.at(-1).cause,/^manual_initial_v9_/);
+  assert.equal(output.at(-1).settingsWait,'network_failed');assert.match(output.at(-1).cause,/^manual_initial_v10_/);
   const first=JSON.stringify(output.at(-1));f.b.invalidate('scope_lost','context_lost');
   assert.equal(JSON.stringify(output.at(-1)),first);
   assert.ok(output.every(row=>Buffer.byteLength(JSON.stringify(row))<=512));

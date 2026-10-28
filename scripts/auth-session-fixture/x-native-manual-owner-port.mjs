@@ -14,7 +14,7 @@ function exact(value, keys) {
   if(names.length!==keys.length||names.some(k=>!keys.includes(k)||!Object.hasOwn(descriptors[k],'value')||!descriptors[k].enumerable))throw failure();
 }
 export function manualOwnerOperation(value) {
-  const operations={manual_prepare:['id','op','owner','role'],manual_acquire:['id','op','owner','role','handle','request','startupBudgetMS'],
+  const operations={manual_prepare:['id','op','owner','role','observationDeadlineMS'],manual_acquire:['id','op','owner','role','handle','request','startupBudgetMS'],
     manual_inspect:['id','op','owner','role'],manual_inventory:['id','op','owner','role'],
     manual_abort:['id','op','owner','role','handle','preserveReader'],manual_capture:['id','op','owner','role','handle','request'],manual_capture_cancel:['id','op','owner','role','handle']};
   const op=value&&Object.getOwnPropertyDescriptor(value,'op')?.value;
@@ -23,6 +23,7 @@ export function manualOwnerOperation(value) {
   if(!Number.isSafeInteger(value.id)||value.id<1||!Number.isSafeInteger(value.owner)||value.owner<1||!roles.includes(value.role))throw failure();
   if('handle' in value&&!(value.op==='manual_abort'&&value.handle===null)&&!ref(value.handle))throw failure();
   if(value.op==='manual_abort'&&(typeof value.preserveReader!=='boolean'||value.role==='collector'&&value.preserveReader))throw failure();
+  if(value.op==='manual_prepare'&&(!Number.isSafeInteger(value.observationDeadlineMS)||value.observationDeadlineMS<1))throw failure();
   if(value.op==='manual_acquire'){
     if(!Number.isSafeInteger(value.startupBudgetMS)||value.startupBudgetMS<1||value.startupBudgetMS>MANUAL_STARTUP_MAX_MS)throw failure();
     exact(value.request,requestKeys);
@@ -112,7 +113,7 @@ export function createXManualOwnerPort({enabled=false,owner,createOwners,snapsho
         if(s.preparing||s.pins)throw diagnostics.record(startupPrepareFailure(null,role,'node_actor','replay'),role,'prepare');s.preparing=true;
         let stage='node_actor';
         try{
-          const ready=await s.actor.prepare();stage='node_reply';exact(ready,['handle','pins']);exact(ready.pins,pinKeys);
+          const ready=await s.actor.prepare(undefined,message.observationDeadlineMS);stage='node_reply';exact(ready,['handle','pins']);exact(ready.pins,pinKeys);
           if(!ref(ready.handle))throw startupPrepareFailure(null,role,stage,'handle_invalid');
           if(!pinKeys.every(k=>ref(ready.pins[k])))throw startupPrepareFailure(null,role,stage,'pins_invalid');
           s.pins=Object.freeze({...ready.pins});s.handle=ready.handle;

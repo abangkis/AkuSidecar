@@ -6,7 +6,7 @@ import {offlineStartupOwner,runOfflineStartupRecipe} from './x-manual-startup-of
 import {offlineXManualOwnerPort} from './x-native-manual-owner-offline.mjs';
 import {executeManualReply} from './x-native-metadata-probe-driver.mjs';
 const request=role=>({challenge:'c'.repeat(48),role,...offlineStartupOwner(role)});
-const command=(op,role,extra={})=>({id:1,op,owner:1,role,...extra});
+const command=(op,role,extra={})=>({id:1,op,owner:1,role,...(op==='manual_prepare'?{observationDeadlineMS:Date.now()+18000}:{}),...extra});
 
 test('closed startup diagnostic codes are branded, bounded and cannot echo spoofed errors or getters',async()=>{
   let longest=0,touched=0;
@@ -68,7 +68,7 @@ test('prepare predicates survive same-role errors, peer cancellation, cleanup an
   }
   const replies=[];
   await executeManualReply(command('manual_prepare','reader'),async()=>{throw first;},(...args)=>replies.push(args));
-  assert.equal(replies[0][2],startupRPCCode(first));assert.match(replies[0][2],/^manual_initial_v9_/);
+  assert.equal(replies[0][2],startupRPCCode(first));assert.match(replies[0][2],/^manual_initial_v10_/);
   assert.ok(replies[0][2].length<=80);
   const earlier=startupFailure('collector','bound_finish','observed_cookie_write',false,undefined,{firstCause:'cookie_candidate'});
   assert.deepEqual(startupDiagnostic(startupPrepareFailure(earlier,'reader','go_rpc','command_failed')),startupDiagnostic(earlier));
