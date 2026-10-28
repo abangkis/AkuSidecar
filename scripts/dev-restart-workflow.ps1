@@ -51,6 +51,8 @@ if ($inspection.status -notin @('absent', 'current', 'migratable')) { throw "Dev
 if ((Get-FileHash -LiteralPath $plan.ConfigPath -Algorithm SHA256).Hash -ne $applicationConfigHash) { throw 'Application config changed during preparation; candidate retained, runtime untouched.' }
 if ($PrepareOnly) { Write-Output 'PASS: development candidate prepared and inspected; no registration or runtime change.'; return }
 
+. (Join-Path $PSScriptRoot 'dev-graceful-shutdown.ps1')
+
 # Ordinary restarts reuse the stable host path; they never claim another host.
 $expectedHost = Join-Path $runtimeDir 'com.akubrowser.reader_activation.json'
 foreach ($vendor in @('Chromium', 'Google\Chrome')) {
@@ -66,38 +68,7 @@ function Get-RegisteredDevService {
     $status = ($text | Out-String) | ConvertFrom-Json
     return Get-DevRuntimeServiceStatus $status
 }
-$deadline = [DateTime]::UtcNow.AddSeconds($WaitForIdleSeconds)
-$requestedShutdown = $false
-$gracefulDeadline = $null
-$observedProcesses = @{}
-while ($true) {
-    $service = Get-RegisteredDevService
-    $owned = @($service.ownedPids | Where-Object { $_ })
-    if (-not $service.rootPid -and $owned.Count -eq 0) { break }
-    foreach ($ownedId in @($owned) + @($service.rootPid | Where-Object { $_ })) {
-        $ownedProcess = Get-CimInstance Win32_Process -Filter "ProcessId=$ownedId"
-        if ($ownedProcess) { $observedProcesses[[string]$ownedId] = $ownedProcess.CreationDate }
-    }
-    # Without an existing control token the user can close the UI gracefully.
-    # Never invoke Supervisor Stop while it could escalate against a live tree.
-    if (-not $requestedShutdown -and $env:AKU_RUNTIME_CONTROL_TOKEN) {
-        $port = @($plan.Service.ports)[0]
-        try {
-            $null = Invoke-RestMethod -Uri "http://127.0.0.1:$port/api/runtime/shutdown-if-idle" -Method Post -ContentType 'application/json' -Body '{}' -Headers @{
-                'X-Aku-Runtime-Control-Token' = $env:AKU_RUNTIME_CONTROL_TOKEN
-            } -TimeoutSec 3
-            $requestedShutdown = $true
-            $gracefulDeadline = [DateTime]::UtcNow.AddSeconds(30)
-        } catch { Write-Host 'Waiting for graceful idle shutdown; runtime control has not released the process.' }
-    } elseif (-not $requestedShutdown) {
-        Write-Host 'Close the AkuBrowser UI gracefully to release the development runtime. No force-stop will be attempted.'
-        $requestedShutdown = $true
-        $gracefulDeadline = [DateTime]::UtcNow.AddSeconds(30)
-    }
-    $expired = if ($gracefulDeadline) { [DateTime]::UtcNow -ge $gracefulDeadline } else { [DateTime]::UtcNow -ge $deadline }
-    if ($expired) { throw 'Graceful shutdown did not release all owned processes; candidate retained, no promotion.' }
-    Start-Sleep -Seconds $PollSeconds
-}
+$observedProcesses = Wait-DevRuntimeGracefulShutdown -Plan $plan -ReadService { Get-RegisteredDevService } -WaitForIdleSeconds $WaitForIdleSeconds -PollSeconds $PollSeconds
 # Check the OS, bound ports and reader pipe independently before promotion.
 $remaining = @(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.Equals($plan.Target, [StringComparison]::OrdinalIgnoreCase) })
 if ($remaining.Count -gt 0) { throw 'A development Sidecar process remains outside Supervisor ownership; refusing promotion.' }

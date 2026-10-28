@@ -41,11 +41,21 @@ an operational restart or session derivation.
   absent database paths, never this option against the user runtime.
 - A later authorized restart requires matching stable native-host registration,
   unchanged service/application config and graceful release. An existing runtime
-  control token may authorize `shutdown-if-idle`; without it the user closes the
-  UI gracefully. Timeout retains the candidate and aborts. Supervisor Stop is
+  control token may authorize `shutdown-if-idle`; without it the helper requests
+  a normal close of the verified AkuBrowser UI while the runtime is idle. It
+  matches the owned parent, image, loopback app origin, window title/handle and
+  process creation identities, and rechecks readiness/epoch before close. It
+  never chooses the capture host or a native reader window. Unverifiable or
+  ambiguous ownership aborts without a close request. Timeout retains the
+  candidate and aborts. Supervisor Stop is
   used only after independent no-owned-process, OS, port and reader-pipe release
   checks to normalize an already-exited service; no live-tree force-stop or
   Supervisor restart is permitted.
+- `-WaitForIdleSeconds 0` performs one readiness check without waiting for a
+  busy runtime. It still allows the existing 30-second cleanup window after a
+  confirmed shutdown/close request; it does not authorize force-stop. The idle
+  observation is not a durable capture reservation. Process, port and pipe
+  release must still be proved independently before promotion.
 - Whole-bundle promotion retains the previous complete code bundle. A move
   failure restores all prior components and preserves the first failure;
   incomplete recovery is reported. Health/image/hash failures retain rollback
@@ -60,6 +70,19 @@ Run `.\scripts\test-stable-dev.ps1` for the offline build/CLI/helper regression.
 Its operational entry-point tests execute copied scripts in a synthetic
 checkout with fake compilation/stagers and real diagnostic executables; no
 registered service or signed-in browser is started.
+
+`scripts/test-dev-graceful-shutdown.ps1` specifically covers the shutdown phase
+with fake process/window/readiness/clock ports on Windows PowerShell 5.1 and
+PowerShell 7. It includes idle/busy handling, one verified UI close, identity and
+epoch changes, close rejection, cleanup timeout, HTTP control and already-exited
+owners. Unlike PrepareOnly coverage, it exercises the graceful-close phase.
+It also executes the actual shutdown assignment extracted from the workflow,
+and verifies that busy/timeout prevents continuation. On 2026-10-28 it passed
+74 assertions across 17 cases on each shell; copied build/restart PrepareOnly
+regressions also passed on both. Receipts are retained locally under
+`build/graceful-shutdown-offline-20261028/`. No real window was closed, no real
+restart or transfer ran, and no Auto Update setting was changed by those tests.
+The default build/restart remains fast; the regression runner is opt-in.
 
 The next increments adapt optional ownership and X routing to ordinary behavior,
 then prove daily use under explicit operational/derivation authorization. See
