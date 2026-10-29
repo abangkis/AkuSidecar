@@ -112,6 +112,19 @@ test("daily warning distinguishes unavailable X from normal capture without expo
   }
 });
 
+test("maintenance keeps saved permission but requires an explicit epoch-pinned Resume action",async()=>{
+  const held=rememberedStatus({state:"disabled",reason:"maintenance-confirmation-required",maintenanceHeld:true,derivationAuthorized:false});
+  const f=setup({request:()=>Promise.resolve({xCapture:rememberedStatus({maintenanceHeld:false})})});
+  f.controller.reset(held);assert.equal(f.calls.length,0);assert.equal(f.consent.checked,true);
+  assert.equal(f.startButton.textContent,"Resume X");assert.equal(f.startButton.disabled,false);
+  assert.equal(f.status.textContent,"Held for maintenance");assert.match(f.detail.textContent,/Auto Update are unchanged/);
+  assert.equal(xDailyCaptureNotice(held,{epoch:"epoch-a",development:true},["x"]).title,"X capture is held for maintenance");
+  f.startButton.click();await flush();
+  assert.equal(f.calls.length,1);assert.equal(f.calls[0].path,"/api/development/x-daily/start");
+  assert.equal(f.calls[0].options.instanceEpoch,"epoch-a");assert.equal(f.startButton.textContent,"Start X");
+  f.controller.destroy();
+});
+
 test("Timeline and Inbox warnings survive stale polls, clear on recovery, and only navigate to Settings", () => {
   const notices = [0, 1].map(() => ({ panel: new FakeElement(), title: new FakeElement(), detail: new FakeElement(), button: new FakeElement() }));
   let settingsVisits = 0;

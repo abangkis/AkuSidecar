@@ -54,3 +54,38 @@ existing operational outcome; do not collect raw responses, account values or
 credentials. An HTTP rejection alone would still not prove which header, if
 any, is required. Any resulting recipe change needs evidence for that specific
 contract before implementation.
+
+## Exact HTTP rejection diagnostics (offline follow-up)
+
+The later closed `reader_identity_http_status` observation narrows the failure
+to a rejected response status outside HTTP 200, 401, 403, 429 and 500–599 under
+the previous classifier. It does not identify the exact status, demonstrate a
+missing header, or establish a replacement endpoint contract. The status check
+runs before response URL, headers, body, account projection or session cookies.
+
+The diagnostic now preserves exact integer statuses from 100 through 599,
+excluding successful 200, as `http_status_NNN`. Familiar 401, 403 and 429 retain
+`http_unauthorized`, `http_forbidden` and `http_rate_limited`; these aliases each
+identify one exact status. All other statuses in that finite interval, including
+unassigned values and 5xx, receive the exact numeric category. Invalid or
+out-of-range values produce the fixed `http_status` fallback without coercion or
+interpolation. The legacy `http_server` category remains accepted across the
+wire for compatibility, but new observations produce exact 5xx categories.
+
+The four-field evidence projection is unchanged. JavaScript and Go enforce the
+same finite allowlist contract; every HTTP rejection remains terminal. Only the
+existing identity `fetch_timeout` category is transient. Synthetic response 302
+coverage tests this classifier only: a real redirect with `redirect: 'error'`
+can reject fetch and yield `fetch_failed`, without exposing a response status.
+
+Focused validation passed: 34 session/provider Node tests, plus
+`TestSourceNativeFailureRetainsSafeFirstCause` and
+`TestSourceNativeHTTPStatusContract` with the `auth_session_dev` build tag and
+offline Go dependencies. Exhaustive HTTP fixtures include 400, 404, 405 and the
+100/599 boundaries, poison URL/header/body access, verify zero cookie reads and
+role propagation, and reject forged numeric suffixes. Go tests exhaust the same
+status interval through wire projection and confirm terminal retry classification.
+
+No live Instagram request was made or fixed by this change. The next authorized
+observation can report a more precise bounded code; it still cannot by itself
+prove which request header or endpoint would resolve the rejection.

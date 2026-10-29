@@ -46,7 +46,7 @@ func TestDevDiagnosticsIndependentOfOptionalCaptureComposition(t *testing.T) {
 				db := filepath.Join(root, "override.db")
 				base := []string{"--config", path, "--database", db, "--bridge-extension-origin", "chrome-extension://synthetic/"}
 				for _, ordinary := range []bool{false, true} {
-					for _, diagnostic := range []string{"--database-inspect", "--runtime-candidate-probe"} {
+					for _, diagnostic := range []string{"--database-inspect", "--runtime-candidate-probe", "--native-derivation-hold-probe"} {
 						args := append([]string(nil), base...)
 						if ordinary {
 							args = append(args, "--dev", "--app-shell", "--windows-capture-split", "--ui-chromium-path", filepath.Join(root, "missing-chrome.exe"))

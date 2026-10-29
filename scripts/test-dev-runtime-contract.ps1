@@ -91,7 +91,7 @@ function New-PrepareOnlyFixture([string] $WorkspaceRoot, [string] $SourceRepo, [
     $fakeWorkerSource = Join-Path $WorkspaceRoot 'worker-source'
     $fakeRuntime = Join-Path $fakeRepo 'runtime\dev'
     New-Item -ItemType Directory -Path $fakeScripts,$fakeBrowserScripts,$fakeUi,$fakeDomain,$fakeWorkerSource,$fakeRuntime,$fakeSupervisorDirectory,(Join-Path $WorkspaceRoot 'SharedTemp') -Force | Out-Null
-    foreach ($name in @('build-dev.ps1', 'source-cache.ps1', 'worker-backup-retention.ps1', 'dev-runtime-contract.ps1', 'restart-dev.ps1', 'dev-restart-workflow.ps1', 'stage-dev-x-assets.mjs', 'register-reader-broker-dev.ps1')) {
+    foreach ($name in @('build-dev.ps1', 'source-cache.ps1', 'worker-backup-retention.ps1', 'dev-runtime-contract.ps1', 'restart-dev.ps1', 'dev-restart-workflow.ps1', 'dev-native-derivation-hold.ps1', 'stage-dev-x-assets.mjs', 'register-reader-broker-dev.ps1')) {
         if ($name -eq 'source-cache.ps1' -and -not (Test-Path -LiteralPath (Join-Path $SourceRepo "scripts\$name") -PathType Leaf)) { continue }
         Copy-Item -LiteralPath (Join-Path $SourceRepo "scripts\$name") -Destination (Join-Path $fakeScripts $name) -Force
     }
@@ -263,7 +263,7 @@ try {
     $wrapperRepo = Join-Path $fixtureRoot 'restart-wrapper-fixture'
     $wrapperScripts = Join-Path $wrapperRepo 'scripts'
     New-Item -ItemType Directory -Path $wrapperScripts -Force | Out-Null
-    foreach ($name in @('restart-dev.ps1', 'dev-restart-workflow.ps1', 'dev-runtime-contract.ps1', 'worker-backup-retention.ps1')) {
+    foreach ($name in @('restart-dev.ps1', 'dev-restart-workflow.ps1', 'dev-runtime-contract.ps1', 'worker-backup-retention.ps1', 'dev-native-derivation-hold.ps1')) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $wrapperScripts $name)
     }
     $wrapperConfig = Join-Path $fixtureRoot 'wrapper-services.json'

@@ -32,6 +32,7 @@ function normalizeStatus(value) {
   const cleanup = status.cleanup ?? "";
   if (typeof cleanup !== "string" || !VALID_CLEANUP.has(cleanup)) return null;
   if (status.rememberedPermission !== undefined && typeof status.rememberedPermission !== "boolean") return null;
+  if (status.maintenanceHeld !== undefined && typeof status.maintenanceHeld !== "boolean") return null;
   return {
     selectedMode: status.selectedMode,
     authorizationPolicy: status.authorizationPolicy,
@@ -41,6 +42,7 @@ function normalizeStatus(value) {
     derivationAuthorized: status.derivationAuthorized,
     cleanup,
     rememberedPermission: status.rememberedPermission === true,
+    maintenanceHeld: status.maintenanceHeld === true,
   };
 }
 
@@ -70,6 +72,7 @@ function setChecked(element, checked) {
 
 function statusLabel(status) {
   if (!status) return "Checking status";
+  if (status.maintenanceHeld && status.reason === "maintenance-confirmation-required") return "Held for maintenance";
   if (status.state === "retry-wait") return "Waiting to retry";
   if (status.state === "capturing") return "Capturing";
   if (status.state === "starting" || status.state === "startup-in-progress") return "Starting";
@@ -92,6 +95,9 @@ function statusLabel(status) {
 function statusDetail(status) {
   if (!status) return "Daily X controls are available only for a development concurrent-mode session.";
   if (status.authorizationPolicy === "profile") {
+    if (status.maintenanceHeld && status.reason === "maintenance-confirmation-required") {
+      return "Native X capture is held for this activation. Your saved permission and Auto Update are unchanged. Press Resume X to permit fresh account/session verification and future manual or automatic X batches.";
+    }
     if (status.state === "retry-wait" && status.cleanup === "verified") {
       return "X had a temporary timeout or network failure. Cleanup is verified. A limited retry can run on the next update after a cooldown, with a new collector and fresh account/session verification. Stop cancels it and removes saved permission.";
     }
@@ -147,7 +153,7 @@ export function xDailyView(statusValue, contextValue, consentChecked, busy = fal
   const terminal = !cleanupUnresolved && (status?.state === "stopped" || status?.state === "failed" || status?.reason === "opted-out" ||
     status?.reason === "process-authorization-ended");
   const canStart = visible && !busy && !needsRefresh && consentChecked === true && status.state === "disabled" &&
-    ["process-consent-required", "profile-consent-required"].includes(status.reason) && status.derivationAuthorized === false && !cleanupUnresolved;
+    ["process-consent-required", "profile-consent-required", "maintenance-confirmation-required"].includes(status.reason) && status.derivationAuthorized === false && !cleanupUnresolved;
   const canStop = visible && !busy && (status.state === "ready" || status.state === "capturing" || status.state === "retry-wait" ||
     status.state === "starting" || status.state === "startup-in-progress" || status.state === "stopping" || cleanupUnresolved ||
     status.rememberedPermission);
@@ -158,6 +164,7 @@ export function xDailyView(statusValue, contextValue, consentChecked, busy = fal
     statusText: statusLabel(status),
     detailText: statusDetail(status),
     terminal,
+    startLabel: status?.maintenanceHeld ? "Resume X" : "Start X",
   };
 }
 
@@ -170,6 +177,10 @@ export function xDailyCaptureNotice(value, context, activeSources, needsRefresh 
   if (needsRefresh) return {
     visible: true, title: "X status unavailable",
     detail: "The current X capture status could not be confirmed. Review X settings before the next update.",
+  };
+  if (status.maintenanceHeld && status.reason === "maintenance-confirmation-required") return {
+    visible: true, title: "X capture is held for maintenance",
+    detail: "Saved permission is unchanged. Resume X in Settings to allow new native batches after this activation. Auto Update can continue with other available sources.",
   };
   if (status.state === "retry-wait" && status.cleanup === "verified") return {
     visible: true, title: "X capture is waiting to retry",
@@ -263,10 +274,11 @@ export function createDailySourceControls({
     const view = deriveView(latestStatus, context, consent?.checked === true, busy, needsRefresh);
     setHidden(panel, !view.visible);
     setDisabled(consent, !view.visible || busy || view.terminal || !latestStatus ||
-      latestStatus.state !== "disabled" || !["process-consent-required", "profile-consent-required"].includes(latestStatus.reason) ||
+      latestStatus.state !== "disabled" || !["process-consent-required", "profile-consent-required", "maintenance-confirmation-required"].includes(latestStatus.reason) ||
       latestStatus.derivationAuthorized !== false || latestStatus.cleanup === "pending" ||
       latestStatus.cleanup === "uncertain" || needsRefresh);
     setDisabled(startButton, !view.startEnabled);
+    setSettingsText(startButton, copy(view.startLabel ?? "Start X"));
     setDisabled(stopButton, !view.stopEnabled);
     const displayedStatus = busy
       ? (busyAction === "stop" ? "Stopping" : "Starting")

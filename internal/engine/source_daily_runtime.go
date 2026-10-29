@@ -54,6 +54,11 @@ func (d dailyController) start(ctx context.Context, request XDailyStartRequest, 
 		d.state.permissionMu.Unlock()
 		return false, nil
 	}
+	if restoreRevision != nil && d.maintenanceHeld() {
+		d.state.mu.Unlock()
+		d.state.permissionMu.Unlock()
+		return false, nil
+	}
 	if d.state.closed || d.state.reason != "" || d.state.startUsed || d.state.factory == nil {
 		d.state.mu.Unlock()
 		d.state.permissionMu.Unlock()
@@ -78,7 +83,10 @@ func (d dailyController) start(ctx context.Context, request XDailyStartRequest, 
 		close(done)
 		d.state.mu.Unlock()
 	}()
-	permissionErr := e.store.SaveDailySourcePermission(ctx, d.source, profileScope, true)
+	permissionErr := e.nativeDerivationHold.Release(string(d.source))
+	if permissionErr == nil {
+		permissionErr = e.store.SaveDailySourcePermission(ctx, d.source, profileScope, true)
+	}
 	if permissionErr != nil {
 		d.state.mu.Lock()
 		d.state.startUsed = false
@@ -161,7 +169,7 @@ func (d dailyController) revoke(ctx context.Context) error {
 
 func (d dailyController) install(parent context.Context, owner sourceDailyOwner) error {
 	e := d.engine
-	if !d.configured() || !e.config.Dev || parent == nil || parent.Err() != nil || owner == nil {
+	if !d.configured() || !e.config.Dev || parent == nil || parent.Err() != nil || owner == nil || d.maintenanceHeld() {
 		return d.failure("owner selection rejected")
 	}
 	if err := owner.CheckReader(parent); err != nil {
@@ -169,7 +177,7 @@ func (d dailyController) install(parent context.Context, owner sourceDailyOwner)
 	}
 	d.state.mu.Lock()
 	defer d.state.mu.Unlock()
-	if !d.state.attached || d.state.closed || d.state.reason != "" || d.state.owner != nil {
+	if !d.state.attached || d.state.closed || d.state.reason != "" || d.state.owner != nil || d.maintenanceHeld() {
 		return d.failure("process authorization unavailable")
 	}
 	d.state.owner = owner
@@ -181,7 +189,7 @@ func (d dailyController) install(parent context.Context, owner sourceDailyOwner)
 func (d dailyController) ready() bool {
 	d.state.mu.RLock()
 	defer d.state.mu.RUnlock()
-	return d.configured() && d.state.owner != nil && d.state.authorized && !d.state.closed && d.state.parent != nil && d.state.parent.Err() == nil
+	return d.configured() && !d.maintenanceHeld() && d.state.owner != nil && d.state.authorized && !d.state.closed && d.state.parent != nil && d.state.parent.Err() == nil
 }
 
 func (d dailyController) prepareReader(ctx context.Context, req readerbroker.Request, marker string) (readerbroker.NativePostPreparation, error) {
@@ -208,7 +216,7 @@ func (d dailyController) queue(run domain.Run, payload map[string]any) error {
 		d.state.mu.Unlock()
 		return nil
 	}
-	if !d.state.authorized || d.state.closed || d.state.owner == nil || d.state.done != nil || d.state.generation == ^uint64(0) {
+	if !d.state.authorized || d.state.closed || d.state.owner == nil || d.state.done != nil || d.state.generation == ^uint64(0) || d.maintenanceHeld() {
 		d.state.mu.Unlock()
 		return d.failure("batch unavailable")
 	}

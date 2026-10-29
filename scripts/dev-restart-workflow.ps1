@@ -5,12 +5,15 @@ param(
     [switch] $ReplaceReaderBrokerRegistration,
     [switch] $Verify,
     [switch] $PlanOnly,
-    [switch] $PrepareOnly
+    [switch] $PrepareOnly,
+    [ValidateSet('daily', 'no-session-transfer')] [string] $ActivationMode
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'worker-backup-retention.ps1')
 . (Join-Path $PSScriptRoot 'dev-runtime-contract.ps1')
+. (Join-Path $PSScriptRoot 'dev-native-derivation-hold.ps1')
+$ActivationMode = Resolve-DevActivationMode $Actor $ActivationMode
 $runtimeDir = Join-Path $repoRoot 'runtime\dev'
 $supervisor = Join-Path (Split-Path -Parent $repoRoot) 'AkuSupervisor\target\dev\aku-supervisor.exe'
 $supervisorConfig = if ($env:AKU_SUPERVISOR_CONFIG) { [IO.Path]::GetFullPath($env:AKU_SUPERVISOR_CONFIG) }
@@ -22,7 +25,7 @@ $plan = Get-DevRuntimeServicePlan $repoRoot $supervisorConfig
 if ($ReplaceReaderBrokerRegistration) { throw 'Native-host migration requires a separate approved handoff; restart-dev never replaces registration.' }
 if ($PlanOnly) {
     [pscustomobject]@{ schema = 'aku.dev-restart-plan.v1'; target = $plan.Target; buildTags = @('auth_session_dev');
-        configChanged = $false; registrationChanged = $false; processConsentGranted = $false; entries = @(Get-DevRuntimeEntries) } |
+        configChanged = $false; registrationChanged = $false; processConsentGranted = $false; activationMode = $ActivationMode; entries = @(Get-DevRuntimeEntries) } |
         ConvertTo-Json -Depth 5
     return
 }
@@ -43,6 +46,11 @@ $probeText = & $candidate @($plan.Arguments) --runtime-candidate-probe --runtime
 if ($LASTEXITCODE -ne 0) { throw "Development config probe failed; runtime untouched: $($probeText | Out-String)" }
 $probe = ($probeText | Out-String) | ConvertFrom-Json
 if ($probe.status -ne 'ok') { throw 'Development candidate config probe was rejected.' }
+if ($ActivationMode -eq 'no-session-transfer') {
+    $holdProbeText = & $candidate @($plan.Arguments) --native-derivation-hold-probe 2>&1
+    if ($LASTEXITCODE -ne 0) { throw 'Candidate cannot enforce no-transfer activation; runtime untouched.' }
+    Assert-DevNativeHoldCapability (($holdProbeText | Out-String) | ConvertFrom-Json)
+}
 $inspectionText = & $candidate @($plan.Arguments) --database-inspect 2>&1
 if ($LASTEXITCODE -ne 0) { throw "Development database inspection failed; runtime untouched: $($inspectionText | Out-String)" }
 $inspection = ($inspectionText | Out-String) | ConvertFrom-Json
@@ -89,6 +97,10 @@ $null = Get-DevRuntimeServicePlan $repoRoot $supervisorConfig
 & $supervisor stop akusidecar --actor $Actor --reason 'normalize already exited development service' --config $supervisorConfig
 if ($LASTEXITCODE -ne 0) { throw 'Supervisor did not accept stopped-state normalization.' }
 $previousBundle = Invoke-DevRuntimePromotion $runtimeDir
+if ($ActivationMode -eq 'no-session-transfer') {
+    $holdPath = Write-DevNativeDerivationHold $plan.Target
+    Write-Host "Native derivation held until explicit Start X/IG: $holdPath"
+}
 & $supervisor start akusidecar --actor $Actor --reason 'start verified ordinary development bundle' --config $supervisorConfig
 if ($LASTEXITCODE -ne 0) { throw "Supervisor could not start the development bundle. Previous code retained at $previousBundle" }
 $health = $null
@@ -103,3 +115,4 @@ $process = Get-CimInstance Win32_Process -Filter "ProcessId=$($service.rootPid)"
 if (-not $process -or -not ([string]$process.ExecutablePath).Equals($plan.Target, [StringComparison]::OrdinalIgnoreCase)) { throw 'Started service image does not match the promoted development runtime.' }
 $null = Assert-DevRuntimeBundle $runtimeDir
 Write-Host "AkuSidecar $($health.version) restarted from runtime/dev; previous complete bundle retained at $previousBundle. Process derivation consent was not granted."
+if ($ActivationMode -eq 'no-session-transfer') { Write-Host 'Saved permissions and Auto Update are unchanged; native X/IG admission remains held until explicit Start.' }

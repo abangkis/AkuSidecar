@@ -5,7 +5,8 @@ param(
     [switch] $ReplaceReaderBrokerRegistration,
     [switch] $Verify,
     [switch] $PlanOnly,
-    [switch] $PrepareOnly
+    [switch] $PrepareOnly,
+    [ValidateSet('daily', 'no-session-transfer')] [string] $ActivationMode
 )
 # Keep the established entry point; the workflow shares the dev bundle contract.
 & (Join-Path $PSScriptRoot 'dev-restart-workflow.ps1') @PSBoundParameters

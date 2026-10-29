@@ -31,6 +31,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Source-only native capability staging failed.' }
     & (Join-Path $PSScriptRoot 'test-dev-worker-promotion.ps1') -DiagnosticImage (Join-Path $root 'dev-diagnostic.exe') 2>&1 | Tee-Object -FilePath $log -Append
     & (Join-Path $PSScriptRoot 'test-dev-graceful-shutdown.ps1') -ResultPath (Join-Path $root 'graceful-shutdown.json') 2>&1 | Tee-Object -FilePath $log -Append
+    & (Join-Path $PSScriptRoot 'test-dev-native-derivation-hold.ps1') 2>&1 | Tee-Object -FilePath $log -Append
     & (Join-Path $PSScriptRoot 'test-worker-backup-retention.ps1') 2>&1 | Tee-Object -FilePath $log -Append
     Write-Output "PASS: stable development build/restart synthetic regressions. Evidence: $log"
 } finally {

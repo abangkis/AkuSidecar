@@ -5,6 +5,7 @@ package engine
 import (
 	"errors"
 	"github.com/abangkis/AkuSidecar/internal/appshell"
+	"strconv"
 	"strings"
 )
 
@@ -48,6 +49,13 @@ var sourceNativeReasons = map[string]bool{"scope": true, "clock": true, "closed"
 // No arbitrary reason or native exception text becomes a public diagnostic.
 func init() {
 	for _, role := range []string{"reader", "collector", "unknown"} {
+		// Same finite contract as INSTAGRAM_HTTP_REJECTIONS: no arbitrary text
+		// or unbounded numeric suffix is admitted across the wire boundary.
+		for status := 100; status <= 599; status++ {
+			if status != 200 && status != 401 && status != 403 && status != 429 {
+				sourceNativeReasons[role+"_identity_http_status_"+strconv.Itoa(status)] = true
+			}
+		}
 		for _, reason := range []string{
 			"page_scope", "login_visible", "http_unauthorized", "http_forbidden", "http_rate_limited",
 			"http_server", "http_status", "response_origin", "response_mime", "body_size", "body_missing",

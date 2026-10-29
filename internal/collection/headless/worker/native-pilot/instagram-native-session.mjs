@@ -6,9 +6,16 @@ export const INSTAGRAM_NATIVE_RECIPE = Object.freeze({source: 'instagram', recip
   home: 'https://www.instagram.com/', evidenceMaxAgeMS: 6000, responseMaxBytes: 65536, projectionMaxBytes: 4096,
   requiredCookies: Object.freeze(['csrftoken', 'ds_user_id', 'sessionid']), optionalCookies: Object.freeze([])});
 
+// Finite HTTP contract: integers 100..599 except 200. Preserve familiar auth
+// aliases; every other rejected status has an exact, bounded diagnostic.
+// Keep this contract synchronized with source_native_failure.go.
+export const INSTAGRAM_HTTP_REJECTIONS = Object.freeze(Array.from({length: 500}, (_, index) => index + 100)
+  .filter(status => ![200, 401, 403, 429].includes(status)).map(status => `http_status_${status}`));
+
 // Closed, value-free reasons only. Neither native exception text nor server
 // messages, URLs, response fields or account values are diagnostic material.
 export const INSTAGRAM_IDENTITY_REJECTIONS = Object.freeze([
+  ...INSTAGRAM_HTTP_REJECTIONS,
   'page_scope', 'login_visible', 'http_unauthorized', 'http_forbidden', 'http_rate_limited',
   'http_server', 'http_status', 'response_origin', 'response_mime', 'body_size', 'body_missing',
   'body_read', 'body_encoding', 'body_json', 'response_shape', 'account_missing',
@@ -37,7 +44,8 @@ export function instagramAccountExpression(nonce) {
     let reader,phase='fetch';
     try{
       const response=await fetch('/api/v1/accounts/current_user/?edit=true',{method:'GET',credentials:'same-origin',cache:'no-store',redirect:'error',signal:controller.signal,headers:{Accept:'application/json'}});
-      if(response.status!==200)return reject(response.status===401?'http_unauthorized':response.status===403?'http_forbidden':response.status===429?'http_rate_limited':response.status>=500&&response.status<=599?'http_server':'http_status');
+      const status=response.status;
+      if(status!==200)return reject(status===401?'http_unauthorized':status===403?'http_forbidden':status===429?'http_rate_limited':Number.isInteger(status)&&status>=100&&status<=599?'http_status_'+status:'http_status');
       if(new URL(response.url).origin!==location.origin)return reject('response_origin');
       if(!/^application\\/json(?:;|$)/i.test(response.headers.get('content-type')||''))return reject('response_mime');
       if(Number(response.headers.get('content-length'))>65536)return reject('body_size');

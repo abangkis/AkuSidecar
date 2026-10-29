@@ -497,6 +497,7 @@ type Options struct {
 	RuntimeControlToken         string
 	RuntimeCandidateProbe       bool
 	RuntimeCandidateProbeSchema int
+	NativeDerivationHoldProbe   bool
 	BridgeExtensionOrigin       string
 }
 
@@ -530,6 +531,7 @@ func ParseFlags() Options {
 	flag.StringVar(&options.RuntimeControlToken, "runtime-control-token", "", "instance-scoped token used by the signed runtime host")
 	flag.BoolVar(&options.RuntimeCandidateProbe, "runtime-candidate-probe", false, "validate the packaged runtime contract and exit")
 	flag.IntVar(&options.RuntimeCandidateProbeSchema, "runtime-candidate-probe-schema", 1, "candidate probe response schema (1=legacy, 2=current)")
+	flag.BoolVar(&options.NativeDerivationHoldProbe, "native-derivation-hold-probe", false, "report maintenance admission capability and exit before database or browser access")
 	flag.StringVar(&options.BridgeExtensionOrigin, "bridge-extension-origin", "", "override the exact trusted AkuBridge chrome-extension origin")
 	flag.Parse()
 	return options

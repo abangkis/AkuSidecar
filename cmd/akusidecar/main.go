@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/activationguard"
 	"github.com/abangkis/AkuSidecar/internal/aidetector"
 	"github.com/abangkis/AkuSidecar/internal/appshell"
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
@@ -74,6 +75,10 @@ func main() {
 	if manual != nil {
 		fatal(logger, manual.ValidateConfig(cfg))
 	}
+	if options.NativeDerivationHoldProbe {
+		fatal(logger, json.NewEncoder(os.Stdout).Encode(map[string]any{"status": "ok", "schema": "aku.native-derivation-hold-capability.v1", "version": 1}))
+		return
+	}
 	if options.RuntimeCandidateProbe {
 		probe, probeErr := runtimeCandidateProbe(cfg.Version, options.RuntimeCandidateProbeSchema)
 		fatal(logger, probeErr)
@@ -109,6 +114,10 @@ func main() {
 			fatal(logger, fmt.Errorf("database requires an explicit recovery decision (%s): %s; inspect with --database-inspect", compatibility.Status, compatibility.Reason))
 		}
 	}
+	image, imageErr := os.Executable()
+	fatal(logger, imageErr)
+	maintenance, holdErr := activationguard.Open(image + activationguard.FileSuffix)
+	fatal(logger, holdErr)
 	var state *store.Store
 	if manual != nil {
 		state, err = manual.OpenDatabase(settings)
@@ -211,6 +220,7 @@ func main() {
 	}
 	eventRuntime := semanticengine.New(state, eventResolver)
 	runtime := engine.New(state, provider, cfg, logger, eventRuntime)
+	fatal(logger, runtime.BindNativeDerivationHold(maintenance))
 	if daily != nil {
 		fatal(logger, daily.Attach(runtime))
 	}

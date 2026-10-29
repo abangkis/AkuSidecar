@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"github.com/abangkis/AkuSidecar/internal/activationguard"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +47,7 @@ var expectedBridgeActions = []string{
 }
 
 type Engine struct {
+	nativeDerivationHold                     *activationguard.Guard
 	store                                    *store.Store
 	provider                                 reasoning.Provider
 	config                                   config.Config

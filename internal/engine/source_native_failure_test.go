@@ -42,3 +42,36 @@ func TestSourceNativeFailureRetainsSafeFirstCause(t *testing.T) {
 		t.Fatal("private causal chain lost")
 	}
 }
+
+func TestSourceNativeHTTPStatusContract(t *testing.T) {
+	// Exhaust the same 100..599 contract as the browser projection, including
+	// unassigned statuses. HTTP 200 is never a rejection; auth aliases remain.
+	for _, role := range []string{"reader", "collector", "unknown"} {
+		for status := 100; status <= 599; status++ {
+			if status == 200 {
+				continue
+			}
+			reason := fmt.Sprintf("http_status_%d", status)
+			switch status {
+			case 401:
+				reason = "http_unauthorized"
+			case 403:
+				reason = "http_forbidden"
+			case 429:
+				reason = "http_rate_limited"
+			}
+			code := "native_source_evidence_" + role + "_identity_" + reason
+			err := sourceNativeWireFailure(&appshell.MainBrowserError{Code: code})
+			var failure *sourceNativeFailure
+			if !errors.As(err, &failure) || failure.dailyFailureCode() != code || failure.dailyRetryClass() != "" {
+				t.Fatalf("HTTP rejection changed or became retryable: %s: %v", code, err)
+			}
+		}
+		for _, suffix := range []string{"099", "600", "200", "401", "403", "429", "0400", "400.0", "400_PRIVATE", "400\n", "-1"} {
+			err := sourceNativeWireFailure(&appshell.MainBrowserError{Code: "native_source_evidence_" + role + "_identity_http_status_" + suffix})
+			if err.Error() != "native_source_wire_unavailable" {
+				t.Fatalf("unsupported status admitted: %q", suffix)
+			}
+		}
+	}
+}

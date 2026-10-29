@@ -19,6 +19,18 @@ test('IG transient cooldown preserves Stop and permission without requesting res
   assert.equal(view.visible,true);assert.equal(view.startEnabled,false);assert.equal(view.stopEnabled,true);
   assert.equal(view.statusText,'Waiting to retry');assert.match(view.detailText,/fresh account\/session/);assert.doesNotMatch(view.detailText,/restart/);
 });
+
+test('IG maintenance release remains explicit and retains experimental acknowledgement',async()=>{
+  const dom=Object.fromEntries(['panel','status','detail','consent','startButton','stopButton','feedback'].map(key=>[key,new Element()]));
+  const calls=[];
+  const controls=createInstagramTrialControls({...dom,readContext:()=>context,api:async(path,options)=>{calls.push({path,options});return{instagramCapture:status({state:'ready',reason:'',rememberedPermission:true,derivationAuthorized:true})};}});
+  controls.reset(status({state:'disabled',reason:'maintenance-confirmation-required',maintenanceHeld:true,rememberedPermission:true}));
+  assert.equal(calls.length,0);assert.equal(dom.startButton.textContent,'Resume IG');assert.equal(dom.startButton.disabled,false);
+  assert.match(dom.detail.textContent,/experimental/);
+  dom.startButton.emit('click');await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(calls[0].options.body.acknowledgeUnqualifiedRecipe,true);assert.equal(calls[0].options.instanceEpoch,'process-a');
+  controls.destroy();
+});
 test('IG controls use independent consent, paths and status without requests on render',async()=>{
   const dom=Object.fromEntries(['panel','status','detail','consent','startButton','stopButton','feedback'].map(key=>[key,new Element()]));
   const calls=[];let currentContext=context;

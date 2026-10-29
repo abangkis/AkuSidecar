@@ -71,6 +71,7 @@ type XCaptureStatus struct {
 	RetryCount                   int                      `json:"retryCount,omitempty"`
 	RetryLimit                   int                      `json:"retryLimit,omitempty"`
 	RetryAt                      string                   `json:"retryAt,omitempty"`
+	MaintenanceHeld              bool                     `json:"maintenanceHeld,omitempty"`
 	StartupDiagnostic            *XDailyStartupDiagnostic `json:"startupDiagnostic,omitempty"`
 	CleanupDiagnostic            *XDailyCleanupDiagnostic `json:"cleanupDiagnostic,omitempty"`
 	Cleanup                      string                   `json:"cleanup,omitempty"`
@@ -153,6 +154,7 @@ func (d dailyController) status() XCaptureStatus {
 	d.state.mu.RLock()
 	defer d.state.mu.RUnlock()
 	status.RememberedPermission = d.state.rememberedPermission
+	status.MaintenanceHeld = d.maintenanceHeld()
 	status.RetryCount, status.RetryLimit = d.state.retryCount, dailyRetryLimit
 	if !d.state.retryAt.IsZero() {
 		status.RetryAt = d.state.retryAt.UTC().Format(time.RFC3339Nano)
@@ -198,6 +200,9 @@ func (d dailyController) status() XCaptureStatus {
 	}
 	if d.state.owner == nil && d.state.factory != nil && !d.state.startUsed && d.state.reason == "" {
 		status.State, status.Reason = "disabled", "process-consent-required"
+		if status.MaintenanceHeld {
+			status.Reason = "maintenance-confirmation-required"
+		}
 	}
 	if d.state.closed {
 		status.State = "stopped"
