@@ -303,6 +303,17 @@ const xDailyControls = createXDailyControls({
     development: state.bootstrap?.deployment?.mode === "development",
   }),
   onStatus: (status) => { if (state.bootstrap) state.bootstrap.xCapture = status; },
+  notices: ["timeline", "inbox"].map((surface) => ({
+    panel: $(`#x-daily-${surface}-notice`),
+    title: $(`#x-daily-${surface}-notice-title`),
+    detail: $(`#x-daily-${surface}-notice-detail`),
+    button: $(`#x-daily-${surface}-notice-settings`),
+  })),
+  readActiveSources: () => state.bootstrap?.settings?.activeSources ?? [],
+  onReviewSettings: () => {
+    setView("settings");
+    $("#x-daily-controls")?.scrollIntoView({ block: "center" });
+  },
 });
 const postScreenshotUI = createPostScreenshotUI({
   request: (path, options) => api(path, options),

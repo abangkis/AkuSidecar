@@ -3,10 +3,50 @@
 This page is the current checkpoint. Historical experiments in the design and
 roadmap are evidence, not a new list of prerequisites.
 
+## Headless MVP: main-dev daily acceptance (2026-10-29)
+
+The selected main-dev daily route is accepted for X: the normal Browser backend
+continues to serve other sources, while opted-in X uses the concurrent collector.
+This is not a change to the global exclusive default or production enablement.
+Permission is stored for the chosen Chrome subprofile, restored after restart,
+and verified afresh for each batch. Each derived collector remains limited to
+60 seconds. Stop X revokes the saved preference; ordinary restart preserves it.
+
+The operator rebuilt/restarted `41ecd1c`; the observed binary matched its recorded
+hash. Two subsequent mixed-source checks included X:
+
+| X run completed (WIB, 29 October) | Captured | Evaluated | Added to Timeline |
+| --- | ---: | ---: | ---: |
+| 14:34:36 | 1 | 1 | 0 |
+| 14:41:38 | 2 | 2 | 1 |
+
+After both runs, the same process reported X `ready`, remembered permission and
+derivation authorization true, cleanup `verified`, no active session and zero
+capture leases. In the executing code, successful batch cleanup requires exact
+bootstrap-target absence before releasing ownership. This supports successful
+Home retirement and successor admission; it is not a visual window inspection
+or a separately persisted positive bootstrap receipt. The first run's zero added
+items is a successful evaluated result, not a capture failure. Auto Update
+remained enabled. No extra transfer or batch was triggered by the inspection.
+
+The accompanying UI change adds a persistent current-source warning to Timeline
+and Update Inbox when selected X is unavailable. It explains that other sources
+can continue, distinguishes unconfirmed status from confirmed exclusion, and
+offers navigation to X Settings without Start, retry, restart or consent changes.
+Existing poll revision/epoch checks remain authoritative, so old replies cannot
+clear a newer failure. This new UI was validated offline in unit tests and a
+fresh-profile, loopback-only desktop/mobile Chrome fixture. Publishing this
+commit/tag does not activate the new UI in an already running process.
+
+Full rotation/renewal qualification, hot mode switching, shared reservations and
+longer acquisition remain deferred; they do not reopen the accepted daily MVP.
+Earlier offline/process-only checkpoints below are historical implementation
+records wherever they conflict with this acceptance.
+
 ## Bounded batch Home retirement (2026-10-29)
 
-Status: offline implementation only; not activated or exercised with a real
-session. The prior deadline/cleanup increment was published and activated as
+Status: implemented and activated as `41ecd1c`; current daily acceptance is above.
+The prior deadline/cleanup increment was published and activated as
 `115797d`. Its first scheduled X batch reached capture, then reported
 `bootstrap: uncertain` at 07:16:44 WIB. That process disabled X, so later checks
 included only Instagram and LinkedIn even though the X preference remained saved.
@@ -27,11 +67,12 @@ inventory, close acknowledgment, post-close inventory, absence timeout and
 reservation release. Raw exceptions, target identifiers and page data are not
 reported. Startup's first cause and independent resource outcomes stay intact.
 
-Validation is offline: delayed disappearance, retained ownership on timeout,
+Initial validation was offline: delayed disappearance, retained ownership on timeout,
 RPC/shape/clock failures, late replies, concurrent close calls, explicit reader
 preservation, and Node-to-Go diagnostic propagation are covered by regressions.
-No native seed, session transfer, runtime activation or Auto Update change is
-part of this increment.
+The implementation phase did not perform a native seed, session transfer,
+runtime activation or Auto Update change; subsequent activation and acceptance
+are recorded above.
 
 Validation result: 54 Node tests passed, targeted Engine/HTTP regressions passed
 in ordinary and `auth_session_dev` builds, and the development binary compiled
@@ -40,7 +81,8 @@ the updated bootstrap and cleanup modules; neither package was executed.
 
 ## Shared prepared-observation deadline and independent cleanup (2026-10-29)
 
-Status: offline implementation only; no runtime activation or session transfer.
+Historical offline implementation checkpoint; published and activated as
+`115797d`, followed by the accepted `41ecd1c` target-retirement correction above.
 
 The live batch after `cd43d47` reported reader `stale_observation` and uncertain
 cleanup. Its 305 ms trace measured acquisition after both PREPARE operations,
@@ -69,8 +111,7 @@ exports absolute clock values, account IDs, targets or raw exception messages.
 Offline coverage composes the real prepared actor and observation with virtual
 time and drives the exported daily owner's begin/end composition with synthetic
 CDP/collector transports. It does not establish real native seed/enrollment or
-end-to-end X capture. The last main-dev activation remains separate from this
-uncommitted increment.
+end-to-end X capture by itself. Subsequent main-dev acceptance is recorded above.
 
 Validation: 166 focused Node regressions passed. Selected Engine/HTTP/Store
 regressions passed in ordinary and `auth_session_dev` builds, including private
@@ -78,7 +119,7 @@ Node/Go V10 catalog parity and synthetic Windows process cleanup. The dev binary
 compiled under `build/x-deadline-cleanup-offline`; both source-only owner packages
 include the deadline and cleanup modules. Those packages were not executed.
 
-## Remembered X permission and batch Home target: offline implementation
+## Remembered X permission and batch Home target: implementation record
 
 Main-profile X permission is now a profile-bound saved preference. Ordinary
 restart restores it once into a fresh process owner; each batch still obtains
@@ -91,8 +132,8 @@ are preserved. Dedicated fixture lifetime remains unchanged.
 An older process-only opt-in has no durable record to restore. The first enable
 in this new build creates that record unless an operational handoff explicitly
 migrates the active choice. [Contract and rollout details](capture-surface-lifecycle-contract.md#remembered-permission-and-fresh-authorization).
-This increment is not activated; offline fixtures and compilation do not prove a
-successful live X batch with the new target lifetime.
+The original offline fixtures and compilation did not prove live capture by
+themselves; the current acceptance above supersedes that earlier limitation.
 
 ## Capture surface lifecycle correction: offline implementation
 
@@ -124,7 +165,8 @@ a new independently sampled runtime/hash receipt.
 Next is daily operation through Settings > Live settings: grant permission and
 click Start X in the current process, then use an ordinary manual check or Auto
 Update. Verify the X result in Inbox/Timeline while the reader remains open.
-Permission is not restored by restart, and Stop remains terminal for its process.
+That process-only permission limitation is historical: the current main-profile
+preference is restored after restart, while Stop revokes the saved preference.
 This is the existing main-dev backend and UI, not another isolated QA delivery.
 Stability observation, full session rotation and shared reservation remain
 follow-up work; they do not reopen the accepted two-batch MVP gate.

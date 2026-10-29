@@ -157,6 +157,33 @@ export function xDailyView(statusValue, contextValue, consentChecked, busy = fal
   };
 }
 
+// This is a current source-health notice, never a rewrite of historical results.
+export function xDailyCaptureNotice(value, context, activeSources, needsRefresh = false) {
+  const status = normalizeStatus(value);
+  const hidden = { visible: false, title: "", detail: "" };
+  if (!context?.development || !context.epoch || status?.selectedMode !== "concurrent" ||
+      !Array.isArray(activeSources) || !activeSources.includes("x")) return hidden;
+  if (needsRefresh) return {
+    visible: true, title: "X status unavailable",
+    detail: "The current X capture status could not be confirmed. Review X settings before the next update.",
+  };
+  if (["ready", "capturing", "starting", "startup-in-progress", "stopping"].includes(status.state)) return hidden;
+  const detail = status.cleanup === "uncertain" || status.cleanup === "pending"
+    ? "X cleanup could not be confirmed. Review X settings before restarting AkuBrowser."
+    : status.reason === "batch-failed"
+      ? "The last X batch failed. Review X settings; restarting AkuBrowser is required before X can resume."
+      : status.reason === "reader-start-failed"
+        ? "X could not start. Review X settings before restarting AkuBrowser."
+        : ["process-consent-required", "profile-consent-required"].includes(status.reason)
+          ? "Enable X in Settings to include it in new updates."
+          : "Review X settings to see why capture is unavailable and how to resume it.";
+  return {
+    visible: true,
+    title: status.reason === "opted-out" ? "X capture is off" : "X capture is paused",
+    detail: `New updates are continuing without X. Other available sources can continue. ${detail}`,
+  };
+}
+
 export function createXDailyControls({
   panel,
   status,
@@ -168,6 +195,9 @@ export function createXDailyControls({
   api,
   readContext,
   onStatus = () => {},
+  notices = [],
+  readActiveSources = () => [],
+  onReviewSettings = () => {},
 }) {
   let latestStatus = null;
   let destroyed = false;
@@ -232,6 +262,13 @@ export function createXDailyControls({
     setSettingsText(status, displayedStatus);
     setSettingsClass(status, `x-daily-status${view.visible ? "" : " x-daily-status-hidden"}`);
     setSettingsText(detail, displayedDetail);
+    const notice = xDailyCaptureNotice(latestStatus, context, readActiveSources(), needsRefresh);
+    for (const item of notices) {
+      setHidden(item.panel, !notice.visible);
+      item.panel?.classList?.toggle("hidden", !notice.visible);
+      setSettingsText(item.title, notice.title);
+      setSettingsText(item.detail, notice.detail);
+    }
   }
 
   function beginRead() {
@@ -383,6 +420,11 @@ export function createXDailyControls({
     event?.preventDefault?.();
     void mutate("stop");
   };
+  const onReviewClick = (event) => {
+    event?.preventDefault?.();
+    onReviewSettings();
+  };
+  for (const item of notices) item.button?.addEventListener?.("click", onReviewClick);
   consent?.addEventListener?.("change", onConsentChange);
   startButton?.addEventListener?.("click", onStartClick);
   stopButton?.addEventListener?.("click", onStopClick);
@@ -402,6 +444,11 @@ export function createXDailyControls({
       consent?.removeEventListener?.("change", onConsentChange);
       startButton?.removeEventListener?.("click", onStartClick);
       stopButton?.removeEventListener?.("click", onStopClick);
+      for (const item of notices) {
+        item.button?.removeEventListener?.("click", onReviewClick);
+        setHidden(item.panel, true);
+        item.panel?.classList?.toggle("hidden", true);
+      }
     },
   };
 }

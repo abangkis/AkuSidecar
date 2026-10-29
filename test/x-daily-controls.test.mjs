@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createXDailyControls, xDailyView } from "../internal/httpapi/web/x-daily-controls.js";
+import { createXDailyControls, xDailyView, xDailyCaptureNotice } from "../internal/httpapi/web/x-daily-controls.js";
 
 class FakeElement {
   constructor() {
@@ -63,7 +63,7 @@ async function flush() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
-function setup({ context = { epoch: "epoch-a", development: true }, request } = {}) {
+function setup({ context = { epoch: "epoch-a", development: true }, request, notices = [], sources = ["x"], onReviewSettings } = {}) {
   const dom = {
     panel: new FakeElement(), status: new FakeElement(), detail: new FakeElement(), consent: new FakeElement(),
     startButton: new FakeElement(), stopButton: new FakeElement(), feedback: new FakeElement(),
@@ -79,9 +79,63 @@ function setup({ context = { epoch: "epoch-a", development: true }, request } = 
     api,
     readContext: () => context,
     onStatus: (value) => statuses.push(value),
+    notices,
+    readActiveSources: () => sources,
+    onReviewSettings,
   });
   return { ...dom, calls, statuses, controller, setContext: (next) => { context = next; } };
 }
+
+test("daily warning distinguishes unavailable X from normal capture without exposing diagnostic content", () => {
+  const context = { epoch: "current", development: true };
+  for (const state of ["ready", "capturing", "starting", "startup-in-progress", "stopping"]) {
+    assert.equal(xDailyCaptureNotice(rememberedStatus({ state }), context, ["x"]).visible, false);
+  }
+  for (const status of [
+    rememberedStatus({ state: "stopped", reason: "batch-failed", derivationAuthorized: false, cleanup: "uncertain" }),
+    rememberedStatus({ state: "failed", reason: "reader-start-failed", derivationAuthorized: false }),
+    dailyStatus(),
+    rememberedStatus({ state: "not-ready", reason: "PRIVATE_ACCOUNT_ID" }),
+  ]) {
+    const notice = xDailyCaptureNotice({ ...status, failureCode: "PRIVATE_COOKIE", cleanupDiagnostic: { targetId: "PRIVATE_TARGET" } }, context, ["instagram", "linkedin", "x"]);
+    assert.equal(notice.visible, true);
+    assert.match(notice.detail, /without X.*Other available sources/);
+    assert.equal(JSON.stringify(notice).includes("PRIVATE"), false);
+  }
+  const optedOut = xDailyCaptureNotice(rememberedStatus({ state: "stopped", reason: "opted-out", derivationAuthorized: false, rememberedPermission: false }), context, ["x"]);
+  assert.equal(optedOut.title, "X capture is off");
+  const uncertain = xDailyCaptureNotice(rememberedStatus(), context, ["x"], true);
+  assert.match(uncertain.detail, /could not be confirmed/);
+  assert.doesNotMatch(uncertain.detail, /without X/);
+  for (const [status, ctx, sources] of [[rememberedStatus(), context, ["linkedin"]], [rememberedStatus(), { ...context, development: false }, ["x"]], [rememberedStatus({ selectedMode: "exclusive" }), context, ["x"]], [null, context, ["x"]]]) {
+    assert.equal(xDailyCaptureNotice(status, ctx, sources).visible, false);
+  }
+});
+
+test("Timeline and Inbox warnings survive stale polls, clear on recovery, and only navigate to Settings", () => {
+  const notices = [0, 1].map(() => ({ panel: new FakeElement(), title: new FakeElement(), detail: new FakeElement(), button: new FakeElement() }));
+  let settingsVisits = 0;
+  const f = setup({ notices, onReviewSettings: () => settingsVisits++ });
+  f.controller.reset(rememberedStatus({ state: "stopped", reason: "batch-failed", derivationAuthorized: false, cleanup: "uncertain" }));
+  for (const notice of notices) {
+    assert.equal(notice.panel.hidden, false);
+    assert.match(notice.detail.textContent, /cleanup could not be confirmed/);
+    notice.button.click();
+  }
+  assert.equal(settingsVisits, 2);assert.equal(f.calls.length, 0);
+  const stale = f.controller.beginRead(), fresh = f.controller.beginRead();
+  assert.equal(f.controller.applyRead(stale, rememberedStatus()), false);
+  assert.equal(notices[0].panel.hidden, false);
+  f.controller.rejectRead(fresh);
+  assert.equal(notices[1].panel.hidden, false);
+  assert.match(notices[1].title.textContent, /unavailable/);
+  f.controller.applyRead(f.controller.beginRead(), rememberedStatus());
+  assert(notices.every(item => item.panel.hidden));
+  f.controller.reset(rememberedStatus({ state: "stopped", reason: "batch-failed", derivationAuthorized: false }));
+  f.setContext({ epoch: "epoch-b", development: true });f.controller.beginRead();
+  assert(notices.every(item => item.panel.hidden), "previous epoch must not supply failure state");
+  f.controller.destroy();notices[0].button.click();assert.equal(settingsVisits, 2);
+});
 
 test("render, poll ticket, and reset never issue requests; missing status fails closed", () => {
   const f = setup();

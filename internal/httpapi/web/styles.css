@@ -141,6 +141,10 @@ h3 { letter-spacing: -0.02em; }
 .auto-update-timeline-status > div { display: grid; gap: 3px; }
 .auto-update-timeline-status strong { color: #e7ca70; }
 .auto-update-timeline-status span { color: var(--muted); font-size: 0.78rem; line-height: 1.45; }
+.x-daily-capture-notice { flex-wrap: wrap; }
+.x-daily-capture-notice > div { flex: 1 1 auto; width: min(100%, 24rem); min-width: 0; overflow-wrap: anywhere; }
+.x-daily-capture-notice button { flex: 0 0 auto; max-width: 100%; white-space: normal; }
+#inbox-panel .x-daily-capture-notice { width: 100%; }
 .native-reader-update-notice > div { min-width: 0; }
 .native-reader-update-notice button { flex: 0 0 auto; max-width: 100%; white-space: normal; }
 .native-reader-update-notice [role="status"]:empty { display: none; }
