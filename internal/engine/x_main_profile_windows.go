@@ -29,7 +29,7 @@ func mainProfileAsset(path string) (xApplicationOwnerAsset, error) {
 	return xApplicationOwnerAsset{path: path, digest: hex.EncodeToString(sum[:])}, nil
 }
 func MainBrowserTransportOptions(cfg config.Config) (*appshell.MainBrowserTransportOptions, error) {
-	if !cfg.Capture.XUsesMainProfile() {
+	if !cfg.Capture.XUsesMainProfile() && !(instagramNativeQualified && cfg.Capture.InstagramCaptureMode() == config.XCaptureConcurrent) {
 		return nil, nil
 	}
 	if !cfg.Dev || !cfg.WindowsCaptureSplit {

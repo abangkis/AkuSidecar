@@ -6,9 +6,10 @@ import {resolve,join,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createApplicationDailyOwner} from '../../../../../scripts/auth-session-fixture/x-native-metadata-probe-driver.mjs';
 import {createMainCDP,createMainPublicFacade,serveMainBrowserTransport,MAIN_TRANSPORT_SCHEMA,mainOwnerFailure,mainStartupProgress,mainStartupProgressForOwnerOperation} from './main-browser-transport-protocol.mjs';
-import {createBorrowedDailyControl} from './main-browser-transport.mjs';
+import {createBorrowedDailyControl,createBorrowedInstagramControl} from './main-browser-transport.mjs';
 import {ownerErrorReply} from './owner-protocol.mjs';
 import {manualCaptureFailure} from '../../../../../scripts/auth-session-fixture/x-native-manual-capture.mjs';
+import {nativeSourceFailure} from './native-source-kernel.mjs';
 
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 test('startup progress preserves bounded v10 phase ages and legacy v9 without raw clock data',()=>{
@@ -73,10 +74,10 @@ test('private CDP failure rejects pending work without raw exception text',async
   f.input.write(JSON.stringify({id:f.requests[0].id,error:{message:'synthetic-secret'}})+'\0');
   await assert.rejects(p,error=>error.message==='main_transport_rejected');
 });
-function controlFixture(t,createX){
+function controlFixture(t,createX,sourceFactories={}){
   const input=new PassThrough(),output=new PassThrough(),rawIn=new PassThrough(),rawOut=new PassThrough(),replies=[];
   output.on('data',b=>replies.push(JSON.parse(b.toString())));
-  const server=serveMainBrowserTransport({input,output,createX,connect:async()=>({input:rawIn,output:rawOut})});
+  const server=serveMainBrowserTransport({input,output,createX,sourceFactories,connect:async()=>({input:rawIn,output:rawOut})});
   t.after(()=>server.close());
   const send=q=>input.write(JSON.stringify(q)+'\n');
   send({op:'main_transport_bootstrap',schema:MAIN_TRANSPORT_SCHEMA,nonce:'a'.repeat(48),transport:'inherited-stdio'});
@@ -247,4 +248,77 @@ test('actual borrowed factory initializes process ownership without creating Hom
   await owner.close();
   assert.deepEqual(calls,[]);
   assert.equal(unsubscribed,true);
+});
+
+test('sealed IG lane is source-bound and preserves the existing X lane',async t=>{
+  const calls=[];
+  const f=controlFixture(t,async()=>({execute:async()=>({legacyX:true}),close:async()=>{}}),{
+    instagram:async()=>({execute:async(op,params)=>{calls.push([op,params]);return{source:'instagram'};},close:async()=>{}}),
+  });await tick();
+  f.send({id:1,op:'main_source',source:'instagram',operation:'source_bootstrap',params:{}});await tick();
+  f.send({id:2,op:'main_source',source:'instagram',operation:'source_initialize',params:{}});await tick();
+  assert.equal(f.replies.find(r=>r.id===2).result.source,'instagram');
+  f.send({id:3,op:'main_source',source:'x',operation:'source_bootstrap',params:{}});await tick();
+  assert.equal(f.replies.find(r=>r.id===3).ok,false);
+  f.send({id:4,op:'main_x',operation:'daily_owner_bootstrap',params:{}});await tick();
+  f.send({id:5,op:'main_x',operation:'daily_reader_check',params:{}});await tick();
+  assert.equal(f.replies.find(r=>r.id===5).result.legacyX,true);
+  assert.equal(calls.length,1);
+});
+
+test('source seed excludes public and X mutation, then ordinary reader calls resume',async t=>{
+  let release;
+  const f=controlFixture(t,undefined,{instagram:async()=>({
+    execute:async op=>op==='source_seed'?new Promise(done=>{release=done;}):{},close:async()=>{},
+  })});await tick();
+  f.send({id:1,op:'main_source',source:'instagram',operation:'source_bootstrap',params:{}});await tick();
+  f.send({id:2,op:'main_source',source:'instagram',operation:'source_seed',params:{}});await tick();
+  f.send({id:3,op:'main_call',method:'Browser.getVersion',params:{},sessionId:'',timeoutMS:1000});await tick();
+  f.send({id:4,op:'main_x',operation:'daily_batch_begin',params:{}});await tick();
+  assert.equal(f.replies.find(r=>r.id===3).ok,false);assert.equal(f.replies.find(r=>r.id===4).ok,false);
+  release({seeded:true});await tick();
+  f.send({id:5,op:'main_call',method:'Browser.getVersion',params:{},sessionId:'',timeoutMS:1000});await tick();
+  f.rawIn.write(JSON.stringify({id:1,result:{product:'Chrome/synthetic'}})+'\0');await tick();
+  assert.equal(f.replies.find(r=>r.id===5).result.product,'Chrome/synthetic');
+});
+
+test('source errors forward only private diagnostic categories, never arbitrary exception fields',async t=>{
+  const f=controlFixture(t,undefined,{instagram:async()=>({execute:async op=>{
+    if(op==='source_check')throw nativeSourceFailure('evidence','identity');
+    const error=new Error('private-token');Object.defineProperty(error,'code',{get(){throw Error('getter invoked');}});throw error;
+  },close:async()=>{}})});await tick();
+  f.send({id:1,op:'main_source',source:'instagram',operation:'source_bootstrap',params:{}});await tick();
+  f.send({id:2,op:'main_source',source:'instagram',operation:'source_check',params:{}});await tick();
+  assert.equal(f.replies.find(r=>r.id===2).error.code,'native_source_evidence_identity');
+  f.send({id:3,op:'main_source',source:'instagram',operation:'source_proof',params:{}});await tick();
+  assert.equal(f.replies.find(r=>r.id===3).error.code,'main_transport_rejected');
+  assert.ok(!JSON.stringify(f.replies).includes('private-token'));
+});
+
+test('unqualified native IG cannot be enabled by a request or read a profile during bootstrap',async t=>{
+  let reads=0;
+  const transport={get call(){reads++;throw new Error('must not read');}};
+  await assert.rejects(createBorrowedInstagramControl({nativeQualified:true},transport));
+  assert.equal(reads,0);
+  const f=controlFixture(t,undefined,{instagram:createBorrowedInstagramControl});await tick();
+  f.send({id:1,op:'main_source',source:'instagram',operation:'source_bootstrap',params:{nativeQualified:true}});await tick();
+  assert.equal(f.replies.find(r=>r.id===1).error.code,'native_source_qualification_required');
+});
+
+test('terminal source close can cancel pending seed without publishing its late success',async t=>{
+  let finishSeed,finishClose;
+  const f=controlFixture(t,undefined,{instagram:async()=>({
+    execute:async op=>op==='source_seed'?new Promise(done=>{finishSeed=done;}):{},
+    close:async()=>{finishSeed({seeded:true});await new Promise(done=>{finishClose=done;});},
+  })});await tick();
+  f.send({id:1,op:'main_source',source:'instagram',operation:'source_bootstrap',params:{}});await tick();
+  f.send({id:2,op:'main_source',source:'instagram',operation:'source_seed',params:{}});await tick();
+  f.send({id:3,op:'main_source',source:'instagram',operation:'source_close',params:{}});await tick();
+  assert.equal(f.replies.find(r=>r.id===2).ok,false);
+  // The seed holder has finished, but cleanup still owns the exclusive lane.
+  f.send({id:4,op:'main_call',method:'Browser.getVersion',params:{},sessionId:'',timeoutMS:1000});await tick();
+  assert.equal(f.replies.find(r=>r.id===4).ok,false);
+  finishClose();await tick();
+  assert.deepEqual(f.replies.find(r=>r.id===3).result,{closed:true});
+  assert.ok(!f.replies.some(r=>r.id===2&&r.ok));
 });

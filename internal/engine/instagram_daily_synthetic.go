@@ -218,31 +218,7 @@ func (b *instagramSyntheticBatch) verify(ctx context.Context) error {
 	return nil
 }
 func (b *instagramSyntheticBatch) Capture(ctx context.Context, command string) (domain.Run, error) {
-	if err := b.verify(ctx); err != nil {
-		return domain.Run{}, err
-	}
-	claim, err := b.owner.engine.store.ClaimManualPilot(ctx, b.permit, command, "instagram-claim:"+command)
-	if err != nil {
-		return domain.Run{}, err
-	}
-	if claim.Handle == nil || claim.Command == nil {
-		return domain.Run{}, errors.New("synthetic Instagram claim unavailable")
-	}
-	observation, err := b.collector.Capture(ctx, claim.Command.Payload)
-	if err != nil {
-		return domain.Run{}, err
-	}
-	if err = b.verify(ctx); err != nil {
-		return domain.Run{}, err
-	}
-	result, err := b.owner.engine.store.CommitManualPilotResult(ctx, claim.Handle, "instagram-result:"+command, observation)
-	if err != nil {
-		return domain.Run{}, err
-	}
-	if result != store.Committed {
-		return domain.Run{}, errors.New("synthetic Instagram commit unavailable")
-	}
-	return b.owner.engine.afterAcceptedObservation(ctx, b.run)
+	return captureSourceDailyPermit(ctx, b.owner.engine, domain.SourceInstagram, b.run, b.permit, command, b.verify, b.collector.Capture)
 }
 func (b *instagramSyntheticBatch) Close(ctx context.Context) error {
 	b.closed = true

@@ -4,6 +4,16 @@
 The dated entries below preserve experiment history. Their old blocker/next-step
 wording must not override the current checkpoint.
 
+### Native Instagram provider implementation (2026-10-29)
+
+The shared source core now has a native IG candidate provider and private
+main-browser transport composition, with reusable attempt/cleanup, Store capture
+and per-source packaging helpers. Existing native X routing remains compatible.
+Implementation and offline tests do not qualify the live IG recipe or activate
+it. The next native acceptance must explicitly qualify its bounded account/login
+projection and minimal session manifest; main-dev IG retains Browser meanwhile.
+See [the native provider contract](native-source-provider-contract.md).
+
 ### Shared-core source expansion: X and Instagram (2026-10-29)
 
 The accepted Headless MVP is the selected daily X route, tagged `headless-mvp`.

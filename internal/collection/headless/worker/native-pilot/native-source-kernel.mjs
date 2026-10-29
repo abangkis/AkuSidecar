@@ -1,0 +1,144 @@
+// Source-independent native attempt lifetime. Source recipes alone choose URLs,
+// session material and account projections; this kernel never interprets them.
+const diagnostics = new WeakMap();
+export const nativeSourceDiagnostic = error => diagnostics.get(error) ?? null;
+export function annotateNativeSourceCleanup(error, cleanup) {
+  if (diagnostics.has(error)) diagnostics.set(error, Object.freeze({...diagnostics.get(error), cleanup}));
+}
+export function nativeSourceFailure(stage, reason) {
+  const error = new Error('native_source_failed');
+  diagnostics.set(error, Object.freeze({stage, reason, cleanup: 'not_started'}));
+  return error;
+}
+export const nativeRecord = (value, keys) => value && [Object.prototype, null].includes(Object.getPrototypeOf(value)) &&
+  Reflect.ownKeys(value).length === keys.length && keys.every(key => Object.hasOwn(Object.getOwnPropertyDescriptor(value, key) ?? {}, 'value'));
+export const nativeRef = value => typeof value === 'string' && value.length > 0 && value.length <= 1024 && !/[\u0000-\u001f\u007f]/u.test(value);
+
+export function createNativeSourceAttempt({source, generation, nonce, profileScope, deadlineMS, now = Date.now, cleanupMS = 3000}) {
+  const admitted = now();
+  if (!['x', 'instagram'].includes(source) || !Number.isSafeInteger(generation) || generation < 1 ||
+      !/^[a-f0-9]{48}$/u.test(nonce) || !nativeRef(profileScope) || !Number.isSafeInteger(admitted) ||
+      !Number.isSafeInteger(deadlineMS) || deadlineMS <= admitted || deadlineMS - admitted > 60000 ||
+      !Number.isSafeInteger(cleanupMS) || cleanupMS < 1 || cleanupMS > 3000) throw nativeSourceFailure('admission', 'scope');
+  const binding = Object.freeze({source, generation, nonce, profileScope, deadlineMS});
+  const resources = new Set();
+  const abort = new AbortController();
+  let state = 'active', last = admitted, first, cleanup = 'not_started', closing;
+  function fail(stage, reason) { first ??= nativeSourceFailure(stage, reason); return first; }
+  function remaining() {
+    const time = now();
+    if (!Number.isSafeInteger(time) || time < last) throw fail('lifetime', 'clock');
+    last = time;
+    if (state !== 'active' || abort.signal.aborted) throw fail('lifetime', 'closed');
+    if (time >= deadlineMS) throw fail('lifetime', 'deadline');
+    return deadlineMS - time;
+  }
+  async function run(stage, operation) {
+    let timer, listener;
+    try {
+      const ms = remaining();
+      const value = await Promise.race([
+        Promise.resolve().then(() => operation(remaining())),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(fail(stage, 'deadline')), ms); }),
+        new Promise((_, reject) => { listener = () => reject(fail(stage, 'canceled')); abort.signal.addEventListener('abort', listener, {once: true}); }),
+      ]);
+      remaining();
+      return value;
+    } catch (error) {
+      first ??= diagnostics.has(error) ? error : nativeSourceFailure(stage, 'unavailable');
+      throw first;
+    } finally { clearTimeout(timer); abort.signal.removeEventListener('abort', listener); }
+  }
+  const closeResource = resource => resource.closing ??= resource.creation.then(async value => {
+    await resource.release(value, cleanupMS); resource.closed = true;
+  });
+  // Register before starting creation. A result arriving after cancellation
+  // retains its release obligation without making the attempt live again.
+  function own(stage, create, release) {
+    remaining();
+    const resource = {closed: false, release};
+    resource.creation = Promise.resolve().then(() => { remaining(); return create(remaining()); });
+    resources.add(resource);
+    void resource.creation.then(() => { if (state !== 'active') void closeResource(resource).catch(() => {}); }, () => { resource.closed = true; });
+    return run(stage, () => resource.creation);
+  }
+  async function boundedCleanup(operation) {
+    let timer;
+    try { return await Promise.race([operation, new Promise((_, reject) => { timer = setTimeout(() => reject(nativeSourceFailure('cleanup', 'deadline')), cleanupMS); })]); }
+    finally { clearTimeout(timer); }
+  }
+  function close() {
+    closing ??= (async () => {
+      state = 'closing'; abort.abort();
+      // Reverse creation order retires child pages before their process. A
+      // failed child still leaves every later release obligation runnable.
+      const results = await boundedCleanup((async () => {
+        const results = [];
+        for (const resource of [...resources].reverse()) {
+          try { await closeResource(resource); results.push({status: 'fulfilled'}); }
+          catch { results.push({status: 'rejected'}); }
+        }
+        return results;
+      })()).catch(() => null);
+      cleanup = results && results.every(result => result.status === 'fulfilled') && [...resources].every(resource => resource.closed) ? 'verified' : 'uncertain';
+      state = 'closed';
+      if (first) diagnostics.set(first, Object.freeze({...diagnostics.get(first), cleanup}));
+      return Object.freeze({closed: cleanup === 'verified', cleanup, source, generation, nonce});
+    })();
+    return closing;
+  }
+  return Object.freeze({binding, run, own, remaining, close, fail,
+    assert(values) {
+      if (!values || values.generation !== generation || values.nonce !== nonce || values.profileScope !== profileScope) throw fail('admission', 'binding');
+      remaining();
+    },
+    status: () => Object.freeze({source, state, cleanup}),
+  });
+}
+
+// Only the exact target created here is reserved and retired. An acknowledged
+// close is insufficient: its absence must be verified before releasing pins.
+export async function createNativeOwnedPage(transport, timeoutMS) {
+  let targetId, sessionId, closing;
+  const setupDeadline = Date.now() + timeoutMS;
+  const call = (method, params = {}, session = '', ms) => {
+    const budget = ms ?? Math.min(10000, setupDeadline - Date.now());
+    if (budget < 1) throw nativeSourceFailure('target', 'deadline');
+    return transport.call(method, params, session, budget);
+  };
+  const close = () => closing ??= (async () => {
+    if (!targetId) return;
+    await call('Target.closeTarget', {targetId}, '', 1000);
+    const until = Date.now() + 2000;
+    while (Date.now() < until) {
+      const result = await call('Target.getTargets', {}, '', Math.max(1, until - Date.now()));
+      if (!Array.isArray(result.targetInfos)) throw nativeSourceFailure('cleanup', 'inventory');
+      if (!result.targetInfos.some(target => target.targetId === targetId)) {
+        transport.releaseSession?.(sessionId); transport.releaseTarget?.(targetId); return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    throw nativeSourceFailure('cleanup', 'target_present');
+  })();
+  try {
+    const target = await call('Target.createTarget', {url: 'about:blank', background: true, forTab: false});
+    if (!nativeRef(target.targetId)) throw nativeSourceFailure('target', 'identity');
+    targetId = target.targetId; transport.reserveTarget(targetId);
+    const attached = await call('Target.attachToTarget', {targetId, flatten: true});
+    if (!nativeRef(attached.sessionId)) throw nativeSourceFailure('target', 'identity');
+    sessionId = attached.sessionId; transport.reserveSession(sessionId);
+    for (const method of ['Page.enable', 'Runtime.enable', 'Network.enable']) await call(method, {}, sessionId);
+    return Object.freeze({
+      send: (method, params = {}, ms = timeoutMS) => call(method, params, sessionId, ms),
+      navigate: (url, ms = timeoutMS) => call('Page.navigate', {url}, sessionId, ms),
+      async evaluate(expression, ms = timeoutMS) {
+        const reply = await call('Runtime.evaluate', {expression, returnByValue: true, awaitPromise: true, userGesture: false}, sessionId, ms);
+        if (reply.exceptionDetails) throw nativeSourceFailure('evidence', 'evaluation');
+        return reply.result?.value;
+      }, close,
+    });
+  } catch (error) {
+    try { await close(); } catch { throw nativeSourceFailure('cleanup', 'target_unverified'); }
+    throw nativeSourceDiagnostic(error) ? error : nativeSourceFailure('target', 'unavailable');
+  }
+}

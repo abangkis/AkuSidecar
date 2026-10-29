@@ -6,6 +6,9 @@ import {serveDailyOwnerPipe,DAILY_OWNER_SCHEMA} from './daily-owner-protocol.mjs
 import {loadPackagedAssets} from './packaged-assets.mjs';
 import {createApplicationDailyOwner} from '../../../../../scripts/auth-session-fixture/x-native-metadata-probe-driver.mjs';
 import {parseStrictJSON} from '../../../../../scripts/auth-session-fixture/x-evidence-ingress.mjs';
+import {createInstagramDailyOwner} from './instagram-native-provider.mjs';
+import {INSTAGRAM_NATIVE_RECIPE} from './instagram-native-session.mjs';
+import {nativeSourceFailure} from './native-source-kernel.mjs';
 
 const rejected=()=>new Error('main_transport_rejected');
 const exact=(v,keys)=>{if(!v||typeof v!=='object'||Array.isArray(v)||Object.keys(v).length!==keys.length||keys.some(k=>!Object.hasOwn(v,k)))throw rejected();};
@@ -63,6 +66,13 @@ export async function createBorrowedDailyControl(params,transport,{createOwner=c
   });
 }
 
+// Qualification is a sealed implementation checkpoint. A control request cannot
+// supply a manifest or turn fixture evidence into native permission.
+export async function createBorrowedInstagramControl(params,transport){
+  if(INSTAGRAM_NATIVE_RECIPE.nativeQualified!==true)throw nativeSourceFailure('qualification','required');
+  return createInstagramDailyOwner(params,transport,{loadAssets:loadPackagedAssets});
+}
+
 export async function runMainBrowserTransport(){
   const [controlPipe,nonce,...extra]=process.argv.slice(2);
   if(extra.length||typeof controlPipe!=='string'||!/^\\\\\.\\pipe\\AkuBrowser\.main-transport\.[a-f0-9]{48}$/u.test(controlPipe)||
@@ -74,6 +84,7 @@ export async function runMainBrowserTransport(){
     // exit alone from sending EOF to the independently owned main Chrome.
     connect:async()=>({input:process.stdin,output:process.stdout}),
     createX:(params,transport)=>createBorrowedDailyControl(params,transport),
+    sourceFactories:{instagram:createBorrowedInstagramControl},
     onClosed:()=>{control.destroy();process.stdin.destroy();process.stdout.end();process.exitCode=0;},
   });
 }

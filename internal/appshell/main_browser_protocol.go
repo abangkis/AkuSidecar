@@ -29,6 +29,12 @@ type MainBrowserProgressProtocol interface {
 	CallXWithProgress(context.Context, string, map[string]any, func([]byte)) (json.RawMessage, error)
 }
 
+// MainBrowserSourceProtocol is an optional, source-bound private lane. Existing
+// X implementations retain their original wire contract and interfaces.
+type MainBrowserSourceProtocol interface {
+	CallSource(context.Context, string, string, map[string]any) (json.RawMessage, error)
+}
+
 // Diagnostics are a closed, Node-normalized projection. Formatting never emits
 // payloads; callers explicitly decode the private diagnostic when needed.
 type MainBrowserError struct {

@@ -26,10 +26,20 @@ async function buildOwnerPackage(outputDirectory,daily,main=false){
   const entry=main?'internal/collection/headless/worker/native-pilot/main-browser-transport.mjs':daily?'internal/collection/headless/worker/native-pilot/daily-owner.mjs':manualEntry;
   const output=resolve(outputDirectory),rel=relative(project,output);
   if(!rel||isAbsolute(rel)||rel==='..'||rel.startsWith('..'+sep))throw new Error('package_output_must_be_project_local');
-  const assets=await sourceAssets(resolve(project,'..','AkuBridge'),'x');
+  const sourceNames=main?['x','instagram']:['x'];
+  const bundles=await Promise.all(sourceNames.map(source=>sourceAssets(resolve(project,'..','AkuBridge'),source)));
+  const catalog=Object.fromEntries(sourceNames.map((source,index)=>[source,{
+    rows:bundles[index].map(({relative:asset,content,execute,newDocument,sha256})=>({relative:asset,content,execute,...(newDocument?{newDocument:true}:{}),sha256})),
+    resolver:bundles[index].structuredMediaResolver,
+  }]));
+  const uniqueAssets=new Map();
+  for(const bundle of Object.values(catalog))for(const row of bundle.rows){
+    if(uniqueAssets.has(row.relative)&&uniqueAssets.get(row.relative).sha256!==row.sha256)throw new Error('package_source_asset_conflict');
+    uniqueAssets.set(row.relative,row);
+  }
+  const assetRows=[...uniqueAssets.values()];
   const timingPath='internal/engine/x-manual-timing-policy.json',timingSource=await readFile(resolve(project,timingPath),'utf8');
-  const assetRows=assets.map(({relative:asset,content,execute,newDocument,sha256})=>({relative:asset,content,execute,...(newDocument?{newDocument:true}:{}),sha256}));
-  const assetSource='const rows='+JSON.stringify(assetRows)+';\nconst resolver='+JSON.stringify(assets.structuredMediaResolver)+';\nexport async function loadPackagedAssets(){const value=rows.map(row=>({...row}));Object.defineProperty(value,"structuredMediaResolver",{value:{...resolver},enumerable:false});return value;}\n';
+  const assetSource='const catalog='+JSON.stringify(catalog)+';\nexport async function loadPackagedAssets(source="x"){if(!Object.hasOwn(catalog,source))throw new Error("package_source_unavailable");const bundle=catalog[source],value=bundle.rows.map(row=>({...row}));Object.defineProperty(value,"structuredMediaResolver",{value:{...bundle.resolver},enumerable:false});return value;}\n';
   const graph=new Map();
   async function visit(key){
     if(graph.has(key))return;
@@ -57,7 +67,8 @@ async function buildOwnerPackage(outputDirectory,daily,main=false){
   const manifest={schema:'aku.x.application-owner-package.v1',entry,nodeMinimum:'22.15.0',capabilities:{sessionSeed:true,readerPost:true},
     ...(daily?{dailyLifecycle:true}:{}),...(main?{mainLifecycle:true}:{}),dataAssets:[{path:timingPath,sha256:hash(timingSource)}],
     modules:Object.entries(modules).map(([path,source])=>({path,sha256:hash(source)})),
-    captureAssets:assetRows.map(({relative:path,sha256})=>({path,sha256}))};
+    captureAssets:assetRows.map(({relative:path,sha256})=>({path,sha256})),
+    sourceCaptureAssets:Object.fromEntries(Object.entries(catalog).map(([source,bundle])=>[source,bundle.rows.map(({relative:path,sha256})=>({path,sha256}))]))};
   // The synchronous hook reads embedded bytes only. Runtime relative imports
   // cannot consult a mutable sibling checkout, node_modules or staged files.
   const launcher=`'use strict';
@@ -88,7 +99,7 @@ import(prefix+${JSON.stringify(entry)}).then(module=>module.${main?'runMainBrows
   await writeFile(driver,launcher,{encoding:'utf8'});
   const record={...manifest,driver:{file:driverName,sha256:hash(launcher)}};
   await writeFile(joinOutput(output,'manifest.json'),JSON.stringify(record,null,2)+'\n');
-  return{driver,manifest:joinOutput(output,'manifest.json'),sha256:record.driver.sha256,moduleCount:graph.size,assetCount:assets.length,capabilities:manifest.capabilities};
+  return{driver,manifest:joinOutput(output,'manifest.json'),sha256:record.driver.sha256,moduleCount:graph.size,assetCount:assetRows.length,capabilities:manifest.capabilities};
 }
 const joinOutput=(directory,name)=>resolve(directory,name);
 if(process.argv[1]&&pathToFileURL(resolve(process.argv[1])).href===import.meta.url){

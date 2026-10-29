@@ -63,7 +63,7 @@ func (e *Engine) SourceCaptureStatus(source domain.Source) XCaptureStatus {
 }
 
 // StartInstagramDaily uses the existing source/profile permission policy. No
-// native Instagram factory is registered until its proof/manifest is qualified.
+// packaged native Instagram factory is registered until its proof/manifest is qualified.
 func (e *Engine) StartInstagramDaily(ctx context.Context, request XDailyStartRequest) error {
 	_, err := e.dailyController(domain.SourceInstagram).start(ctx, request, nil)
 	return err

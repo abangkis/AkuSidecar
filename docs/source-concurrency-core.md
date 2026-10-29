@@ -59,6 +59,12 @@ databases only.
 
 ## Instagram qualification boundary
 
+The native provider implementation is now described in the
+[native source provider contract](native-source-provider-contract.md). Its
+private main-browser composition, proof/claim path and sealed packaging exist;
+the live IG recipe remains qualification-required. The synthetic-only adapter
+checkpoint below records the preceding increment, not native acceptance.
+
 An authenticated-looking feed, an inbox/edit-account link, or cookie presence
 alone does not establish account identity. A native Instagram adapter needs a
 qualified bounded source for account/login evidence and a source-specific

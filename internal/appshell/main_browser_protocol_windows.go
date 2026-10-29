@@ -460,6 +460,12 @@ func (c *mainBrowserClient) Call(ctx context.Context, method string, params any,
 func (c *mainBrowserClient) CallX(ctx context.Context, operation string, params map[string]any) (json.RawMessage, error) {
 	return c.request(ctx, "main_x", map[string]any{"operation": operation, "params": params})
 }
+func (c *mainBrowserClient) CallSource(ctx context.Context, source, operation string, params map[string]any) (json.RawMessage, error) {
+	if source != "instagram" {
+		return nil, errors.New("main browser source rejected")
+	}
+	return c.request(ctx, "main_source", map[string]any{"source": source, "operation": operation, "params": params})
+}
 func (c *mainBrowserClient) CallXWithProgress(ctx context.Context, operation string, params map[string]any, progress func([]byte)) (json.RawMessage, error) {
 	var mu sync.Mutex
 	count := 0

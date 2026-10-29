@@ -549,6 +549,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 			fatal(logger, captureManager.RetainForProcess())
 			fatal(logger, engine.ConfigureXMainDailyRuntime(collectionCtx, runtime, capture, captureManager, captureProfilePath(options, cfg), captureProfileDirectory, result.Executable))
 		}
+		fatal(logger, engine.ConfigureInstagramMainDailyRuntime(collectionCtx, runtime, capture, captureManager, captureProfilePath(options, cfg), captureProfileDirectory, result.Executable))
 		captureManager.SetTimingObserver(func(stage string, elapsed time.Duration, ok bool) {
 			logger.Printf("capture_transition_timing stage=%s elapsed_ms=%d ok=%t", stage, elapsed.Milliseconds(), ok)
 		})

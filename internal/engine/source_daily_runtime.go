@@ -300,7 +300,10 @@ func (d dailyController) queue(run domain.Run, payload map[string]any) error {
 			}
 		}()
 		if err := owner.CheckReader(work); err != nil {
-			cause = xDailyStartupFail(err, "reader_check", "ownership")
+			cause = err
+			if d.source == domain.SourceX {
+				cause = xDailyStartupFail(err, "reader_check", "ownership")
+			}
 			return
 		}
 		// Register the cancel/join worker before persisting its command. Stop
@@ -312,7 +315,7 @@ func (d dailyController) queue(run domain.Run, payload map[string]any) error {
 			cause = err
 			return
 		}
-		// Native startup starts the original clock at seed, not at queue admission.
+		// Each provider reports its original batch clock; queue admission cannot renew it.
 		startup, stop := context.WithCancel(work)
 		phase = "startup"
 		batch, cause = owner.BeginBatch(startup, parent, generation, run)

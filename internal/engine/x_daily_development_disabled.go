@@ -25,6 +25,15 @@ func ConfigureXMainDailyRuntime(_ context.Context, e *Engine, _ *appshell.Window
 	return nil
 }
 
+func ConfigureInstagramMainDailyRuntime(_ context.Context, e *Engine, _ *appshell.Window, _ *captureruntime.Manager, _, _, _ string) error {
+	if e != nil && e.config.Capture.InstagramCaptureMode() == config.XCaptureConcurrent {
+		e.instagramDaily.mu.Lock()
+		e.instagramDaily.reason = "native-adapter-build-unavailable"
+		e.instagramDaily.mu.Unlock()
+	}
+	return nil
+}
+
 func ConfigureXDailyNativeRuntime(_ context.Context, e *Engine, _, _ string) error {
 	if e.XDailyConfigured() {
 		return errors.New("daily X native owner unavailable in this build")

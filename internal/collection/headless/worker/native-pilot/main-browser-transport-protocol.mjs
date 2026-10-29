@@ -3,6 +3,8 @@ import {parseStrictJSON} from '../../../../../scripts/auth-session-fixture/x-evi
 import {MANUAL_TIMING} from '../../../../../scripts/auth-session-fixture/x-manual-timing-policy.mjs';
 import {STARTUP_PHASES,STARTUP_REASONS,STARTUP_ROLES,STARTUP_TRACE} from '../../../../../scripts/auth-session-fixture/x-manual-startup-diagnostic.mjs';
 import {SETTINGS_WAIT_STATES} from '../../../../../scripts/auth-session-fixture/x-settings-wait-state.mjs';
+import {createSourceOwnerRegistry,sourceOwnerRegistryFailure} from './source-owner-registry.mjs';
+import {nativeSourceDiagnostic} from './native-source-kernel.mjs';
 
 export const MAIN_TRANSPORT_SCHEMA='aku.main-browser-transport.v1';
 const rejected=()=>new Error('main_transport_rejected');
@@ -173,13 +175,19 @@ export function createMainPublicFacade(transport,{recipes=[],busy=()=>false}={})
   };
 }
 
-// The entry supplies connection and X factories. Neither a control request nor
+// The entry supplies connection and sealed source factories. Neither a control request nor
 // an error can return raw CDP frames, headers, cookies or protocol exceptions.
-export function serveMainBrowserTransport({input,output,connect,createX,recipes=[],expectedNonce,onClosed=()=>{}}){
-  let bytes=Buffer.alloc(0),closed=false,booting=false,transport,publicCall,x,xAttempted=false,busy=false,lastID=0,pending=0,publicPending=0;
+export function serveMainBrowserTransport({input,output,connect,createX,sourceFactories={},recipes=[],expectedNonce,onClosed=()=>{}}){
+  let bytes=Buffer.alloc(0),closed=false,booting=false,transport,publicCall,x,xAttempted=false,busy=null,lastID=0,pending=0,publicPending=0;
+  const sources=createSourceOwnerRegistry(sourceFactories);
+  const acquire=(lane,terminal=false)=>{
+    if(busy&&(!terminal||busy.lane!==lane))throw rejected();
+    const lock=busy??={lane,holders:0};lock.holders++;
+    return()=>{if(--lock.holders===0&&busy===lock)busy=null;};
+  };
   const seen=new Set();
   const emit=q=>{if(closed)return;const wire=Buffer.from(JSON.stringify(q)+'\n');if(wire.length>8*1024*1024){close();return;}output.write(wire,error=>{wire.fill(0);if(error)close();});};
-  const close=()=>{if(closed)return;closed=true;bytes.fill(0);input.pause();void Promise.resolve().then(()=>x?.close()).catch(()=>{}).finally(()=>{transport?.close();onClosed();});};
+  const close=()=>{if(closed)return;closed=true;bytes.fill(0);input.pause();void Promise.allSettled([Promise.resolve().then(()=>x?.close()),sources.close()]).finally(()=>{transport?.close();onClosed();});};
   async function handle(line){
     let q;try{
       q=parse(line);
@@ -200,7 +208,7 @@ export function serveMainBrowserTransport({input,output,connect,createX,recipes=
         else if(q.op==='main_x'){
           exact(q,['id','op','operation','params']);if(typeof createX!=='function'||busy&&q.operation!=='daily_reader_check')throw rejected();
           const exclusive=['daily_owner_bootstrap','daily_reader_initialize','daily_batch_begin','daily_batch_seed','daily_batch_end','daily_owner_close'].includes(q.operation);
-          if(exclusive&&publicPending)throw rejected();if(exclusive)busy=true;
+          if(exclusive&&publicPending)throw rejected();const release=exclusive?acquire('x'):()=>{};
           try{if(!x){if(q.operation!=='daily_owner_bootstrap'||xAttempted)throw rejected();xAttempted=true;x=await createX(q.params,transport);result={bound:true};}
             else{
               let terminal=false,progressCount=0;
@@ -211,11 +219,29 @@ export function serveMainBrowserTransport({input,output,connect,createX,recipes=
               };
               try{result=await x.execute(q.operation,q.params,q.id,report);}finally{terminal=true;}
             }
-          }finally{if(exclusive)busy=false;}
+          }finally{release();}
+        }else if(q.op==='main_source'){
+          exact(q,['id','op','source','operation','params']);
+          const terminal=['source_end','source_close'].includes(q.operation),lane='source:'+q.source;
+          if(typeof q.source!=='string'||typeof q.operation!=='string'||busy&&(!terminal||busy.lane!==lane))throw rejected();
+          const exclusive=['source_bootstrap','source_initialize','source_begin','source_seed','source_end','source_close'].includes(q.operation);
+          if(exclusive&&publicPending&&!terminal)throw rejected();const release=exclusive?acquire(lane,terminal):()=>{};
+          try{result=await sources.execute(q.source,q.operation,q.params,transport);}
+          finally{release();}
         }else throw rejected();
         emit({id:q.id,ok:true,result});
       }finally{pending--;}
-    }catch(error){if(q&&Number.isSafeInteger(q.id))emit({id:q.id,ok:false,error:q.op==='main_x'&&ownerFailures.has(error)?ownerFailures.get(error):{code:'main_transport_rejected'}});else close();}
+    }catch(error){
+      let failure={code:'main_transport_rejected'};
+      if(q?.op==='main_x'&&ownerFailures.has(error))failure=ownerFailures.get(error);
+      if(q?.op==='main_source'){
+        const reason=sourceOwnerRegistryFailure(error),diagnostic=nativeSourceDiagnostic(error);
+        if(reason)failure={code:'native_'+reason};
+        else if(diagnostic&&['stage','reason','cleanup'].every(key=>typeof diagnostic[key]==='string'&&/^[a-z_]{1,64}$/u.test(diagnostic[key])))
+          failure={code:`native_source_${diagnostic.stage}_${diagnostic.reason}`};
+      }
+      if(q&&Number.isSafeInteger(q.id))emit({id:q.id,ok:false,error:failure});else close();
+    }
     finally{line.fill(0);}
   }
   input.on('data',chunk=>{if(closed)return;if(bytes.length+chunk.length>8*1024*1024){close();return;}const old=bytes;bytes=Buffer.concat([old,chunk]);old.fill(0);let at;

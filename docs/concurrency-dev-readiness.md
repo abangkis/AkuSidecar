@@ -5,6 +5,11 @@ roadmap are evidence, not a new list of prerequisites.
 
 ## Shared X/Instagram core: offline integration (2026-10-29)
 
+The following native-provider increment implements the IG candidate recipe,
+private source transport and Windows ownership composition using shared lifecycle
+and Store helpers. The recipe remains unqualified and the runtime is unchanged.
+See [native source provider responsibilities and limits](native-source-provider-contract.md).
+
 The next implementation uses one source-bound daily controller for X and
 Instagram. X entry points delegate to that core while retaining their config,
 permission key and native provider behavior. Instagram uses the existing
