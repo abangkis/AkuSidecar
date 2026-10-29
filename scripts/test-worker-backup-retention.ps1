@@ -49,6 +49,14 @@ try {
     $workerRoot = Join-Path $runtimeRoot 'headless-worker'
     New-Item -ItemType Directory -Path $runtimeRoot -Force | Out-Null
     New-SyntheticWorkerBundle $workerRoot
+    [IO.File]::WriteAllText((Join-Path $workerRoot 'session-policy.mjs'), 'export const policy = "synthetic";')
+    $null = Get-WorkerBackupBundleInventory $workerRoot
+    $cookieData = Join-Path $workerRoot 'cookies.json'
+    [IO.File]::WriteAllText($cookieData, '{"synthetic":true}')
+    $cookieBlocked = $false
+    try { $null = Get-WorkerBackupBundleInventory $workerRoot } catch { $cookieBlocked = $true }
+    Assert-True $cookieBlocked 'Cookie data was accepted as executable source.'
+    Remove-Item -LiteralPath $cookieData
     $unownedBackup = Join-Path $runtimeRoot 'headless-worker.previous-legacy'
     New-SyntheticWorkerBundle $unownedBackup
     $buildPrefix = '.build-dev-headless-worker-rollback-'

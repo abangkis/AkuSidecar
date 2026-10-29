@@ -32,8 +32,12 @@ function Get-WorkerBackupBundleInventory([string] $WorkerRoot) {
         if (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
             throw "Worker bundle contains a reparse point: $($entry.FullName)"
         }
+        # Executable source modules can implement session/profile policy; their
+        # names do not make them runtime state. Directories and data files keep
+        # the strict deny rules. Bundle provenance verifies the actual code bytes.
+        $sourceModule = -not $entry.PSIsContainer -and $entry.Extension -in @('.js', '.mjs', '.cjs')
         if ($entry.Name -match '(?i)^\.env(?:\..*)?$|^(?:\.git|node_modules|cache|profile|profiles|user[-_]?data|cookies?|sessions?|credentials?|secrets?|tokens?)$' -or
-            $entry.Name -match '(?i)(cookie|session|profile|user[-_]?data|credential|secret|token)' -or
+            (-not $sourceModule -and $entry.Name -match '(?i)(cookie|session|profile|user[-_]?data|credential|secret|token)') -or
             $entry.Name -match '(?i)\.(?:db|sqlite\d?(?:-(?:wal|shm))?|jsonl|pem|key|pfx|p12|jks|log)$') {
             throw "Worker bundle contains a state or sensitive item: $($entry.FullName)"
         }
