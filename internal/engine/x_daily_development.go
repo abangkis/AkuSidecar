@@ -12,7 +12,9 @@ import (
 
 const xDailyBatchLimitMS = 60000
 
-type xDailyRouting struct {
+type xDailyRouting = sourceDailyRouting
+
+type sourceDailyRouting struct {
 	mu                         sync.RWMutex
 	permissionMu               sync.Mutex
 	attached, closed           bool
@@ -128,65 +130,68 @@ func (e *Engine) XDailyConfigured() bool {
 
 func (e *Engine) XConcurrentConfigured() bool { return e.XDailyConfigured() || e.XManualConfigured() }
 
-func (e *Engine) XCaptureStatus() XCaptureStatus {
-	status := XCaptureStatus{SelectedMode: e.config.Capture.XCaptureMode(), EffectiveMode: config.XCaptureExclusive, State: "selected", Reason: "ordinary-route", RestartRequiredForModeChange: true}
-	if !e.XDailyConfigured() {
+func (e *Engine) XCaptureStatus() XCaptureStatus { return e.dailyController(domain.SourceX).status() }
+
+func (d dailyController) status() XCaptureStatus {
+	e := d.engine
+	status := XCaptureStatus{SelectedMode: d.selectedMode(), EffectiveMode: config.XCaptureExclusive, State: "selected", Reason: "ordinary-route", RestartRequiredForModeChange: true}
+	if !d.configured() {
 		return status
 	}
 	status.EffectiveMode, status.State, status.Reason = "unavailable", "not-ready", "batch-adapter-required"
 	status.AuthorizationPolicy, status.MaxBatchMS = "profile", xDailyBatchLimitMS
 	status.ReaderBootstrapLifetime = "process"
-	if e.config.Capture.XUsesMainProfile() {
+	if d.source == domain.SourceInstagram || e.config.Capture.XUsesMainProfile() {
 		status.ReaderBootstrapLifetime = "batch"
 	}
-	e.xDaily.mu.RLock()
-	defer e.xDaily.mu.RUnlock()
-	status.RememberedPermission = e.xDaily.rememberedPermission
-	if e.xDaily.cleanupDiagnostic != nil {
-		detail := e.xDaily.cleanupDiagnostic.closed()
+	d.state.mu.RLock()
+	defer d.state.mu.RUnlock()
+	status.RememberedPermission = d.state.rememberedPermission
+	if d.state.cleanupDiagnostic != nil {
+		detail := d.state.cleanupDiagnostic.closed()
 		status.CleanupDiagnostic = &detail
 	}
-	status.FailurePhase = e.xDaily.failurePhase
-	status.FailureCode = e.xDaily.failureCode
-	status.StartupDiagnostic = xDailyStartupDetail(e.xDaily.firstFailure)
-	if e.xDaily.owner != nil {
+	status.FailurePhase = d.state.failurePhase
+	status.FailureCode = d.state.failureCode
+	status.StartupDiagnostic = xDailyStartupDetail(d.state.firstFailure)
+	if d.state.owner != nil {
 		status.Cleanup = "verified"
 		status.CleanupScope = "batch_collector"
 	}
-	if e.xDaily.done != nil {
+	if d.state.done != nil {
 		status.Cleanup = "pending"
 	}
-	if e.xDaily.startDone != nil {
+	if d.state.startDone != nil {
 		select {
-		case <-e.xDaily.startDone:
+		case <-d.state.startDone:
 		default:
 			status.Cleanup = "pending"
 		}
 	}
-	if e.xDaily.cleanupUncertain {
+	if d.state.cleanupUncertain {
 		status.Cleanup = "uncertain"
 	}
-	if e.xDaily.owner != nil {
-		status.State, status.Reason = "stopped", e.xDaily.reason
-		if e.xDaily.authorized && e.xDaily.parent.Err() == nil {
+	if d.state.owner != nil {
+		status.State, status.Reason = "stopped", d.state.reason
+		if d.state.authorized && d.state.parent.Err() == nil {
 			status.EffectiveMode, status.State, status.Reason, status.DerivationAuthorized = "concurrent", "ready", "", true
-			if e.xDaily.done != nil {
+			if d.state.done != nil {
 				status.State = "capturing"
 			}
 		}
 	}
-	if e.xDaily.owner == nil && e.xDaily.reason != "" {
-		status.State, status.Reason = "disabled", e.xDaily.reason
+	if d.state.owner == nil && d.state.reason != "" {
+		status.State, status.Reason = "disabled", d.state.reason
 	}
-	if e.xDaily.owner == nil && e.xDaily.factory != nil && !e.xDaily.startUsed && e.xDaily.reason == "" {
+	if d.state.owner == nil && d.state.factory != nil && !d.state.startUsed && d.state.reason == "" {
 		status.State, status.Reason = "disabled", "process-consent-required"
 	}
-	if e.xDaily.closed {
+	if d.state.closed {
 		status.State = "stopped"
-		if e.xDaily.reason == "" || e.xDaily.reason == "opted-out" {
+		if d.state.reason == "" || d.state.reason == "opted-out" {
 			status.Reason = "process-authorization-ended"
 		} else {
-			status.Reason = e.xDaily.reason
+			status.Reason = d.state.reason
 		}
 	}
 	return status
@@ -199,13 +204,11 @@ func (e *Engine) closeXDailySelection() {
 }
 
 func (e *Engine) xDailyUnavailable(source domain.Source) bool {
-	return source == domain.SourceX && e.XDailyConfigured() && !e.xDailyReady()
+	return e.dailySourceConfigured(source) && !e.dailySourceReady(source)
 }
 
 func (e *Engine) dailyCaptureSources(sources []domain.Source) ([]domain.Source, error) {
-	if !e.XDailyConfigured() {
-		return sources, nil
-	}
+
 	allowed := make([]domain.Source, 0, len(sources))
 	for _, source := range sources {
 		if !e.xDailyUnavailable(source) {
@@ -213,24 +216,28 @@ func (e *Engine) dailyCaptureSources(sources []domain.Source) ([]domain.Source, 
 		}
 	}
 	if len(allowed) == 0 && len(sources) > 0 {
+		if !e.XDailyConfigured() {
+			return nil, errors.New("Instagram concurrent capture is not ready: native-adapter-unqualified")
+		}
 		return nil, errors.New("X concurrent capture is not ready: batch-adapter-required")
 	}
 	return allowed, nil
 }
 
 // Reconcile before accepted-observation reasoning resumes. No collector or
-// source acquisition is performed here, and non-X work is untouched.
+// source acquisition is performed here, and ordinary unfenced work is untouched.
 func (e *Engine) ReconcileXDailyStartup(ctx context.Context) error {
-	if !e.XDailyConfigured() {
-		return nil
-	}
 	session, err := e.store.ActiveSession(ctx)
 	if err != nil || session == nil {
 		return err
 	}
 	for _, run := range session.Runs {
-		if run.Source == domain.SourceX {
-			if err = e.store.ReconcileClosedDailyXCapture(ctx, run.ID); err != nil {
+		fenced, fenceErr := e.store.HasDailySourceFence(ctx, run.Source, run.ID)
+		if fenceErr != nil {
+			return fenceErr
+		}
+		if e.dailySourceConfigured(run.Source) || fenced {
+			if err = e.store.ReconcileClosedDailySourceCapture(ctx, run.Source, run.ID); err != nil {
 				return err
 			}
 		}
@@ -241,41 +248,53 @@ func (e *Engine) ReconcileXDailyStartup(ctx context.Context) error {
 // Continue only after main's ordinary capture composition is installed. This
 // also finalizes an X-only session whose unavailable capture was rejected.
 func (e *Engine) ResumeXDailyScheduling(ctx context.Context) error {
-	if !e.XDailyConfigured() {
+	for _, source := range dailySources {
+		if e.dailySourceConfigured(source) {
+			if err := e.dailyController(source).resume(ctx); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (d dailyController) resume(ctx context.Context) error {
+	e := d.engine
+	if !d.configured() {
 		return nil
 	}
 	if ctx == nil {
-		return errors.New("daily X scheduling context required")
+		return d.failure("scheduling context required")
 	}
-	e.xDaily.mu.Lock()
-	shouldRestore := e.xDaily.factory != nil && !e.xDaily.permissionRestoreAttempted
-	profileScope := e.xDaily.profileScope
-	revision := e.xDaily.permissionRevision
+	d.state.mu.Lock()
+	shouldRestore := d.state.factory != nil && !d.state.permissionRestoreAttempted
+	profileScope := d.state.profileScope
+	revision := d.state.permissionRevision
 	var restoreDone chan struct{}
 	if shouldRestore {
-		e.xDaily.permissionRestoreAttempted = true
+		d.state.permissionRestoreAttempted = true
 		restoreDone = make(chan struct{})
-		e.xDaily.permissionRestoreDone = restoreDone
+		d.state.permissionRestoreDone = restoreDone
 	} else {
-		restoreDone = e.xDaily.permissionRestoreDone
+		restoreDone = d.state.permissionRestoreDone
 	}
-	e.xDaily.mu.Unlock()
+	d.state.mu.Unlock()
 	if shouldRestore {
 		func() {
 			defer func() {
-				e.xDaily.mu.Lock()
-				if e.xDaily.permissionRestoreDone == restoreDone {
-					e.xDaily.permissionRestoreDone = nil
+				d.state.mu.Lock()
+				if d.state.permissionRestoreDone == restoreDone {
+					d.state.permissionRestoreDone = nil
 				}
 				close(restoreDone)
-				e.xDaily.mu.Unlock()
+				d.state.mu.Unlock()
 			}()
-			remembered, permissionErr := e.store.XDailyPermission(ctx, profileScope)
-			if !e.publishRestoredXDailyPermission(revision, remembered, permissionErr) {
+			remembered, permissionErr := e.store.DailySourcePermission(ctx, d.source, profileScope)
+			if !d.publishRestoredPermission(revision, remembered, permissionErr) {
 				return
 			}
 			if permissionErr == nil && remembered {
-				e.restoreXDailyStart(ctx, revision)
+				d.restoreStart(ctx, revision)
 			}
 		}()
 	} else if restoreDone != nil {
@@ -294,28 +313,36 @@ func (e *Engine) ResumeXDailyScheduling(ctx context.Context) error {
 }
 
 func (e *Engine) restoreXDailyStart(ctx context.Context, revision uint64) {
-	admitted, err := e.startXDaily(ctx, XDailyStartRequest{AcknowledgeLimitations: true, AllowProcessSessionDerivation: true}, &revision)
+	e.dailyController(domain.SourceX).restoreStart(ctx, revision)
+}
+
+func (d dailyController) restoreStart(ctx context.Context, revision uint64) {
+	admitted, err := d.start(ctx, XDailyStartRequest{AcknowledgeLimitations: true, AllowProcessSessionDerivation: true}, &revision)
 	if !admitted || err == nil {
 		return
 	}
-	e.xDaily.mu.Lock()
-	defer e.xDaily.mu.Unlock()
-	if e.xDaily.permissionRevision == revision+1 && e.xDaily.reason == "" {
-		e.xDaily.startUsed = true
-		e.xDaily.reason = "permission-start-failed"
+	d.state.mu.Lock()
+	defer d.state.mu.Unlock()
+	if d.state.permissionRevision == revision+1 && d.state.reason == "" {
+		d.state.startUsed = true
+		d.state.reason = "permission-start-failed"
 	}
 }
 
 func (e *Engine) publishRestoredXDailyPermission(revision uint64, remembered bool, readErr error) bool {
-	e.xDaily.mu.Lock()
-	defer e.xDaily.mu.Unlock()
-	if e.xDaily.permissionRevision != revision {
+	return e.dailyController(domain.SourceX).publishRestoredPermission(revision, remembered, readErr)
+}
+
+func (d dailyController) publishRestoredPermission(revision uint64, remembered bool, readErr error) bool {
+	d.state.mu.Lock()
+	defer d.state.mu.Unlock()
+	if d.state.permissionRevision != revision {
 		return false
 	}
-	e.xDaily.rememberedPermission = remembered && readErr == nil
+	d.state.rememberedPermission = remembered && readErr == nil
 	if readErr != nil {
-		e.xDaily.authorized = false
-		e.xDaily.reason = "permission-read-failed"
+		d.state.authorized = false
+		d.state.reason = "permission-read-failed"
 	}
 	return true
 }

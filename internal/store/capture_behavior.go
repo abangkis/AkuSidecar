@@ -39,7 +39,7 @@ func (s *Store) captureBehaviorDecision(ctx context.Context, tx *sql.Tx, source 
 		// A manual pilot is exclusive with ordinary capture for this source,
 		// independently of the optional spacing configuration.
 		var active int
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM bridge_commands c JOIN runs r ON r.id=c.run_id JOIN meta m ON m.key=?||r.session_id WHERE r.source=? AND c.status='claimed'`, manualPilotSessionPrefix, source).Scan(&active); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM bridge_commands c JOIN runs r ON r.id=c.run_id JOIN meta m ON (m.key=?||r.session_id OR m.key=?||r.session_id||':instagram') WHERE r.source=? AND c.status='claimed'`, manualPilotSessionPrefix, manualPilotSessionPrefix, source).Scan(&active); err != nil {
 			return batchbehavior.Decision{}, err
 		}
 		if active > 0 {

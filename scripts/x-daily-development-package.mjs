@@ -8,6 +8,9 @@ const schema='aku.x.daily-development-package.v1';
 const mainSchema='aku.x.daily-development-package.v2';
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 export const dailyPackageSchema=schema;
+// Retain verification of historical X-only schema-30 packages. New source-bound
+// authority uses schema 31; neither value grants runtime compatibility itself.
+export const dailyDatabaseSchemas=Object.freeze([30,31]);
 export function dailyReaderContract(source='dedicated'){
   if(source==='dedicated')return{source,schema,directory:'x-daily-owner',driver:'x-daily-owner.cjs',
     entry:'internal/collection/headless/worker/native-pilot/daily-owner.mjs',lifecycle:'dailyLifecycle'};
@@ -246,7 +249,7 @@ export async function verifyDailyPackage(path){
     permitted(row);reject((await fileRecord(row.path)).sha256===row.sha256,'daily_input_stale');
   }
   for(const name of requiredRuntimeSchemas)reject(manifest.sourceInputs.some(row=>resolve(row.path)===join(layout.root,'schemas',name)),'daily_schema_missing');
-  reject(manifest.configProbe?.status==='ok'&&manifest.configProbe.databaseSchemaVersion===30,'daily_schema_probe_rejected');
+  reject(manifest.configProbe?.status==='ok'&&dailyDatabaseSchemas.includes(manifest.configProbe.databaseSchemaVersion),'daily_schema_probe_rejected');
   reject(await absent(join(root,'activation-receipt.json')),'daily_package_already_handed_off');
   return{packageId:manifest.packageId,sourceCommit:manifest.sourceCommit,filesVerified:manifest.files.length,
     preparationOnly:true,executionApproved:false,activationReady:false,readerSource:source,readerSelection:manifest.reader.selection,

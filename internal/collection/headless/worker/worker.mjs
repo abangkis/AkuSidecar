@@ -8,6 +8,7 @@ import { launchChrome } from './chrome.mjs';
 import { createBorrowedChrome, createBorrowedRPC } from './borrowed.mjs';
 import { capture } from './capture.mjs';
 import { sourceProvenance } from './provenance.mjs';
+export { createSourceConcurrentAdapter } from './source-concurrent-adapter.mjs';
 
 export const WORKER_VERSION = '1.0.0';
 export const PROTOCOL_VERSION = 1;
@@ -68,7 +69,7 @@ export async function sourceAssets(bridgePath, source) {
       ];
   selected.splice(selected.findIndex(asset => asset.relative === `AkuBridge/adapters/${source}-adapter.js`) + 1, 0,
     { relative: 'AkuBridge/source-freshness-runtime.js', path: resolve(bridge, 'source-freshness-runtime.js'), execute: true });
-  const workerModules = ['capture-primitives.mjs', 'capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'structured-media.mjs', 'additional-source-media.mjs', 'photo-recapture.mjs', 'x-text-recovery.mjs', 'x-passive-evidence.mjs', 'headless-freshness.mjs', 'source-freshness-contract.mjs', 'worker.mjs', 'package.json']
+  const workerModules = ['capture-primitives.mjs', 'capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'structured-media.mjs', 'additional-source-media.mjs', 'photo-recapture.mjs', 'x-text-recovery.mjs', 'x-passive-evidence.mjs', 'headless-freshness.mjs', 'source-freshness-contract.mjs', 'source-concurrent-adapter.mjs', 'worker.mjs', 'package.json']
     .map(name => ({ relative: `worker/${name}`, path: resolve(root, name), execute: false }));
   const assets = [];
   for (const asset of [...shared, ...selected, ...workerModules]) {

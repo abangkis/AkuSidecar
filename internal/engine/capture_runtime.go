@@ -832,7 +832,7 @@ func (e *Engine) admitHybridRun(ctx context.Context, session domain.Session, run
 	// collector. A requested Browser owner needs no temporary Facebook borrow;
 	// that exception belongs to the legacy common-headless route. Keep the
 	// predecessor, lease and generation checks below for both admission paths.
-	ordinaryDailyBrowser := e.XDailyConfigured() && run.Source != domain.SourceX &&
+	ordinaryDailyBrowser := (e.XDailyConfigured() || e.dailySourceConfigured(domain.SourceInstagram)) && !e.dailySourceConfigured(run.Source) &&
 		e.collectionRuntime != nil && e.collectionRuntime.Status().Requested == "browser"
 	if desired == "browser" && !ordinaryDailyBrowser {
 		if err := e.beginHybridBrowserCollection(session.ID, run.Source); err != nil {
@@ -916,6 +916,16 @@ func (e *Engine) hybridPredecessorsDrained(ctx context.Context, session domain.S
 		e.mu.RUnlock()
 		if active || pending {
 			return false, nil
+		}
+		if e.dailySourceConfigured(previous.Source) {
+			d := e.dailyController(previous.Source)
+			d.state.mu.RLock()
+			owned := d.state.done != nil && d.state.runID == previous.ID
+			uncertain := d.state.cleanupUncertain
+			d.state.mu.RUnlock()
+			if owned || uncertain {
+				return false, nil
+			}
 		}
 	}
 	drained, err := e.store.SessionCaptureCommandsDrained(ctx, session.ID, &run.Ordinal)

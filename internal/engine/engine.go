@@ -97,6 +97,7 @@ type Engine struct {
 	captureBehaviorMu                        sync.Mutex
 	xManual                                  xManualRouting
 	xDaily                                   xDailyRouting
+	instagramDaily                           xDailyRouting
 	captureWork                              map[string]context.CancelFunc
 }
 
@@ -666,9 +667,9 @@ func (e *Engine) startSession(ctx context.Context, intent string, policy domain.
 		return domain.Session{}, errors.New("collection runtime does not match the saved collection mode")
 	}
 	validSources := e.grantedActiveSources(settings)
-	if e.xDailyReady() {
+	{
 		for _, source := range settings.ActiveSources {
-			if source == domain.SourceX {
+			if e.dailySourceReady(source) {
 				found := false
 				for _, v := range validSources {
 					if v == source {
@@ -681,13 +682,8 @@ func (e *Engine) startSession(ctx context.Context, intent string, policy domain.
 			}
 		}
 	}
-	if e.xDailyReady() {
-		e.xDaily.mu.RLock()
-		busy := e.xDaily.done != nil
-		e.xDaily.mu.RUnlock()
-		if busy {
-			return domain.Session{}, errors.New("daily X collector cleanup is pending")
-		}
+	if err := e.dailyCleanupPending(); err != nil {
+		return domain.Session{}, err
 	}
 	validSources, err = e.dailyCaptureSources(validSources)
 	if err != nil {
@@ -713,8 +709,8 @@ func (e *Engine) startSession(ctx context.Context, intent string, policy domain.
 		}
 	}
 	var session domain.Session
-	if e.XDailyConfigured() && e.xDailyReady() {
-		session, err = e.store.CreateDailyXUpdateSession(ctx, intent, settings, policy)
+	if sources := e.readyDailySources(); len(sources) > 0 {
+		session, err = e.store.CreateDailySourceUpdateSession(ctx, intent, settings, policy, sources)
 	} else {
 		session, err = e.store.CreateUpdateSession(ctx, intent, settings, policy)
 	}
@@ -765,6 +761,10 @@ func (e *Engine) startNextLocked(ctx context.Context, sessionID string) (*domain
 	for run != nil && e.xDailyUnavailable(run.Source) {
 		skippedDailyX = true
 		failure := domain.Failure{Code: "x_concurrent_not_ready", Stage: "capture", Message: "X concurrent capture is not ready: batch-adapter-required", Retryable: true}
+		if run.Source == domain.SourceInstagram {
+			failure.Code = "instagram_concurrent_not_ready"
+			failure.Message = "Instagram concurrent capture is not ready: native-adapter-unqualified"
+		}
 		if err := e.store.FailRun(ctx, run.ID, failure); err != nil {
 			return nil, err
 		}
@@ -860,7 +860,7 @@ func (e *Engine) startNextLocked(ctx context.Context, sessionID string) (*domain
 		e.launchLivingTopicRouting(sessionID)
 		return nil, nil
 	}
-	if run.Source == domain.SourceX && e.XDailyConfigured() && e.xDailyReady() {
+	if e.dailySourceReady(run.Source) {
 		// The daily collector owns a separate browser, but Store still serializes
 		// this session's capture commands. Drain predecessors before registering
 		// a worker or starting native derivation; do not borrow the ordinary owner.
@@ -883,8 +883,8 @@ func (e *Engine) startNextLocked(ctx context.Context, sessionID string) (*domain
 			payload["scrollFraction"] = behavior.ScrollFraction
 			payload["scrollSettleMs"] = behavior.ScrollSettleMS
 		}
-		if err = e.queueXDailyBatch(*run, payload); err != nil {
-			if failErr := e.store.RejectUnavailableXCapture(ctx, run.ID); failErr != nil {
+		if err = e.dailyController(run.Source).queue(*run, payload); err != nil {
+			if failErr := e.store.RejectUnavailableSourceCapture(ctx, run.Source, run.ID); failErr != nil {
 				return nil, failErr
 			}
 			return e.startNextLocked(ctx, sessionID)
@@ -1855,7 +1855,7 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 		_, err = e.startNext(ctx, run.SessionID)
 		return err
 	}
-	dailyRoundOne, err := e.store.IsDailyXCapture(ctx, runID)
+	dailyRoundOne, err := e.store.IsDailySourceCapture(ctx, runID)
 	if err != nil {
 		return err
 	}

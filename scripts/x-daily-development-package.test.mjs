@@ -85,6 +85,18 @@ test('daily proposal preserves ordinary arguments/state and never grants process
   const result=await verifyDailyPackage(f.path);assert.equal(result.databaseOpened,false);assert.equal(result.profileInspected,false);assert.equal(result.activationReady,false);
   await assert.rejects(readFile(f.manifest.ordinary.database),{code:'ENOENT'});
 });
+
+test('package verification accepts current schema31 and historical30 but rejects other schema probes',async t=>{
+  const f=await fixture(t);
+  for(const version of [30,31]){
+    f.manifest.configProbe.databaseSchemaVersion=version;await f.save();
+    const result=await verifyDailyPackage(f.path);assert.equal(result.activationReady,false);assert.equal(result.databaseOpened,false);
+  }
+  for(const version of [29,32,'31',31.5]){
+    f.manifest.configProbe.databaseSchemaVersion=version;await f.save();
+    await assert.rejects(verifyDailyPackage(f.path),/daily_schema_probe_rejected/);
+  }
+});
 test('daily layout rejects QA selectors, duplicate path overrides and relocated cwd',async t=>{
   const f=await fixture(t);
   for(const arg of ['--dev-session-reuse=native-x-manual','--dev-qa-pilot-plan=other','--provider=other',

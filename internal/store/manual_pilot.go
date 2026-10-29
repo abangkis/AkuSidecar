@@ -88,7 +88,12 @@ type manualPilotState struct {
 
 func rejectManualPilotRun(ctx context.Context, tx *sql.Tx, runID string) error {
 	var n int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM runs r JOIN meta m ON m.key=?||r.session_id WHERE r.id=? AND (r.source='x' OR COALESCE(json_extract(m.value,'$.runScoped'),0)<>1)`, manualPilotSessionPrefix, runID).Scan(&n); err != nil {
+	// The durable key determines the protected source, even if a stored source
+	// field is missing or damaged. Mutable receipt data cannot remove a fence.
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM runs r JOIN meta m ON
+	 (m.key=?||r.session_id AND (r.source='x' OR COALESCE(json_extract(m.value,'$.runScoped'),0)<>1)) OR
+	 (m.key=?||r.session_id||':instagram' AND (r.source='instagram' OR COALESCE(json_extract(m.value,'$.runScoped'),0)<>1))
+	 WHERE r.id=?`, manualPilotSessionPrefix, manualPilotSessionPrefix, runID).Scan(&n); err != nil {
 		return err
 	}
 	if n != 0 {
@@ -110,7 +115,7 @@ func writeManualState(ctx context.Context, tx *sql.Tx, v manualPilotState, old s
 	if err != nil {
 		return err
 	}
-	r, err := tx.ExecContext(ctx, `UPDATE meta SET value=? WHERE key=? AND value=?`, string(raw), manualPilotSessionPrefix+v.SessionID, old)
+	r, err := tx.ExecContext(ctx, `UPDATE meta SET value=? WHERE key=? AND value=?`, string(raw), manualPilotSessionPrefix+manualScopeID(v.SessionID, v.Source), old)
 	if err != nil {
 		return err
 	}
@@ -136,13 +141,13 @@ func revokeManualPilotSessionTx(ctx context.Context, tx *sql.Tx, id string) erro
 	return writeManualState(ctx, tx, v, raw)
 }
 func (s *Store) liveManualPilot(ctx context.Context, tx *sql.Tx, p *ManualPilotPermit) error {
-	if p == nil || p.store != s || p.revoked.Load() || !s.Now().Before(p.deadline) || s.manualPilots[p.state.SessionID] != p {
+	if p == nil || p.store != s || p.revoked.Load() || !s.Now().Before(p.deadline) || s.manualPilots[manualScopeID(p.state.SessionID, p.state.Source)] != p {
 		return errManualPilot
 	}
-	if err := requireSourceCaptureAllowed(ctx, tx, domain.SourceX); err != nil {
+	if err := requireSourceCaptureAllowed(ctx, tx, p.state.Source); err != nil {
 		return err
 	}
-	v, _, err := readManualState(ctx, tx, p.state.SessionID)
+	v, _, err := readManualState(ctx, tx, manualScopeID(p.state.SessionID, p.state.Source))
 	if err != nil {
 		return err
 	}
@@ -159,14 +164,14 @@ func (s *Store) liveManualPilot(ctx context.Context, tx *sql.Tx, p *ManualPilotP
 	if err = tx.QueryRowContext(ctx, `SELECT r.source,r.session_id,r.status,s.status,s.coverage_json FROM runs r JOIN sessions s ON s.id=r.session_id WHERE r.id=?`, v.RunID).Scan(&source, &session, &status, &sessionStatus, &coverage); err != nil {
 		return err
 	}
-	if source != string(domain.SourceX) || session != v.SessionID || status == "cancelled" || status == "failed" || status == "completed" || sessionStatus == "cancelled" || sessionStatus == "completed" || sessionStatus == "failed" {
+	if !supportedDailySource(v.Source) || source != string(v.Source) || session != v.SessionID || status == "cancelled" || status == "failed" || status == "completed" || sessionStatus == "cancelled" || sessionStatus == "completed" || sessionStatus == "failed" {
 		return errManualPilot
 	}
 	var plan struct {
 		Policy  string            `json:"collectionPolicy"`
 		Drivers map[string]string `json:"collectionSourceDrivers"`
 	}
-	if json.Unmarshal([]byte(coverage), &plan) != nil || plan.Policy != domain.SessionCollectionPolicyHybridHeadlessV1 || plan.Drivers["x"] != "headless" {
+	if json.Unmarshal([]byte(coverage), &plan) != nil || plan.Policy != domain.SessionCollectionPolicyHybridHeadlessV1 || plan.Drivers[string(v.Source)] != "headless" {
 		return errManualPilot
 	}
 	// SQLite reads can wait. Recheck elapsed authority after the last database
@@ -216,9 +221,11 @@ func writeManualOp(ctx context.Context, tx *sql.Tx, v ManualPilotOperation) erro
 func (s *Store) finishManualTx(ctx context.Context, tx *sql.Tx, op ManualPilotOperation) (ManualPilotOutcome, error) {
 	retireDaily := func() {
 		if op.Kind == "revoke" {
-			if p := s.manualPilots[op.SessionID]; p != nil && p.state.RunScoped && p.state.Attempt == op.Binding {
-				delete(s.manualPilots, op.SessionID)
-				s.manualPilotClosures.Delete(op.SessionID)
+			for key, p := range s.manualPilots {
+				if p.state.SessionID == op.SessionID && p.state.RunID == op.RunID && p.state.RunScoped && p.state.Attempt == op.Binding {
+					delete(s.manualPilots, key)
+					s.manualPilotClosures.Delete(key)
+				}
 			}
 		}
 	}
@@ -276,14 +283,14 @@ func (s *Store) ClaimManualPilotWithBehavior(ctx context.Context, p *ManualPilot
 	if e = s.liveManualPilot(ctx, tx, p); e != nil {
 		return result, e
 	}
-	active, e := activeSourceCaptureCount(ctx, tx, domain.SourceX)
+	active, e := activeSourceCaptureCount(ctx, tx, p.state.Source)
 	if e != nil {
 		return result, e
 	}
 	if active != 0 {
 		return result, errors.New("manual capture admission busy")
 	}
-	if allowed, err := s.captureBehaviorAllowed(ctx, tx, domain.SourceX, policy); err != nil || !allowed {
+	if allowed, err := s.captureBehaviorAllowed(ctx, tx, p.state.Source, policy); err != nil || !allowed {
 		if err == nil {
 			err = errors.New("manual capture pacing waiting")
 		}
@@ -393,7 +400,7 @@ func (s *Store) CommitManualPilotResult(ctx context.Context, h *ManualPilotClaim
 	if e = s.liveManualPilot(ctx, tx, p); e != nil {
 		return RejectedNoMutation, e
 	}
-	if clone.Source != domain.SourceX || h.binding != p.state.Attempt {
+	if clone.Source != p.state.Source || h.binding != p.state.Attempt {
 		return RejectedNoMutation, errManualPilot
 	}
 	claim, e := readManualOp(ctx, tx, h.claimOpID)
@@ -408,7 +415,7 @@ func (s *Store) CommitManualPilotResult(ctx context.Context, h *ManualPilotClaim
 		return RejectedNoMutation, e
 	}
 	if p.state.RunScoped {
-		if _, e = tx.ExecContext(ctx, `UPDATE runs SET coverage_json=json_set(coverage_json,'$.dailyXAcquisitionPolicy','round_one_v1') WHERE id=?`, p.state.RunID); e != nil {
+		if _, e = tx.ExecContext(ctx, `UPDATE runs SET coverage_json=json_set(coverage_json,?,'round_one_v1') WHERE id=?`, dailyAcquisitionPath(p.state.Source), p.state.RunID); e != nil {
 			return RejectedNoMutation, e
 		}
 	}
@@ -453,7 +460,7 @@ func (s *Store) RevokeManualPilot(ctx context.Context, p *ManualPilotPermit, opI
 	if !errors.Is(pe, sql.ErrNoRows) {
 		return Indeterminate, pe
 	}
-	v, raw, e := readManualState(ctx, tx, p.state.SessionID)
+	v, raw, e := readManualState(ctx, tx, manualScopeID(p.state.SessionID, p.state.Source))
 	if e != nil {
 		return Indeterminate, e
 	}
@@ -470,4 +477,20 @@ func (s *Store) RevokeManualPilot(ctx context.Context, p *ManualPilotPermit, opI
 		return Indeterminate, e
 	}
 	return s.finishManualTx(ctx, tx, op)
+}
+
+func supportedDailySource(source domain.Source) bool {
+	return source == domain.SourceX || source == domain.SourceInstagram
+}
+func manualScopeID(session string, source domain.Source) string {
+	if source == domain.SourceInstagram {
+		return session + ":instagram"
+	}
+	return session
+}
+func dailyAcquisitionPath(source domain.Source) string {
+	if source == domain.SourceX {
+		return "$.dailyXAcquisitionPolicy"
+	}
+	return "$.dailyInstagramAcquisitionPolicy"
 }

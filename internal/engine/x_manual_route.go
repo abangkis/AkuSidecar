@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
@@ -47,18 +48,20 @@ type xManualStarter interface {
 }
 
 func (e *Engine) xManualStartupPending() bool {
-	e.xDaily.mu.RLock()
-	dailyStart := e.xDaily.startDone
-	dailyUncertain := e.xDaily.cleanupUncertain
-	e.xDaily.mu.RUnlock()
-	if dailyUncertain {
-		return true
-	}
-	if dailyStart != nil {
-		select {
-		case <-dailyStart:
-		default:
+	for _, source := range dailySources {
+		d := e.dailyController(source)
+		d.state.mu.RLock()
+		dailyStart, dailyUncertain := d.state.startDone, d.state.cleanupUncertain
+		d.state.mu.RUnlock()
+		if dailyUncertain {
 			return true
+		}
+		if dailyStart != nil {
+			select {
+			case <-dailyStart:
+			default:
+				return true
+			}
 		}
 	}
 	e.xManual.mu.RLock()
@@ -170,7 +173,7 @@ func (e *Engine) PrepareXManualReader(ctx context.Context, req readerbroker.Requ
 // Hold the read lock through the ordinary durable claim. Startup reserves X
 // under the write lock, so a preliminary availability check cannot race it.
 func (e *Engine) ordinarySourceRoute(source domain.Source) (func(), bool) {
-	if source == domain.SourceX && e.XDailyConfigured() {
+	if e.dailySourceConfigured(source) {
 		return func() {}, false
 	}
 	if source != domain.SourceX {
@@ -196,15 +199,18 @@ func (e *Engine) stepXManual(ctx context.Context) {
 func (e *Engine) ordinaryPendingRun(ctx context.Context, collector string) (string, error) {
 	e.xManual.mu.RLock()
 	r := e.xManual.route
-	blocked := e.XDailyConfigured() || e.xManual.starting || r != nil && r.occupied()
+	blocked := e.XDailyConfigured() || e.dailySourceConfigured(domain.SourceInstagram) || e.xManual.starting || r != nil && r.occupied()
 	e.xManual.mu.RUnlock()
 	if blocked {
-		return e.store.PendingRunIDForCollectorExcept(ctx, collector, domain.SourceX)
+		return e.store.PendingRunIDForCollectorExceptSources(ctx, collector, e.ordinaryExcludedSources())
 	}
 	return e.store.PendingRunIDForCollector(ctx, collector)
 }
 
 func (e *Engine) shutdownXManual() {
+	cleanup, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_ = e.closeInstagramDaily(cleanup)
 	e.closeXDailySelection()
 	e.xManual.mu.Lock()
 	e.xManual.closed = true

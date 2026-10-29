@@ -16,18 +16,22 @@ import (
 
 // Private trusted composition supplies these ports. The process reader and
 // its authorization outlive successful batches; every collector is disposable.
-type xDailyNativeOwner interface {
+type sourceDailyOwner interface {
 	BeginBatch(context.Context, context.Context, uint64, domain.Run) (xDailyNativeBatch, error)
 	PrepareReader(context.Context, readerbroker.Request, string) (readerbroker.NativePostPreparation, error)
 	CheckReader(context.Context) error
 	Close(context.Context) error
 }
-type xDailyNativeBatch interface {
+type sourceDailyBatch interface {
 	StartedAt() time.Time
 	Deadline() time.Time
 	Capture(context.Context, string) (domain.Run, error)
 	Close(context.Context) error
 }
+
+// Compatibility aliases keep the existing X provider and API contract unchanged.
+type xDailyNativeOwner = sourceDailyOwner
+type xDailyNativeBatch = sourceDailyBatch
 
 type XDailyStartRequest struct {
 	AcknowledgeLimitations        bool `json:"acknowledgeLimitations"`
@@ -35,28 +39,7 @@ type XDailyStartRequest struct {
 }
 
 func (e *Engine) configureXDailyFactory(parent context.Context, factory func(context.Context, context.Context) (xDailyNativeOwner, error), profileScopes ...string) error {
-	if !e.XDailyConfigured() || !e.config.Dev || parent == nil || factory == nil || parent.Err() != nil {
-		return errors.New("daily X factory rejected")
-	}
-	if len(profileScopes) > 1 {
-		return errors.New("daily X factory profile scope rejected")
-	}
-	profileScope := xDailyProfileScope(e.config.Root, e.config.Database.Path, "synthetic-root", "synthetic-directory")
-	if len(profileScopes) == 1 {
-		profileScope = profileScopes[0]
-	}
-	if !validXDailyProfileScope(profileScope) {
-		return errors.New("daily X factory profile scope rejected")
-	}
-	e.xDaily.mu.Lock()
-	defer e.xDaily.mu.Unlock()
-	if !e.xDaily.attached || e.xDaily.factory != nil || e.xDaily.owner != nil || e.xDaily.closed {
-		return errors.New("daily X factory already selected")
-	}
-	e.xDaily.parent = parent
-	e.xDaily.factory = factory
-	e.xDaily.profileScope = profileScope
-	return nil
+	return e.dailyController(domain.SourceX).configure(parent, factory, profileScopes...)
 }
 
 func (e *Engine) StartXDaily(ctx context.Context, request XDailyStartRequest) error {
@@ -67,293 +50,29 @@ func (e *Engine) StartXDaily(ctx context.Context, request XDailyStartRequest) er
 // startXDaily checks a restore's read revision in the same critical section
 // that claims startup. A newer explicit decision supersedes the restore.
 func (e *Engine) startXDaily(ctx context.Context, request XDailyStartRequest, restoreRevision *uint64) (bool, error) {
-	if !e.XDailyConfigured() || !e.config.Dev || ctx == nil || ctx.Err() != nil || !request.AcknowledgeLimitations || !request.AllowProcessSessionDerivation {
-		return false, errors.New("daily X process consent required")
-	}
-	e.xDaily.permissionMu.Lock()
-	e.xDaily.mu.Lock()
-	if restoreRevision != nil && e.xDaily.permissionRevision != *restoreRevision {
-		e.xDaily.mu.Unlock()
-		e.xDaily.permissionMu.Unlock()
-		return false, nil
-	}
-	if e.xDaily.closed || e.xDaily.reason != "" || e.xDaily.startUsed || e.xDaily.factory == nil {
-		e.xDaily.mu.Unlock()
-		e.xDaily.permissionMu.Unlock()
-		return false, errors.New("daily X process start unavailable or consumed")
-	}
-	e.xDaily.startUsed = true
-	e.xDaily.permissionRevision++
-	factory, parent, profileScope := e.xDaily.factory, e.xDaily.parent, e.xDaily.profileScope
-	call, cancel := context.WithCancel(ctx)
-	done := make(chan struct{})
-	e.xDaily.startDone = done
-	e.xDaily.cancelStart = cancel
-	e.xDaily.mu.Unlock()
-	stopParent := context.AfterFunc(parent, cancel)
-	defer func() {
-		stopParent()
-		cancel()
-		e.xDaily.mu.Lock()
-		if e.xDaily.startDone == done {
-			e.xDaily.cancelStart = nil
-		}
-		close(done)
-		e.xDaily.mu.Unlock()
-	}()
-	if err := e.store.SaveXDailyPermission(ctx, profileScope, true); err != nil {
-		e.xDaily.mu.Lock()
-		e.xDaily.startUsed = false
-		e.xDaily.mu.Unlock()
-		e.xDaily.permissionMu.Unlock()
-		return true, errors.New("daily X permission could not be saved")
-	}
-	e.xDaily.mu.Lock()
-	e.xDaily.rememberedPermission = true
-	e.xDaily.mu.Unlock()
-	e.xDaily.permissionMu.Unlock()
-	owner, err := factory(call, parent)
-	if err == nil && call.Err() != nil {
-		err = call.Err()
-	}
-	if err == nil {
-		err = e.installXDailyOwner(parent, owner)
-	}
-	if err != nil {
-		cleanupFailed := false
-		if owner != nil {
-			cleanup, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			if cleanupErr := owner.Close(cleanup); cleanupErr != nil {
-				cleanupFailed = true
-				e.rememberXDailyCleanup(xDailyCleanupFail(cleanupErr, "owner_close", "unverified"))
-			}
-			cancel()
-		}
-		e.xDaily.mu.Lock()
-		if cleanupFailed {
-			e.xDaily.owner = owner
-			e.xDaily.cleanupUncertain = true
-		}
-		if e.xDaily.reason == "" {
-			e.xDaily.reason = "reader-start-failed"
-			e.xDaily.failurePhase = "reader-startup"
-			e.xDaily.firstFailure = err
-			e.xDaily.failureCode = xDailyClosedFailureCode(err)
-		}
-		e.xDaily.mu.Unlock()
-		return true, errors.New("daily X reader startup failed")
-	}
-	return true, nil
+	return e.dailyController(domain.SourceX).start(ctx, request, restoreRevision)
 }
 
 // RevokeXDailyPermission persists explicit opt-out before ending the current
 // process grant. Ordinary shutdown intentionally leaves the preference intact.
 func (e *Engine) RevokeXDailyPermission(ctx context.Context) error {
-	if ctx == nil {
-		return errors.New("daily X revocation context required")
-	}
-	if !e.XDailyConfigured() {
-		return nil
-	}
-	if e.store == nil {
-		return errors.New("daily X permission store unavailable")
-	}
-	e.xDaily.permissionMu.Lock()
-	e.xDaily.mu.Lock()
-	profileScope := e.xDaily.profileScope
-	e.xDaily.permissionRevision++
-	e.xDaily.mu.Unlock()
-	if !validXDailyProfileScope(profileScope) {
-		stopErr := e.stopXDaily(ctx)
-		e.xDaily.permissionMu.Unlock()
-		return errors.Join(errors.New("daily X profile scope unavailable"), stopErr)
-	}
-	saveErr := e.store.SaveXDailyPermission(ctx, profileScope, false)
-	if saveErr == nil {
-		e.xDaily.mu.Lock()
-		e.xDaily.rememberedPermission = false
-		e.xDaily.mu.Unlock()
-	}
-	stopErr := e.stopXDaily(ctx)
-	e.xDaily.permissionMu.Unlock()
-	if saveErr != nil || stopErr != nil {
-		return errors.Join(saveErr, stopErr)
-	}
-	return nil
+	return e.dailyController(domain.SourceX).revoke(ctx)
 }
 
 func (e *Engine) installXDailyOwner(parent context.Context, owner xDailyNativeOwner) error {
-	if !e.XDailyConfigured() || !e.config.Dev || parent == nil || parent.Err() != nil || owner == nil {
-		return errors.New("daily X owner selection rejected")
-	}
-	if err := owner.CheckReader(parent); err != nil {
-		return errors.New("daily X reader unavailable")
-	}
-	e.xDaily.mu.Lock()
-	defer e.xDaily.mu.Unlock()
-	if !e.xDaily.attached || e.xDaily.closed || e.xDaily.reason != "" || e.xDaily.owner != nil {
-		return errors.New("daily X process authorization unavailable")
-	}
-	e.xDaily.owner = owner
-	e.xDaily.parent = parent
-	e.xDaily.authorized = true
-	return nil
+	return e.dailyController(domain.SourceX).install(parent, owner)
 }
 
 func (e *Engine) xDailyReady() bool {
-	e.xDaily.mu.RLock()
-	defer e.xDaily.mu.RUnlock()
-	return e.XDailyConfigured() && e.xDaily.owner != nil && e.xDaily.authorized && !e.xDaily.closed && e.xDaily.parent != nil && e.xDaily.parent.Err() == nil
+	return e.dailyController(domain.SourceX).ready()
 }
 
 func (e *Engine) prepareXDailyReader(ctx context.Context, req readerbroker.Request, marker string) (readerbroker.NativePostPreparation, error) {
-	e.xDaily.mu.RLock()
-	owner := e.xDaily.owner
-	parent := e.xDaily.parent
-	e.xDaily.mu.RUnlock()
-	if owner == nil || parent == nil || parent.Err() != nil {
-		return readerbroker.NativePostPreparation{}, errors.New("daily X reader unavailable")
-	}
-	if err := owner.CheckReader(ctx); err != nil {
-		return readerbroker.NativePostPreparation{}, errors.New("daily X reader ownership changed")
-	}
-	return owner.PrepareReader(ctx, req, marker)
+	return e.dailyController(domain.SourceX).prepareReader(ctx, req, marker)
 }
 
 func (e *Engine) queueXDailyBatch(run domain.Run, payload map[string]any) error {
-	e.xDaily.mu.Lock()
-	if e.xDaily.done != nil && e.xDaily.runID == run.ID {
-		e.xDaily.mu.Unlock()
-		return nil
-	}
-	if !e.xDaily.authorized || e.xDaily.closed || e.xDaily.owner == nil || e.xDaily.done != nil || e.xDaily.generation == ^uint64(0) {
-		e.xDaily.mu.Unlock()
-		return errors.New("daily X batch unavailable")
-	}
-	e.xDaily.generation++
-	generation := e.xDaily.generation
-	owner := e.xDaily.owner
-	parent := e.xDaily.parent
-	work, cancel := context.WithCancel(parent)
-	done := make(chan struct{})
-	e.xDaily.done = done
-	e.xDaily.runID = run.ID
-	if e.xDaily.workers == 0 {
-		e.xDaily.drain = make(chan struct{})
-	}
-	e.xDaily.workers++
-	e.xDaily.cancel = cancel
-	e.xDaily.mu.Unlock()
-	e.mu.Lock()
-	e.processWorkers++
-	e.mu.Unlock()
-	go func() {
-		defer func() {
-			e.mu.Lock()
-			e.processWorkers--
-			e.mu.Unlock()
-			e.xDaily.mu.Lock()
-			e.xDaily.workers--
-			if e.xDaily.workers == 0 {
-				close(e.xDaily.drain)
-			}
-			e.xDaily.mu.Unlock()
-		}()
-		var batch xDailyNativeBatch
-		var cause error
-		phase := "reader-check"
-		defer func() {
-			// Freeze the operational cause before cancellation or cleanup can
-			// produce a secondary failure. Diagnostics never grant authority.
-			e.rememberXDailyFailure(cause, phase)
-			cancel()
-			cleanup, stop := context.WithTimeout(context.Background(), 30*time.Second)
-			cleanupFailed := false
-			if batch != nil {
-				if err := batch.Close(cleanup); err != nil {
-					e.rememberXDailyCleanup(err)
-					cleanupFailed = true
-					if cause == nil {
-						cause = errors.New("daily X collector cleanup uncertain")
-						phase = "cleanup"
-					}
-				}
-			}
-			if cause != nil && !cleanupFailed {
-				if err := e.store.ReconcileClosedDailyXCapture(cleanup, run.ID); err != nil {
-					e.rememberXDailyCleanup(xDailyCleanupFail(err, "store_reconcile", "unverified"))
-					cleanupFailed = true
-				}
-			}
-			stop()
-			e.rememberXDailyFailure(cause, phase)
-			e.xDaily.mu.Lock()
-			if cleanupFailed {
-				e.xDaily.cleanupUncertain = true
-			}
-			if cause != nil {
-				e.xDaily.authorized = false
-				if e.xDaily.reason == "" {
-					e.xDaily.reason = "batch-failed"
-				}
-			}
-			// Generation and done identity prevent a late completion retiring a successor.
-			if e.xDaily.generation == generation && e.xDaily.done == done {
-				e.xDaily.done = nil
-				e.xDaily.runID = ""
-				e.xDaily.cancel = nil
-			}
-			close(done)
-			e.xDaily.mu.Unlock()
-			if cause != nil {
-				e.logger.Printf("x_daily_batch phase=terminal reason=batch-failed generation=%d", generation)
-				if detail := e.XCaptureStatus().StartupDiagnostic; detail != nil {
-					e.logger.Printf("x_daily_startup stage=%s condition=%s cause=%s broker_reason=%s %s", detail.Stage, detail.Condition, detail.Cause, detail.BrokerReason, detail.Origin)
-				}
-			}
-			if detail := e.XCaptureStatus().CleanupDiagnostic; detail != nil {
-				e.logger.Printf("x_daily_cleanup %s", detail.String())
-			}
-			if !cleanupFailed {
-				_, _ = e.startNext(context.Background(), run.SessionID)
-			}
-		}()
-		if err := owner.CheckReader(work); err != nil {
-			cause = xDailyStartupFail(err, "reader_check", "ownership")
-			return
-		}
-		// Register the cancel/join worker before persisting its command. Stop
-		// therefore always has an owner for SQL/startup and cannot orphan work
-		// between durable StartRun and batch registration.
-		phase = "command"
-		command, err := e.store.StartRun(work, run.ID, payload)
-		if err != nil {
-			cause = err
-			return
-		}
-		// Native startup starts the original clock at seed, not at queue admission.
-		startup, stop := context.WithCancel(work)
-		phase = "startup"
-		batch, cause = owner.BeginBatch(startup, parent, generation, run)
-		stop()
-		if cause != nil || batch == nil {
-			if cause == nil {
-				cause = xDailyStartupFail(nil, "batch_begin_reply", "unavailable")
-			}
-			return
-		}
-		start, end := batch.StartedAt(), batch.Deadline()
-		phase = "deadline"
-		if start.IsZero() || start.After(e.store.Now()) || !end.After(e.store.Now()) || end.After(start.Add(60*time.Second)) {
-			cause = errors.New("daily X batch deadline rejected")
-			return
-		}
-		capture, stop := context.WithDeadline(work, end)
-		phase = "capture"
-		_, cause = batch.Capture(capture, command.ID)
-		stop()
-	}()
-	return nil
+	return e.dailyController(domain.SourceX).queue(run, payload)
 }
 
 func xDailyClosedFailureCode(err error) string {
@@ -394,72 +113,9 @@ func validXDailyProfileScope(profileScope string) bool {
 }
 
 func (e *Engine) stopXDaily(ctx context.Context) error {
-	e.xDaily.mu.Lock()
-	e.xDaily.authorized = false
-	if e.xDaily.reason == "" {
-		e.xDaily.reason = "opted-out"
-	}
-	cancel, done, startCancel, startDone := e.xDaily.cancel, e.xDaily.done, e.xDaily.cancelStart, e.xDaily.startDone
-	e.xDaily.mu.Unlock()
-	if startCancel != nil {
-		startCancel()
-	}
-	if startDone != nil {
-		select {
-		case <-startDone:
-		case <-ctx.Done():
-			return errors.New("daily X startup cleanup pending")
-		}
-	}
-	if cancel != nil {
-		cancel()
-	}
-	if done != nil {
-		select {
-		case <-done:
-		case <-ctx.Done():
-			return errors.New("daily X batch cleanup pending")
-		}
-	}
-	e.xDaily.mu.RLock()
-	uncertain := e.xDaily.cleanupUncertain
-	e.xDaily.mu.RUnlock()
-	if uncertain {
-		return errors.New("daily X batch cleanup uncertain")
-	}
-	return nil
+	return e.dailyController(domain.SourceX).stop(ctx)
 }
 
 func (e *Engine) closeXDaily(ctx context.Context) error {
-	stopErr := e.stopXDaily(ctx)
-	e.xDaily.mu.Lock()
-	e.xDaily.closed = true
-	owner := e.xDaily.owner
-	e.xDaily.mu.Unlock()
-	if owner != nil {
-		if err := owner.Close(ctx); err != nil {
-			e.rememberXDailyCleanup(xDailyCleanupFail(err, "owner_close", "unverified"))
-			return err
-		}
-		e.xDaily.mu.RLock()
-		done, start, drain := e.xDaily.done, e.xDaily.startDone, e.xDaily.drain
-		e.xDaily.mu.RUnlock()
-		for _, ended := range []<-chan struct{}{start, done, drain} {
-			if ended != nil {
-				select {
-				case <-ended:
-				case <-ctx.Done():
-					return errors.New("daily X process cleanup pending")
-				}
-			}
-		}
-		e.xDaily.mu.Lock()
-		e.xDaily.cleanupUncertain = false
-		e.xDaily.mu.Unlock()
-		return nil
-	}
-	if stopErr != nil {
-		return stopErr
-	}
-	return nil
+	return e.dailyController(domain.SourceX).close(ctx)
 }

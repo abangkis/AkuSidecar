@@ -56,9 +56,9 @@ func main() {
  mode,path:=os.Args[1],os.Args[2]
  s,err:=store.Open(path,domain.DefaultSettings("expanded","quiet","promote_unused_budget",true))
  if mode=="reject" {
-  if err==nil { s.Close(); panic("schema-29 binary opened schema-30") }
-  if !strings.Contains(err.Error(),"database schema 30 is incompatible with required schema 29") { panic("unexpected schema-29 rejection") }
-  fmt.Println("PASS: real schema-29 binary refused schema-30 database")
+  if err==nil { s.Close(); panic("schema-29 binary opened schema-31") }
+  if !strings.Contains(err.Error(),"database schema 31 is incompatible with required schema 29") { panic("unexpected schema-29 rejection") }
+  fmt.Println("PASS: real schema-29 binary refused schema-31 database")
   return
  }
  if err!=nil { panic(err) }
@@ -75,12 +75,12 @@ INSERT INTO meta(key,value) VALUES('manual_pilot_upgrade_sentinel','preserve');`
   fmt.Println("PASS: real schema-29 binary created synthetic queued/claimed work")
   return
  }
- if mode!="upgrade"||store.SchemaVersion!=30 { panic("invalid synthetic upgrade mode") }
+ if mode!="upgrade"||store.SchemaVersion!=31 { panic("invalid synthetic upgrade mode") }
  var count int; var version,marker string
  if db.QueryRowContext(ctx,`SELECT COUNT(*) FROM bridge_commands WHERE payload_json='{"synthetic":"preserve"}' AND ((id='synthetic-queued' AND status='queued') OR (id='synthetic-claimed' AND status='claimed'))`).Scan(&count)!=nil||count!=2 { panic("queue changed during migration") }
- if db.QueryRowContext(ctx,`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version)!=nil||version!="30" { panic("schema upgrade absent") }
+ if db.QueryRowContext(ctx,`SELECT value FROM meta WHERE key='schema_version'`).Scan(&version)!=nil||version!="31" { panic("schema upgrade absent") }
  if db.QueryRowContext(ctx,`SELECT value FROM meta WHERE key='manual_pilot_upgrade_sentinel'`).Scan(&marker)!=nil||marker!="preserve" { panic("migration marker changed") }
- fmt.Println("PASS: schema-29 to schema-30 migration preserved queued/claimed work")
+ fmt.Println("PASS: schema-29 to schema-31 migration preserved queued/claimed work")
 }
 '@ | Set-Content -LiteralPath $probe -Encoding utf8NoBOM
     # Internal imports require the probe source to live inside its chosen module.

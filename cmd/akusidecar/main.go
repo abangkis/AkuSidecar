@@ -213,8 +213,8 @@ func main() {
 	runtime := engine.New(state, provider, cfg, logger, eventRuntime)
 	if daily != nil {
 		fatal(logger, daily.Attach(runtime))
-		fatal(logger, runtime.ReconcileXDailyStartup(context.Background()))
 	}
+	fatal(logger, runtime.ReconcileXDailyStartup(context.Background()))
 	if manual != nil {
 		defer runtime.Shutdown()
 		fatal(logger, manual.Attach(context.Background(), runtime))

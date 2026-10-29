@@ -80,15 +80,19 @@ func xDailyStartupFail(cause error, stage, condition string) error {
 }
 
 func (e *Engine) rememberXDailyFailure(cause error, phase string) {
+	e.dailyController("x").rememberFailure(cause, phase)
+}
+
+func (d dailyController) rememberFailure(cause error, phase string) {
 	if cause == nil {
 		return
 	}
-	e.xDaily.mu.Lock()
-	defer e.xDaily.mu.Unlock()
-	if e.xDaily.firstFailure == nil {
-		e.xDaily.firstFailure = cause
-		e.xDaily.failurePhase = phase
-		e.xDaily.failureCode = xDailyClosedFailureCode(cause)
+	d.state.mu.Lock()
+	defer d.state.mu.Unlock()
+	if d.state.firstFailure == nil {
+		d.state.firstFailure = cause
+		d.state.failurePhase = phase
+		d.state.failureCode = xDailyClosedFailureCode(cause)
 	}
 }
 

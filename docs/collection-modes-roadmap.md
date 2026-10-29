@@ -4,6 +4,26 @@
 The dated entries below preserve experiment history. Their old blocker/next-step
 wording must not override the current checkpoint.
 
+### Shared-core source expansion: X and Instagram (2026-10-29)
+
+The accepted Headless MVP is the selected daily X route, tagged `headless-mvp`.
+Source expansion reuses that mechanism rather than introducing a parallel IG
+pipeline. The approved offline increment extracts source-bound orchestration and
+Store guards, keeps X compatibility wrappers, and adds an injected IG adapter
+that reuses the existing collector/media pipeline. `capture.instagramMode`
+defaults to `browser`; concurrent selection alone is not native readiness.
+
+Schema 31 is the approved semantic compatibility barrier for source-scoped
+permits; the older X-only guard must not open a newer database. Migration and
+cross-source receipt/claim/recovery checks use synthetic databases only. Runtime
+and user-database migration remain separate operational work.
+
+The remaining IG delta is qualification of its bounded native proof source and
+session manifest, followed by specifically authorized native integration. The X
+lifecycle/ownership/cleanup experiments remain inherited evidence, not a new
+multi-stage MVP to repeat. Full rotation, hot switching and shared reservations
+remain deferred. [Implementation boundary](source-concurrency-core.md).
+
 ### Accepted main-dev path and next daily-use increment (2026-10-28)
 
 The ordinary `runtime/dev` deployment of `0991fa2` passed two explicitly

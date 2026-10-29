@@ -3,6 +3,35 @@
 This page is the current checkpoint. Historical experiments in the design and
 roadmap are evidence, not a new list of prerequisites.
 
+## Shared X/Instagram core: offline integration (2026-10-29)
+
+The next implementation uses one source-bound daily controller for X and
+Instagram. X entry points delegate to that core while retaining their config,
+permission key and native provider behavior. Instagram uses the existing
+collector/parser and media recovery behind an injected synthetic adapter. Its
+startup selector is `capture.instagramMode`: `browser` by default, or
+`concurrent` with unavailable status until a qualified provider is installed.
+Selecting the route does not supply proof, permission or a session importer.
+
+The shared Store permit/claim/commit path now binds the source and preserves
+separate X/IG state and receipts inside the same update session. Schema 31 is
+the user-approved downgrade fence because older schema-30 code only understands
+the X run-scoped guard. This increment touches source and synthetic databases
+only. A future activation must plan compatible database rollback; it must not
+lower the schema metadata to run an older binary.
+
+Mixed-source synthetic sessions exercise both X then IG and IG then X. The IG
+worker seam uses actual source assets and `captureIsolated`, with owned temporary
+media targets, verified close receipts and first-cause/cleanup separation. These
+Go and JavaScript tests are separate component/integration boundaries, not a
+native session-transfer end-to-end result.
+
+Native IG remains unqualified: its bounded identity/login evidence source and
+session-data manifest are not invented from the X contract or from a signed-in
+looking feed. No session transfer, runtime activation, login change or Auto Update
+change is part of this increment. Main-dev IG retains its Browser route. See the
+[shared-core responsibilities and offline acceptance](source-concurrency-core.md).
+
 ## Headless MVP: main-dev daily acceptance (2026-10-29)
 
 The selected main-dev daily route is accepted for X: the normal Browser backend

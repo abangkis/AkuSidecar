@@ -840,15 +840,24 @@ func (s *Store) CompleteOnboarding(ctx context.Context, sources []domain.Source)
 }
 
 func (s *Store) CreateUpdateSession(ctx context.Context, intent string, settings domain.Settings, policy domain.UpdatePolicy) (domain.Session, error) {
-	return s.createUpdateSession(ctx, intent, settings, policy, false)
+	return s.createUpdateSession(ctx, intent, settings, policy, nil)
 }
 
 // The daily X route changes only X's frozen driver, never saved preferences or
 // the ordinary routing decisions for the other selected sources.
 func (s *Store) CreateDailyXUpdateSession(ctx context.Context, intent string, settings domain.Settings, policy domain.UpdatePolicy) (domain.Session, error) {
-	return s.createUpdateSession(ctx, intent, settings, policy, true)
+	return s.createUpdateSession(ctx, intent, settings, policy, []domain.Source{domain.SourceX})
 }
-func (s *Store) createUpdateSession(ctx context.Context, intent string, settings domain.Settings, policy domain.UpdatePolicy, dailyX bool) (domain.Session, error) {
+func (s *Store) CreateDailySourceUpdateSession(ctx context.Context, intent string, settings domain.Settings, policy domain.UpdatePolicy, sources []domain.Source) (domain.Session, error) {
+	for _, source := range sources {
+		if !supportedDailySource(source) {
+			return domain.Session{}, errManualPilot
+		}
+	}
+	return s.createUpdateSession(ctx, intent, settings, policy, sources)
+}
+
+func (s *Store) createUpdateSession(ctx context.Context, intent string, settings domain.Settings, policy domain.UpdatePolicy, dailySources []domain.Source) (domain.Session, error) {
 	if err := domain.ValidateIntent(intent); err != nil {
 		return domain.Session{}, err
 	}
@@ -899,7 +908,7 @@ func (s *Store) createUpdateSession(ctx context.Context, intent string, settings
 		coverageValue["collectionSourceDrivers"] = drivers
 		coverageValue["collectionSources"] = configuredSources
 	}
-	if dailyX {
+	if len(dailySources) > 0 {
 		drivers, ok := coverageValue["collectionSourceDrivers"].(map[string]string)
 		if !ok {
 			drivers = map[string]string{}
@@ -907,8 +916,10 @@ func (s *Store) createUpdateSession(ctx context.Context, intent string, settings
 				drivers[string(source)] = "browser"
 			}
 		}
-		if _, ok := drivers["x"]; ok {
-			drivers["x"] = "headless"
+		for _, source := range dailySources {
+			if _, ok := drivers[string(source)]; ok {
+				drivers[string(source)] = "headless"
+			}
 		}
 		coverageValue["collectionPolicy"] = domain.SessionCollectionPolicyHybridHeadlessV1
 		coverageValue["collectionSourceDrivers"] = drivers
@@ -1461,15 +1472,28 @@ func (s *Store) PendingRunIDForCollector(ctx context.Context, collector string) 
 // PendingRunIDForCollectorExcept selects an ordinary route without changing
 // admission policy. The Engine may reserve X for its private manual route.
 func (s *Store) PendingRunIDForCollectorExcept(ctx context.Context, collector string, excluded domain.Source) (string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT r.id,c.payload_json FROM runs r JOIN bridge_commands c ON c.run_id=r.id WHERE r.status='waiting_for_bridge' AND c.status='queued' AND r.source<>? ORDER BY c.created_at,c.rowid`, excluded)
+	return s.PendingRunIDForCollectorExceptSources(ctx, collector, []domain.Source{excluded})
+}
+func (s *Store) PendingRunIDForCollectorExceptSources(ctx context.Context, collector string, excluded []domain.Source) (string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT r.id,c.payload_json,r.source FROM runs r JOIN bridge_commands c ON c.run_id=r.id WHERE r.status='waiting_for_bridge' AND c.status='queued' ORDER BY c.created_at,c.rowid`)
 	if err != nil {
 		return "", err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var id, raw string
-		if err := rows.Scan(&id, &raw); err != nil {
+		var source domain.Source
+		if err := rows.Scan(&id, &raw, &source); err != nil {
 			return "", err
+		}
+		skip := false
+		for _, v := range excluded {
+			if v == source {
+				skip = true
+			}
+		}
+		if skip {
+			continue
 		}
 		payload, err := decodeCapturePayload(raw)
 		if err != nil {
@@ -1736,7 +1760,7 @@ func (s *Store) FailQueuedRuns(ctx context.Context, sessionID string, failure do
 	}
 	defer tx.Rollback()
 	var protected int
-	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM meta WHERE key=?`, manualPilotSessionPrefix+sessionID).Scan(&protected); err != nil {
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM meta WHERE key IN (?,?)`, manualPilotSessionPrefix+sessionID, manualPilotSessionPrefix+manualScopeID(sessionID, domain.SourceInstagram)).Scan(&protected); err != nil {
 		return err
 	}
 	if protected != 0 {
@@ -2486,13 +2510,17 @@ func (s *Store) AddFeedback(ctx context.Context, timelineID string, input domain
 }
 
 func (s *Store) CancelSession(ctx context.Context, id string) error {
-	if value, ok := s.manualPilotClosures.Load(id); ok {
-		value.(*ManualPilotPermit).revoked.Store(true)
+	for _, source := range []domain.Source{domain.SourceX, domain.SourceInstagram} {
+		if value, ok := s.manualPilotClosures.Load(manualScopeID(id, source)); ok {
+			value.(*ManualPilotPermit).revoked.Store(true)
+		}
 	}
 	s.manualPilotMu.Lock()
 	defer s.manualPilotMu.Unlock()
-	if p := s.manualPilots[id]; p != nil {
-		p.revoked.Store(true)
+	for _, source := range []domain.Source{domain.SourceX, domain.SourceInstagram} {
+		if p := s.manualPilots[manualScopeID(id, source)]; p != nil {
+			p.revoked.Store(true)
+		}
 	}
 	now := domain.Now()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -2500,8 +2528,10 @@ func (s *Store) CancelSession(ctx context.Context, id string) error {
 		return err
 	}
 	defer tx.Rollback()
-	if err := revokeManualPilotSessionTx(ctx, tx, id); err != nil {
-		return err
+	for _, source := range []domain.Source{domain.SourceX, domain.SourceInstagram} {
+		if err := revokeManualPilotSessionTx(ctx, tx, manualScopeID(id, source)); err != nil {
+			return err
+		}
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE sessions SET status='cancelled',active_source=NULL,completed_at=? WHERE id=? AND status IN ('queued','running')`, now, id); err != nil {
 		return err

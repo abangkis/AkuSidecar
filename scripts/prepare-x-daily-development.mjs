@@ -7,7 +7,7 @@ import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {buildNativeDailyOwnerPackage,buildMainBrowserTransportPackage} from './build-x-native-owner.mjs';
 import {ordinary,digest,fileRecord,copyTree,inventory} from './x-development-pilot-package.mjs';
-import {dailyPreparationArguments,dailyReaderContract,dailyReaderSelection,dailyPrerequisites,
+import {dailyDatabaseSchemas,dailyPreparationArguments,dailyReaderContract,dailyReaderSelection,dailyPrerequisites,
   dailyLayout,dailyConfigProposal,dailyMainRollbackProposal,dailyServiceProposal,dailyRollbackProvenance,verifyDailyPackage} from './x-daily-development-package.mjs';
 import {sourceAssets} from '../internal/collection/headless/worker/worker.mjs';
 
@@ -86,7 +86,7 @@ const externalAssets=await Promise.all([layout.chrome,layout.uiChrome,join(dirna
 // This exits before Store, provider, HTTP, UI, factory or profile startup. It
 // validates the actual ordinary config/arguments; it does not grant consent.
 const configProbe=JSON.parse(command(image,[...service.args,'--runtime-candidate-probe','--runtime-candidate-probe-schema=2']));
-if(configProbe.status!=='ok'||configProbe.databaseSchemaVersion!==30)throw new Error('daily_config_probe_rejected');
+if(configProbe.status!=='ok'||!dailyDatabaseSchemas.includes(configProbe.databaseSchemaVersion))throw new Error('daily_config_probe_rejected');
 await writeFile(join(bin,'com.akubrowser.reader_activation.json'),JSON.stringify({name:'com.akubrowser.reader_activation',
   description:'Explicit Windows AkuBrowser reader activation',path:join(bin,'aku-reader-broker.exe'),type:'stdio',
   allowed_origins:['chrome-extension://dlibmmlopdahibfniinemhnghlifiple/']},null,2)+'\n',{flag:'wx'});

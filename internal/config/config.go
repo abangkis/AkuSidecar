@@ -448,6 +448,7 @@ func (p ProviderConfig) Validate(name string) error {
 }
 
 type CaptureConfig struct {
+	InstagramMode        string                `json:"instagramMode,omitempty"`
 	XMode                string                `json:"xMode,omitempty"`
 	XReaderProfile       string                `json:"xReaderProfile,omitempty"`
 	XReaderSource        string                `json:"xReaderSource,omitempty"`

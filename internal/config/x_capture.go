@@ -16,6 +16,9 @@ func (c CaptureConfig) XCaptureMode() string {
 }
 
 func (c CaptureConfig) ValidateXMode() error {
+	if c.InstagramCaptureMode() != "browser" && c.InstagramCaptureMode() != XCaptureConcurrent {
+		return errors.New("capture.instagramMode must be browser or concurrent")
+	}
 	if c.XReaderSource != "" && c.XReaderSource != "dedicated" && c.XReaderSource != "main" {
 		return errors.New("capture.xReaderSource must be dedicated or main")
 	}
@@ -28,6 +31,15 @@ func (c CaptureConfig) ValidateXMode() error {
 	default:
 		return errors.New("capture.xMode must be exclusive or concurrent")
 	}
+}
+
+// InstagramCaptureMode is a restart-required route selector. Native concurrent
+// capture remains unavailable without a qualified provider, even when selected.
+func (c CaptureConfig) InstagramCaptureMode() string {
+	if c.InstagramMode == "" {
+		return "browser"
+	}
+	return c.InstagramMode
 }
 
 func (c CaptureConfig) XUsesMainProfile() bool {

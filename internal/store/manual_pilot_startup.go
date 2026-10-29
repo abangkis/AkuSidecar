@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"encoding/hex"
+	"github.com/abangkis/AkuSidecar/internal/domain"
 	"time"
 )
 
@@ -33,10 +34,16 @@ func (s *Store) NewDevelopmentManualPilotIssuer(validate func(context.Context) (
 // Daily permits retain the same account/owner/deadline checks, while fencing
 // X rather than unrelated source runs in the ordinary mixed-source session.
 func (s *Store) NewDevelopmentDailyPilotIssuer(validate func(context.Context) (DevelopmentManualPilotBinding, error)) func(context.Context, string, string) (*ManualPilotPermit, error) {
-	return s.newDevelopmentPilotIssuer(validate, true)
+	return s.NewDevelopmentSourceDailyPilotIssuer(domain.SourceX, validate)
 }
 
+func (s *Store) NewDevelopmentSourceDailyPilotIssuer(source domain.Source, validate func(context.Context) (DevelopmentManualPilotBinding, error)) func(context.Context, string, string) (*ManualPilotPermit, error) {
+	return s.newSourceDevelopmentPilotIssuer(source, validate, true)
+}
 func (s *Store) newDevelopmentPilotIssuer(validate func(context.Context) (DevelopmentManualPilotBinding, error), runScoped bool) func(context.Context, string, string) (*ManualPilotPermit, error) {
+	return s.newSourceDevelopmentPilotIssuer(domain.SourceX, validate, runScoped)
+}
+func (s *Store) newSourceDevelopmentPilotIssuer(source domain.Source, validate func(context.Context) (DevelopmentManualPilotBinding, error), runScoped bool) func(context.Context, string, string) (*ManualPilotPermit, error) {
 	return func(ctx context.Context, session, run string) (*ManualPilotPermit, error) {
 		if validate == nil || session == "" || run == "" {
 			return nil, errManualPilot
@@ -50,7 +57,7 @@ func (s *Store) newDevelopmentPilotIssuer(validate func(context.Context) (Develo
 		if err != nil || len(digest) != 32 || v.Attempt == "" || v.OwnerGeneration == 0 || v.StartedAt.IsZero() || v.StartedAt.After(now) || !v.Deadline.After(now) || v.Deadline.After(v.StartedAt.Add(60*time.Second)) {
 			return nil, errManualPilot
 		}
-		p, err := s.issueDevelopmentPilot(ctx, session, run, "startup-sha256:"+v.Digest, "startup-sha256:"+v.Digest, v.Attempt, v.OwnerGeneration, v.Deadline, runScoped)
+		p, err := s.issueSourceDevelopmentPilot(ctx, source, session, run, "startup-sha256:"+v.Digest, "startup-sha256:"+v.Digest, v.Attempt, v.OwnerGeneration, v.Deadline, runScoped)
 		if err != nil {
 			return nil, err
 		}

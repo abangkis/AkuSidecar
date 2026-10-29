@@ -116,6 +116,10 @@ func xDailyCleanupFail(err error, stage, condition string) error {
 	return &xDailyCleanupError{detail: XDailyCleanupDiagnostic{Stage: stage, Condition: condition}.closed(), cause: err}
 }
 func (e *Engine) rememberXDailyCleanup(err error) {
+	e.dailyController("x").rememberCleanup(err)
+}
+
+func (d dailyController) rememberCleanup(err error) {
 	if err == nil {
 		return
 	}
@@ -124,10 +128,10 @@ func (e *Engine) rememberXDailyCleanup(err error) {
 		err = xDailyCleanupFail(err, "batch_end", "unverified")
 		_ = errors.As(err, &known)
 	}
-	d := known.detail.closed()
-	e.xDaily.mu.Lock()
-	if e.xDaily.cleanupDiagnostic == nil {
-		e.xDaily.cleanupDiagnostic = &d
+	detail := known.detail.closed()
+	d.state.mu.Lock()
+	if d.state.cleanupDiagnostic == nil {
+		d.state.cleanupDiagnostic = &detail
 	}
-	e.xDaily.mu.Unlock()
+	d.state.mu.Unlock()
 }

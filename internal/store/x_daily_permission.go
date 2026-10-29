@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/abangkis/AkuSidecar/internal/domain"
 	"io"
 	"strings"
 )
@@ -22,12 +23,20 @@ type xDailyPermissionRecord struct {
 // the supplied reader-profile scope. Missing or differently scoped records are
 // treated as disabled.
 func (s *Store) XDailyPermission(ctx context.Context, profileScope string) (bool, error) {
+	return s.DailySourcePermission(ctx, domain.SourceX, profileScope)
+}
+
+func (s *Store) DailySourcePermission(ctx context.Context, source domain.Source, profileScope string) (bool, error) {
+	key, err := dailyPermissionKey(source)
+	if err != nil {
+		return false, err
+	}
 	if err := validateXDailyPermissionProfileScope(profileScope); err != nil {
 		return false, err
 	}
 
 	var raw string
-	err := s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key=?`, xDailyPermissionMetaKey).Scan(&raw)
+	err = s.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key=?`, key).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -48,6 +57,14 @@ func (s *Store) XDailyPermission(ctx context.Context, profileScope string) (bool
 // SaveXDailyPermission atomically stores the explicit daily X permission for a
 // reader-profile scope. Passing enabled=false persists a revocation.
 func (s *Store) SaveXDailyPermission(ctx context.Context, profileScope string, enabled bool) error {
+	return s.SaveDailySourcePermission(ctx, domain.SourceX, profileScope, enabled)
+}
+
+func (s *Store) SaveDailySourcePermission(ctx context.Context, source domain.Source, profileScope string, enabled bool) error {
+	key, err := dailyPermissionKey(source)
+	if err != nil {
+		return err
+	}
 	if err := validateXDailyPermissionProfileScope(profileScope); err != nil {
 		return err
 	}
@@ -59,7 +76,7 @@ func (s *Store) SaveXDailyPermission(ctx context.Context, profileScope string, e
 	}
 	if _, err := s.db.ExecContext(ctx, `
 		INSERT INTO meta(key,value) VALUES(?,?)
-		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, xDailyPermissionMetaKey, string(raw)); err != nil {
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, string(raw)); err != nil {
 		return fmt.Errorf("save X daily permission: %w", err)
 	}
 	return nil
@@ -150,4 +167,15 @@ func decodeXDailyPermissionFields(raw string) (map[string]json.RawMessage, error
 		return nil, err
 	}
 	return fields, nil
+}
+
+func dailyPermissionKey(source domain.Source) (string, error) {
+	switch source {
+	case domain.SourceX:
+		return xDailyPermissionMetaKey, nil
+	case domain.SourceInstagram:
+		return "instagram_daily_permission_v1", nil
+	default:
+		return "", errors.New("unsupported daily permission source")
+	}
 }
