@@ -82,6 +82,16 @@ collector pins/profile may be released only after exit has been proved. Unknown
 collector ownership cannot be treated as an empty process inventory. Borrowed
 main Chrome and explicit user readers are outside batch retirement authority.
 
+Batch Home retirement uses one `captureCleanupMS` monotonic budget (currently
+3 seconds) for inventory, one exact-target close request and absence verification.
+Polling does not extend that deadline. The reservation is released only after
+the owned target is absent; a failed or timed-out operation blocks successor
+admission. Concurrent cleanup callers join the same close operation. No user
+target is closed or adopted by URL. Separate closed `bootstrapDiagnostic`
+stage/condition fields distinguish inventory, close, absence and release failures
+without exposing target IDs or raw protocol exceptions. They do not replace the
+primary startup cause or other cleanup resource outcomes.
+
 ## Remembered permission and fresh authorization
 
 Main-dev Settings remembers an explicit opt-in for the selected reader profile

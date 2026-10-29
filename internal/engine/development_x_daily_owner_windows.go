@@ -486,15 +486,18 @@ func (b *xDailyBatch) Close(ctx context.Context) error {
 			b.stopManagers()
 		}
 		var receipt struct {
-			Closed  bool                    `json:"closed"`
-			Cleanup *XDailyCleanupResources `json:"cleanup"`
+			Closed              bool                       `json:"closed"`
+			Cleanup             *XDailyCleanupResources    `json:"cleanup"`
+			BootstrapDiagnostic *XDailyBootstrapDiagnostic `json:"bootstrapDiagnostic"`
 		}
 		if err := b.owner.call(ctx, "daily_batch_end", map[string]any{"generation": b.generation}, &receipt); err != nil {
 			detail.BatchEnd = "uncertain"
 			fail("batch_end", "rpc", err)
 		} else {
 			detail.Resources = receipt.Cleanup
-			if receipt.Cleanup == nil || !receipt.Cleanup.valid() || receipt.Closed != receipt.Cleanup.complete() {
+			detail.Bootstrap = receipt.BootstrapDiagnostic
+			bootstrapInvalid := receipt.BootstrapDiagnostic != nil && (!receipt.BootstrapDiagnostic.valid() || receipt.Cleanup == nil || receipt.Cleanup.Bootstrap != "uncertain")
+			if receipt.Cleanup == nil || !receipt.Cleanup.valid() || receipt.Closed != receipt.Cleanup.complete() || bootstrapInvalid {
 				detail.BatchEnd = "uncertain"
 				fail("batch_end", "receipt", errors.New("daily cleanup receipt invalid"))
 			} else if !receipt.Closed {

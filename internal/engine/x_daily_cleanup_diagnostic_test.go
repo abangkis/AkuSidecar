@@ -60,3 +60,32 @@ func TestXDailyCleanupDiagnosticRejectsMissingOrUnknownResources(t *testing.T) {
 		t.Fatal("missing resources manufactured cleanup proof")
 	}
 }
+
+func TestXDailyBootstrapDiagnosticIsClosedAndIndependent(t *testing.T) {
+	e := &Engine{}
+	e.config.Capture.XMode = config.XCaptureConcurrent
+	bootstrap := &XDailyBootstrapDiagnostic{Stage: "absence", Condition: "timeout"}
+	cleanup := &xDailyCleanupError{detail: XDailyCleanupDiagnostic{Stage: "batch_end", Condition: "unverified", Bootstrap: bootstrap}, cause: errors.New("PRIVATE_TARGET_COOKIE")}
+	e.rememberXDailyCleanup(cleanup)
+	status := e.XCaptureStatus()
+	if status.CleanupDiagnostic == nil || status.CleanupDiagnostic.Bootstrap == nil || *status.CleanupDiagnostic.Bootstrap != *bootstrap {
+		t.Fatal("bootstrap diagnostic was not projected")
+	}
+	status.CleanupDiagnostic.Bootstrap.Condition = "mutated"
+	if e.XCaptureStatus().CleanupDiagnostic.Bootstrap.Condition != "timeout" {
+		t.Fatal("bootstrap status exposed mutable state")
+	}
+	if !strings.Contains(e.XCaptureStatus().CleanupDiagnostic.String(), "bootstrap_stage=absence bootstrap_condition=timeout") {
+		t.Fatal("bootstrap diagnostic was not logged separately")
+	}
+	for _, invalid := range []XDailyBootstrapDiagnostic{{Stage: "PRIVATE_TARGET", Condition: "timeout"}, {Stage: "close", Condition: "PRIVATE_TOKEN"}, {}} {
+		if invalid.valid() {
+			t.Fatal("unbounded bootstrap diagnostic accepted")
+		}
+		d := (XDailyCleanupDiagnostic{Bootstrap: &invalid}).closed()
+		raw, _ := json.Marshal(d)
+		if strings.Contains(string(raw), "PRIVATE") || strings.Contains(d.String(), "PRIVATE") {
+			t.Fatal("private bootstrap error leaked")
+		}
+	}
+}

@@ -2359,7 +2359,7 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
     if(!Number.isSafeInteger(borrowedReader.pid)||borrowedReader.pid<1||typeof borrowedReader.profileDirectory!=='string'||!borrowedReader.profileDirectory||/[\\/\u0000-\u001f]/u.test(borrowedReader.profileDirectory)||
       typeof borrowedReader.transport?.call!=='function'||typeof borrowedReader.transport?.subscribe!=='function'||typeof borrowedReader.transport?.alive!=='function')throw probeError('borrowed_reader_rejected');
     borrowedMainTransport=borrowedReader.transport;
-    batchBootstrap=createBatchBootstrap({call:(method,params)=>borrowedMainTransport.call(method,params,'',10000),
+    batchBootstrap=createBatchBootstrap({call:(method,params,timeoutMS=10000)=>borrowedMainTransport.call(method,params,'',timeoutMS),
       reserveTarget:id=>borrowedMainTransport.reserveTarget?.(id),releaseTarget:id=>borrowedMainTransport.releaseTarget?.(id)});
     unsubscribeBorrowed=borrowedMainTransport.subscribe(raw=>{try{dispatchCDP(raw);}catch{failCDP('borrowed_reader_event_failed');}});
   }

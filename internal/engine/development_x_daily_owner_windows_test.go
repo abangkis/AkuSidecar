@@ -45,64 +45,84 @@ func dailySyntheticConfig(t *testing.T) xApplicationOwnerConfig {
 }
 
 func TestXDailyNativeCleanupUncertaintyStillReleasesExitedCollector(t *testing.T) {
-	cfg := dailySyntheticConfig(t)
-	source := strings.Replace(dailySyntheticDriver, "closed:true,cleanup:{readerControls:'verified'", "closed:false,cleanup:{readerControls:'uncertain'", 1)
-	if source == dailySyntheticDriver {
-		t.Fatal("synthetic cleanup failure not injected")
-	}
-	if err := os.WriteFile(cfg.driver.path, []byte(source), 0600); err != nil {
-		t.Fatal(err)
-	}
-	cfg.driver = applicationAsset(t, cfg.driver.path)
-	e, state := testEngine(t)
-	e.config.Dev = true
-	e.config.Capture.XMode = config.XCaptureConcurrent
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	owner, err := newXDailyNativeOwner(ctx, ctx, cfg, e, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var closeChecked bool
-	t.Cleanup(func() {
-		cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
-		defer stop()
-		if err := owner.Close(cleanup); err != nil && !closeChecked {
-			t.Error(err)
-		}
-	})
-	settings, _ := state.GetSettings(ctx)
-	settings.ActiveSources = []domain.Source{domain.SourceX}
-	session, err := state.CreateUpdateSession(ctx, "synthetic cleanup separation", settings, domain.UpdatePolicy{Trigger: domain.UpdateTriggerUser, Delivery: domain.UpdateDeliveryVisible, BudgetAuthority: domain.BudgetAuthorityUser})
-	if err != nil {
-		t.Fatal(err)
-	}
-	batch, startErr := owner.BeginBatch(ctx, ctx, 1, session.Runs[0])
-	if startErr == nil || batch == nil {
-		t.Fatal("fake transport manufactured startup authority or lost its partial batch")
-	}
-	cleanupErr := batch.Close(ctx)
-	var diagnostic *xDailyCleanupError
-	if !errors.As(cleanupErr, &diagnostic) || diagnostic.detail.Resources == nil || diagnostic.detail.Resources.ReaderControls != "uncertain" || diagnostic.detail.Resources.Bootstrap != "not_needed" || diagnostic.detail.CollectorExit != "verified" || diagnostic.detail.PinRelease != "verified" {
-		t.Fatalf("independent cleanup did not complete: %v", cleanupErr)
-	}
-	if _, err := os.Stat(batch.(*xDailyBatch).host.cfg.collector.Root); !os.IsNotExist(err) {
-		t.Fatal("an exited collector profile was retained after unrelated control failure")
-	}
-	if err := owner.CheckReader(ctx); err != nil {
-		t.Fatal("cleanup retired the process reader")
-	}
-	e.rememberXDailyFailure(startErr, "startup")
-	e.rememberXDailyCleanup(cleanupErr)
-	status := e.XCaptureStatus()
-	if status.StartupDiagnostic == nil || status.CleanupDiagnostic == nil || status.FailurePhase != "startup" {
-		t.Fatal("primary and cleanup diagnostics were not both retained")
-	}
-	closeErr := owner.Close(ctx)
-	closeChecked = true
-	var closedDetail *xDailyCleanupError
-	if !errors.As(closeErr, &closedDetail) || closedDetail.detail.Resources.ReaderControls != "uncertain" {
-		t.Fatal("owner shutdown erased prior batch cleanup uncertainty")
+	for _, failure := range []string{"controls", "bootstrap", "contradictory_receipt"} {
+		t.Run(failure, func(t *testing.T) {
+			cfg := dailySyntheticConfig(t)
+			source := strings.Replace(dailySyntheticDriver, "closed:true,cleanup:{readerControls:'verified'", "closed:false,cleanup:{readerControls:'uncertain'", 1)
+			wantReader, wantBootstrap := "uncertain", "not_needed"
+			if failure == "bootstrap" {
+				source = strings.Replace(dailySyntheticDriver, "closed:true,cleanup:", "closed:false,bootstrapDiagnostic:{stage:'absence',condition:'timeout'},cleanup:", 1)
+				source = strings.Replace(source, "bootstrap:'not_needed'", "bootstrap:'uncertain'", 1)
+				wantReader, wantBootstrap = "verified", "uncertain"
+			}
+			if failure == "contradictory_receipt" {
+				source = strings.Replace(dailySyntheticDriver, "closed:true,cleanup:", "closed:true,bootstrapDiagnostic:{stage:'absence',condition:'timeout'},cleanup:", 1)
+				wantReader, wantBootstrap = "verified", "not_needed"
+			}
+			if source == dailySyntheticDriver {
+				t.Fatal("synthetic cleanup failure not injected")
+			}
+			if err := os.WriteFile(cfg.driver.path, []byte(source), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg.driver = applicationAsset(t, cfg.driver.path)
+			e, state := testEngine(t)
+			e.config.Dev = true
+			e.config.Capture.XMode = config.XCaptureConcurrent
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			owner, err := newXDailyNativeOwner(ctx, ctx, cfg, e, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var closeChecked bool
+			t.Cleanup(func() {
+				cleanup, stop := context.WithTimeout(context.Background(), 10*time.Second)
+				defer stop()
+				if err := owner.Close(cleanup); err != nil && !closeChecked {
+					t.Error(err)
+				}
+			})
+			settings, _ := state.GetSettings(ctx)
+			settings.ActiveSources = []domain.Source{domain.SourceX}
+			session, err := state.CreateUpdateSession(ctx, "synthetic cleanup separation", settings, domain.UpdatePolicy{Trigger: domain.UpdateTriggerUser, Delivery: domain.UpdateDeliveryVisible, BudgetAuthority: domain.BudgetAuthorityUser})
+			if err != nil {
+				t.Fatal(err)
+			}
+			batch, startErr := owner.BeginBatch(ctx, ctx, 1, session.Runs[0])
+			if startErr == nil || batch == nil {
+				t.Fatal("fake transport manufactured startup authority or lost its partial batch")
+			}
+			cleanupErr := batch.Close(ctx)
+			var diagnostic *xDailyCleanupError
+			if !errors.As(cleanupErr, &diagnostic) || diagnostic.detail.Resources == nil || diagnostic.detail.Resources.ReaderControls != wantReader || diagnostic.detail.Resources.Bootstrap != wantBootstrap || diagnostic.detail.CollectorExit != "verified" || diagnostic.detail.PinRelease != "verified" {
+				t.Fatalf("independent cleanup did not complete: %v", cleanupErr)
+			}
+			if _, err := os.Stat(batch.(*xDailyBatch).host.cfg.collector.Root); !os.IsNotExist(err) {
+				t.Fatal("an exited collector profile was retained after unrelated control failure")
+			}
+			if err := owner.CheckReader(ctx); err != nil {
+				t.Fatal("cleanup retired the process reader")
+			}
+			e.rememberXDailyFailure(startErr, "startup")
+			e.rememberXDailyCleanup(cleanupErr)
+			status := e.XCaptureStatus()
+			if status.StartupDiagnostic == nil || status.CleanupDiagnostic == nil || status.FailurePhase != "startup" {
+				t.Fatal("primary and cleanup diagnostics were not both retained")
+			}
+			if failure == "bootstrap" && (status.CleanupDiagnostic.Bootstrap == nil || status.CleanupDiagnostic.Bootstrap.Stage != "absence" || status.CleanupDiagnostic.Bootstrap.Condition != "timeout" || !strings.Contains(status.CleanupDiagnostic.String(), "bootstrap_condition=timeout")) {
+				t.Fatal("bootstrap failure was lost between the Node receipt and status/log projection")
+			}
+			if failure == "contradictory_receipt" && (status.CleanupDiagnostic.BatchEnd != "uncertain" || status.CleanupDiagnostic.Condition != "receipt") {
+				t.Fatal("contradictory bootstrap receipt manufactured cleanup proof")
+			}
+			closeErr := owner.Close(ctx)
+			closeChecked = true
+			var closedDetail *xDailyCleanupError
+			if !errors.As(closeErr, &closedDetail) || closedDetail.detail.Resources.ReaderControls != wantReader || closedDetail.detail.Resources.Bootstrap != wantBootstrap {
+				t.Fatal("owner shutdown erased prior batch cleanup uncertainty")
+			}
+		})
 	}
 }
 

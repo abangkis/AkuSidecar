@@ -3,6 +3,41 @@
 This page is the current checkpoint. Historical experiments in the design and
 roadmap are evidence, not a new list of prerequisites.
 
+## Bounded batch Home retirement (2026-10-29)
+
+Status: offline implementation only; not activated or exercised with a real
+session. The prior deadline/cleanup increment was published and activated as
+`115797d`. Its first scheduled X batch reached capture, then reported
+`bootstrap: uncertain` at 07:16:44 WIB. That process disabled X, so later checks
+included only Instagram and LinkedIn even though the X preference remained saved.
+The retained diagnostic does not identify which bootstrap close step failed.
+
+Bootstrap retirement now sends one close request for its exact owned target and
+polls for verified absence. The single monotonic deadline includes inventory,
+close and all verification waits: it uses `captureCleanupMS` from the existing
+timing policy (currently 3,000 ms), with waits of at most 50 ms between polls. Per-command
+budgets are capped by the remaining deadline. A late response cannot release
+ownership; overlapping close calls join the same operation. Timeout or malformed
+inventory retains the reservation and prevents a successor batch. Existing user
+targets are never adopted, closed or reclaimed by URL.
+
+A separate, value-free `bootstrapDiagnostic` crosses the cleanup receipt into Go
+status and logs. Closed stage/condition categories distinguish pre-close
+inventory, close acknowledgment, post-close inventory, absence timeout and
+reservation release. Raw exceptions, target identifiers and page data are not
+reported. Startup's first cause and independent resource outcomes stay intact.
+
+Validation is offline: delayed disappearance, retained ownership on timeout,
+RPC/shape/clock failures, late replies, concurrent close calls, explicit reader
+preservation, and Node-to-Go diagnostic propagation are covered by regressions.
+No native seed, session transfer, runtime activation or Auto Update change is
+part of this increment.
+
+Validation result: 54 Node tests passed, targeted Engine/HTTP regressions passed
+in ordinary and `auth_session_dev` builds, and the development binary compiled
+under `build/x-bootstrap-close-offline`. The main/daily source packages include
+the updated bootstrap and cleanup modules; neither package was executed.
+
 ## Shared prepared-observation deadline and independent cleanup (2026-10-29)
 
 Status: offline implementation only; no runtime activation or session transfer.

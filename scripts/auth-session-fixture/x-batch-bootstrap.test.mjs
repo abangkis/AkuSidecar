@@ -28,8 +28,8 @@ test('batch bootstrap creates fresh exact targets and preserves user targets',as
 });
 
 test('unverified bootstrap cleanup blocks another batch and retains reservation',async()=>{
-  let closes=0,absent=false,created=false;const reserved=new Set();
-  const scope=createBatchBootstrap({reserveTarget:id=>reserved.add(id),releaseTarget:id=>reserved.delete(id),call:async(method)=>{
+  let closes=0,absent=false,created=false,time=0;const reserved=new Set();
+  const scope=createBatchBootstrap({now:()=>time,sleep:async ms=>{time+=ms;},reserveTarget:id=>reserved.add(id),releaseTarget:id=>reserved.delete(id),call:async(method)=>{
     if(method==='Target.createTarget'){created=true;return{targetId:'owned'};}
     if(method==='Target.getTargets')return{targetInfos:!created||absent?[]:[{targetId:'owned'}]};
     if(method==='Target.closeTarget'){closes++;return{success:true};}
@@ -76,16 +76,19 @@ test('actual borrowed begin failure retires its exact bootstrap on owner close w
 
 test('actual daily begin/end composition creates fresh reader and collector sessions and preserves user targets',async()=>{
  const {createApplicationDailyOwner:create}=await import('./x-native-metadata-probe-driver.mjs?composed-batches');
- const calls=[],targets=new Set(['user-reader']);let serial=0,collectorCloses=0,failDispose=false;
+ const calls=[],targets=new Set(['user-reader']);let serial=0,collectorCloses=0,failDispose=false,retiring=null,retirementReads=0;
  const transport={alive:()=>true,subscribe:()=>()=>{},call:async(method,params)=>{
    calls.push(method);
-   if(method==='Target.getTargets')return{targetInfos:[...targets].map(targetId=>({targetId}))};
+   if(method==='Target.getTargets'){
+     if(retiring&&++retirementReads>=2){targets.delete(retiring);retiring=null;}
+     return{targetInfos:[...targets].map(targetId=>({targetId}))};
+   }
    if(method==='Target.createTarget'){const targetId=`home-${++serial}`;targets.add(targetId);return{targetId};}
    if(method==='Target.attachToTarget')return{sessionId:`session-${params.targetId}`};
    if(method==='Page.enable'||method==='Target.detachFromTarget')return{};
    if(method==='Runtime.evaluate')return{result:{type:'boolean',value:true}};
    if(method==='Browser.getWindowForTarget')return{windowId:1};
-   if(method==='Target.closeTarget'){assert.notEqual(params.targetId,'user-reader');targets.delete(params.targetId);return{success:true};}
+   if(method==='Target.closeTarget'){assert.notEqual(params.targetId,'user-reader');retiring=params.targetId;retirementReads=0;return{success:true};}
    throw Error('unexpected');
  }};
  const collectorFactory=()=>({launch:async()=>({pid:process.pid+1}),close:async()=>{collectorCloses++;},send:async(method,params,session,project)=>{

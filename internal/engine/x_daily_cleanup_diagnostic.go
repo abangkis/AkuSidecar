@@ -28,18 +28,36 @@ func (r XDailyCleanupResources) complete() bool {
 }
 
 // Cleanup has its own diagnostic channel and cannot replace startup's cause.
+type XDailyBootstrapDiagnostic struct {
+	Stage     string `json:"stage"`
+	Condition string `json:"condition"`
+}
+
+func (d XDailyBootstrapDiagnostic) closed() XDailyBootstrapDiagnostic {
+	d.Stage = xDailyStartupMember(d.Stage, []string{"inventory_before", "close", "inventory_after", "absence", "release", "state"}, "unknown")
+	d.Condition = xDailyStartupMember(d.Condition, []string{"rpc", "invalid_reply", "timeout", "pending", "clock_invalid"}, "unavailable")
+	return d
+}
+
+func (d XDailyBootstrapDiagnostic) valid() bool { return d == d.closed() }
+
 type XDailyCleanupDiagnostic struct {
-	Stage          string                  `json:"stage"`
-	Condition      string                  `json:"condition"`
-	Broker         string                  `json:"broker"`
-	BatchEnd       string                  `json:"batchEnd"`
-	CollectorExit  string                  `json:"collectorExit"`
-	PinRelease     string                  `json:"pinRelease"`
-	StoreReconcile string                  `json:"storeReconcile"`
-	Resources      *XDailyCleanupResources `json:"resources,omitempty"`
+	Stage          string                     `json:"stage"`
+	Condition      string                     `json:"condition"`
+	Broker         string                     `json:"broker"`
+	BatchEnd       string                     `json:"batchEnd"`
+	CollectorExit  string                     `json:"collectorExit"`
+	PinRelease     string                     `json:"pinRelease"`
+	StoreReconcile string                     `json:"storeReconcile"`
+	Resources      *XDailyCleanupResources    `json:"resources,omitempty"`
+	Bootstrap      *XDailyBootstrapDiagnostic `json:"bootstrapDiagnostic,omitempty"`
 }
 
 func (d XDailyCleanupDiagnostic) closed() XDailyCleanupDiagnostic {
+	if d.Bootstrap != nil {
+		bootstrap := d.Bootstrap.closed()
+		d.Bootstrap = &bootstrap
+	}
 	d.Stage = xDailyStartupMember(d.Stage, []string{"broker_stop", "batch_end", "collector_exit", "pin_release", "store_reconcile", "owner_close"}, "unknown")
 	d.Condition = xDailyStartupMember(d.Condition, []string{"unverified", "rpc", "receipt", "alive", "release", "unavailable"}, "unavailable")
 	outcome := func(s string) string {
@@ -71,6 +89,9 @@ func (d XDailyCleanupDiagnostic) String() string {
 	s := fmt.Sprintf("stage=%s condition=%s broker=%s batch_end=%s collector_exit=%s pin_release=%s store_reconcile=%s", d.Stage, d.Condition, d.Broker, d.BatchEnd, d.CollectorExit, d.PinRelease, d.StoreReconcile)
 	if r := d.Resources; r != nil {
 		s += fmt.Sprintf(" reader_controls=%s collector_controls=%s collector=%s enrollment=%s attachments=%s bootstrap=%s", r.ReaderControls, r.CollectorControls, r.Collector, r.Enrollment, r.Attachments, r.Bootstrap)
+	}
+	if b := d.Bootstrap; b != nil {
+		s += fmt.Sprintf(" bootstrap_stage=%s bootstrap_condition=%s", b.Stage, b.Condition)
 	}
 	return s
 }
