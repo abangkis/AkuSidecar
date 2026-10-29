@@ -89,3 +89,33 @@ status interval through wire projection and confirm terminal retry classificatio
 No live Instagram request was made or fixed by this change. The next authorized
 observation can report a more precise bounded code; it still cannot by itself
 prove which request header or endpoint would resolve the rejection.
+
+## Transport correction and source isolation
+
+An offline end-to-end review found that the shared main-browser transport still
+required every diagnostic word to contain only lowercase letters or underscores.
+The new exact HTTP categories contain digits, so a category such as
+`reader_identity_http_status_400` was replaced by a generic transport rejection.
+This was a diagnostic propagation defect; it does not establish the live HTTP
+status or explain why Instagram rejected the request.
+
+The transport now admits those numeric reasons only from the existing finite
+Instagram HTTP allowlist, for the evidence stage. Stage and cleanup validation
+remain unchanged. Tests exercise every role/status combination through the real
+serializer and representative replies through the Go client decoder. They also
+reject forged suffixes and verify that one source's rejected RPC does not close
+the shared transport or prevent another source's requests.
+
+Mixed Engine/Store fixtures cover both source orders and both failure directions.
+After an IG collector's identity fails and its cleanup completes, X still commits
+an observation in the same session and captures again in the next session. The
+reverse case injects an X startup ownership rejection and verifies the same IG
+continuity. Saved permissions and Auto Update are preserved. Unverified cleanup,
+loss of the shared browser owner, or failure of the shared transport remain
+separate barriers; a source-local HTTP/identity error is not such a barrier.
+
+The current simultaneous maintenance notices come from the explicit no-transfer
+activation hold, not failure propagation. Each source can be released separately.
+No live probe, hold release, session transfer, login change or runtime activation
+was performed by this follow-up. The native request contract remains unqualified
+until a separately authorized observation supplies the precise failure.

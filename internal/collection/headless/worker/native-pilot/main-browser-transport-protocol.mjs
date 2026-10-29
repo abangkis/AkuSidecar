@@ -5,9 +5,18 @@ import {STARTUP_PHASES,STARTUP_REASONS,STARTUP_ROLES,STARTUP_TRACE} from '../../
 import {SETTINGS_WAIT_STATES} from '../../../../../scripts/auth-session-fixture/x-settings-wait-state.mjs';
 import {createSourceOwnerRegistry,sourceOwnerRegistryFailure} from './source-owner-registry.mjs';
 import {nativeSourceDiagnostic} from './native-source-kernel.mjs';
+import {INSTAGRAM_HTTP_REJECTIONS} from './instagram-native-session.mjs';
+import {createMainDiagnosticScope} from './main-browser-diagnostic-scope.mjs';
+import {validateInstagramReaderDiagnostic} from './instagram-reader-diagnostic.mjs';
 
 export const MAIN_TRANSPORT_SCHEMA='aku.main-browser-transport.v1';
 const rejected=()=>new Error('main_transport_rejected');
+// Numeric diagnostics are admitted only from the same finite identity catalog
+// used by the IG projection, never by widening arbitrary diagnostic text.
+const instagramHTTPReasons=new Set(['reader','collector','unknown'].flatMap(role=>INSTAGRAM_HTTP_REJECTIONS.map(reason=>`${role}_identity_${reason}`)));
+const diagnosticWord=value=>typeof value==='string'&&/^[a-z_]{1,64}$/u.test(value);
+const sourceDiagnosticAllowed=value=>value&&diagnosticWord(value.stage)&&diagnosticWord(value.cleanup)&&
+  (diagnosticWord(value.reason)||value.stage==='evidence'&&instagramHTTPReasons.has(value.reason));
 const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const exact=(v,keys)=>{if(!object(v)||Object.keys(v).length!==keys.length||keys.some(k=>!Object.hasOwn(v,k)))throw rejected();};
 const bounded=(v,n=4096)=>typeof v==='string'&&v.length<=n&&!/[\u0000-\u001f\u007f]/u.test(v);
@@ -80,13 +89,39 @@ export function createMainCDP({input,output,onFailure=()=>{}}){
       if(Object.hasOwn(q,'id')){
         const p=pending.get(q.id);if(!p)continue;pending.delete(q.id);clearTimeout(p.timer);
         if((q.sessionId??'')!==p.sessionId){p.reject(rejected());close();return;}
-        if(q.error||!object(q.result))p.reject(rejected());else p.resolve(q.result);
+        if(p.expired){if(!q.error&&object(q.result))Promise.resolve().then(()=>p.late(q.result)).catch(()=>{});}
+        else if(q.error||!object(q.result))p.reject(rejected());else p.resolve(q.result);
       }else if(typeof q.method==='string'){
         for(const listener of listeners){try{listener(q);}catch{close();break;}}
       }else{close();return;}
     }
   });
   input.on('end',close);input.on('error',close);output.on('error',close);
+  function call(method,params={},sessionId='',timeoutMS=15000,local=false,late){
+    if(closed||pending.size>=32||!bounded(method,128)||!bounded(sessionId,512)||!Number.isInteger(timeoutMS)||timeoutMS<1||timeoutMS>60000)return Promise.reject(rejected());
+    const id=++sequence;if(!Number.isSafeInteger(id)){close();return Promise.reject(rejected());}
+    const wire=Buffer.from(JSON.stringify({id,method,params,...(sessionId?{sessionId}:{})})+'\0');
+    if(wire.length>8*1024*1024){wire.fill(0);return Promise.reject(rejected());}
+    return new Promise((resolve,reject)=>{
+      const entry={resolve,reject,sessionId,late,expired:false};
+      entry.timer=setTimeout(()=>{
+        if(!local){close();return;}
+        if(typeof late==='function')entry.expired=true;else pending.delete(id);
+        reject(new Error('diagnostic_request_timeout'));
+      },timeoutMS);
+      pending.set(id,entry);
+      try{output.write(wire,error=>{wire.fill(0);if(error)close();});}catch{wire.fill(0);close();}
+    });
+  }
+  const diagnosticRaw={
+    alive:()=>!closed,
+    privateTarget:id=>privateTargets.has(id),privateSession:id=>privateSessions.has(id),
+    reserveTarget(id){if(!bounded(id,512)||!id||privateTargets.size>=2048)throw rejected();privateTargets.add(id);},
+    reserveSession(id){if(!bounded(id,512)||!id||privateSessions.size>=2048)throw rejected();privateSessions.add(id);},
+    releaseTarget:id=>privateTargets.delete(id),releaseSession:id=>privateSessions.delete(id),
+    subscribe(fn){if(closed||typeof fn!=='function'||listeners.size>=32)throw rejected();listeners.add(fn);return()=>listeners.delete(fn);},
+    call:(method,params,sessionId,timeoutMS,late)=>call(method,params,sessionId,timeoutMS,true,late),
+  };
   return Object.freeze({
     alive:()=>!closed,
     privateTarget:id=>privateTargets.has(id),privateSession:id=>privateSessions.has(id),
@@ -94,16 +129,8 @@ export function createMainCDP({input,output,onFailure=()=>{}}){
     reserveSession(id){if(!bounded(id,512)||!id||privateSessions.size>=2048)throw rejected();privateSessions.add(id);},
     releaseTarget:id=>privateTargets.delete(id),releaseSession:id=>privateSessions.delete(id),
     subscribe(fn){if(closed||typeof fn!=='function'||listeners.size>=32)throw rejected();listeners.add(fn);return()=>listeners.delete(fn);},
-    call(method,params={},sessionId='',timeoutMS=15000){
-      if(closed||pending.size>=32||!bounded(method,128)||!bounded(sessionId,512)||!Number.isInteger(timeoutMS)||timeoutMS<1||timeoutMS>60000)return Promise.reject(rejected());
-      const id=++sequence;if(!Number.isSafeInteger(id)){close();return Promise.reject(rejected());}
-      const wire=Buffer.from(JSON.stringify({id,method,params,...(sessionId?{sessionId}:{})})+'\0');
-      if(wire.length>8*1024*1024){wire.fill(0);return Promise.reject(rejected());}
-      return new Promise((resolve,reject)=>{
-        const timer=setTimeout(()=>{close();},timeoutMS);pending.set(id,{resolve,reject,timer,sessionId});
-        try{output.write(wire,error=>{wire.fill(0);if(error)close();});}catch{wire.fill(0);close();}
-      });
-    },close,
+    call:(method,params,sessionId,timeoutMS)=>call(method,params,sessionId,timeoutMS),
+    createDiagnosticScope:()=>createMainDiagnosticScope(diagnosticRaw),close,
   });
 }
 
@@ -177,8 +204,8 @@ export function createMainPublicFacade(transport,{recipes=[],busy=()=>false}={})
 
 // The entry supplies connection and sealed source factories. Neither a control request nor
 // an error can return raw CDP frames, headers, cookies or protocol exceptions.
-export function serveMainBrowserTransport({input,output,connect,createX,sourceFactories={},recipes=[],expectedNonce,onClosed=()=>{}}){
-  let bytes=Buffer.alloc(0),closed=false,booting=false,transport,publicCall,x,xAttempted=false,busy=null,lastID=0,pending=0,publicPending=0;
+export function serveMainBrowserTransport({input,output,connect,createX,sourceFactories={},diagnoseInstagramReader,recipes=[],expectedNonce,onClosed=()=>{}}){
+  let bytes=Buffer.alloc(0),closed=false,booting=false,transport,publicCall,x,xAttempted=false,busy=null,lastID=0,pending=0,publicPending=0,ownerPending=0,diagnosticBlocked=false;
   const sources=createSourceOwnerRegistry(sourceFactories);
   const acquire=(lane,terminal=false)=>{
     if(busy&&(!terminal||busy.lane!==lane))throw rejected();
@@ -206,9 +233,9 @@ export function serveMainBrowserTransport({input,output,connect,createX,sourceFa
         let result;
         if(q.op==='main_call'){exact(q,['id','op','method','params','sessionId','timeoutMS']);const {id,op,...call}=q;publicPending++;try{result=await publicCall(call);}finally{publicPending--;}}
         else if(q.op==='main_x'){
-          exact(q,['id','op','operation','params']);if(typeof createX!=='function'||busy&&q.operation!=='daily_reader_check')throw rejected();
+          exact(q,['id','op','operation','params']);if(typeof createX!=='function'||busy&&(busy.lane==='diagnostic:instagram'||q.operation!=='daily_reader_check'))throw rejected();
           const exclusive=['daily_owner_bootstrap','daily_reader_initialize','daily_batch_begin','daily_batch_seed','daily_batch_end','daily_owner_close'].includes(q.operation);
-          if(exclusive&&publicPending)throw rejected();const release=exclusive?acquire('x'):()=>{};
+          if(exclusive&&publicPending)throw rejected();const release=exclusive?acquire('x'):()=>{};ownerPending++;
           try{if(!x){if(q.operation!=='daily_owner_bootstrap'||xAttempted)throw rejected();xAttempted=true;x=await createX(q.params,transport);result={bound:true};}
             else{
               let terminal=false,progressCount=0;
@@ -219,14 +246,21 @@ export function serveMainBrowserTransport({input,output,connect,createX,sourceFa
               };
               try{result=await x.execute(q.operation,q.params,q.id,report);}finally{terminal=true;}
             }
-          }finally{release();}
+          }finally{ownerPending--;release();}
         }else if(q.op==='main_source'){
           exact(q,['id','op','source','operation','params']);
           const terminal=['source_end','source_close'].includes(q.operation),lane='source:'+q.source;
           if(typeof q.source!=='string'||typeof q.operation!=='string'||busy&&(!terminal||busy.lane!==lane))throw rejected();
           const exclusive=['source_bootstrap','source_initialize','source_begin','source_seed','source_end','source_close'].includes(q.operation);
-          if(exclusive&&publicPending&&!terminal)throw rejected();const release=exclusive?acquire(lane,terminal):()=>{};
+          if(exclusive&&publicPending&&!terminal)throw rejected();const release=exclusive?acquire(lane,terminal):()=>{};ownerPending++;
           try{result=await sources.execute(q.source,q.operation,q.params,transport);}
+          finally{ownerPending--;release();}
+        }else if(q.op==='main_instagram_reader_diagnostic'){
+          exact(q,['id','op','nonce']);
+          if(typeof diagnoseInstagramReader!=='function'||typeof q.nonce!=='string'||!/^[a-f0-9]{48}$/u.test(q.nonce)||busy||publicPending||ownerPending||diagnosticBlocked)throw rejected();
+          const release=acquire('diagnostic:instagram');
+          try{result=validateInstagramReaderDiagnostic(await diagnoseInstagramReader(transport,{nonce:q.nonce}));diagnosticBlocked=result.cleanup!=='verified';}
+          catch(error){diagnosticBlocked=true;throw error;}
           finally{release();}
         }else throw rejected();
         emit({id:q.id,ok:true,result});
@@ -237,7 +271,7 @@ export function serveMainBrowserTransport({input,output,connect,createX,sourceFa
       if(q?.op==='main_source'){
         const reason=sourceOwnerRegistryFailure(error),diagnostic=nativeSourceDiagnostic(error);
         if(reason)failure={code:'native_'+reason};
-        else if(diagnostic&&['stage','reason','cleanup'].every(key=>typeof diagnostic[key]==='string'&&/^[a-z_]{1,64}$/u.test(diagnostic[key])))
+        else if(sourceDiagnosticAllowed(diagnostic))
           failure={code:`native_source_${diagnostic.stage}_${diagnostic.reason}`};
       }
       if(q&&Number.isSafeInteger(q.id))emit({id:q.id,ok:false,error:failure});else close();

@@ -35,6 +35,12 @@ type MainBrowserSourceProtocol interface {
 	CallSource(context.Context, string, string, map[string]any) (json.RawMessage, error)
 }
 
+// MainBrowserInstagramDiagnosticProtocol is an optional sealed reader diagnostic.
+// It accepts only a caller nonce and returns a closed, privacy-safe projection.
+type MainBrowserInstagramDiagnosticProtocol interface {
+	DiagnoseInstagramReader(context.Context, string) (json.RawMessage, error)
+}
+
 // Diagnostics are a closed, Node-normalized projection. Formatting never emits
 // payloads; callers explicitly decode the private diagnostic when needed.
 type MainBrowserError struct {

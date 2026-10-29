@@ -9,7 +9,8 @@ import {createMainCDP,createMainPublicFacade,serveMainBrowserTransport,MAIN_TRAN
 import {createBorrowedDailyControl,createBorrowedInstagramControl} from './main-browser-transport.mjs';
 import {ownerErrorReply} from './owner-protocol.mjs';
 import {manualCaptureFailure} from '../../../../../scripts/auth-session-fixture/x-native-manual-capture.mjs';
-import {nativeSourceFailure} from './native-source-kernel.mjs';
+import {nativeSourceFailure,annotateNativeSourceCleanup} from './native-source-kernel.mjs';
+import {INSTAGRAM_HTTP_REJECTIONS} from './instagram-native-session.mjs';
 
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 test('startup progress preserves bounded v10 phase ages and legacy v9 without raw clock data',()=>{
@@ -293,6 +294,63 @@ test('source errors forward only private diagnostic categories, never arbitrary 
   f.send({id:3,op:'main_source',source:'instagram',operation:'source_proof',params:{}});await tick();
   assert.equal(f.replies.find(r=>r.id===3).error.code,'main_transport_rejected');
   assert.ok(!JSON.stringify(f.replies).includes('private-token'));
+});
+
+test('source wire preserves every finite IG HTTP identity reason for each role',async t=>{
+  let failure;
+  const f=controlFixture(t,undefined,{instagram:async()=>({execute:async()=>{throw failure;},close:async()=>{}})});await tick();
+  f.send({id:1,op:'main_source',source:'instagram',operation:'source_bootstrap',params:{}});await tick();
+  let id=1;
+  for(const role of ['reader','collector','unknown'])for(const status of INSTAGRAM_HTTP_REJECTIONS){
+    const reason=`${role}_identity_${status}`;
+    failure=nativeSourceFailure('evidence',reason);
+    annotateNativeSourceCleanup(failure,'verified');
+    f.send({id:++id,op:'main_source',source:'instagram',operation:'source_check',params:{}});await tick();
+    assert.deepEqual(f.replies.at(-1),{id,ok:false,error:{code:`native_source_evidence_${reason}`}});
+  }
+});
+
+test('source wire rejects invented numeric identity reasons and numeric stage or cleanup text',async t=>{
+  let failure;
+  const f=controlFixture(t,undefined,{instagram:async()=>({execute:async()=>{throw failure;},close:async()=>{}})});await tick();
+  f.send({id:1,op:'main_source',source:'instagram',operation:'source_bootstrap',params:{}});await tick();
+  const reasons=['99','600','200','401','403','429','0400','4000','400_private_token','400\n','private-token']
+    .map(suffix=>`reader_identity_http_status_${suffix}`);
+  const cases=[...reasons.map(reason=>['evidence',reason,'verified']),
+    ['evidence','outsider_identity_http_status_400','verified'],
+    ['capture','reader_identity_http_status_400','verified'],
+    ['evidence1','reader_identity_http_status_400','verified'],
+    ['evidence','reader_identity_http_status_400','verified1']];
+  let id=1;
+  for(const [stage,reason,cleanup] of cases){
+    failure=nativeSourceFailure(stage,reason);annotateNativeSourceCleanup(failure,cleanup);
+    f.send({id:++id,op:'main_source',source:'instagram',operation:'source_check',params:{}});await tick();
+    assert.deepEqual(f.replies.at(-1),{id,ok:false,error:{code:'main_transport_rejected'}});
+  }
+});
+
+test('source identity and X operation failures release their lanes without closing the peer transport',async t=>{
+  let sourceClosed=false,xClosed=false;
+  const f=controlFixture(t,async()=>({execute:async op=>{
+    if(op==='daily_batch_begin')throw new Error('synthetic-x-failure');
+    return {legacyX:true};
+  },close:async()=>{xClosed=true;}}),{instagram:async()=>({execute:async op=>{
+    if(op==='source_seed')throw nativeSourceFailure('evidence','reader_identity_http_status_400');
+    if(op==='source_end')return {closed:true};
+    return {source:'instagram'};
+  },close:async()=>{sourceClosed=true;}})});await tick();
+  const send=async(id,op,operation)=>{
+    f.send({id,op,...(op==='main_source'?{source:'instagram'}:{}),operation,params:{}});await tick();
+    return f.replies.find(reply=>reply.id===id);
+  };
+  await send(1,'main_source','source_bootstrap');
+  assert.equal((await send(2,'main_source','source_seed')).error.code,'native_source_evidence_reader_identity_http_status_400');
+  assert.deepEqual((await send(3,'main_source','source_end')).result,{closed:true});
+  await send(4,'main_x','daily_owner_bootstrap');
+  assert.deepEqual((await send(5,'main_x','daily_reader_check')).result,{legacyX:true});
+  assert.equal((await send(6,'main_x','daily_batch_begin')).ok,false);
+  assert.deepEqual((await send(7,'main_source','source_check')).result,{source:'instagram'});
+  assert.equal(sourceClosed,false);assert.equal(xClosed,false);
 });
 
 test('unqualified native IG cannot be enabled by a request or read a profile during bootstrap',async t=>{

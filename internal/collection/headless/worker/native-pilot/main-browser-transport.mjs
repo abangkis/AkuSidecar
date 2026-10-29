@@ -9,6 +9,7 @@ import {parseStrictJSON} from '../../../../../scripts/auth-session-fixture/x-evi
 import {createInstagramDailyOwner} from './instagram-native-provider.mjs';
 import {INSTAGRAM_NATIVE_RECIPE} from './instagram-native-session.mjs';
 import {nativeSourceFailure} from './native-source-kernel.mjs';
+import {runInstagramReaderDiagnostic} from './instagram-reader-diagnostic.mjs';
 
 const rejected=()=>new Error('main_transport_rejected');
 const exact=(v,keys)=>{if(!v||typeof v!=='object'||Array.isArray(v)||Object.keys(v).length!==keys.length||keys.some(k=>!Object.hasOwn(v,k)))throw rejected();};
@@ -88,6 +89,7 @@ export async function runMainBrowserTransport(){
     connect:async()=>({input:process.stdin,output:process.stdout}),
     createX:(params,transport)=>createBorrowedDailyControl(params,transport),
     sourceFactories:{instagram:createBorrowedInstagramControl},
+    diagnoseInstagramReader:runInstagramReaderDiagnostic,
     onClosed:()=>{control.destroy();process.stdin.destroy();process.stdout.end();process.exitCode=0;},
   });
 }

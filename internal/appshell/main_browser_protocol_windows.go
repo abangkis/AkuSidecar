@@ -484,3 +484,15 @@ func (c *mainBrowserClient) CallXWithProgress(ctx context.Context, operation str
 	return c.requestWithProgress(ctx, "main_x", map[string]any{"operation": operation, "params": params}, boundedProgress)
 }
 func (c *mainBrowserClient) TransportWorker() *OwnedCommand { return c.worker }
+
+func (c *mainBrowserClient) DiagnoseInstagramReader(ctx context.Context, nonce string) (json.RawMessage, error) {
+	if !validInstagramDiagnosticNonce(nonce) {
+		return nil, &MainBrowserError{Code: "instagram_diagnostic_invalid_request"}
+	}
+	raw, err := c.request(ctx, "main_instagram_reader_diagnostic", map[string]any{"nonce": nonce})
+	if err != nil {
+		// Transport diagnostics are untrusted and may contain private browser data.
+		return nil, &MainBrowserError{Code: "instagram_diagnostic_rejected"}
+	}
+	return validateInstagramDiagnosticProjection(raw)
+}
