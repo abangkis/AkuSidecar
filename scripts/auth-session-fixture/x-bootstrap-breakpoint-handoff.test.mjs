@@ -3,10 +3,12 @@ import test from 'node:test';
 import vm from 'node:vm';
 import { BootstrapHandoffCapture, BootstrapBreakpointHandoff } from './x-bootstrap-breakpoint-handoff.mjs';
 import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, validateBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
-import { QA_BOUND_BOOTSTRAP_EXPRESSION, projectBoundBootstrap } from './x-qa-bound-observation.mjs';
+import { QA_BOUND_BOOTSTRAP_EXPRESSION, projectBoundBootstrap, createManualV2BoundObservation } from './x-qa-bound-observation.mjs';
+import {QACheckpointRendezvous} from './x-qa-checkpoint-rendezvous.mjs';
+import {QA_AB_URL} from './x-qa-direct-ab.mjs';
 import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 
-function fixture(fault, boundIdentity = false, beforeIdentityRead = async () => {}) {
+function fixture(fault, boundIdentity = false, beforeIdentityRead = async () => {}, hooks = {}) {
   let capture;
   let index = 0;
   let phase = 'instrumentation';
@@ -16,6 +18,7 @@ function fixture(fault, boundIdentity = false, beforeIdentityRead = async () => 
   const context = vm.createContext({ location: { origin: 'https://x.com', pathname: '/home' } });
   const scripts = ['globalThis.__INITIAL_STATE__={session:{user_id_str:"123456"}}', 'void 0', 'delete globalThis.__INITIAL_STATE__', 'void 0'];
   if (boundIdentity) scripts[0] = 'globalThis.__INITIAL_STATE__={session:{user_id:"123456"},entities:{users:{entities:{"123456":{id_str:"123456"}}}}}';
+  if (fault === 'weak_identity') scripts[0] = 'globalThis.__INITIAL_STATE__={session:{user_id_str:"123456"}}';
   const observe = (event, raw = {}) => capture.observe(event, raw);
   const pause = (ordinary = false) => {
     phase = ordinary ? 'normal' : 'instrumentation';
@@ -33,6 +36,7 @@ function fixture(fault, boundIdentity = false, beforeIdentityRead = async () => 
   capture = new BootstrapHandoffCapture({
     boundIdentity,
     beforeIdentityRead,
+    beforeRuntimeDisable: hooks.beforeRuntimeDisable,
     send: async (method, params, purpose) => {
       if (method === 'Page.getFrameTree') return { frameId: 'private-root' };
       if (method === 'Debugger.setInstrumentationBreakpoint') return { breakpointId: 'private-instrumentation' };
@@ -78,6 +82,7 @@ function fixture(fault, boundIdentity = false, beforeIdentityRead = async () => 
         const projected = JSON.parse(JSON.stringify(raw));
         const dto = boundIdentity ? projectBoundBootstrap(projected, id => {
           assert.ok(id === null || id === '123456');
+          hooks.acceptIdentity?.(id, projected.projection);
         }) : validateBootstrapCurrentSelf(projected);
         if (fault === 'replay') pause(true);
         return dto;
@@ -87,6 +92,31 @@ function fixture(fault, boundIdentity = false, beforeIdentityRead = async () => 
   });
   return { capture, evaluations: () => evaluations, observe };
 }
+
+test('a captured bootstrap candidate can leave strict identity absent and its peer rendezvous pending', async () => {
+  const scope={owner:1,profileId:'synthetic-profile',sessionId:'synthetic-session',targetId:'synthetic-target'};
+  let receipts=0,reads=0,waitState,ready;
+  const binder=createManualV2BoundObservation(scope,'root',async()=>{reads++;throw Error('no eligible response body');},()=>100,undefined,
+    {deferCookieMutation:false,onPrivateResult:()=>{},onPrivateStartup:()=>{receipts++;}});
+  const emit=(method,params)=>binder.observe({sessionId:scope.sessionId,method,params},scope);
+  emit('Page.frameNavigated',{frame:{id:'root',loaderId:'document',url:'https://x.com/home'}});
+  emit('Runtime.executionContextCreated',{context:{id:7,origin:'https://x.com',auxData:{isDefault:true,frameId:'root'}}});
+  const rendezvous=new QACheckpointRendezvous(25);
+  const peer=assert.rejects(rendezvous.arrive('collector'),/qa_rendezvous_closed/);
+  const {capture}=fixture('weak_identity',true,async()=>{},{
+    acceptIdentity:(id,projection)=>binder.acceptIdentity(id,projection),
+    beforeRuntimeDisable:async()=>{
+      ready=binder.identityReady();
+      emit('Network.requestWillBeSent',{requestId:'settings',frameId:'root',loaderId:'document',request:{method:'GET',url:QA_AB_URL}});
+      waitState=binder.settingsWaitState();
+    },
+  });
+  const result=await capture.run();await peer;
+  assert.equal(result.stopReason,'captured');assert.equal(result.snapshot.stableIdStringCandidates,1);
+  assert.equal(ready,false);assert.equal(waitState,'request_before_identity');
+  assert.equal(rendezvous.snapshot().arrivals,1);assert.equal(rendezvous.snapshot().state,'timed_out');
+  assert.equal(receipts,0);assert.equal(reads,0);await binder.finish(false);
+});
 
 test('owner prepare holds a verified normal pause before identity evaluation until broker acquisition', async () => {
   let release, entered;

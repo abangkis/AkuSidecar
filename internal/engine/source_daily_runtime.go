@@ -78,11 +78,7 @@ func (d dailyController) start(ctx context.Context, request XDailyStartRequest, 
 		close(done)
 		d.state.mu.Unlock()
 	}()
-	trial := d.source == domain.SourceInstagram && e.config.Capture.InstagramTrial
-	var permissionErr error
-	if !trial {
-		permissionErr = e.store.SaveDailySourcePermission(ctx, d.source, profileScope, true)
-	}
+	permissionErr := e.store.SaveDailySourcePermission(ctx, d.source, profileScope, true)
 	if permissionErr != nil {
 		d.state.mu.Lock()
 		d.state.startUsed = false
@@ -91,7 +87,7 @@ func (d dailyController) start(ctx context.Context, request XDailyStartRequest, 
 		return true, d.failure("permission could not be saved")
 	}
 	d.state.mu.Lock()
-	d.state.rememberedPermission = !trial
+	d.state.rememberedPermission = true
 	d.state.mu.Unlock()
 	d.state.permissionMu.Unlock()
 	owner, err := factory(call, parent)
@@ -229,6 +225,8 @@ func (d dailyController) queue(run domain.Run, payload map[string]any) error {
 	}
 	d.state.workers++
 	d.state.cancel = cancel
+	retryAt := d.state.retryAt
+	d.state.retryWaiting = retryAt.After(e.store.Now())
 	d.state.mu.Unlock()
 	e.mu.Lock()
 	e.processWorkers++
@@ -273,16 +271,16 @@ func (d dailyController) queue(run domain.Run, payload map[string]any) error {
 			}
 			stop()
 			d.rememberFailure(cause, phase)
+			retryReady := false
+			if recovered, ok := batch.(dailyRetryCleanup); ok && !cleanupFailed {
+				retryReady = recovered.dailyRetryReady()
+			}
 			d.state.mu.Lock()
 			if cleanupFailed {
 				d.state.cleanupUncertain = true
 			}
-			if cause != nil {
-				d.state.authorized = false
-				if d.state.reason == "" {
-					d.state.reason = "batch-failed"
-				}
-			}
+			d.finishRetryPolicy(cause, phase, cleanupFailed, retryReady)
+			d.state.retryWaiting = false
 			// Generation and done identity prevent a late completion retiring a successor.
 			if d.state.generation == generation && d.state.done == done {
 				d.state.done = nil
@@ -293,6 +291,9 @@ func (d dailyController) queue(run domain.Run, payload map[string]any) error {
 			d.state.mu.Unlock()
 			if cause != nil {
 				e.logger.Printf(string(d.source)+"_daily_batch phase=terminal reason=batch-failed generation=%d", generation)
+				if status := d.status(); status.RetryAt != "" {
+					e.logger.Printf(string(d.source)+"_daily_retry state=waiting attempt=%d limit=%d", status.RetryCount, status.RetryLimit)
+				}
 				if detail := d.status().StartupDiagnostic; detail != nil {
 					e.logger.Printf(string(d.source)+"_daily_startup stage=%s condition=%s cause=%s broker_reason=%s %s", detail.Stage, detail.Condition, detail.Cause, detail.BrokerReason, detail.Origin)
 				}
@@ -304,6 +305,25 @@ func (d dailyController) queue(run domain.Run, payload map[string]any) error {
 				_, _ = e.startNext(context.Background(), run.SessionID)
 			}
 		}()
+		phase = "cooldown"
+		if delay := retryAt.Sub(e.store.Now()); delay > 0 {
+			timer := time.NewTimer(delay)
+			select {
+			case <-timer.C:
+			case <-work.Done():
+				timer.Stop()
+				cause = work.Err()
+				return
+			}
+		}
+		d.state.mu.Lock()
+		d.state.retryWaiting = false
+		d.state.retryAt = time.Time{}
+		// A new attempt has its own first cause; cleanup in this attempt cannot
+		// replace it. Earlier attempts remain in the run history and safe logs.
+		d.state.firstFailure, d.state.failureCode, d.state.failurePhase = nil, "", ""
+		d.state.mu.Unlock()
+		phase = "reader-check"
 		if err := owner.CheckReader(work); err != nil {
 			cause = err
 			if d.source == domain.SourceX {

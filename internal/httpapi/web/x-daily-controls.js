@@ -8,7 +8,7 @@ const START_CONSENT = Object.freeze({
   allowProcessSessionDerivation: true,
 });
 const VALID_STATES = new Set([
-  "selected", "not-ready", "disabled", "ready", "capturing", "starting", "startup-in-progress", "stopping", "stopped", "failed",
+  "selected", "not-ready", "disabled", "ready", "capturing", "retry-wait", "starting", "startup-in-progress", "stopping", "stopped", "failed",
 ]);
 const VALID_CLEANUP = new Set(["", "verified", "pending", "uncertain"]);
 
@@ -70,6 +70,7 @@ function setChecked(element, checked) {
 
 function statusLabel(status) {
   if (!status) return "Checking status";
+  if (status.state === "retry-wait") return "Waiting to retry";
   if (status.state === "capturing") return "Capturing";
   if (status.state === "starting" || status.state === "startup-in-progress") return "Starting";
   if (status.state === "stopping") return "Stopping";
@@ -91,6 +92,9 @@ function statusLabel(status) {
 function statusDetail(status) {
   if (!status) return "Daily X controls are available only for a development concurrent-mode session.";
   if (status.authorizationPolicy === "profile") {
+    if (status.state === "retry-wait" && status.cleanup === "verified") {
+      return "X had a temporary timeout or network failure. Cleanup is verified. A limited retry can run on the next update after a cooldown, with a new collector and fresh account/session verification. Stop cancels it and removes saved permission.";
+    }
     if (status.cleanup === "pending" || status.cleanup === "uncertain") {
       return "X cleanup is not yet verified. Your saved permission is unchanged; no new batch can start until cleanup completes.";
     }
@@ -144,7 +148,7 @@ export function xDailyView(statusValue, contextValue, consentChecked, busy = fal
     status?.reason === "process-authorization-ended");
   const canStart = visible && !busy && !needsRefresh && consentChecked === true && status.state === "disabled" &&
     ["process-consent-required", "profile-consent-required"].includes(status.reason) && status.derivationAuthorized === false && !cleanupUnresolved;
-  const canStop = visible && !busy && (status.state === "ready" || status.state === "capturing" ||
+  const canStop = visible && !busy && (status.state === "ready" || status.state === "capturing" || status.state === "retry-wait" ||
     status.state === "starting" || status.state === "startup-in-progress" || status.state === "stopping" || cleanupUnresolved ||
     status.rememberedPermission);
   return {
@@ -166,6 +170,10 @@ export function xDailyCaptureNotice(value, context, activeSources, needsRefresh 
   if (needsRefresh) return {
     visible: true, title: "X status unavailable",
     detail: "The current X capture status could not be confirmed. Review X settings before the next update.",
+  };
+  if (status.state === "retry-wait" && status.cleanup === "verified") return {
+    visible: true, title: "X capture is waiting to retry",
+    detail: "The last X attempt had a temporary failure and cleanup is verified. A limited retry is available on the next update after a cooldown; account/session verification is required again. Other sources can continue.",
   };
   if (["ready", "capturing", "starting", "startup-in-progress", "stopping"].includes(status.state)) return hidden;
   const detail = status.cleanup === "uncertain" || status.cleanup === "pending"

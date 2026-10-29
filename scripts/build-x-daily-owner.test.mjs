@@ -17,6 +17,7 @@ test('daily owner package seals the distinct process/batch entry without executi
   assert.equal(createHash('sha256').update(bytes).digest('hex'),result.sha256);
   assert.match(bytes.toString(),/module\.runDailyOwner\(\)/u);
   assert(manifest.modules.some(row=>row.path.endsWith('/daily-owner-protocol.mjs')));
+  assert(manifest.modules.some(row=>row.path.endsWith('/source-retry-policy.mjs')));
   assert(manifest.captureAssets.length>0);
 });
 
@@ -30,7 +31,7 @@ test('main transport seals per-source assets without replacing the existing X bu
   assert.deepEqual(Object.keys(manifest.sourceCaptureAssets),['x','instagram']);
   for(const source of ['x','instagram'])assert(manifest.sourceCaptureAssets[source].some(row=>row.path===`AkuBridge/adapters/${source}-adapter.js`));
   assert.equal(new Set(manifest.captureAssets.map(row=>row.path)).size,manifest.captureAssets.length);
-  for(const name of ['instagram-native-provider.mjs','instagram-native-session.mjs','native-source-kernel.mjs','source-owner-registry.mjs'])
+  for(const name of ['instagram-native-provider.mjs','instagram-native-session.mjs','native-source-kernel.mjs','source-owner-registry.mjs','source-retry-policy.mjs'])
     assert(manifest.modules.some(row=>row.path.endsWith('/'+name)));
   assert.equal(createHash('sha256').update(await readFile(result.driver)).digest('hex'),result.sha256);
 });

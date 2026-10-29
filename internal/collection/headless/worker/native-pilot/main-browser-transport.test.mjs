@@ -284,12 +284,12 @@ test('source seed excludes public and X mutation, then ordinary reader calls res
 
 test('source errors forward only private diagnostic categories, never arbitrary exception fields',async t=>{
   const f=controlFixture(t,undefined,{instagram:async()=>({execute:async op=>{
-    if(op==='source_check')throw nativeSourceFailure('evidence','identity');
+    if(op==='source_check')throw nativeSourceFailure('evidence','collector_identity_http_forbidden');
     const error=new Error('private-token');Object.defineProperty(error,'code',{get(){throw Error('getter invoked');}});throw error;
   },close:async()=>{}})});await tick();
   f.send({id:1,op:'main_source',source:'instagram',operation:'source_bootstrap',params:{}});await tick();
   f.send({id:2,op:'main_source',source:'instagram',operation:'source_check',params:{}});await tick();
-  assert.equal(f.replies.find(r=>r.id===2).error.code,'native_source_evidence_identity');
+  assert.equal(f.replies.find(r=>r.id===2).error.code,'native_source_evidence_collector_identity_http_forbidden');
   f.send({id:3,op:'main_source',source:'instagram',operation:'source_proof',params:{}});await tick();
   assert.equal(f.replies.find(r=>r.id===3).error.code,'main_transport_rejected');
   assert.ok(!JSON.stringify(f.replies).includes('private-token'));

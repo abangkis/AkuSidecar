@@ -59,6 +59,7 @@ type xDailyBatch struct {
 	closeErr     error
 	pinsOnce     sync.Once
 	pinsErr      error
+	retryReady   bool
 }
 
 func newXDailyNativeOwner(parent, startup context.Context, cfg xApplicationOwnerConfig, e *Engine, _ xApplicationPostPreparer) (xDailyNativeOwner, error) {
@@ -487,6 +488,7 @@ func (b *xDailyBatch) Close(ctx context.Context) error {
 		}
 		var receipt struct {
 			Closed              bool                       `json:"closed"`
+			RetryReady          bool                       `json:"retryReady,omitempty"`
 			Cleanup             *XDailyCleanupResources    `json:"cleanup"`
 			BootstrapDiagnostic *XDailyBootstrapDiagnostic `json:"bootstrapDiagnostic"`
 		}
@@ -540,6 +542,10 @@ func (b *xDailyBatch) Close(ctx context.Context) error {
 			b.owner.mu.Lock()
 			if b.owner.batch == b {
 				b.owner.batch = nil
+				b.retryReady = receipt.RetryReady
+				if b.retryReady && !b.owner.host.isClosed() {
+					b.owner.failed = false
+				}
 			}
 			b.owner.mu.Unlock()
 		} else {
@@ -547,6 +553,11 @@ func (b *xDailyBatch) Close(ctx context.Context) error {
 		}
 	})
 	return b.closeErr
+}
+func (b *xDailyBatch) dailyRetryReady() bool {
+	b.owner.mu.Lock()
+	defer b.owner.mu.Unlock()
+	return b.retryReady && b.closeErr == nil && b.owner.batch == nil && !b.owner.failed && !b.owner.host.isClosed()
 }
 func (b *xDailyBatch) releasePins() error {
 	b.pinsOnce.Do(func() {

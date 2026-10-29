@@ -6,18 +6,24 @@ class Element {
   addEventListener(type,fn){this.listeners.set(type,fn);} removeEventListener(type){this.listeners.delete(type);}
   emit(type){this.listeners.get(type)?.({preventDefault(){}});}
 }
-const status=(extra={})=>({selectedMode:'concurrent',authorizationPolicy:'process',maxBatchMs:60000,state:'disabled',reason:'process-consent-required',derivationAuthorized:false,...extra});
+const status=(extra={})=>({selectedMode:'concurrent',authorizationPolicy:'profile',rememberedPermission:false,maxBatchMs:60000,state:'disabled',reason:'process-consent-required',derivationAuthorized:false,...extra});
 const context={epoch:'process-a',development:true};
-test('IG trial hides nonprocess authority and describes its unqualified scope',()=>{
-  assert.equal(instagramTrialView(status({authorizationPolicy:'profile'}),context,true).visible,false);
+test('IG trial requires profile authority and describes its unqualified scope',()=>{
+  assert.equal(instagramTrialView(status({authorizationPolicy:'process'}),context,true).visible,false);
   const view=instagramTrialView(status(),context,true);assert.equal(view.startEnabled,true);assert.match(view.detailText,/not yet qualified/);
   assert.equal(instagramTrialView(status({cleanup:'uncertain'}),context,true).startEnabled,false);
+});
+
+test('IG transient cooldown preserves Stop and permission without requesting restart',()=>{
+  const view=instagramTrialView(status({state:'retry-wait',reason:'transient-batch-failure',cleanup:'verified',rememberedPermission:true,derivationAuthorized:true}),context,true);
+  assert.equal(view.visible,true);assert.equal(view.startEnabled,false);assert.equal(view.stopEnabled,true);
+  assert.equal(view.statusText,'Waiting to retry');assert.match(view.detailText,/fresh account\/session/);assert.doesNotMatch(view.detailText,/restart/);
 });
 test('IG controls use independent consent, paths and status without requests on render',async()=>{
   const dom=Object.fromEntries(['panel','status','detail','consent','startButton','stopButton','feedback'].map(key=>[key,new Element()]));
   const calls=[];let currentContext=context;
   const controls=createInstagramTrialControls({...dom,readContext:()=>currentContext,api:async(path,options)=>{
-    calls.push({path,options});return{instagramCapture:status({state:'ready',reason:'',derivationAuthorized:true})};
+    calls.push({path,options});return{instagramCapture:status({state:'ready',reason:'',rememberedPermission:true,derivationAuthorized:true})};
   }});
   controls.reset(status());assert.equal(calls.length,0);assert.equal(dom.startButton.disabled,true);
   dom.consent.checked=true;dom.consent.emit('change');assert.equal(dom.startButton.disabled,false);
@@ -27,4 +33,19 @@ test('IG controls use independent consent, paths and status without requests on 
   assert.equal(calls[0].options.instanceEpoch,'process-a');assert.equal(dom.stopButton.disabled,false);
   currentContext={...context,epoch:'process-b'};controls.beginRead();assert.equal(dom.consent.checked,false);assert.equal(dom.startButton.disabled,true);
   controls.destroy();
+});
+
+test('IG saved choice is restored only from fresh server status after an epoch change',()=>{
+  const dom=Object.fromEntries(['panel','status','detail','consent','startButton','stopButton','feedback'].map(key=>[key,new Element()]));
+  const calls=[];let currentContext=context;
+  const controls=createInstagramTrialControls({...dom,readContext:()=>currentContext,api:(...args)=>{calls.push(args);}});
+  const saved=status({state:'ready',reason:'',rememberedPermission:true,derivationAuthorized:true});
+  controls.reset(saved);assert.equal(dom.consent.checked,true);
+  const stale=controls.beginRead();currentContext={...context,epoch:'process-b'};
+  const fresh=controls.beginRead();assert.equal(dom.consent.checked,false);
+  assert.equal(controls.applyRead(stale,{instagramCapture:saved}),false);
+  assert.equal(controls.applyRead(fresh,{instagramCapture:status({state:'stopped',reason:'batch-failed',rememberedPermission:true})}),true);
+  assert.equal(dom.consent.checked,true);assert.equal(dom.startButton.disabled,true);assert.equal(dom.stopButton.disabled,false);
+  assert.match(dom.detail.textContent,/saved/);assert.match(dom.detail.textContent,/verification/);
+  assert.equal(calls.length,0);controls.destroy();
 });

@@ -9,7 +9,7 @@ import {createInstagramVideoRecovery} from '../additional-source-media.mjs';
 import {resolveInstagramStructuredMediaInMainWorld} from '../../../../../../AkuBridge/instagram-main-world-media-resolver.js';
 import {resolveInstagramStructuredFeedInMainWorld} from '../../../../../../AkuBridge/instagram-main-world-feed-resolver.js';
 import {createInstagramDailyOwner, INSTAGRAM_NATIVE_RECIPE} from './instagram-native-provider.mjs';
-import {createNativeSourceAttempt, createNativeOwnedPage, nativeSourceDiagnostic} from './native-source-kernel.mjs';
+import {createNativeSourceAttempt, createNativeOwnedPage, nativeSourceDiagnostic, nativeSourceFailure} from './native-source-kernel.mjs';
 import {projectInstagramCookies, instagramAccountExpression, verifyInstagramPair} from './instagram-native-session.mjs';
 
 const nonce = 'a'.repeat(48), profileScope = 'reader-profile-scope';
@@ -26,7 +26,8 @@ function fixture(options = {}) {
   const frame = () => ({frameTree: {frame: {id: 'root', loaderId: options.changedDocument && ++documentReads > 1 ? 'changed' : 'loader', url: INSTAGRAM_NATIVE_RECIPE.home}}});
   const projection = expression => {
     if (!expression.includes('current_user')) return true;
-    return {nonce: JSON.parse(expression.match(/nonce:("[a-f0-9]+")/u)[1]), authenticated: !options.loggedOut, accountId: options.accountId ?? '123456789'};
+    return {nonce: JSON.parse(expression.match(/nonce:("[a-f0-9]+")/u)[1]), authenticated: !options.loggedOut,
+      accountId: options.loggedOut ? '' : options.accountId ?? '123456789', rejection: options.loggedOut ? 'login_visible' : 'none'};
   };
   const transport = {
     alive: () => true,
@@ -114,6 +115,20 @@ test('native recipe stays unqualified and has no speculative optional cookie imp
   assert.equal(INSTAGRAM_NATIVE_RECIPE.nativeQualified, false);
   assert.deepEqual(INSTAGRAM_NATIVE_RECIPE.optionalCookies, []);
   assert.throws(() => { INSTAGRAM_NATIVE_RECIPE.nativeQualified = true; });
+});
+
+test('IG retries use a fresh collector and proof after verified cleanup, then stop at the bound',async()=>{
+  const f=await start({runCapture:async()=>{throw nativeSourceFailure('capture','deadline');}});
+  for(let generation=1;generation<=3;generation++){
+    const q={...binding,generation,nonce:generation===1?nonce:generation.toString().repeat(48)};
+    if(generation>1)await f.owner.execute('source_begin',{...q,collectorProfile:resolve('offline/collector-'+generation),deadlineMS:Date.now()+60000});
+    await f.owner.execute('source_seed',q);
+    await assert.rejects(f.owner.execute('source_capture',{...q,payload:{scrolls:0}}));
+    assert.deepEqual(await f.owner.execute('source_end',q),{closed:true});
+  }
+  assert.equal(f.seedCount,3);assert.equal(f.targets.size,0);
+  await assert.rejects(f.owner.execute('source_begin',{...binding,generation:4,collectorProfile:resolve('offline/collector-4'),deadlineMS:Date.now()+60000}));
+  await f.owner.close();
 });
 
 test('two-phase native provider reads no session until seed; fresh bound proof and injected capture seam', async () => {
@@ -285,7 +300,7 @@ test('bounded account expression streams only one fixed endpoint, no raw body pr
   };
   const result = await runInNewContext(instagramAccountExpression(nonce), sandbox);
   assert.equal(request.url, '/api/v1/accounts/current_user/?edit=true'); assert.equal(request.options.redirect, 'error');
-  assert.equal(result.authenticated, true); assert.deepEqual(Object.keys(result).sort(), ['accountId', 'authenticated', 'nonce']);
+  assert.equal(result.authenticated, true); assert.deepEqual(Object.keys(result).sort(), ['accountId', 'authenticated', 'nonce', 'rejection']);
   assert.ok(!JSON.stringify(result).includes('PRIVATE'));
   sandbox.fetch = async () => ({status: 200, url: 'https://www.instagram.com/api/v1/accounts/current_user/?edit=true', headers: new Headers({'content-type': 'application/json'}), body: new Response('x'.repeat(65537)).body});
   assert.equal((await runInNewContext(instagramAccountExpression(nonce), sandbox)).authenticated, false);

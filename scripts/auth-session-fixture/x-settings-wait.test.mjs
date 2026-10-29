@@ -91,6 +91,14 @@ test('an ineligible or missing request stays pending until the existing wait bud
   }
 });
 
+test('a settings request before identity cannot become eligible retroactively even after a successful response',async()=>{
+  const f=fixture();f.request();assert.equal(f.b.settingsWaitState(),'request_before_identity');
+  f.identity();assert.equal(f.b.identityReady(),true);f.response(false);f.finish();
+  const budget=createStartupWaitBudget(10,{role:'reader'});
+  await assert.rejects(budget.wait(f.b.done),error=>startupDiagnostic(error).reason==='deadline');
+  assert.equal(f.reads(),0);assert.equal(f.receipts(),0);await f.b.finish(false);
+});
+
 test('diagnostic subscribers cannot affect evidence or leak native errors',async()=>{
   const f=fixture();f.b.onSettingsWait(()=>{throw Error('PRIVATE_LISTENER');});
   f.identity();f.request();f.response(false);f.finish();

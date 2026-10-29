@@ -94,6 +94,7 @@ type sourceNativeBatch struct {
 	closed    bool
 	once      sync.Once
 	closeErr  error
+	failure   error
 }
 
 func (o *sourceNativeOwner) CheckReader(ctx context.Context) error {
@@ -133,6 +134,9 @@ func (o *sourceNativeOwner) BeginBatch(ctx, parent context.Context, generation u
 	ctx, cancel := context.WithDeadline(ctx, b.Deadline())
 	defer cancel()
 	fail := func(err error) (sourceDailyBatch, error) {
+		b.mu.Lock()
+		b.failure = err
+		b.mu.Unlock()
 		o.mu.Lock()
 		o.failed = true
 		o.mu.Unlock()
@@ -232,7 +236,8 @@ func (b *sourceNativeBatch) verify(ctx context.Context) error {
 	}
 	return nil
 }
-func (b *sourceNativeBatch) Capture(ctx context.Context, command string) (domain.Run, error) {
+func (b *sourceNativeBatch) Capture(ctx context.Context, command string) (result domain.Run, failure error) {
+	defer func() { b.mu.Lock(); b.failure = failure; b.mu.Unlock() }()
 	run, err := captureSourceDailyPermit(ctx, b.owner.engine, b.owner.source, b.run, b.permit, command, b.verify, b.collector.Capture)
 	if err != nil {
 		return run, sourceNativeFail(err, "capture", "unavailable")
@@ -257,10 +262,23 @@ func (b *sourceNativeBatch) Close(ctx context.Context) error {
 			b.owner.failed = true
 		} else if b.owner.batch == b {
 			b.owner.batch = nil
+			b.mu.Lock()
+			if dailyTransientClass(b.failure) != "" && !b.owner.closed {
+				b.owner.failed = false
+			}
+			b.mu.Unlock()
 		}
 		b.owner.mu.Unlock()
 	})
 	return b.closeErr
+}
+
+func (b *sourceNativeBatch) dailyRetryReady() bool {
+	b.owner.mu.Lock()
+	defer b.owner.mu.Unlock()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.closed && b.closeErr == nil && b.owner.batch == nil && !b.owner.failed && !b.owner.closed && dailyTransientClass(b.failure) != ""
 }
 func (o *sourceNativeOwner) Close(ctx context.Context) error {
 	o.mu.Lock()

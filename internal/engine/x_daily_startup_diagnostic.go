@@ -62,6 +62,10 @@ func (e *xDailyStartupError) GoString() string         { return e.Error() }
 func (e *xDailyStartupError) Unwrap() error            { return e.cause }
 func (e *xDailyStartupError) dailyFailureCode() string { return e.Error() }
 
+// Startup diagnostics do not grant retry authority. In particular, a peer
+// deadline can originate from missing identity rather than network failure.
+func (e *xDailyStartupError) dailyRetryClass() string { return "" }
+
 func xDailyStartupFail(cause error, stage, condition string) error {
 	var first *xDailyStartupError
 	if errors.As(cause, &first) && first != nil {

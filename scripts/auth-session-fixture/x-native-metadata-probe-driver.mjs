@@ -1,6 +1,7 @@
 import {registerFreshStartupSession,startupRootControls,allowsStartupControl,mustRetireStartupOwner,markStartupControlAttempt} from './x-manual-root-controls.mjs';
 import {createStartupTiming} from './x-manual-startup-timing.mjs';
 import {createBatchBootstrap} from './x-batch-bootstrap.mjs';
+import {sourceTransientClass,SOURCE_RETRY_LIMIT} from '../../internal/collection/headless/worker/native-pilot/source-retry-policy.mjs';
 import {cleanupDailyBatch} from './x-daily-batch-cleanup.mjs';
 // Opt-in, headful X QA. Default modes export metadata only. The fixed
 // account-settings mode may read one completed response body and immediately
@@ -2351,6 +2352,7 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
   twoPhaseState={root,profile:readerProfile,rootIdentity,profileIdentity:readerIdentity,phase2Started:true};
   applicationScope={loadAssets,emitProgress};
   let initialized=false,closed=false,failed=false,base,batch,generation=0,account;
+  let transient='',retryCount=0,captureSucceeded=false;
   const posts=new Map();
   let borrowedTarget=null,unsubscribeBorrowed=null;
   let batchBootstrap;
@@ -2374,7 +2376,9 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
       enrollment:current?async()=>{let first;for(const release of [()=>current.manualCollectorUnsubscribe?.(),()=>current.shortFeasibility?.manualCookieUnsubscribe?.(),()=>current.manualEnrollment?.close()])try{await release();}catch(error){first??=error;}if(first)throw first;}:undefined,
       attachments:current?async()=>{let first;for(const sessionId of new Set([current.manualObserver?.sessionId,current.sessionId].filter(Boolean)))try{await sendApplicationPost('Target.detachFromTarget',{sessionId});borrowedMainTransport?.releaseSession?.(sessionId);}catch(error){first??=error;}if(first)throw first;}:undefined,
       bootstrap:batchBootstrap?async()=>{await batchBootstrap.close();borrowedTarget=null;}:undefined});
-    if(!result.closed)failed=true;
+    if(!result.closed){failed=true;transient='';}
+    else if(failed&&transient&&retryCount<SOURCE_RETRY_LIMIT){failed=false;retryCount++;}
+    else if(!failed&&captureSucceeded)retryCount=0;
     lastBatchCleanup=result;
     batch=null;active=base;protocolOwner=base.owner;applicationScope={loadAssets,emitProgress};
     return result;
@@ -2397,7 +2401,7 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
     async check(){if(!initialized)throw probeError('daily_reader_unavailable');return check();},
     async begin(message){
       if(!initialized||failed||batch||message.generation!==generation+1)throw probeError('daily_batch_unavailable');
-      generation=message.generation;await check();
+      generation=message.generation;transient='';captureSucceeded=false;await check();
       lastBatchCleanup=null;
       const path=message.collectorProfile;
       if(typeof path!=='string'||!isAbsolute(path)||resolve(path)!==path)throw probeError('daily_collector_path_invalid');
@@ -2408,7 +2412,7 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
           borrowedTarget=await batchBootstrap.begin();
           await initializeChromeSession(child,readerProfile,borrowedTarget);
           batch=active;
-        }catch(error){failed=true;throw error;}
+        }catch(error){failed=true;transient='';throw error;}
       }
       const attached=batchBootstrap?{sessionId:batch.sessionId}:await sendApplicationPost('Target.attachToTarget',{targetId:base.targetId,flatten:true});
       if(!safeId(attached.sessionId))throw probeError('daily_reader_attachment_failed');
@@ -2418,20 +2422,21 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
       registerFreshStartupSession(batch,batch.sessionId,'reader');await send('Page.enable',{},batch.sessionId);await home();
       applicationScope={collectorProfile:path,loadAssets,emitProgress,collectorFactory,expectedAccount:account,seedGrant:createApplicationSeedGrant({runSeed:seedRetainedManualPilot})};
       try{const collector=await prepareShortConcurrency({owner:batch.owner});if(!sameDirectoryIdentity(await ordinaryDirectoryIdentity(path),collectorIdentity))throw probeError('daily_collector_changed');return{owner:batch.owner,readerPID:base.pid,collectorPID:collector.collectorPID};}
-      catch(error){failed=true;throw error;}
+      catch(error){failed=true;transient='';throw error;}
     },
     async seed(message){
       if(!batch||failed||message.generation!==generation||message.owner!==batch.owner)throw probeError('daily_seed_unavailable');
       try{const receipt=await applicationScope.seedGrant.run({id:message.id,op:'manual_seed_bootstrap',owner:batch.owner});
         if(account!==undefined&&account!==receipt.accountId)throw probeError('daily_account_changed');account=receipt.accountId;return receipt;
-      }catch(error){failed=true;throw error;}
+      }catch(error){failed=true;transient='';throw error;}
     },
     async execute(message){
       if(!batch)throw probeError('daily_batch_unavailable');await check();
       const cleanup=['manual_abort','manual_capture_cancel'].includes(message.op);
       if(!cleanup){if(failed)throw probeError('daily_batch_failed');applicationScope.seedGrant.assertCurrent();}
       if(message.op==='manual_capture')applicationScope.seedGrant.assertCaptureDeadline(message.request?.deadlineMS);
-      try{return await executeManualOwnerRPC(message);}catch(error){if(!cleanup)failed=true;throw error;}
+      try{const result=await executeManualOwnerRPC(message);if(message.op==='manual_capture')captureSucceeded=true;return result;}
+      catch(error){if(!cleanup){transient=failed?'':sourceTransientClass(error);failed=true;}throw error;}
     },
     async end(message){if(message.generation!==generation)throw probeError('daily_batch_stale');return endBatch();},
     async post(message){
@@ -2442,7 +2447,7 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
         const actor=createApplicationReaderPost({owner:base.owner,bootstrapTarget:base.targetId,allowMainOrigin:true,processScopedOwner:Boolean(borrowedReader),
           command:async(method,params,session,before=()=>{})=>{await check();before();return sendApplicationPost(method,params,session);},
           assertCurrent:()=>{if(closed||childExited||cdpFailure)throw probeError('daily_reader_changed');}});
-        record={actor,timer:setTimeout(()=>{posts.delete(key);void actor.close().catch(()=>{failed=true;});},35000)};posts.set(key,record);
+        record={actor,timer:setTimeout(()=>{posts.delete(key);void actor.close().catch(()=>{failed=true;transient='';});},35000)};posts.set(key,record);
       }
       if(!record)throw probeError('daily_reader_request_missing');
       try{return await record.actor.execute(message);}finally{if(message.op!=='manual_prepare_post'){clearTimeout(record.timer);posts.delete(key);await record.actor.close();}}

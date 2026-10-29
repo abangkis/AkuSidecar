@@ -1,5 +1,6 @@
 // Source-independent native attempt lifetime. Source recipes alone choose URLs,
 // session material and account projections; this kernel never interprets them.
+import {markSourceTransient} from './source-retry-policy.mjs';
 const diagnostics = new WeakMap();
 export const nativeSourceDiagnostic = error => diagnostics.get(error) ?? null;
 export function annotateNativeSourceCleanup(error, cleanup) {
@@ -8,6 +9,7 @@ export function annotateNativeSourceCleanup(error, cleanup) {
 export function nativeSourceFailure(stage, reason) {
   const error = new Error('native_source_failed');
   diagnostics.set(error, Object.freeze({stage, reason, cleanup: 'not_started'}));
+  if (['capture', 'navigation', 'evidence'].includes(stage) && reason === 'deadline') markSourceTransient(error, 'timeout');
   return error;
 }
 export const nativeRecord = (value, keys) => value && [Object.prototype, null].includes(Object.getPrototypeOf(value)) &&

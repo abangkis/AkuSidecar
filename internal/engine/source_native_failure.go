@@ -21,8 +21,43 @@ func (e *sourceNativeFailure) dailyFailureCode() string {
 	return "native_source_" + e.stage + "_" + e.reason
 }
 
+func (e *sourceNativeFailure) dailyRetryClass() string {
+	if e.stage == "evidence" {
+		for _, role := range []string{"reader", "collector"} {
+			switch e.reason {
+			case role + "_identity_fetch_timeout":
+				return "timeout"
+			}
+		}
+	}
+	if e.stage == "capture" || e.stage == "navigation" || e.stage == "evidence" || e.stage == "startup" {
+		if e.reason == "deadline" {
+			return "timeout"
+		}
+		if e.reason == "unavailable" {
+			return dailyTransientClass(e.cause)
+		}
+	}
+	return ""
+}
+
 var sourceNativeStages = map[string]bool{"admission": true, "lifetime": true, "target": true, "collector": true, "session": true, "evidence": true, "navigation": true, "capture": true, "cleanup": true, "operation": true, "qualification": true, "startup": true, "ownership": true, "wire": true, "store": true}
 var sourceNativeReasons = map[string]bool{"scope": true, "clock": true, "closed": true, "deadline": true, "canceled": true, "unavailable": true, "inventory": true, "target_present": true, "identity": true, "nonce": true, "projection": true, "required": true, "document": true, "document_changed": true, "account_mismatch": true, "stale": true, "pair": true, "fields": true, "profile": true, "owner": true, "changed": true, "home": true, "url": true, "expression": true, "method": true, "unverified": true, "binding": true, "busy": true, "replay": true, "batch": true, "collector": true, "state": true, "source": true, "observation": true, "operation": true, "generation": true, "proof": true, "decode": true}
+
+// Keep the browser projection's closed rejection categories intact across RPC.
+// No arbitrary reason or native exception text becomes a public diagnostic.
+func init() {
+	for _, role := range []string{"reader", "collector", "unknown"} {
+		for _, reason := range []string{
+			"page_scope", "login_visible", "http_unauthorized", "http_forbidden", "http_rate_limited",
+			"http_server", "http_status", "response_origin", "response_mime", "body_size", "body_missing",
+			"body_read", "body_encoding", "body_json", "response_shape", "account_missing", "account_anonymous",
+			"account_type", "account_format", "page_changed", "fetch_timeout", "fetch_failed", "projection",
+		} {
+			sourceNativeReasons[role+"_identity_"+reason] = true
+		}
+	}
+}
 
 func sourceNativeFail(cause error, stage, reason string) error {
 	var previous *sourceNativeFailure

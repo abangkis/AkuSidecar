@@ -20,6 +20,7 @@ type sourceNativeOffline struct {
 	ownership, cleanup bool
 	closed, captures   int
 	changeAfterCapture bool
+	seedFailure        error
 }
 
 func (f *sourceNativeOffline) CheckReader(context.Context) error { return nil }
@@ -45,7 +46,32 @@ func (f *sourceNativeOffline) pair(c sourceNativeChallenge) sourceNativePair {
 	return p
 }
 func (f *sourceNativeOffline) Seed(_ context.Context, c sourceNativeChallenge) (sourceNativePair, error) {
+	if f.seedFailure != nil {
+		return sourceNativePair{}, f.seedFailure
+	}
 	return f.pair(c), nil
+}
+
+func TestSourceNativeRetryReadinessRequiresTransientAndVerifiedCleanup(t *testing.T) {
+	for _, mode := range []string{"timeout", "account", "cleanup"} {
+		t.Run(mode, func(t *testing.T) {
+			o, f, run, _ := sourceNativeFixture(t)
+			f.seedFailure = sourceNativeFail(nil, "evidence", "reader_identity_fetch_timeout")
+			if mode == "account" {
+				f.seedFailure = sourceNativeFail(nil, "evidence", "account_mismatch")
+			}
+			f.cleanup = mode == "cleanup"
+			b, err := o.BeginBatch(context.Background(), context.Background(), 1, run)
+			if err == nil || b == nil {
+				t.Fatal("fixture seed did not fail")
+			}
+			closeErr := b.Close(context.Background())
+			ready := b.(dailyRetryCleanup).dailyRetryReady()
+			if ready != (mode == "timeout") || (closeErr != nil) != (mode == "cleanup") {
+				t.Fatalf("mode=%s retryReady=%t cleanup=%v", mode, ready, closeErr)
+			}
+		})
+	}
 }
 func (f *sourceNativeOffline) Proof(_ context.Context, c sourceNativeChallenge) (sourceNativePair, error) {
 	return f.pair(c), nil

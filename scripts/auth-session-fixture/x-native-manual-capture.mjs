@@ -5,6 +5,7 @@ import {HeaderSafetyGuard} from './x-manual-header-safety.mjs';
 import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 import {CaptureTrafficDiagnostics} from './x-capture-traffic-diagnostics.mjs';
 import {projectCaptureWorkerDiagnostic} from './x-capture-worker-diagnostic.mjs';
+import {markSourceTransient,sourceTransientClass} from '../../internal/collection/headless/worker/native-pilot/source-retry-policy.mjs';
 
 const fail=()=>new Error('xnp_manual_capture_rejected');
 export const CAPTURE_STAGES=Object.freeze(['unknown','admission','behavior','coordinator','owner_before','payload','transport','assets','target_create','target_attach','observer','navigation','evaluation','worker','coverage','serialization','wire','observation','owner_after','cleanup']);
@@ -29,6 +30,10 @@ export function manualCaptureFailure(error,stage,reason) {
   const result=fail();
   if(challenge)Object.assign(result,{code:'challenge_required',challengeCategory:category});
   captureDetails.set(result,Object.freeze({stage:CAPTURE_STAGES.includes(stage)?stage:'unknown',reason:CAPTURE_REASONS.includes(reason)?reason:'unknown',cleanup:'unknown'}));
+  if(!challenge&&['transport','navigation','evaluation'].includes(stage)) {
+    if(reason==='deadline')markSourceTransient(result,'timeout');
+    if(reason==='network_failed')markSourceTransient(result,'network');
+  }
   return result;
 }
 // The private wire carries a closed reason, never page text or raw exceptions.
@@ -38,6 +43,8 @@ export function manualCaptureRPCCode(error) {
       :data(error,'challengeCategory')==='x_human_verification'?'manual_capture_challenge_x_human_verification'
       :'manual_capture_challenge_unknown';
   }
+  const transient=sourceTransientClass(error);
+  if(transient)return 'manual_capture_transient_'+transient;
   return 'manual_capture_rejected';
 }
 // Observational metadata is independent of the operational failure code. It

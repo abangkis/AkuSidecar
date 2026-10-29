@@ -185,6 +185,29 @@ func nativePilotCaptureTransportError(ctx context.Context, err error) error {
 		}
 	}
 	if err != nil {
+		// This is an explicit operational code from the trusted private pipe,
+		// independent of the observational diagnostic sideband.
+		var operational interface{ dailyFailureCode() string }
+		if errors.As(err, &operational) {
+			class := ""
+			switch operational.dailyFailureCode() {
+			case "manual_capture_transient_timeout":
+				class = "timeout"
+			case "manual_capture_transient_network":
+				class = "network"
+			}
+			if class != "" {
+				detail := sideband.closed()
+				if !valid {
+					reason := "network_failed"
+					if class == "timeout" {
+						reason = "deadline"
+					}
+					detail = (nativePilotCaptureDiagnostic{"transport", reason, "unknown"}).closed()
+				}
+				return &nativePilotCaptureError{detail: detail, cause: &dailyTransientFailure{class: class}}
+			}
+		}
 		category, challenge := "", true
 		switch err.Error() {
 		case "manual_capture_challenge_cloudflare":

@@ -1,6 +1,7 @@
 import {parseStrictJSON} from '../../../../../scripts/auth-session-fixture/x-evidence-ingress.mjs';
 import {ownerOperation,ownerErrorReply} from './owner-protocol.mjs';
 import {applicationPostOperation} from '../../../../../scripts/auth-session-fixture/x-application-reader-post.mjs';
+import {sourceTransientClass,SOURCE_RETRY_LIMIT} from './source-retry-policy.mjs';
 
 export const DAILY_OWNER_SCHEMA='aku.x.daily-owner.v1';
 const fail=()=>new Error('daily_owner_rejected');
@@ -10,6 +11,7 @@ const exact=(v,keys)=>{if(!v||typeof v!=='object'||Array.isArray(v)||Object.keys
 export function serveDailyOwnerPipe({input,output,createOwner,onClosed=()=>{}}){
   let bytes=Buffer.alloc(0),owner,booting=false,closed=false,lastID=0,pending=0,batchPending=0;
   let initialized=false,initializing=false,generation=0,state='idle',seedUsed=false;
+  let transient='',retryCount=0,captureSucceeded=false;
   const inflight=new Set(),seen=new Set(),decoder=new TextDecoder('utf-8',{fatal:true});
   const close=()=>{if(closed)return;closed=true;bytes.fill(0);bytes=Buffer.alloc(0);input.pause();void Promise.resolve().then(()=>owner?.close()).catch(()=>{}).finally(onClosed);};
   const emit=value=>{if(closed)return;let wire;try{wire=Buffer.from(JSON.stringify(value)+'\n');if(wire.length>800*1024)throw fail();output.write(wire,error=>{wire.fill(0);if(error)close();});}catch{close();}};
@@ -39,7 +41,7 @@ export function serveDailyOwnerPipe({input,output,createOwner,onClosed=()=>{}}){
         }else if(q.op==='daily_batch_begin'){
           exact(q,['id','op','generation','collectorProfile']);
           if(!initialized||initializing||state!=='idle'||batchPending!==1||q.generation!==generation+1||!Number.isSafeInteger(q.generation))throw fail();
-          generation=q.generation;state='starting';seedUsed=false;
+          generation=q.generation;state='starting';seedUsed=false;transient='';captureSucceeded=false;
           result=await owner.begin(q);state='prepared';
         }else if(q.op==='daily_batch_seed'){
           exact(q,['id','op','generation','owner']);
@@ -48,7 +50,11 @@ export function serveDailyOwnerPipe({input,output,createOwner,onClosed=()=>{}}){
         }else if(q.op==='daily_batch_end'){
           exact(q,['id','op','generation']);
           if(q.generation!==generation||!['prepared','active','failed'].includes(state)||batchPending!==1)throw fail();
-          const failed=state==='failed';state='closing';result=await owner.end(q);state=failed?'failed':'idle';
+          const failed=state==='failed';state='closing';result=await owner.end(q);
+          const retryReady=failed&&transient!==''&&retryCount<SOURCE_RETRY_LIMIT&&result?.closed===true;
+          if(retryReady){retryCount++;result={...result,retryReady:true};}
+          else if(!failed&&captureSucceeded)retryCount=0;
+          state=failed&&!retryReady?'failed':'idle';
         }else if(q.op==='daily_reader_check'){
           exact(q,['id','op']);if(!initialized||initializing)throw fail();result=await owner.check();
         }else if(['manual_prepare_post','manual_complete_post','manual_cancel_post'].includes(q.op)){
@@ -58,10 +64,11 @@ export function serveDailyOwnerPipe({input,output,createOwner,onClosed=()=>{}}){
           const m={...q};delete m.generation;ownerOperation(m);
           if(state!=='active'&&!(['manual_abort','manual_capture_cancel'].includes(q.op)&&state==='failed'))throw fail();
           result=await owner.execute(m);
+          if(q.op==='manual_capture')captureSucceeded=true;
         }
         if(Buffer.isBuffer(result)){const raw=result;try{result=parseStrictJSON(raw.toString('utf8'),{maxJSONDepth:4,maxJSONTokens:96});}finally{raw.fill(0);}}
         emit({id:q.id,ok:true,result});
-      }catch(error){if(!processOperation)state='failed';emit(ownerErrorReply(q.op==='daily_batch_seed'?{...q,op:'native_owner_seed'}:q,error));}
+      }catch(error){if(!processOperation){transient=state==='failed'||q.op!=='manual_capture'?'':sourceTransientClass(error);state='failed';}emit(ownerErrorReply(q.op==='daily_batch_seed'?{...q,op:'native_owner_seed'}:q,error));}
       finally{pending--;if(!processOperation)batchPending--;inflight.delete(q.id);}
     }catch{close();}finally{line.fill(0);}
   }

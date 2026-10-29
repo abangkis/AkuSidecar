@@ -19,6 +19,9 @@ func TestSourceNativeFailureRetainsSafeFirstCause(t *testing.T) {
 	}{
 		{sourceNativeFail(errors.New("private-cookie-and-profile"), "evidence", "pair"), "native_source_evidence_pair"},
 		{sourceNativeWireFailure(&appshell.MainBrowserError{Code: "native_source_session_required"}), "native_source_session_required"},
+		{sourceNativeWireFailure(&appshell.MainBrowserError{Code: "native_source_evidence_reader_identity_http_forbidden"}), "native_source_evidence_reader_identity_http_forbidden"},
+		{sourceNativeWireFailure(&appshell.MainBrowserError{Code: "native_source_evidence_collector_identity_body_json"}), "native_source_evidence_collector_identity_body_json"},
+		{sourceNativeWireFailure(&appshell.MainBrowserError{Code: "native_source_evidence_reader_identity_private-cookie-and-profile"}), "native_source_wire_unavailable"},
 		{sourceNativeWireFailure(&appshell.MainBrowserError{Code: "native_source_secret_private-cookie-and-profile"}), "native_source_wire_unavailable"},
 	} {
 		e, _ := testEngine(t)

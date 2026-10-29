@@ -5,6 +5,7 @@ import {launchChrome} from '../chrome.mjs';
 import {captureIsolated, validateCapture} from '../capture.mjs';
 import {canonicalSourceURL} from '../observation.mjs';
 import {createNativeSourceAttempt, createNativeOwnedPage, nativeSourceFailure, nativeSourceDiagnostic, annotateNativeSourceCleanup, nativeRecord, nativeRef} from './native-source-kernel.mjs';
+import {sourceTransientClass, SOURCE_RETRY_LIMIT} from './source-retry-policy.mjs';
 import {INSTAGRAM_NATIVE_RECIPE, readInstagramEvidence, eraseInstagramCookies, verifyInstagramPair} from './instagram-native-session.mjs';
 
 export {INSTAGRAM_NATIVE_RECIPE};
@@ -39,6 +40,7 @@ export async function createInstagramDailyOwner(params, transport, {loadAssets, 
   const secret = randomBytes(32);
   const descriptor = Object.freeze({source: 'instagram', recipe: INSTAGRAM_NATIVE_RECIPE.recipe, readerOwnerID: String(params.readerPID), readerProfileID: params.readerProfile});
   let initialized = false, closed = false, generation = 0, batch, terminal = false, busy = false, previousAccount, lastBatchCleanup, closing;
+  let recoverable = false, retryCount = 0;
   const check = () => { if (!initialized || closed || terminal || !transport.alive()) throw nativeSourceFailure('lifetime', 'owner'); };
   const disposeCookies = result => { if (result) eraseInstagramCookies(result.cookies); };
   async function evidence(role, nonce) {
@@ -92,6 +94,8 @@ export async function createInstagramDailyOwner(params, transport, {loadAssets, 
     if (!batch) return lastBatchCleanup ?? {closed: true, cleanup: 'verified', source: 'instagram'};
     const receipt = await batch.attempt.close();
     if (!receipt.closed) terminal = true;
+    else if (recoverable && retryCount <= SOURCE_RETRY_LIMIT && !closed && transport.alive()) terminal = false;
+    recoverable = false;
     lastBatchCleanup = receipt;
     batch = null;
     return receipt;
@@ -190,10 +194,12 @@ export async function createInstagramDailyOwner(params, transport, {loadAssets, 
         if (ms < 1000) throw nativeSourceFailure('capture', 'deadline');
         const result = await current.attempt.run('capture', () => runCapture(browser, {instagram: assets}, 'instagram', {...values.payload, captureTimeoutMs: ms}));
         if (result?.source !== 'instagram' || Buffer.byteLength(JSON.stringify(result), 'utf8') > 512 * 1024) throw nativeSourceFailure('capture', 'observation');
-        await pair(); return result;
+        await pair(); retryCount = 0; return result;
       }
       throw nativeSourceFailure('admission', 'operation');
     } catch (error) {
+      recoverable = !terminal && sourceTransientClass(error) !== '';
+      if (recoverable) retryCount++;
       terminal = true;
       const failure = nativeSourceDiagnostic(error) ? error : nativeSourceFailure('operation', 'unavailable');
       // Preserve the first cause separately from resource retirement results.

@@ -69,7 +69,8 @@ func (e *Engine) StartInstagramDaily(ctx context.Context, request XDailyStartReq
 	return err
 }
 
-// Trial consent is explicit for each process and never qualifies the recipe.
+// Explicit trial consent is saved per source/profile and never qualifies the recipe.
+// Restart restores the choice through a new owner; every batch still requires fresh proof.
 func (e *Engine) StartInstagramTrial(ctx context.Context, request XDailyStartRequest, acknowledgeUnqualified bool) error {
 	if !e.config.Dev || !e.config.Capture.InstagramTrial || !acknowledgeUnqualified {
 		return e.dailyController(domain.SourceInstagram).failure("trial consent required")

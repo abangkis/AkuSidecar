@@ -70,7 +70,7 @@ export async function syntheticCapturePort(pins,transport,bridgePath,{inspect=va
     snapshot:async role=>inspect({...rolePins[role],sessionId:role+'-session',alive:true,headless:role==='collector',windowCount:role==='reader'?1:0,bootstrapCount:role==='reader'?1:0,lifecycleReady:true}),retire:async()=>{},
     capture:(request,options)=>captureNativeXTarget({request,bridgePath,...options,browserContextId:'owned-context',command:transport.command.bind(transport),subscribe:transport.subscribe.bind(transport)})});
   let id=1;
-  for(const role of roles)await port.execute({id:id++,op:'manual_prepare',owner:1,role});
+  for(const role of roles)await port.execute({id:id++,op:'manual_prepare',owner:1,role,observationDeadlineMS:Date.now()+MANUAL_TIMING.startupTotalMS});
   for(const role of roles)await port.execute({id:id++,op:'manual_acquire',owner:1,role,handle:role+'-handle',startupBudgetMS:MANUAL_TIMING.evidenceMaxAgeMS,request:{challenge:'synthetic',role,...rolePins[role]}});
   return port;
 }

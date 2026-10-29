@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {PassThrough} from 'node:stream';
 import {serveDailyOwnerPipe,DAILY_OWNER_SCHEMA} from './daily-owner-protocol.mjs';
 import {applicationPostOperation} from '../../../../../scripts/auth-session-fixture/x-application-reader-post.mjs';
+import {manualCaptureFailure} from '../../../../../scripts/auth-session-fixture/x-native-manual-capture.mjs';
 
 async function fixture(t,overrides={}){
   const input=new PassThrough(),output=new PassThrough(),events=[],waiting=[];let buffer='',id=0;
@@ -48,6 +49,19 @@ test('cleanup uncertainty prevents reuse and EOF closes process owner',async t=>
 test('reader check remains independent of retired batch',async t=>{
  const f=await fixture(t);await f.request('daily_batch_begin',{generation:1,collectorProfile:'c'});await f.request('daily_batch_seed',{generation:1,owner:2});await f.request('daily_batch_end',{generation:1});
  assert.equal((await f.request('daily_reader_check')).ok,true);
+});
+
+test('verified end permits two fresh generations after operational network failure only',async t=>{
+ const f=await fixture(t,{execute:async()=>{throw manualCaptureFailure(null,'navigation','network_failed');}});
+ for(let generation=1;generation<=3;generation++){
+  assert.equal((await f.request('daily_batch_begin',{generation,collectorProfile:'collector-'+generation})).ok,true);
+  await f.request('daily_batch_seed',{generation,owner:generation+1});
+  const pins=Object.fromEntries(['ownerId','profileId','contextId','targetId','frameId','documentId'].map(key=>[key,'synthetic-'+key]));
+  const failed=await f.request('manual_capture',{generation,owner:generation+1,role:'collector',handle:'synthetic',request:{correlation:'synthetic',pins,deadlineMS:Date.now()+10000,payload:{scrolls:0}}});
+  assert.equal(failed.ok,false);
+  const end=await f.request('daily_batch_end',{generation});assert.equal(end.ok,true);assert.equal(end.result.retryReady===true,generation<3);
+ }
+ assert.equal((await f.request('daily_batch_begin',{generation:4,collectorProfile:'collector-4'})).ok,false);
 });
 test('reader RPC may overlap batch creation without consuming batch authority',async t=>{
  let release;const f=await fixture(t,{check:()=>new Promise(r=>{release=()=>r({readerPID:100,readerProfile:'reader'});})});

@@ -42,6 +42,9 @@ type sourceDailyRouting struct {
 	cleanupDiagnostic          *XDailyCleanupDiagnostic
 	startDone                  chan struct{}
 	cancelStart                context.CancelFunc
+	retryCount                 int
+	retryAt                    time.Time
+	retryWaiting               bool
 }
 
 // XDailySelection owns only the restart-required routing selection. Step two
@@ -65,6 +68,9 @@ type XCaptureStatus struct {
 	DerivationAuthorized         bool                     `json:"derivationAuthorized"`
 	FailurePhase                 string                   `json:"failurePhase,omitempty"`
 	FailureCode                  string                   `json:"failureCode,omitempty"`
+	RetryCount                   int                      `json:"retryCount,omitempty"`
+	RetryLimit                   int                      `json:"retryLimit,omitempty"`
+	RetryAt                      string                   `json:"retryAt,omitempty"`
 	StartupDiagnostic            *XDailyStartupDiagnostic `json:"startupDiagnostic,omitempty"`
 	CleanupDiagnostic            *XDailyCleanupDiagnostic `json:"cleanupDiagnostic,omitempty"`
 	Cleanup                      string                   `json:"cleanup,omitempty"`
@@ -140,9 +146,6 @@ func (d dailyController) status() XCaptureStatus {
 	}
 	status.EffectiveMode, status.State, status.Reason = "unavailable", "not-ready", "batch-adapter-required"
 	status.AuthorizationPolicy, status.MaxBatchMS = "profile", xDailyBatchLimitMS
-	if d.source == domain.SourceInstagram && e.config.Capture.InstagramTrial {
-		status.AuthorizationPolicy = "process"
-	}
 	status.ReaderBootstrapLifetime = "process"
 	if d.source == domain.SourceInstagram || e.config.Capture.XUsesMainProfile() {
 		status.ReaderBootstrapLifetime = "batch"
@@ -150,6 +153,10 @@ func (d dailyController) status() XCaptureStatus {
 	d.state.mu.RLock()
 	defer d.state.mu.RUnlock()
 	status.RememberedPermission = d.state.rememberedPermission
+	status.RetryCount, status.RetryLimit = d.state.retryCount, dailyRetryLimit
+	if !d.state.retryAt.IsZero() {
+		status.RetryAt = d.state.retryAt.UTC().Format(time.RFC3339Nano)
+	}
 	if d.state.cleanupDiagnostic != nil {
 		detail := d.state.cleanupDiagnostic.closed()
 		status.CleanupDiagnostic = &detail
@@ -161,7 +168,7 @@ func (d dailyController) status() XCaptureStatus {
 		status.Cleanup = "verified"
 		status.CleanupScope = "batch_collector"
 	}
-	if d.state.done != nil {
+	if d.state.done != nil && !d.state.retryWaiting {
 		status.Cleanup = "pending"
 	}
 	if d.state.startDone != nil {
@@ -180,6 +187,9 @@ func (d dailyController) status() XCaptureStatus {
 			status.EffectiveMode, status.State, status.Reason, status.DerivationAuthorized = "concurrent", "ready", "", true
 			if d.state.done != nil {
 				status.State = "capturing"
+			}
+			if d.state.retryAt.After(e.store.Now()) {
+				status.State, status.Reason = "retry-wait", "transient-batch-failure"
 			}
 		}
 	}
@@ -270,8 +280,7 @@ func (d dailyController) resume(ctx context.Context) error {
 		return d.failure("scheduling context required")
 	}
 	d.state.mu.Lock()
-	trial := d.source == domain.SourceInstagram && e.config.Capture.InstagramTrial
-	shouldRestore := !trial && d.state.factory != nil && !d.state.permissionRestoreAttempted
+	shouldRestore := d.state.factory != nil && !d.state.permissionRestoreAttempted
 	profileScope := d.state.profileScope
 	revision := d.state.permissionRevision
 	var restoreDone chan struct{}
