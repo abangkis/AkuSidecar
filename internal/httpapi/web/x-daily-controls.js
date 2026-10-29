@@ -184,7 +184,7 @@ export function xDailyCaptureNotice(value, context, activeSources, needsRefresh 
   };
 }
 
-export function createXDailyControls({
+export function createDailySourceControls({
   panel,
   status,
   detail,
@@ -198,7 +198,16 @@ export function createXDailyControls({
   notices = [],
   readActiveSources = () => [],
   onReviewSettings = () => {},
+  sourceLabel = "X",
+  statusField = "xCapture",
+  startPath = X_DAILY_START,
+  stopPath = X_DAILY_STOP,
+  startConsent = START_CONSENT,
+  deriveView = xDailyView,
+  deriveNotice = xDailyCaptureNotice,
 }) {
+  const normalize = value => normalizeStatus(value && Object.hasOwn(value, statusField) ? value[statusField] : value);
+  const copy = value => sourceLabel === "X" ? value : value.replace(/\bX\b/g, sourceLabel);
   let latestStatus = null;
   let destroyed = false;
   let busy = false;
@@ -243,7 +252,7 @@ export function createXDailyControls({
   function render() {
     if (destroyed) return;
     const context = syncContext();
-    const view = xDailyView(latestStatus, context, consent?.checked === true, busy, needsRefresh);
+    const view = deriveView(latestStatus, context, consent?.checked === true, busy, needsRefresh);
     setHidden(panel, !view.visible);
     setDisabled(consent, !view.visible || busy || view.terminal || !latestStatus ||
       latestStatus.state !== "disabled" || !["process-consent-required", "profile-consent-required"].includes(latestStatus.reason) ||
@@ -261,8 +270,8 @@ export function createXDailyControls({
         : view.detailText);
     setSettingsText(status, displayedStatus);
     setSettingsClass(status, `x-daily-status${view.visible ? "" : " x-daily-status-hidden"}`);
-    setSettingsText(detail, displayedDetail);
-    const notice = xDailyCaptureNotice(latestStatus, context, readActiveSources(), needsRefresh);
+    setSettingsText(detail, copy(displayedDetail));
+    const notice = deriveNotice(latestStatus, context, readActiveSources(), needsRefresh);
     for (const item of notices) {
       setHidden(item.panel, !notice.visible);
       item.panel?.classList?.toggle("hidden", !notice.visible);
@@ -282,7 +291,7 @@ export function createXDailyControls({
     if (destroyed) return false;
     const context = syncContext();
     if (!ticket || busy || ticket.epoch !== context.epoch || ticket.revision !== revision) return false;
-    const nextStatus = normalizeStatus(value);
+    const nextStatus = normalize(value);
     if (!nextStatus) {
       needsRefresh = true;
       setChecked(consent, false);
@@ -313,7 +322,7 @@ export function createXDailyControls({
     busyAction = "";
     setChecked(consent, false);
     showFeedback("");
-    const nextStatus = normalizeStatus(value);
+    const nextStatus = normalize(value);
     if (nextStatus && context.development && context.epoch) publishStatus(nextStatus);
     else {
       latestStatus = null;
@@ -323,11 +332,11 @@ export function createXDailyControls({
   }
 
   function showFeedback(message) {
-    setSettingsText(feedback, message);
+    setSettingsText(feedback, copy(message));
   }
 
   function adoptMutationStatus(value) {
-    const nextStatus = normalizeStatus(value);
+    const nextStatus = normalize(value);
     if (!nextStatus) return false;
     publishStatus(nextStatus);
     return true;
@@ -358,7 +367,7 @@ export function createXDailyControls({
   async function mutate(kind) {
     if (destroyed || busy) return;
     const context = syncContext();
-    const view = xDailyView(latestStatus, context, consent?.checked === true, busy, needsRefresh);
+    const view = deriveView(latestStatus, context, consent?.checked === true, busy, needsRefresh);
     if (!context.development || !context.epoch || (kind === "start" ? !view.startEnabled : !view.stopEnabled)) return;
 
     const epoch = context.epoch;
@@ -374,9 +383,9 @@ export function createXDailyControls({
     let result = null;
     let failed = false;
     try {
-      result = await api(kind === "start" ? X_DAILY_START : X_DAILY_STOP, {
+      result = await api(kind === "start" ? startPath : stopPath, {
         method: "POST",
-        body: kind === "start" ? { ...START_CONSENT } : {},
+        body: kind === "start" ? { ...startConsent } : {},
         instanceEpoch: epoch,
       });
     } catch {
@@ -452,3 +461,5 @@ export function createXDailyControls({
     },
   };
 }
+
+export function createXDailyControls(options) { return createDailySourceControls(options); }

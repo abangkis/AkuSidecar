@@ -78,7 +78,12 @@ func (d dailyController) start(ctx context.Context, request XDailyStartRequest, 
 		close(done)
 		d.state.mu.Unlock()
 	}()
-	if err := e.store.SaveDailySourcePermission(ctx, d.source, profileScope, true); err != nil {
+	trial := d.source == domain.SourceInstagram && e.config.Capture.InstagramTrial
+	var permissionErr error
+	if !trial {
+		permissionErr = e.store.SaveDailySourcePermission(ctx, d.source, profileScope, true)
+	}
+	if permissionErr != nil {
 		d.state.mu.Lock()
 		d.state.startUsed = false
 		d.state.mu.Unlock()
@@ -86,7 +91,7 @@ func (d dailyController) start(ctx context.Context, request XDailyStartRequest, 
 		return true, d.failure("permission could not be saved")
 	}
 	d.state.mu.Lock()
-	d.state.rememberedPermission = true
+	d.state.rememberedPermission = !trial
 	d.state.mu.Unlock()
 	d.state.permissionMu.Unlock()
 	owner, err := factory(call, parent)

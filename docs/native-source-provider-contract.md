@@ -6,7 +6,9 @@ This increment implements the native Instagram provider and its main-browser
 transport composition. It is not a native acceptance result. The immutable Go
 and Node qualification records remain false until the candidate evidence and
 session recipe are checked in a separately authorized QA run. Configuration,
-RPC parameters and synthetic evidence cannot qualify the recipe.
+RPC parameters and synthetic evidence cannot qualify the recipe. The separately
+approved main-dev trial is an explicit exception for execution, not qualification;
+see [trial operation and rollback](instagram-main-dev-trial.md).
 
 No signed-in profile, session transfer, user database, running service or Auto
 Update setting is accessed or changed by this offline implementation. The main

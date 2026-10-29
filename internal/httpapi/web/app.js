@@ -8,6 +8,7 @@ import { nativePostWaitReason, syncNativePostAvailability } from "./native-post-
 import { nativeReaderNotice, nativeReaderResumeMessage } from "./native-reader-notice.js";
 import { setSettingsText, setSettingsClass } from "./settings-render.js";
 import { createXDailyControls } from "./x-daily-controls.js";
+import { createInstagramTrialControls } from "./instagram-trial-controls.js";
 import { createFrameTaskQueue, setInlineStyle } from "./ui-frame.js";
 import { backToTopHorizontalPosition, createScrollIdleGate } from "./timeline-scroll-layout.js";
 import { formatTimelineCheckSummary } from "./timeline-check-summary.js";
@@ -314,6 +315,18 @@ const xDailyControls = createXDailyControls({
     setView("settings");
     $("#x-daily-controls")?.scrollIntoView({ block: "center" });
   },
+});
+const instagramTrialControls = createInstagramTrialControls({
+  panel: $("#instagram-trial-controls"), status: $("#instagram-trial-status"), detail: $("#instagram-trial-detail"),
+  consent: $("#instagram-trial-consent"), startButton: $("#instagram-trial-start"), stopButton: $("#instagram-trial-stop"),
+  feedback: $("#instagram-trial-feedback"), api: (path, options) => api(path, options),
+  readContext: () => ({epoch: state.bootstrap?.instanceEpoch, development: state.bootstrap?.deployment?.mode === "development"}),
+  onStatus: status => { if (state.bootstrap) state.bootstrap.instagramCapture = status; },
+  readActiveSources: () => state.bootstrap?.settings?.activeSources ?? [],
+  notices: ["timeline", "inbox"].map(surface => ({panel: $(`#instagram-trial-${surface}-notice`),
+    title: $(`#instagram-trial-${surface}-notice-title`), detail: $(`#instagram-trial-${surface}-notice-detail`),
+    button: $(`#instagram-trial-${surface}-notice-settings`)})),
+  onReviewSettings: () => { setView("settings"); $("#instagram-trial-controls")?.scrollIntoView({block: "center"}); },
 });
 const postScreenshotUI = createPostScreenshotUI({
   request: (path, options) => api(path, options),
@@ -725,6 +738,7 @@ async function bootstrap(options = {}) {
     window.dispatchEvent(new CustomEvent("aku-startup-stage", { detail: "rendering" }));
     state.bootstrap = restored;
     xDailyControls.reset(restored.xCapture);
+    instagramTrialControls.reset(restored.instagramCapture);
     state.bootstrapError = null;
     state.releasedCaptureSources.clear();
     state.lastUIActivitySentAt = 0;
@@ -3404,16 +3418,19 @@ async function pollCollectionRuntime() {
   if (!state.bootstrap || state.collectionPollInFlight) return;
   state.collectionPollInFlight = true;
   const xDailyRead = xDailyControls.beginRead();
+  const instagramRead = instagramTrialControls.beginRead();
   try {
     const response = await api("/api/collection/runtime");
     state.bootstrap.collectionRuntime = response.collectionRuntime;
     xDailyControls.applyRead(xDailyRead, response.xCapture);
+    instagramTrialControls.applyRead(instagramRead, response.instagramCapture);
     renderCollectionRuntime();
     renderSourceSessionReadiness();
     syncRunButtons();
     if (response.collectionRuntime.effective === "headless") setPill("#bridge-status", "Headless collection ready", "ok");
   } catch {
     xDailyControls.rejectRead(xDailyRead);
+    instagramTrialControls.rejectRead(instagramRead);
     // Existing connection recovery owns transient failures.
   }
   finally { state.collectionPollInFlight = false; }

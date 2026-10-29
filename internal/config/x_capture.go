@@ -45,3 +45,10 @@ func (c CaptureConfig) InstagramCaptureMode() string {
 func (c CaptureConfig) XUsesMainProfile() bool {
 	return c.XCaptureMode() == XCaptureConcurrent && c.XReaderSource == "main"
 }
+
+func (c CaptureConfig) ValidateInstagramTrial(dev, split bool) error {
+	if c.InstagramTrial && (!dev || !split || c.InstagramCaptureMode() != XCaptureConcurrent) {
+		return errors.New("Instagram trial requires development split capture and concurrent Instagram mode")
+	}
+	return nil
+}

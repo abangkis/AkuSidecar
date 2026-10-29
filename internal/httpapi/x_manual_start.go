@@ -21,6 +21,9 @@ func readXDailyStart(r *http.Request) (engine.XDailyStartRequest, error) {
 	return engine.XDailyStartRequest{AcknowledgeLimitations: v["acknowledgeLimitations"], AllowProcessSessionDerivation: v["allowProcessSessionDerivation"]}, err
 }
 func readXConsent(r *http.Request, permission string) (map[string]bool, error) {
+	return readConsentFields(r, []string{"acknowledgeLimitations", permission})
+}
+func readConsentFields(r *http.Request, permissions []string) (map[string]bool, error) {
 	out := map[string]bool{}
 	defer r.Body.Close()
 	kind, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -40,7 +43,13 @@ func readXConsent(r *http.Request, permission string) (map[string]bool, error) {
 	for d.More() {
 		token, err = d.Token()
 		key, ok := token.(string)
-		if err != nil || !ok || seen[key] || key != "acknowledgeLimitations" && key != permission {
+		allowed := false
+		for _, permission := range permissions {
+			if key == permission {
+				allowed = true
+			}
+		}
+		if err != nil || !ok || seen[key] || !allowed {
 			return out, badRequest("manual X consent is invalid")
 		}
 		seen[key] = true
@@ -50,7 +59,7 @@ func readXConsent(r *http.Request, permission string) (map[string]bool, error) {
 		}
 		out[key] = value
 	}
-	if _, err = d.Token(); err != nil || len(seen) != 2 {
+	if _, err = d.Token(); err != nil || len(seen) != len(permissions) {
 		return out, badRequest("manual X consent is invalid")
 	}
 	var extra any

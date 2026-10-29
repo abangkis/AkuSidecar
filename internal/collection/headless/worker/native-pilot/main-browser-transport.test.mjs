@@ -322,3 +322,11 @@ test('terminal source close can cancel pending seed without publishing its late 
   assert.deepEqual(f.replies.find(r=>r.id===3).result,{closed:true});
   assert.ok(!f.replies.some(r=>r.id===2&&r.ok));
 });
+
+test('explicit trial acknowledgement permits owner binding without qualifying the recipe or reading session data',async()=>{
+  const transport={alive:()=>true,call:async()=>{throw Error('no session read');},reserveTarget(){},reserveSession(){},releaseTarget(){},releaseSession(){}};
+  const owner=await createBorrowedInstagramControl({chromePath:resolve('offline/chrome.exe'),readerProfile:resolve('offline/reader'),readerPID:101,
+    profileDirectory:'Default',acknowledgeLimitations:true,allowProcessSessionDerivation:true,acknowledgeUnqualifiedRecipe:true},transport);
+  const result=await owner.execute('source_initialize',{});assert.equal(result.source,'instagram');
+  assert.equal(owner.capabilities.nativeQualified,false);await owner.close();
+});

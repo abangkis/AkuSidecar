@@ -449,6 +449,7 @@ func (p ProviderConfig) Validate(name string) error {
 
 type CaptureConfig struct {
 	InstagramMode        string                `json:"instagramMode,omitempty"`
+	InstagramTrial       bool                  `json:"instagramTrial,omitempty"`
 	XMode                string                `json:"xMode,omitempty"`
 	XReaderProfile       string                `json:"xReaderProfile,omitempty"`
 	XReaderSource        string                `json:"xReaderSource,omitempty"`
@@ -642,6 +643,9 @@ func (c Config) Validate() error {
 		return errors.New("max acquisition rounds must be one or two")
 	}
 	if err := c.Capture.ValidateXMode(); err != nil {
+		return err
+	}
+	if err := c.Capture.ValidateInstagramTrial(c.Dev, c.WindowsCaptureSplit); err != nil {
 		return err
 	}
 	if err := c.Capture.Behavior.Validate(); err != nil {

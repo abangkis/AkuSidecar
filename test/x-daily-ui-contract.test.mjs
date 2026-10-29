@@ -48,6 +48,7 @@ test("ordinary runtime polling hands X status to its pre-request ticket without 
         events.push("apply");
       },
     },
+    instagramTrialControls: {beginRead: () => ({}), applyRead: () => {}},
     renderCollectionRuntime: () => {}, renderSourceSessionReadiness: () => {}, syncRunButtons: () => {},
   });
   vm.runInContext(functionBetween("async function pollCollectionRuntime(", "function renderSettings("), context);
@@ -71,6 +72,7 @@ test("failed runtime polling rejects its own status ticket without automatic mut
     state,
     api: async () => { requests++; throw new Error("synthetic disconnect"); },
     xDailyControls: { beginRead: () => ticket, rejectRead: value => rejected.push(value) },
+    instagramTrialControls: {beginRead: () => ({}), rejectRead: () => {}},
   });
   vm.runInContext(functionBetween("async function pollCollectionRuntime(", "function renderSettings("), context);
   await context.pollCollectionRuntime();

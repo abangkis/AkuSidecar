@@ -252,7 +252,11 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": domain.ApplicationVersion, "runtime": "go", "deployment": s.config.Deployment.PublicStatus(), "provider": s.engine.ProviderName(), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime(), "bridgeContractVersion": domain.BridgeContractVersion, "softwareUpdate": domain.SidecarSoftwareUpdateMetadata(store.SchemaVersion), "instanceEpoch": s.engine.Epoch(), "uptimeMs": time.Since(s.started).Milliseconds(), "database": map[string]any{"status": "healthy"}, "loadProfile": settings.LoadProfile})
 	case r.Method == http.MethodGet && p == "/api/collection/runtime":
-		return writeJSON(w, http.StatusOK, map[string]any{"collectionRuntime": s.engine.CollectionRuntime(), "xManual": s.engine.XManualStatus(), "xCapture": s.engine.XCaptureStatus()})
+		return writeJSON(w, http.StatusOK, map[string]any{"collectionRuntime": s.engine.CollectionRuntime(), "xManual": s.engine.XManualStatus(), "xCapture": s.engine.XCaptureStatus(), "instagramCapture": s.engine.SourceCaptureStatus(domain.SourceInstagram)})
+	case r.Method == http.MethodPost && p == "/api/development/instagram-trial/start":
+		return s.instagramTrialAction(w, r, ctx, true)
+	case r.Method == http.MethodPost && p == "/api/development/instagram-trial/stop":
+		return s.instagramTrialAction(w, r, ctx, false)
 	case r.Method == http.MethodPost && p == "/api/development/x-daily/start":
 		if !s.config.Dev {
 			return notFound("development route")
@@ -454,7 +458,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "deployment": s.config.Deployment.PublicStatus(), "provider": s.engine.ProviderName(), "reasoningProviders": s.engine.ReasoningProviders(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime(), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "softwareUpdate": domain.SidecarSoftwareUpdateMetadata(store.SchemaVersion), "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": health.Status, "schemaVersion": store.SchemaVersion}, "databaseHealth": health, "sources": domain.Sources(), "settings": settings, "collectionRuntime": s.engine.CollectionRuntime(), "xCapture": s.engine.XCaptureStatus(), "onboarding": onboarding, "calibration": calibration, "activeSession": sessionProgressProjection(active), "timeline": timeline, "timelineBatches": timelineBatches, "latestCheck": latestCheck, "autoUpdate": autoUpdate})
+		return writeJSON(w, http.StatusOK, map[string]any{"version": domain.ApplicationVersion, "runtime": "go", "deployment": s.config.Deployment.PublicStatus(), "provider": s.engine.ProviderName(), "reasoningProviders": s.engine.ReasoningProviders(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime(), "instanceEpoch": s.engine.Epoch(), "bridgeContractVersion": domain.BridgeContractVersion, "softwareUpdate": domain.SidecarSoftwareUpdateMetadata(store.SchemaVersion), "bridgeToken": token, "bridge": s.engine.BridgeStatus(), "database": map[string]any{"status": health.Status, "schemaVersion": store.SchemaVersion}, "databaseHealth": health, "sources": domain.Sources(), "settings": settings, "collectionRuntime": s.engine.CollectionRuntime(), "xCapture": s.engine.XCaptureStatus(), "instagramCapture": s.engine.SourceCaptureStatus(domain.SourceInstagram), "onboarding": onboarding, "calibration": calibration, "activeSession": sessionProgressProjection(active), "timeline": timeline, "timelineBatches": timelineBatches, "latestCheck": latestCheck, "autoUpdate": autoUpdate})
 	case r.Method == http.MethodGet && p == "/api/calibration/active":
 		calibration, err := s.engine.CalibrationOverview(ctx)
 		if err != nil {

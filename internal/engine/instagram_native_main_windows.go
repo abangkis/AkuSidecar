@@ -58,7 +58,8 @@ func ConfigureInstagramMainDailyRuntime(parent context.Context, e *Engine, windo
 	if e == nil || e.config.Capture.InstagramCaptureMode() != config.XCaptureConcurrent {
 		return nil
 	}
-	if !instagramNativeQualified {
+	trial := e.config.Dev && e.config.Capture.InstagramTrial
+	if !instagramNativeQualified && !trial {
 		e.instagramDaily.mu.Lock()
 		if !e.instagramDaily.attached && e.instagramDaily.factory == nil {
 			e.instagramDaily.reason = "native-adapter-qualification-required"
@@ -136,7 +137,11 @@ func ConfigureInstagramMainDailyRuntime(parent context.Context, e *Engine, windo
 		h := &xApplicationOwner{cfg: cfg, worker: protocol.TransportWorker(), readerLease: &xMainBorrowedLease{descriptor: descriptor, manager: manager, generation: generation}, closed: make(chan struct{}), stopping: make(chan struct{}), readerDone: make(chan struct{})}
 		t := &instagramMainNativeTransport{protocol: protocol.(appshell.MainBrowserSourceProtocol), host: h, root: collectorRoot}
 		o := &sourceNativeOwner{engine: e, source: domain.SourceInstagram, recipe: instagramNativeRecipe, profile: scope, transport: t}
-		if err = t.call(startup, "source_bootstrap", map[string]any{"readerPID": window.PID(), "readerProfile": profile, "profileDirectory": subprofile, "chromePath": chrome, "acknowledgeLimitations": true, "allowProcessSessionDerivation": true}, nil); err != nil {
+		bootstrap := map[string]any{"readerPID": window.PID(), "readerProfile": profile, "profileDirectory": subprofile, "chromePath": chrome, "acknowledgeLimitations": true, "allowProcessSessionDerivation": true}
+		if trial {
+			bootstrap["acknowledgeUnqualifiedRecipe"] = true
+		}
+		if err = t.call(startup, "source_bootstrap", bootstrap, nil); err != nil {
 			return o, err
 		}
 		var reply nativeMainDescriptor

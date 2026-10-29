@@ -362,6 +362,15 @@
                 </div>
                 <p id="x-daily-feedback" class="settings-detail" role="status" aria-live="polite"></p>
               </section>
+              <section id="instagram-trial-controls" class="x-daily-controls" hidden aria-labelledby="instagram-trial-heading">
+                <div class="x-daily-heading"><strong id="instagram-trial-heading">IG concurrent capture — experimental trial</strong><span id="instagram-trial-status" role="status" aria-live="polite"></span></div>
+                <p id="instagram-trial-detail" class="settings-detail"></p>
+                <p class="settings-detail">Start IG enables normal manual and automatic checks. It does not start a batch immediately. The native recipe has not yet been qualified.</p>
+                <label class="x-daily-consent-row" for="instagram-trial-consent"><input id="instagram-trial-consent" type="checkbox" autocomplete="off" /><span>Allow this experimental recipe to reuse my IG login for this process only.</span></label>
+                <details class="x-daily-permission-details"><summary>Permission and limits</summary><p>Only sessionid, csrftoken and ds_user_id may be copied to temporary collectors, for at most 60 seconds per batch. Account/session verification or uncertain cleanup stops IG. Reader windows and Auto Update are preserved. Permission must be granted again after restart.</p></details>
+                <div class="x-daily-actions"><button id="instagram-trial-start" type="button" class="primary-button" disabled>Start IG</button><button id="instagram-trial-stop" type="button" class="secondary-button" disabled>Stop IG</button></div>
+                <p id="instagram-trial-feedback" class="settings-detail" role="status" aria-live="polite"></p>
+              </section>
               <label class="settings-row" for="capture-visibility-policy">
                 <span class="settings-copy"><strong>Capture visibility</strong><small id="capture-visibility-description">Single-window Quiet shares one background window; multi-window Quiet remains available for trial; Adaptive uses a canonical tab in your normal Chrome window.</small></span>
                 <select id="capture-visibility-policy" name="captureVisibility">
@@ -609,6 +618,10 @@
           <section id="x-daily-inbox-notice" class="auto-update-timeline-status x-daily-capture-notice hidden" role="status" aria-live="polite" aria-labelledby="x-daily-inbox-notice-title">
             <div><strong id="x-daily-inbox-notice-title"></strong><span id="x-daily-inbox-notice-detail"></span></div>
             <button id="x-daily-inbox-notice-settings" class="text-button" type="button">Review X settings</button>
+          </section>
+<section id="instagram-trial-inbox-notice" class="auto-update-timeline-status x-daily-capture-notice hidden" role="status" aria-live="polite" aria-labelledby="instagram-trial-inbox-notice-title">
+            <div><strong id="instagram-trial-inbox-notice-title"></strong><span id="instagram-trial-inbox-notice-detail"></span></div>
+            <button id="instagram-trial-inbox-notice-settings" class="text-button" type="button">Review IG trial</button>
           </section>
           <div id="inbox-sessions" class="inbox-sessions"></div>
         </div>
@@ -885,6 +898,10 @@
         <section id="x-daily-timeline-notice" class="auto-update-timeline-status x-daily-capture-notice hidden" role="status" aria-live="polite" aria-labelledby="x-daily-timeline-notice-title">
           <div><strong id="x-daily-timeline-notice-title"></strong><span id="x-daily-timeline-notice-detail"></span></div>
           <button id="x-daily-timeline-notice-settings" class="text-button" type="button">Review X settings</button>
+        </section>
+<section id="instagram-trial-timeline-notice" class="auto-update-timeline-status x-daily-capture-notice hidden" role="status" aria-live="polite" aria-labelledby="instagram-trial-timeline-notice-title">
+          <div><strong id="instagram-trial-timeline-notice-title"></strong><span id="instagram-trial-timeline-notice-detail"></span></div>
+          <button id="instagram-trial-timeline-notice-settings" class="text-button" type="button">Review IG trial</button>
         </section>
 
         <section id="x-capture-pause" class="auto-update-timeline-status hidden" role="alert">

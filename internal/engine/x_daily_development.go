@@ -140,6 +140,9 @@ func (d dailyController) status() XCaptureStatus {
 	}
 	status.EffectiveMode, status.State, status.Reason = "unavailable", "not-ready", "batch-adapter-required"
 	status.AuthorizationPolicy, status.MaxBatchMS = "profile", xDailyBatchLimitMS
+	if d.source == domain.SourceInstagram && e.config.Capture.InstagramTrial {
+		status.AuthorizationPolicy = "process"
+	}
 	status.ReaderBootstrapLifetime = "process"
 	if d.source == domain.SourceInstagram || e.config.Capture.XUsesMainProfile() {
 		status.ReaderBootstrapLifetime = "batch"
@@ -267,7 +270,8 @@ func (d dailyController) resume(ctx context.Context) error {
 		return d.failure("scheduling context required")
 	}
 	d.state.mu.Lock()
-	shouldRestore := d.state.factory != nil && !d.state.permissionRestoreAttempted
+	trial := d.source == domain.SourceInstagram && e.config.Capture.InstagramTrial
+	shouldRestore := !trial && d.state.factory != nil && !d.state.permissionRestoreAttempted
 	profileScope := d.state.profileScope
 	revision := d.state.permissionRevision
 	var restoreDone chan struct{}
