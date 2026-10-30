@@ -16,6 +16,26 @@ export const nativeRecord = (value, keys) => value && [Object.prototype, null].i
   Reflect.ownKeys(value).length === keys.length && keys.every(key => Object.hasOwn(Object.getOwnPropertyDescriptor(value, key) ?? {}, 'value'));
 export const nativeRef = value => typeof value === 'string' && value.length > 0 && value.length <= 1024 && !/[\u0000-\u001f\u007f]/u.test(value);
 
+// Both the compatible X owner and generic source attempts use this executor.
+// Callers retain resource order, ownership checks and their existing deadline.
+// Errors stay local to the optional diagnostic projector, never in the receipt.
+export async function settleNativeCleanup(stages, onFailure = () => {}) {
+  const outcomes = [];
+  for (const [stage, release] of stages) {
+    let outcome = 'not_needed';
+    if (release) {
+      try { await release(); outcome = 'verified'; }
+      catch (error) {
+        outcome = 'uncertain';
+        // Diagnostics must not prevent independent resources from retiring.
+        try { onFailure(stage, error); } catch {}
+      }
+    }
+    outcomes.push(Object.freeze({stage, outcome}));
+  }
+  return Object.freeze(outcomes);
+}
+
 export function createNativeSourceAttempt({source, generation, nonce, profileScope, deadlineMS, now = Date.now, cleanupMS = 3000}) {
   const admitted = now();
   if (!['x', 'instagram'].includes(source) || !Number.isSafeInteger(generation) || generation < 1 ||
@@ -74,15 +94,10 @@ export function createNativeSourceAttempt({source, generation, nonce, profileSco
       state = 'closing'; abort.abort();
       // Reverse creation order retires child pages before their process. A
       // failed child still leaves every later release obligation runnable.
-      const results = await boundedCleanup((async () => {
-        const results = [];
-        for (const resource of [...resources].reverse()) {
-          try { await closeResource(resource); results.push({status: 'fulfilled'}); }
-          catch { results.push({status: 'rejected'}); }
-        }
-        return results;
-      })()).catch(() => null);
-      cleanup = results && results.every(result => result.status === 'fulfilled') && [...resources].every(resource => resource.closed) ? 'verified' : 'uncertain';
+      const results = await boundedCleanup(settleNativeCleanup(
+        [...resources].reverse().map((resource, index) => [index, () => closeResource(resource)]),
+      )).catch(() => null);
+      cleanup = results && results.every(result => result.outcome === 'verified') && [...resources].every(resource => resource.closed) ? 'verified' : 'uncertain';
       state = 'closed';
       if (first) diagnostics.set(first, Object.freeze({...diagnostics.get(first), cleanup}));
       return Object.freeze({closed: cleanup === 'verified', cleanup, source, generation, nonce});

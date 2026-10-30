@@ -18,6 +18,7 @@ test('daily owner package seals the distinct process/batch entry without executi
   assert.match(bytes.toString(),/module\.runDailyOwner\(\)/u);
   assert(manifest.modules.some(row=>row.path.endsWith('/daily-owner-protocol.mjs')));
   assert(manifest.modules.some(row=>row.path.endsWith('/source-retry-policy.mjs')));
+  assert(manifest.modules.some(row=>row.path.endsWith('/native-source-kernel.mjs')));
   assert(manifest.captureAssets.length>0);
 });
 

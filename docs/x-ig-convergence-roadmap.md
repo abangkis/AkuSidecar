@@ -135,13 +135,13 @@ terminate predictably; temporary resources retire and user readers remain.
 | Roadmap documentation and historical review | Complete | Requested by user on 2026-10-30 |
 | 1: Contract map and baseline tests | Complete for the current integration boundary | Existing lifecycle suites reused; ownership projection and UI/Bridge parity added |
 | 2: Cleanup and dispatch integration | Implemented offline for wrong-owner dispatch/release and unclaimed waiting | Native-only completion and mixed-source barriers covered; ambiguous historical Browser ownership remains guarded |
-| 3: Existing lifecycle convergence | Shared orchestration retained; native owner migration remains pending | No replacement controller/kernel introduced; X wire compatibility preserved |
+| 3: Existing lifecycle convergence | Cleanup execution shared offline; broader owner migration remains pending | X cleanup and IG attempt cleanup use the existing native kernel; X wire compatibility preserved |
 | 4: Provider completion | Offline diagnostic suite verified; HTTP 400 unresolved | A fresh bounded native diagnostic needs separate authorization |
 | 5: Daily acceptance and retirement | Pending | No live activation, transfer or obsolete-path removal |
 
 Record completed evidence and remaining differences here as work proceeds. This
 is the execution checklist; existing design documents remain the detailed
-contract references. No commit, push or runtime change is part of this update.
+contract references. Runtime activation remains a separate approval.
 
 ## Implemented increment: lifecycle routing and dispatch recovery
 
@@ -191,3 +191,33 @@ This increment does not claim resolution of the current IG HTTP 400, retirement
 of unknown historical Browser resources, or complete migration of the X native
 owner. Those claims require their own evidence; none is inferred from offline
 passing tests or from the shared controller already existing.
+
+## Owner convergence increment: shared cleanup execution
+
+The compatible X daily owner now delegates its cleanup sequence through
+`settleNativeCleanup` in the existing `native-source-kernel.mjs`. Generic native
+attempts, used by IG, use the same executor. There is no second lifecycle core.
+
+The shared responsibility is ordered release, continuation after independent
+release failures, and value-free outcomes. A diagnostic projector cannot stop
+later releases. Ownership checks, resource registration, cleanup deadlines,
+source evidence and receipt projection remain with their existing callers.
+This is intentionally not a migration of X to the IG identity recipe.
+
+X retains collector/enrollment/attachment/bootstrap order, control-restoration
+status, bootstrap diagnostic categories and its existing Go wire receipt.
+Generic attempts retain reverse resource order, bounded cleanup, late-resource
+release obligations, idempotent close and first-cause preservation. No deadline
+or authority check was removed or increased.
+
+Offline evidence: 68 tests passed across X daily protocol, main browser
+transport, IG provider, cleanup conformance and package sealing. Conformance
+includes all 16 X release-failure combinations and both source bindings for
+cancellation, late creation and first-cause retention. Packaging verifies that
+the X daily owner includes the shared kernel without running the owner.
+
+Remaining adoption work: compare and consolidate cancellation/deadline adapters
+where X's qualified startup and seed lifecycle can preserve their exact guards.
+The full X owner migration and live daily acceptance are not complete. IG HTTP
+400 qualification remains a separate provider issue. No runtime, login, session
+transfer or Auto Update change occurred in this increment.
