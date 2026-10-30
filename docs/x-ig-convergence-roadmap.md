@@ -135,7 +135,7 @@ terminate predictably; temporary resources retire and user readers remain.
 | Roadmap documentation and historical review | Complete | Requested by user on 2026-10-30 |
 | 1: Contract map and baseline tests | Complete for the current integration boundary | Existing lifecycle suites reused; ownership projection and UI/Bridge parity added |
 | 2: Cleanup and dispatch integration | Implemented offline for wrong-owner dispatch/release and unclaimed waiting | Native-only completion and mixed-source barriers covered; ambiguous historical Browser ownership remains guarded |
-| 3: Existing lifecycle convergence | Cleanup execution shared offline; broader owner migration remains pending | X cleanup and IG attempt cleanup use the existing native kernel; X wire compatibility preserved |
+| 3: Existing lifecycle convergence | Cleanup and operation cancellation/deadline execution shared offline; broader owner migration remains pending | X grant and IG attempt use the existing native kernel; X wire compatibility preserved |
 | 4: Provider completion | Offline diagnostic suite verified; HTTP 400 unresolved | A fresh bounded native diagnostic needs separate authorization |
 | 5: Daily acceptance and retirement | Pending | No live activation, transfer or obsolete-path removal |
 
@@ -221,3 +221,35 @@ where X's qualified startup and seed lifecycle can preserve their exact guards.
 The full X owner migration and live daily acceptance are not complete. IG HTTP
 400 qualification remains a separate provider issue. No runtime, login, session
 transfer or Auto Update change occurred in this increment.
+
+## Owner convergence increment: cancellation and operation deadlines
+
+`createNativeOperationScope` in the existing kernel now supplies fixed-deadline
+waiting, cancellation, clock-regression rejection and late-result rejection to
+both generic native attempts and the X application seed grant. Callers still
+own diagnostic categories and the first-cause record; no common identity or
+cookie recipe is introduced.
+
+X retains its monotonic elapsed-time clock, wall-clock capture deadline ceiling,
+one-use grant and maximum 60 seconds from seed start. IG retains its original
+absolute attempt deadline and integer-clock validation. Each operation receives
+only the remaining budget, never a renewed budget. Cleanup keeps its independent
+existing allowance and resource ownership obligations.
+
+The daily X owner revokes its grant before batch-end cleanup, explicit abort or
+capture cancellation, and owner close. Cancellation also consumes a grant that
+has not started. Pending seed waits reject; guarded late writes and late seed
+success cannot regain authority. A fresh batch still needs a fresh grant and
+the existing generation, ownership and account checks.
+
+Cancellation stops waiting and revokes authority; it does not magically cancel
+an in-flight CDP request. Existing owner cleanup and pre-write guards remain
+responsible for resource retirement and write admission. Per-operation X RPC
+timeouts, root-navigation controls and provider-specific proof code remain in
+their qualified implementations; this increment does not claim their wholesale
+migration or live acceptance.
+
+Offline evidence: 78 tests passed across grant/kernel cancellation, exact
+deadline and clock regression, late completion, X daily protocol, main transport,
+IG provider, cleanup conformance and sealed package construction. Native browser
+execution, session transfer, activation and runtime changes were not performed.

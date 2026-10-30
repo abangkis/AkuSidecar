@@ -36,6 +36,37 @@ export async function settleNativeCleanup(stages, onFailure = () => {}) {
   return Object.freeze(outcomes);
 }
 
+// Mechanism only: callers supply clock validation and their closed diagnostic
+// vocabulary. The absolute deadline is fixed; cancellation never renews it.
+export function createNativeOperationScope({now, admitted, deadlineMS, validTime = Number.isSafeInteger, fail, rejected}) {
+  if (!validTime(admitted) || !validTime(deadlineMS) || deadlineMS <= admitted) throw fail('lifetime', 'clock');
+  const abort = new AbortController();
+  let last = admitted;
+  function remaining() {
+    const time = now();
+    if (!validTime(time) || time < last) throw fail('lifetime', 'clock');
+    last = time;
+    if (abort.signal.aborted) throw fail('lifetime', 'closed');
+    if (time >= deadlineMS) throw fail('lifetime', 'deadline');
+    return deadlineMS - time;
+  }
+  async function run(stage, operation) {
+    let timer, listener;
+    try {
+      const ms = remaining();
+      const result = await Promise.race([
+        Promise.resolve().then(() => operation(remaining())),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(fail(stage, 'deadline')), ms); }),
+        new Promise((_, reject) => { listener = () => reject(fail(stage, 'canceled')); abort.signal.addEventListener('abort', listener, {once: true}); }),
+      ]);
+      remaining();
+      return result;
+    } catch (error) { throw rejected(stage, error); }
+    finally { clearTimeout(timer); if (listener) abort.signal.removeEventListener('abort', listener); }
+  }
+  return Object.freeze({remaining, run, cancel: () => abort.abort()});
+}
+
 export function createNativeSourceAttempt({source, generation, nonce, profileScope, deadlineMS, now = Date.now, cleanupMS = 3000}) {
   const admitted = now();
   if (!['x', 'instagram'].includes(source) || !Number.isSafeInteger(generation) || generation < 1 ||
@@ -44,33 +75,15 @@ export function createNativeSourceAttempt({source, generation, nonce, profileSco
       !Number.isSafeInteger(cleanupMS) || cleanupMS < 1 || cleanupMS > 3000) throw nativeSourceFailure('admission', 'scope');
   const binding = Object.freeze({source, generation, nonce, profileScope, deadlineMS});
   const resources = new Set();
-  const abort = new AbortController();
-  let state = 'active', last = admitted, first, cleanup = 'not_started', closing;
+  let state = 'active', first, cleanup = 'not_started', closing;
   function fail(stage, reason) { first ??= nativeSourceFailure(stage, reason); return first; }
-  function remaining() {
-    const time = now();
-    if (!Number.isSafeInteger(time) || time < last) throw fail('lifetime', 'clock');
-    last = time;
-    if (state !== 'active' || abort.signal.aborted) throw fail('lifetime', 'closed');
-    if (time >= deadlineMS) throw fail('lifetime', 'deadline');
-    return deadlineMS - time;
-  }
-  async function run(stage, operation) {
-    let timer, listener;
-    try {
-      const ms = remaining();
-      const value = await Promise.race([
-        Promise.resolve().then(() => operation(remaining())),
-        new Promise((_, reject) => { timer = setTimeout(() => reject(fail(stage, 'deadline')), ms); }),
-        new Promise((_, reject) => { listener = () => reject(fail(stage, 'canceled')); abort.signal.addEventListener('abort', listener, {once: true}); }),
-      ]);
-      remaining();
-      return value;
-    } catch (error) {
+  const scope = createNativeOperationScope({now, admitted, deadlineMS, fail,
+    rejected(stage, error) {
       first ??= diagnostics.has(error) ? error : nativeSourceFailure(stage, 'unavailable');
-      throw first;
-    } finally { clearTimeout(timer); abort.signal.removeEventListener('abort', listener); }
-  }
+      return first;
+    },
+  });
+  const {remaining, run} = scope;
   const closeResource = resource => resource.closing ??= resource.creation.then(async value => {
     await resource.release(value, cleanupMS); resource.closed = true;
   });
@@ -91,7 +104,7 @@ export function createNativeSourceAttempt({source, generation, nonce, profileSco
   }
   function close() {
     closing ??= (async () => {
-      state = 'closing'; abort.abort();
+      state = 'closing'; scope.cancel();
       // Reverse creation order retires child pages before their process. A
       // failed child still leaves every later release obligation runnable.
       const results = await boundedCleanup(settleNativeCleanup(

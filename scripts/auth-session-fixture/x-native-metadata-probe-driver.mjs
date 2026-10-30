@@ -2368,6 +2368,7 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
   const check=async()=>{if(closed||childExited||cdpFailure||borrowedReader&&!borrowedMainTransport.alive()||!await verifyTwoPhaseDirectories())throw probeError('daily_reader_changed');return{readerPID:child.pid,readerProfile};};
   const home=async()=>{const end=Date.now()+MANUAL_TIMING.collectorHomeReadyMS;while(!(await loginState({owner:active.owner})).ready){await check();if(Date.now()>=end)throw probeError('daily_reader_login_unavailable');await new Promise(r=>setTimeout(r,200));}};
   const endBatch=async()=>{
+    applicationScope?.seedGrant?.cancel();
     const current=batch;
     if(!current&&lastBatchCleanup)return lastBatchCleanup;
     const controlState=owner=>owner?.manualControlsCleanup??(owner&&mustRetireStartupOwner(owner)?'uncertain':'not_needed');
@@ -2433,6 +2434,7 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
     async execute(message){
       if(!batch)throw probeError('daily_batch_unavailable');await check();
       const cleanup=['manual_abort','manual_capture_cancel'].includes(message.op);
+      if(cleanup)applicationScope.seedGrant?.cancel();
       if(!cleanup){if(failed)throw probeError('daily_batch_failed');applicationScope.seedGrant.assertCurrent();}
       if(message.op==='manual_capture')applicationScope.seedGrant.assertCaptureDeadline(message.request?.deadlineMS);
       try{const result=await executeManualOwnerRPC(message);if(message.op==='manual_capture')captureSucceeded=true;return result;}
@@ -2454,6 +2456,7 @@ export async function createApplicationDailyOwner({chromePath,readerProfile,load
     },
     async close(){
       if(closed)return;closed=true;
+      applicationScope?.seedGrant?.cancel();
       for(const p of posts.values()){clearTimeout(p.timer);await p.actor.close().catch(()=>{});}posts.clear();
       if(!borrowedReader){try{if(batch)await closeShortCollector(batch);}finally{await closeChrome();}return;}
       // Borrower cleanup may retire only its collector and explicit bootstrap

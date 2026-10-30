@@ -62,3 +62,46 @@ test('hanging seed has a bounded one-use failure and no late successful authorit
   assert.equal(grant.startupAllowed(),false);assert.equal(grant.transferAllowed(),false);
   await assert.rejects(grant.run({}),error=>manualSeedDiagnostic(error)?.reason==='replay');
 });
+
+test('cancel before seed consumes the grant without invoking the recipe',async()=>{
+  let calls=0;
+  const grant=createApplicationSeedGrant({runSeed:async()=>{calls++;}});
+  grant.cancel();grant.cancel();
+  await assert.rejects(grant.run({}),error=>manualSeedDiagnostic(error)?.reason==='replay');
+  assert.equal(calls,0);assert.equal(grant.transferAllowed(),false);
+});
+
+test('cancel during seed rejects the wait and prevents a late cookie write',async()=>{
+  let finish,started,writes=0,grant;
+  const ready=new Promise(resolve=>{started=resolve;});
+  grant=createApplicationSeedGrant({runSeed:async()=>{
+    started();await new Promise(resolve=>{finish=resolve;});
+    grant.assertCurrent();writes++;return{seeded:true};
+  }});
+  const pending=grant.run({});await ready;
+  grant.cancel();
+  await assert.rejects(pending,error=>manualSeedDiagnostic(error)?.reason==='rejected');
+  finish();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(writes,0);assert.equal(grant.startupAllowed(),false);
+  await assert.rejects(grant.run({}),error=>manualSeedDiagnostic(error)?.reason==='replay');
+});
+
+test('cancel after seed revokes startup and capture without changing a later fresh grant',async()=>{
+  const grant=createApplicationSeedGrant({runSeed:async()=>({seeded:true})});
+  await grant.run({});assert.equal(grant.startupAllowed(),true);
+  grant.cancel();assert.equal(grant.startupAllowed(),false);
+  assert.throws(()=>grant.assertCaptureDeadline(Date.now()));
+  const fresh=createApplicationSeedGrant({runSeed:async()=>({seeded:true})});
+  await fresh.run({});assert.equal(fresh.startupAllowed(),true);
+});
+
+test('deadline first cause survives cancellation and a late rejected operation',async()=>{
+  let rejectLate;
+  const grant=createApplicationSeedGrant({budgetMS:5,runSeed:()=>new Promise((_,reject)=>{rejectLate=reject;})});
+  let original;
+  await assert.rejects(grant.run({}),error=>{original=error;return manualSeedDiagnostic(error)?.reason==='deadline';});
+  grant.cancel();rejectLate(Error('PRIVATE'));
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.throws(()=>grant.assertCaptureDeadline(Date.now()),error=>error===original);
+  assert.equal(grant.startupAllowed(),false);
+});
