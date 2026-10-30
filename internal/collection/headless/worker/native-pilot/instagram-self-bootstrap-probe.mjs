@@ -14,7 +14,7 @@ const rejected = () => new Error('instagram_self_bootstrap_probe_rejected');
 
 // Reads only JSON script nodes; never invokes page modules or executes scripts.
 // PolarisViewer is a discovery candidate, not a qualified Instagram contract.
-function scanInstagramBootstrap(policy,parseJSON){
+function scanInstagramBootstrap(policy,parseJSON,onUnique){
  const base={schema:'aku.instagram-self-bootstrap-probe.v2',reason:'missing',shapeReason:'none',usernameReason:'none',modulePresent:false,idString:false,idSafeNumber:false,usernameString:false,duplicateDetected:false,conflictDetected:false,documentBound:false,serverFresh:false,qualified:false,scanComplete:false,budgetExpanded:false};
  const out=(reason,complete=false)=>({...base,reason,scanComplete:complete});
  const started=performance.now(),deadline=started+policy.deadlineMS;let last=started;
@@ -89,12 +89,18 @@ function scanInstagramBootstrap(policy,parseJSON){
   check();
   if(location.origin!=='https://www.instagram.com'||location.pathname!=='/')return out('document_changed');
   if(document.querySelector('input[type="password"],form[action*="login"]'))return out('login_visible');
-  return out(base.shapeReason!=='none'?'shape':base.conflictDetected?'conflict':base.duplicateDetected?'duplicate':ids.size?'candidate':'missing',true);
+  const reason=base.shapeReason!=='none'?'shape':base.conflictDetected?'conflict':base.duplicateDetected?'duplicate':ids.size?'candidate':'missing';
+  if(reason==='candidate'&&onUnique)onUnique(ids.values().next().value);
+  return out(reason,true);
  }catch(reason){
   const allowed=['bounds_script_count','bounds_script_chars','bounds_script_bytes','bounds_total_bytes','bounds_candidate_bytes','bounds_parse_bytes','bounds_parse_tokens','bounds_nodes','bounds_entries','bounds_depth','scan_deadline','scan_clock','invalid_json'];
   return out(allowed.includes(reason)?reason:'unavailable');
  }
 }
+
+// Private package composition only; the passive expression never supplies the
+// callback and its public projection remains unchanged.
+export const INSTAGRAM_PRIVATE_BOOTSTRAP_SCANNER_SOURCE=scanInstagramBootstrap.toString();
 
 export function instagramSelfBootstrapExpression(policy=INSTAGRAM_BOOTSTRAP_BUDGET){
  const checked=validateInstagramBootstrapBudget(policy);

@@ -37,6 +37,10 @@ func (e *Engine) RunInstagramBootstrapDiagnostic(ctx context.Context, action fun
 	return e.runInstagramDiagnostic(ctx, action, appshell.ValidateInstagramBootstrapDiagnostic)
 }
 
+func (e *Engine) RunInstagramBootstrapCorroborationDiagnostic(ctx context.Context, action func(context.Context) (json.RawMessage, error)) (json.RawMessage, error) {
+	return e.runInstagramDiagnostic(ctx, action, appshell.ValidateInstagramBootstrapCorroborationDiagnostic)
+}
+
 func (e *Engine) runInstagramDiagnostic(ctx context.Context, action func(context.Context) (json.RawMessage, error), validate func(json.RawMessage) (json.RawMessage, error)) (json.RawMessage, error) {
 	if !e.InstagramReaderDiagnosticConfigured() || action == nil {
 		return nil, instagramDiagnosticRejected("unavailable")

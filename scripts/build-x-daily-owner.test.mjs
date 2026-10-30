@@ -32,7 +32,9 @@ test('main transport seals per-source assets without replacing the existing X bu
   assert.deepEqual(Object.keys(manifest.sourceCaptureAssets),['x','instagram']);
   for(const source of ['x','instagram'])assert(manifest.sourceCaptureAssets[source].some(row=>row.path===`AkuBridge/adapters/${source}-adapter.js`));
   assert.equal(new Set(manifest.captureAssets.map(row=>row.path)).size,manifest.captureAssets.length);
-  for(const name of ['instagram-native-provider.mjs','instagram-native-session.mjs','native-source-kernel.mjs','source-owner-registry.mjs','source-retry-policy.mjs','instagram-bootstrap-budget.mjs'])
+  for(const name of ['instagram-native-provider.mjs','instagram-native-session.mjs','native-source-kernel.mjs','source-owner-registry.mjs','source-retry-policy.mjs','instagram-bootstrap-budget.mjs',
+    'instagram-bootstrap-corroboration.mjs','instagram-bootstrap-corroboration-policy.mjs','instagram-bootstrap-body-stream.mjs',
+    'instagram-bootstrap-corroboration-expression.mjs','main-bootstrap-corroboration-scope.mjs'])
     assert(manifest.modules.some(row=>row.path.endsWith('/'+name)));
   assert.equal(createHash('sha256').update(await readFile(result.driver)).digest('hex'),result.sha256);
 });

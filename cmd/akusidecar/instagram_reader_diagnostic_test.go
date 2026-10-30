@@ -42,6 +42,47 @@ func (p *diagnosticOperatorProtocol) DiagnoseInstagramReader(ctx context.Context
 	return p.invoke(ctx, nonce)
 }
 
+func (p *diagnosticOperatorProtocol) DiagnoseInstagramBootstrapCorroboration(ctx context.Context, nonce string) (json.RawMessage, error) {
+	p.calls++
+	return p.invoke(ctx, nonce)
+}
+
+func TestInstagramBootstrapCorroborationActionPinsExistingOwner(t *testing.T) {
+	process := &diagnosticOperatorProcess{done: make(chan error), driver: "browser"}
+	owner, err := captureruntime.New(process)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Terminate()
+	if err = owner.RetainForProcess(); err != nil {
+		t.Fatal(err)
+	}
+	protocol := &diagnosticOperatorProtocol{invoke: func(_ context.Context, nonce string) (json.RawMessage, error) {
+		if nonce != strings.Repeat("a", 48) || owner.Snapshot().ActiveLeases != 1 {
+			t.Fatal("diagnostic owner not pinned")
+		}
+		return json.RawMessage(`{"safe":true}`), nil
+	}}
+	action := instagramBootstrapCorroborationDiagnosticAction(protocol, owner, 1234)
+	if action == nil {
+		t.Fatal("existing persistent owner unavailable")
+	}
+	if _, err = action(context.Background(), strings.Repeat("a", 48)); err != nil || protocol.calls != 1 || owner.Snapshot().ActiveLeases != 0 {
+		t.Fatal("diagnostic lease leaked")
+	}
+	if instagramBootstrapCorroborationDiagnosticAction(nil, owner, 1234) != nil || instagramBootstrapCorroborationDiagnosticAction(protocol, owner, 9999) != nil {
+		t.Fatal("foreign protocol/owner bound")
+	}
+	lease, err := owner.Acquire()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = action(context.Background(), strings.Repeat("a", 48)); err == nil || protocol.calls != 1 {
+		t.Fatal("active capture owner admitted")
+	}
+	lease.Release()
+}
+
 func TestInstagramDiagnosticActionUsesOnlyRunningPersistentOwner(t *testing.T) {
 	process := &diagnosticOperatorProcess{done: make(chan error), driver: "browser"}
 	owner, err := captureruntime.New(process)

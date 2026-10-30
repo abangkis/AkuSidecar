@@ -568,6 +568,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 		if runtime.InstagramReaderDiagnosticConfigured() {
 			server.SetInstagramReaderDiagnosticAction(instagramReaderDiagnosticAction(capture.CaptureProtocol(), captureManager, capture.PID()))
 			server.SetInstagramBootstrapDiagnosticAction(instagramBootstrapDiagnosticAction(capture.CaptureProtocol(), captureManager, capture.PID()))
+			server.SetInstagramBootstrapCorroborationDiagnosticAction(instagramBootstrapCorroborationDiagnosticAction(capture.CaptureProtocol(), captureManager, capture.PID()))
 		}
 		captureManager.SetTimingObserver(func(stage string, elapsed time.Duration, ok bool) {
 			logger.Printf("capture_transition_timing stage=%s elapsed_ms=%d ok=%t", stage, elapsed.Milliseconds(), ok)

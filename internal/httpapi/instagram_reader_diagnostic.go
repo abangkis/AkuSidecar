@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/abangkis/AkuSidecar/internal/engine"
 )
@@ -25,6 +26,12 @@ func (s *Server) SetInstagramBootstrapDiagnosticAction(action func(context.Conte
 	s.instagramBootstrapDiagnostic = action
 }
 
+func (s *Server) SetInstagramBootstrapCorroborationDiagnosticAction(action func(context.Context, string) (json.RawMessage, error)) {
+	s.appShellActionsMu.Lock()
+	defer s.appShellActionsMu.Unlock()
+	s.instagramBootstrapCorroborationDiagnostic = action
+}
+
 func (s *Server) runInstagramReaderDiagnostic(w http.ResponseWriter, r *http.Request) error {
 	if !s.engine.InstagramReaderDiagnosticConfigured() {
 		return notFound("Instagram reader diagnostic")
@@ -35,10 +42,15 @@ func (s *Server) runInstagramReaderDiagnostic(w http.ResponseWriter, r *http.Req
 	if r.URL.RawQuery != "" {
 		return badRequest("Instagram reader diagnostic does not accept query parameters")
 	}
-	bootstrap := r.URL.Path == "/api/diagnostics/instagram-bootstrap"
+	path := strings.TrimSuffix(r.URL.Path, "/")
+	bootstrap := path == "/api/diagnostics/instagram-bootstrap"
+	corroboration := path == "/api/diagnostics/instagram-bootstrap-corroboration"
 	keys := []string{"allowAuthenticatedReaderDiagnostic", "acknowledgeBoundedErrorBody"}
 	if bootstrap {
 		keys = []string{"allowPassiveBootstrapInspection"}
+	}
+	if corroboration {
+		keys = []string{"allowBootstrapCorroboration", "acknowledgeBoundedDocumentBody", "acknowledgeAccountCookieComparison"}
 	}
 	consent, err := readConsentFields(r, keys)
 	accepted := err == nil
@@ -53,6 +65,9 @@ func (s *Server) runInstagramReaderDiagnostic(w http.ResponseWriter, r *http.Req
 	if bootstrap {
 		action = s.instagramBootstrapDiagnostic
 	}
+	if corroboration {
+		action = s.instagramBootstrapCorroborationDiagnostic
+	}
 	s.appShellActionsMu.RUnlock()
 	if action == nil {
 		return apiError{Status: http.StatusConflict, Code: "instagram_diagnostic_unavailable", Message: "The existing main browser diagnostic is unavailable."}
@@ -64,6 +79,9 @@ func (s *Server) runInstagramReaderDiagnostic(w http.ResponseWriter, r *http.Req
 	run := s.engine.RunInstagramReaderDiagnostic
 	if bootstrap {
 		run = s.engine.RunInstagramBootstrapDiagnostic
+	}
+	if corroboration {
+		run = s.engine.RunInstagramBootstrapCorroborationDiagnostic
 	}
 	raw, err := run(r.Context(), func(ctx context.Context) (json.RawMessage, error) {
 		return action(ctx, hex.EncodeToString(nonce[:]))

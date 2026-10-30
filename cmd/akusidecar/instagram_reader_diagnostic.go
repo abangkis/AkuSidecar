@@ -27,6 +27,14 @@ func instagramBootstrapDiagnosticAction(protocol appshell.CaptureProtocol, manag
 	return bindInstagramDiagnosticAction(diagnostic.DiagnoseInstagramBootstrap, manager, pid)
 }
 
+func instagramBootstrapCorroborationDiagnosticAction(protocol appshell.CaptureProtocol, manager *captureruntime.Manager, pid int) func(context.Context, string) (json.RawMessage, error) {
+	diagnostic, ok := protocol.(appshell.MainBrowserInstagramBootstrapCorroborationDiagnosticProtocol)
+	if !ok {
+		return nil
+	}
+	return bindInstagramDiagnosticAction(diagnostic.DiagnoseInstagramBootstrapCorroboration, manager, pid)
+}
+
 func bindInstagramDiagnosticAction(action func(context.Context, string) (json.RawMessage, error), manager *captureruntime.Manager, pid int) func(context.Context, string) (json.RawMessage, error) {
 	if manager == nil || pid < 1 || manager.PID() != pid || !manager.Persistent() {
 		return nil

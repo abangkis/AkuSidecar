@@ -11,6 +11,7 @@ import {INSTAGRAM_NATIVE_RECIPE} from './instagram-native-session.mjs';
 import {nativeSourceFailure} from './native-source-kernel.mjs';
 import {runInstagramReaderDiagnostic} from './instagram-reader-diagnostic.mjs';
 import {diagnoseInstagramSelfBootstrap} from './instagram-self-bootstrap-probe.mjs';
+import {runInstagramBootstrapCorroboration} from './instagram-bootstrap-corroboration.mjs';
 
 const rejected=()=>new Error('main_transport_rejected');
 const exact=(v,keys)=>{if(!v||typeof v!=='object'||Array.isArray(v)||Object.keys(v).length!==keys.length||keys.some(k=>!Object.hasOwn(v,k)))throw rejected();};
@@ -92,6 +93,7 @@ export async function runMainBrowserTransport(){
     sourceFactories:{instagram:createBorrowedInstagramControl},
     diagnoseInstagramReader:runInstagramReaderDiagnostic,
     diagnoseInstagramBootstrap:diagnoseInstagramSelfBootstrap,
+    diagnoseInstagramBootstrapCorroboration:runInstagramBootstrapCorroboration,
     onClosed:()=>{control.destroy();process.stdin.destroy();process.stdout.end();process.exitCode=0;},
   });
 }

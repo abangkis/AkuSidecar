@@ -55,8 +55,9 @@ type Server struct {
 	appShellPID         func() int
 	splitCapture        *splitCaptureTransport
 
-	instagramReaderDiagnostic    func(context.Context, string) (json.RawMessage, error)
-	instagramBootstrapDiagnostic func(context.Context, string) (json.RawMessage, error)
+	instagramReaderDiagnostic                 func(context.Context, string) (json.RawMessage, error)
+	instagramBootstrapDiagnostic              func(context.Context, string) (json.RawMessage, error)
+	instagramBootstrapCorroborationDiagnostic func(context.Context, string) (json.RawMessage, error)
 
 	// Set only by the tagged frontend QA composition, before Server.Start.
 	developmentNativeReaderClosed bool
@@ -215,6 +216,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	case r.Method == http.MethodPost && p == "/api/diagnostics/instagram-reader":
 		return s.runInstagramReaderDiagnostic(w, r)
 	case r.Method == http.MethodPost && p == "/api/diagnostics/instagram-bootstrap":
+		return s.runInstagramReaderDiagnostic(w, r)
+	case r.Method == http.MethodPost && p == "/api/diagnostics/instagram-bootstrap-corroboration":
 		return s.runInstagramReaderDiagnostic(w, r)
 	case r.Method == http.MethodPost && p == "/api/post-screenshots":
 		return s.createPostScreenshot(w, r)
