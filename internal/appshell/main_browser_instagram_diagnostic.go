@@ -7,6 +7,12 @@ import (
 	"unicode/utf8"
 )
 
+// ValidateInstagramReaderDiagnostic applies the same closed projection contract
+// to operator callbacks as to replies from the private browser transport.
+func ValidateInstagramReaderDiagnostic(raw json.RawMessage) (json.RawMessage, error) {
+	return validateInstagramDiagnosticProjection(raw)
+}
+
 func validInstagramDiagnosticNonce(nonce string) bool {
 	if len(nonce) != 48 {
 		return false
@@ -84,7 +90,7 @@ func validateInstagramDiagnosticProjection(raw json.RawMessage) (json.RawMessage
 	if !allowed(p.PrimaryCause, "none", "invalid_request", "scope_unavailable", "setup_failed", "navigation_failed", "context_unavailable", "document_changed", "evaluation_failed", "projection_invalid", "fetch_timeout", "fetch_failed", "http_rejected", "unexpected_success", "response_scope", "body_oversize", "body_read_failed", "body_invalid", "wire_unmatched", "cleanup_failed", "page_scope", "login_visible") ||
 		!allowed(p.MIME, "missing", "json", "html", "other") ||
 		!allowed(p.BodyClass, "not_read", "json_object", "json_nonobject", "invalid_json", "invalid_utf8", "oversize", "read_failed") ||
-		!allowed(p.ErrorCategory, "none", "login_required", "challenge_required", "checkpoint_required", "feedback_required", "sentry_block", "csrf_failed", "unknown") ||
+		!allowed(p.ErrorCategory, "none", "login_required", "challenge_required", "checkpoint_required", "feedback_required", "sentry_block", "csrf_failed", "invalid_app_id", "unknown") ||
 		!allowed(p.Cleanup, "not_started", "verified", "uncertain") {
 		return rejected()
 	}

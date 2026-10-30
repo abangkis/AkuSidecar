@@ -8,6 +8,8 @@ import {nativeSourceDiagnostic} from './native-source-kernel.mjs';
 import {INSTAGRAM_HTTP_REJECTIONS} from './instagram-native-session.mjs';
 import {createMainDiagnosticScope} from './main-browser-diagnostic-scope.mjs';
 import {validateInstagramReaderDiagnostic} from './instagram-reader-diagnostic.mjs';
+import {createMainBootstrapDiagnosticScope} from './main-bootstrap-diagnostic-scope.mjs';
+import {validateInstagramBootstrapDiagnostic} from './instagram-self-bootstrap-probe.mjs';
 
 export const MAIN_TRANSPORT_SCHEMA='aku.main-browser-transport.v1';
 const rejected=()=>new Error('main_transport_rejected');
@@ -130,7 +132,8 @@ export function createMainCDP({input,output,onFailure=()=>{}}){
     releaseTarget:id=>privateTargets.delete(id),releaseSession:id=>privateSessions.delete(id),
     subscribe(fn){if(closed||typeof fn!=='function'||listeners.size>=32)throw rejected();listeners.add(fn);return()=>listeners.delete(fn);},
     call:(method,params,sessionId,timeoutMS)=>call(method,params,sessionId,timeoutMS),
-    createDiagnosticScope:()=>createMainDiagnosticScope(diagnosticRaw),close,
+    createDiagnosticScope:()=>createMainDiagnosticScope(diagnosticRaw),
+    createBootstrapDiagnosticScope:()=>createMainBootstrapDiagnosticScope(diagnosticRaw),close,
   });
 }
 
@@ -204,7 +207,7 @@ export function createMainPublicFacade(transport,{recipes=[],busy=()=>false}={})
 
 // The entry supplies connection and sealed source factories. Neither a control request nor
 // an error can return raw CDP frames, headers, cookies or protocol exceptions.
-export function serveMainBrowserTransport({input,output,connect,createX,sourceFactories={},diagnoseInstagramReader,recipes=[],expectedNonce,onClosed=()=>{}}){
+export function serveMainBrowserTransport({input,output,connect,createX,sourceFactories={},diagnoseInstagramReader,diagnoseInstagramBootstrap,recipes=[],expectedNonce,onClosed=()=>{}}){
   let bytes=Buffer.alloc(0),closed=false,booting=false,transport,publicCall,x,xAttempted=false,busy=null,lastID=0,pending=0,publicPending=0,ownerPending=0,diagnosticBlocked=false;
   const sources=createSourceOwnerRegistry(sourceFactories);
   const acquire=(lane,terminal=false)=>{
@@ -255,11 +258,12 @@ export function serveMainBrowserTransport({input,output,connect,createX,sourceFa
           if(exclusive&&publicPending&&!terminal)throw rejected();const release=exclusive?acquire(lane,terminal):()=>{};ownerPending++;
           try{result=await sources.execute(q.source,q.operation,q.params,transport);}
           finally{ownerPending--;release();}
-        }else if(q.op==='main_instagram_reader_diagnostic'){
+        }else if(['main_instagram_reader_diagnostic','main_instagram_bootstrap_diagnostic'].includes(q.op)){
           exact(q,['id','op','nonce']);
-          if(typeof diagnoseInstagramReader!=='function'||typeof q.nonce!=='string'||!/^[a-f0-9]{48}$/u.test(q.nonce)||busy||publicPending||ownerPending||diagnosticBlocked)throw rejected();
+          const bootstrap=q.op==='main_instagram_bootstrap_diagnostic',diagnose=bootstrap?diagnoseInstagramBootstrap:diagnoseInstagramReader;
+          if(typeof diagnose!=='function'||typeof q.nonce!=='string'||!/^[a-f0-9]{48}$/u.test(q.nonce)||busy||publicPending||ownerPending||diagnosticBlocked)throw rejected();
           const release=acquire('diagnostic:instagram');
-          try{result=validateInstagramReaderDiagnostic(await diagnoseInstagramReader(transport,{nonce:q.nonce}));diagnosticBlocked=result.cleanup!=='verified';}
+          try{result=(bootstrap?validateInstagramBootstrapDiagnostic:validateInstagramReaderDiagnostic)(await diagnose(transport,{nonce:q.nonce}));diagnosticBlocked=result.cleanup!=='verified';}
           catch(error){diagnosticBlocked=true;throw error;}
           finally{release();}
         }else throw rejected();

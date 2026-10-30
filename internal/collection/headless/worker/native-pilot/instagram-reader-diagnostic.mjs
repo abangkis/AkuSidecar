@@ -10,7 +10,7 @@ export const DIAGNOSTIC_PRIMARY_CAUSES = Object.freeze(['none', 'invalid_request
   'cleanup_failed', 'page_scope', 'login_visible']);
 const mimes = ['missing', 'json', 'html', 'other'];
 const bodies = ['not_read', 'json_object', 'json_nonobject', 'invalid_json', 'invalid_utf8', 'oversize', 'read_failed'];
-const errors = ['none', 'login_required', 'challenge_required', 'checkpoint_required', 'feedback_required', 'sentry_block', 'csrf_failed', 'unknown'];
+const errors = ['none', 'login_required', 'challenge_required', 'checkpoint_required', 'feedback_required', 'sentry_block', 'csrf_failed', 'invalid_app_id', 'unknown'];
 const cleanupStates = ['not_started', 'verified', 'uncertain'];
 const resultKeys = ['schema', 'primaryCause', 'status', 'mime', 'bodyClass', 'errorCategory', 'documentBound', 'wireMatched', 'cleanup'];
 const pageKeys = ['nonce', 'primaryCause', 'status', 'mime', 'bodyClass', 'errorCategory', 'homeAfter'];
@@ -66,7 +66,7 @@ export function instagramReaderDiagnosticExpression(nonce) {
       try{value=JSON.parse(text);}catch{out.bodyClass='invalid_json';return finish();}
       if(!value||typeof value!=='object'||Array.isArray(value)){out.bodyClass='json_nonobject';return finish();}
       out.bodyClass='json_object';
-      const allowed=['login_required','challenge_required','checkpoint_required','feedback_required','sentry_block','csrf_failed'];
+      const allowed=['login_required','challenge_required','checkpoint_required','feedback_required','sentry_block','csrf_failed','invalid_app_id'];
       out.errorCategory=allowed.includes(value.error_type)?value.error_type:allowed.includes(value.message)?value.message:'unknown';
       return finish();
     }catch{
@@ -88,19 +88,19 @@ export async function runInstagramReaderDiagnostic(transport, request) {
   if (!record(request, ['nonce']) || typeof request.nonce !== 'string' || !noncePattern.test(request.nonce)) {
     cause('invalid_request'); return validateInstagramReaderDiagnostic(result);
   }
-  let scope, targetId, sessionId, unsubscribe, pinned, currentContext, attemptedTarget = false, invalidated = false, phase = 'setup_failed';
+  let scope, targetId, sessionId, unsubscribe, pinned, attemptedTarget = false, invalidated = false, phase = 'setup_failed', setupRevision = 0;
   let requestID, requestCount = 0, wireStatus, expectedFrame, expectedLoader;
   const contexts = new Map();
   const setupUntil = Date.now() + 10000;
   const invalidate = () => { if (pinned) { invalidated = true; cause('document_changed'); } };
   const timeout = () => { const ms = setupUntil - Date.now(); if (ms < 1) throw failure(); return Math.min(8000, ms); };
   const send = (method, params = {}, ms = timeout()) => scope.call(method, params, sessionId ?? '', ms);
-  const frame = async ms => {
+  const frame = async (ms, settling = false) => {
     const raw = await send('Page.getFrameTree', {}, ms);
     const f = raw?.frameTree?.frame;
-    if (!f || typeof f.id !== 'string' || !f.id || typeof f.loaderId !== 'string' || !f.loaderId ||
-        f.url !== INSTAGRAM_DIAGNOSTIC_HOME || f.parentId !== undefined) throw failure();
-    return {id: f.id, loaderId: f.loaderId};
+    if (!f || !reference(f.id) || typeof f.loaderId !== 'string' || !f.loaderId && !(settling && f.url === 'about:blank') ||
+        f.url !== INSTAGRAM_DIAGNOSTIC_HOME && !(settling && f.url === 'about:blank') || f.parentId !== undefined) throw failure();
+    return {id: f.id, loaderId: f.loaderId, url: f.url};
   };
   try {
     if (typeof transport?.createDiagnosticScope !== 'function') { cause('scope_unavailable'); return validateInstagramReaderDiagnostic(result); }
@@ -113,18 +113,24 @@ export async function runInstagramReaderDiagnostic(transport, request) {
         const p = event.params ?? {};
         if (event.method === 'Runtime.executionContextCreated') {
           const c = p.context;
+          if (c?.auxData?.isDefault === true && reference(c.auxData.frameId)) {
+            contexts.delete(c.auxData.frameId);
+            if (c.auxData.frameId === expectedFrame) setupRevision++;
+            if (pinned && c.auxData.frameId === pinned.id && c.uniqueId !== pinned.uniqueId) invalidate();
+          }
           if (c?.auxData?.isDefault === true && reference(c.auxData.frameId) && Number.isSafeInteger(c.id) && c.id > 0 &&
               reference(c.uniqueId) && c.origin === 'https://www.instagram.com') {
             contexts.set(c.auxData.frameId, {id: c.id, uniqueId: c.uniqueId});
-            if (pinned && c.auxData.frameId === pinned.id && c.uniqueId !== pinned.uniqueId) invalidate();
           }
-        } else if (event.method === 'Runtime.executionContextsCleared') { contexts.clear(); invalidate(); }
+        } else if (event.method === 'Runtime.executionContextsCleared') { setupRevision++;contexts.clear(); invalidate(); }
         else if (event.method === 'Runtime.executionContextDestroyed') {
-          for (const [key, c] of contexts) if (c.id === p.executionContextId || c.uniqueId === p.executionContextUniqueId) contexts.delete(key);
+          for (const [key, c] of contexts) if (c.id === p.executionContextId || c.uniqueId === p.executionContextUniqueId) {
+            contexts.delete(key);if (key === expectedFrame) setupRevision++;
+          }
           if (pinned && (p.executionContextId === pinned.contextID || p.executionContextUniqueId === pinned.uniqueId)) invalidate();
-        } else if (event.method === 'Page.frameNavigated' && pinned && p.frame?.id === pinned.id) invalidate();
-        else if (event.method === 'Page.frameDetached' && pinned && p.frameId === pinned.id) invalidate();
-        else if (event.method === 'Page.navigatedWithinDocument' && pinned && p.frameId === pinned.id) invalidate();
+        } else if (event.method === 'Page.frameNavigated' && p.frame?.id === expectedFrame) { setupRevision++;invalidate(); }
+        else if (event.method === 'Page.frameDetached' && p.frameId === expectedFrame) { setupRevision++;invalidate(); }
+        else if (event.method === 'Page.navigatedWithinDocument' && p.frameId === expectedFrame) { setupRevision++;invalidate(); }
         else if (event.method === 'Network.requestWillBeSent' && pinned && p.frameId === pinned.id && p.loaderId === pinned.loaderId && p.request?.url === endpoint) {
           requestCount++;requestID=reference(p.requestId)?p.requestId:undefined;
           if (p.request.method !== 'GET' || p.redirectResponse) requestCount++;
@@ -146,20 +152,39 @@ export async function runInstagramReaderDiagnostic(transport, request) {
     if (navigation?.errorText || typeof navigation?.frameId !== 'string' || typeof navigation?.loaderId !== 'string' || !navigation.frameId || !navigation.loaderId) throw failure();
     expectedFrame = navigation.frameId;expectedLoader = navigation.loaderId;
     phase = 'context_unavailable';
+    // Page.navigate acknowledges a navigation; its expected document may not
+    // have committed yet. Observe candidates until that exact loader is ready.
+    // The evidence pin is immutable only after both frame checks agree.
     while (Date.now() < setupUntil) {
-      const before = await frame(timeout());currentContext=contexts.get(before.id);
-      if (before.id !== expectedFrame || before.loaderId !== expectedLoader) { cause('document_changed'); throw failure(); }
-      if (currentContext) {
-        pinned = {...before, uniqueId: currentContext.uniqueId, contextID: currentContext.id};
-        const ready = await send('Runtime.evaluate', {expression: "location.origin==='https://www.instagram.com'&&location.pathname==='/'&&['interactive','complete'].includes(document.readyState)", uniqueContextId: pinned.uniqueId, returnByValue: true, awaitPromise: true, userGesture: false});
-        if (invalidated || ready?.exceptionDetails) throw failure();
-        if (ready?.result?.value === true) break;
-        pinned = undefined;
+      const before = await frame(timeout(), true), currentContext = contexts.get(before.id);
+      if (before.id !== expectedFrame) { cause('document_changed'); throw failure(); }
+      if (before.url === INSTAGRAM_DIAGNOSTIC_HOME && before.loaderId === expectedLoader && currentContext) {
+        const candidate = {...before, uniqueId: currentContext.uniqueId, contextID: currentContext.id}, revision = setupRevision;
+        let ready;
+        try {
+          ready = await send('Runtime.evaluate', {expression: "location.origin==='https://www.instagram.com'&&location.pathname==='/'&&['interactive','complete'].includes(document.readyState)", uniqueContextId: candidate.uniqueId, returnByValue: true, awaitPromise: true, userGesture: false});
+        } catch (error) {
+          if (setupRevision === revision && contexts.get(before.id)?.uniqueId === candidate.uniqueId) throw error;
+        }
+        if (ready?.exceptionDetails && setupRevision === revision && contexts.get(before.id)?.uniqueId === candidate.uniqueId) throw failure();
+        if (ready?.result?.value === true) {
+          const confirmed = await frame(timeout(), true), context = contexts.get(confirmed.id);
+          if (confirmed.id !== expectedFrame) { cause('document_changed'); throw failure(); }
+          if (setupRevision === revision && confirmed.url === INSTAGRAM_DIAGNOSTIC_HOME && confirmed.loaderId === expectedLoader && context?.uniqueId === candidate.uniqueId) {
+            pinned = candidate;break;
+          }
+        }
       }
       await pause(25);
     }
     if (!pinned || invalidated) throw failure();
     for (const [method, params] of [['Network.setCacheDisabled', {cacheDisabled: true}], ['Network.setBypassServiceWorker', {bypass: true}]]) await send(method, params);
+    // Instrumentation awaits can observe a new document. Never dispatch the
+    // endpoint expression after the frozen frame/context has been invalidated.
+    const admitted = await frame(timeout()), admittedContext = contexts.get(admitted.id);
+    if (invalidated || admitted.id !== pinned.id || admitted.loaderId !== pinned.loaderId || admittedContext?.uniqueId !== pinned.uniqueId) {
+      invalidate();throw failure();
+    }
     phase = 'evaluation_failed';
     let evaluation;
     try {

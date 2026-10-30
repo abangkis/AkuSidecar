@@ -54,6 +54,9 @@ type Engine struct {
 	epoch                                    string
 	mu                                       sync.RWMutex
 	operation                                sync.Mutex
+	instagramReaderDiagnosticUsed            bool // guarded by operation
+	instagramReaderDiagnosticMu              sync.RWMutex
+	instagramReaderDiagnosticDone            chan struct{} // guarded by mu
 	captureMu                                sync.Mutex
 	captureOwner                             *captureruntime.Manager
 	captureSessions                          map[string]*captureruntime.Lease
@@ -3255,7 +3258,7 @@ func (e *Engine) RuntimeUpdateReadiness(ctx context.Context) (bool, string, erro
 		return false, "active_media_recapture", nil
 	}
 	e.mu.RLock()
-	activeWorkers := len(e.active)
+	activeWorkers := len(e.active) + e.processWorkers
 	shuttingDown := e.shuttingDown
 	e.mu.RUnlock()
 	if shuttingDown {

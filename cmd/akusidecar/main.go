@@ -332,6 +332,11 @@ func main() {
 	shell.Cancel() // Stop accepting/relaunching windows as soon as shutdown wins.
 	logger.Printf("shutdown requested")
 	runtime.Shutdown()
+	diagnosticDrain, cancelDiagnosticDrain := context.WithTimeout(context.Background(), 31*time.Second)
+	if err := runtime.DrainInstagramReaderDiagnostic(diagnosticDrain); err != nil {
+		logger.Printf("Instagram reader diagnostic cleanup did not settle before browser retirement")
+	}
+	cancelDiagnosticDrain()
 	if daily != nil && cfg.Capture.XUsesMainProfile() {
 		// Borrowers and disposable collectors finish before the shared browser
 		// transport/Job is released. SQLite's existing deferred gate remains.
@@ -560,6 +565,10 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 			fatal(logger, engine.ConfigureXMainDailyRuntime(collectionCtx, runtime, capture, captureManager, captureProfilePath(options, cfg), captureProfileDirectory, result.Executable))
 		}
 		fatal(logger, engine.ConfigureInstagramMainDailyRuntime(collectionCtx, runtime, capture, captureManager, captureProfilePath(options, cfg), captureProfileDirectory, result.Executable))
+		if runtime.InstagramReaderDiagnosticConfigured() {
+			server.SetInstagramReaderDiagnosticAction(instagramReaderDiagnosticAction(capture.CaptureProtocol(), captureManager, capture.PID()))
+			server.SetInstagramBootstrapDiagnosticAction(instagramBootstrapDiagnosticAction(capture.CaptureProtocol(), captureManager, capture.PID()))
+		}
 		captureManager.SetTimingObserver(func(stage string, elapsed time.Duration, ok bool) {
 			logger.Printf("capture_transition_timing stage=%s elapsed_ms=%d ok=%t", stage, elapsed.Milliseconds(), ok)
 		})

@@ -47,6 +47,10 @@ func (d dailyController) start(ctx context.Context, request XDailyStartRequest, 
 	if !d.configured() || !e.config.Dev || ctx == nil || ctx.Err() != nil || !request.AcknowledgeLimitations || !request.AllowProcessSessionDerivation {
 		return false, d.failure("process consent required")
 	}
+	if !e.instagramReaderDiagnosticMu.TryRLock() {
+		return false, d.failure("reader diagnostic in progress")
+	}
+	defer e.instagramReaderDiagnosticMu.RUnlock()
 	d.state.permissionMu.Lock()
 	d.state.mu.Lock()
 	if restoreRevision != nil && d.state.permissionRevision != *restoreRevision {

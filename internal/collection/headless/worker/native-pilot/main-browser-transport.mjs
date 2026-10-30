@@ -10,6 +10,7 @@ import {createInstagramDailyOwner} from './instagram-native-provider.mjs';
 import {INSTAGRAM_NATIVE_RECIPE} from './instagram-native-session.mjs';
 import {nativeSourceFailure} from './native-source-kernel.mjs';
 import {runInstagramReaderDiagnostic} from './instagram-reader-diagnostic.mjs';
+import {diagnoseInstagramSelfBootstrap} from './instagram-self-bootstrap-probe.mjs';
 
 const rejected=()=>new Error('main_transport_rejected');
 const exact=(v,keys)=>{if(!v||typeof v!=='object'||Array.isArray(v)||Object.keys(v).length!==keys.length||keys.some(k=>!Object.hasOwn(v,k)))throw rejected();};
@@ -90,6 +91,7 @@ export async function runMainBrowserTransport(){
     createX:(params,transport)=>createBorrowedDailyControl(params,transport),
     sourceFactories:{instagram:createBorrowedInstagramControl},
     diagnoseInstagramReader:runInstagramReaderDiagnostic,
+    diagnoseInstagramBootstrap:diagnoseInstagramSelfBootstrap,
     onClosed:()=>{control.destroy();process.stdin.destroy();process.stdout.end();process.exitCode=0;},
   });
 }

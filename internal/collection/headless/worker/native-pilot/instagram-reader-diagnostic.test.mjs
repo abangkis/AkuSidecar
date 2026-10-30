@@ -60,11 +60,11 @@ test('invalid, non-object, unknown and private JSON never becomes arbitrary diag
     [{body:'null'},'json_nonobject'],[{readFailure:true},'read_failed']]){
     const p=await pageFixture(options).run();assert.equal(p.bodyClass,bodyClass);assert.ok(!JSON.stringify(p).includes('PRIVATE'));
   }
-  for(const value of [{error_type:'PRIVATE_TOKEN',message:'PRIVATE_MESSAGE'},{error_type:'invalid_app_id',user:{pk:'PRIVATE_ACCOUNT'}},
+  for(const value of [{error_type:'PRIVATE_TOKEN',message:'PRIVATE_MESSAGE'},{error_type:'invalid_app_id PRIVATE_SECRET',user:{pk:'PRIVATE_ACCOUNT'}},
     {message:'csrf token missing PRIVATE_SECRET'},{error_type:{value:'login_required'}}]){
     const p=await pageFixture({body:JSON.stringify(value)}).run();assert.equal(p.errorCategory,'unknown');assert.ok(!JSON.stringify(p).includes('PRIVATE'));
   }
-  for(const error_type of ['login_required','challenge_required','checkpoint_required','feedback_required','sentry_block','csrf_failed']){
+  for(const error_type of ['login_required','challenge_required','checkpoint_required','feedback_required','sentry_block','csrf_failed','invalid_app_id']){
     assert.equal((await pageFixture({body:JSON.stringify({error_type})}).run()).errorCategory,error_type);
   }
 });
@@ -83,9 +83,9 @@ test('fetch timeout is finite; cancellation cannot hold result indefinitely',asy
 });
 
 function runnerFixture(options={}) {
-  const calls=[],pins=new Set(),sessions=new Set();let listener,alive=true,exists=false,disposed=false,frameReads=0;
+  const calls=[],pins=new Set(),sessions=new Set();let listener,alive=true,exists=false,disposed=false,frameReads=0,readyReads=0,endpointCalls=0,currentUnique='unique-owned';
   const emit=(method,params)=>listener?.({sessionId:'session-owned',method,params});
-  const context=()=>emit('Runtime.executionContextCreated',{context:{id:7,uniqueId:'unique-owned',origin:'https://www.instagram.com',auxData:{isDefault:true,frameId:'frame-owned'}}});
+  const context=()=>emit('Runtime.executionContextCreated',{context:{id:currentUnique==='unique-owned'?7:8,uniqueId:currentUnique,origin:'https://www.instagram.com',auxData:{isDefault:true,frameId:'frame-owned'}}});
   const scope={alive:()=>alive,cleanupVerified:()=>!options.unresolvedAllocation&&pins.size===0&&sessions.size===0,on(fn){listener=fn;return()=>{listener=undefined;};},
     reserveTarget:id=>pins.add(id),reserveSession:id=>sessions.add(id),releaseTarget:id=>pins.delete(id),releaseSession:id=>sessions.delete(id),
     dispose(){disposed=true;},async call(method,params,sessionId,ms){
@@ -93,13 +93,21 @@ function runnerFixture(options={}) {
       if(options.failMethod===method)throw Error('PRIVATE_TRANSPORT');
       if(method==='Target.createTarget'){exists=true;return{targetId:'target-owned'};}
       if(method==='Target.attachToTarget')return{sessionId:'session-owned'};
-      if(method==='Page.navigate'){context();return{frameId:'frame-owned',loaderId:'loader-owned'};}
+      if(method==='Page.navigate'){if(!options.delayedContext)context();return{frameId:'frame-owned',loaderId:'loader-owned'};}
       if(method==='Page.getFrameTree'){
-        frameReads++;return{frameTree:{frame:{id:'frame-owned',loaderId:options.changeLoader&&frameReads>1?'changed':'loader-owned',url:home}}};
+        frameReads++;
+        if(options.delayedContext&&frameReads===2)context();
+        return{frameTree:{frame:{id:options.wrongRoot?'foreign-root':'frame-owned',loaderId:options.changeLoader&&endpointCalls>0?'changed':options.initialOldLoader&&frameReads===1?'previous-loader':'loader-owned',url:options.initialBlank&&frameReads===1?'about:blank':options.nonHome?'https://outside.invalid/':home}}};
       }
       if(method==='Runtime.evaluate'){
-        assert.equal(params.uniqueContextId,'unique-owned');
-        if(!params.expression.includes('api/v1/accounts'))return{result:{value:true}};
+        assert.equal(params.uniqueContextId,currentUnique);
+        if(!params.expression.includes('api/v1/accounts')){
+          readyReads++;
+          if(options.initialFrameEvent&&readyReads===1)emit('Page.frameNavigated',{frame:{id:'frame-owned',loaderId:'loader-owned',url:home}});
+          if(options.replaceReadyContext&&readyReads===1){currentUnique='unique-replacement';context();}
+          return{result:{value:!(options.initialLoading&&readyReads===1)}};
+        }
+        endpointCalls++;
         if(options.evalFailure){if(options.destroyContext)emit('Runtime.executionContextDestroyed',{executionContextId:7,executionContextUniqueId:'unique-owned'});throw Error('PRIVATE_EVALUATION');}
         if(options.exception)return{exceptionDetails:{text:'PRIVATE_EXCEPTION'}};
         if(!options.noWire){
@@ -113,10 +121,11 @@ function runnerFixture(options={}) {
       }
       if(method==='Target.closeTarget'){exists=false;return{success:true};}
       if(method==='Target.getTargets'){if(options.inventoryFailure)throw Error('PRIVATE_INVENTORY');return{targetInfos:exists?[{targetId:'target-owned',url:'PRIVATE_URL'}]:[{targetId:'user-tab',url:'PRIVATE_URL'}]};}
+      if(method===options.invalidateMethod)emit(options.invalidateEvent??'Runtime.executionContextsCleared',options.invalidateEvent==='Page.navigatedWithinDocument'?{frameId:'frame-owned'}:{});
       return{};
     }};
   const transport={createDiagnosticScope:()=>scope};
-  return{transport,calls,pins,sessions,scope,emit,get frameReads(){return frameReads;},get disposed(){return disposed;},get alive(){return alive;}};
+  return{transport,calls,pins,sessions,scope,emit,get frameReads(){return frameReads;},get endpointCalls(){return endpointCalls;},get disposed(){return disposed;},get alive(){return alive;}};
 }
 const forbidden=/getCookies|setCookies|Storage\.|createBrowserContext|source_|collector|Browser.close/;
 function assertReaderOnly(f){
@@ -129,7 +138,7 @@ function assertReaderOnly(f){
 test('sealed runner binds reader request before and after HTTP400; cleanup is independent',async()=>{
   const f=runnerFixture(),r=await runInstagramReaderDiagnostic(f.transport,{nonce});
   assert.deepEqual(r,{schema:INSTAGRAM_DIAGNOSTIC_SCHEMA,primaryCause:'http_rejected',status:400,mime:'json',bodyClass:'json_object',errorCategory:'unknown',documentBound:true,wireMatched:true,cleanup:'verified'});
-  assert.equal(f.frameReads,2);assert.equal(f.pins.size,0);assert.equal(f.sessions.size,0);assert.ok(f.disposed);assert.ok(f.alive);
+  assert.equal(f.frameReads,4);assert.equal(f.pins.size,0);assert.equal(f.sessions.size,0);assert.ok(f.disposed);assert.ok(f.alive);
   assertReaderOnly(f);assert.ok(!JSON.stringify(r).includes('PRIVATE'));assert.ok(Buffer.byteLength(JSON.stringify(r))<=1024);
 });
 test('200 and HTTP failures all remain reader-only',async()=>{
@@ -158,7 +167,7 @@ test('projection forgery and evaluation failure still perform after-binding and 
   for(const [options,cause] of [[{projection:{nonce:'b'.repeat(48)}},'projection_invalid'],[{projection:{accountId:'PRIVATE'}},'projection_invalid'],
     [{projection:{errorCategory:'PRIVATE'}},'projection_invalid'],[{evalFailure:true},'evaluation_failed'],[{exception:true},'evaluation_failed']]){
     const f=runnerFixture(options),r=await runInstagramReaderDiagnostic(f.transport,{nonce});
-    assert.equal(r.primaryCause,cause);assert.equal(f.frameReads,2);assert.equal(r.cleanup,'verified');assertReaderOnly(f);
+    assert.equal(r.primaryCause,cause);assert.equal(f.frameReads,4);assert.equal(r.cleanup,'verified');assertReaderOnly(f);
     assert.ok(!JSON.stringify(r).includes('PRIVATE'));
   }
 });
@@ -186,5 +195,28 @@ test('strict request/output validators reject extra fields, getters, arbitrary l
   for(const request of [{nonce,extra:true},{nonce:'PRIVATE'},{nonce:1},null]){
     let scopes=0;const r=await runInstagramReaderDiagnostic({createDiagnosticScope(){scopes++;} },request);
     assert.equal(r.primaryCause,'invalid_request');assert.equal(scopes,0);
+  }
+});
+
+test('initial navigation settles before immutable evidence binding',async()=>{
+  for(const options of [{initialOldLoader:true},{initialBlank:true},{delayedContext:true},{initialFrameEvent:true},{initialLoading:true},{replaceReadyContext:true}]){
+    const f=runnerFixture(options),r=await runInstagramReaderDiagnostic(f.transport,{nonce});
+    assert.equal(r.primaryCause,'http_rejected',JSON.stringify(options));assert.equal(r.documentBound,true);assert.equal(r.wireMatched,true);
+    assert.equal(f.endpointCalls,1);assert.equal(r.cleanup,'verified');assertReaderOnly(f);
+  }
+});
+
+test('invalidation during network instrumentation prevents the endpoint evaluation',async()=>{
+  for(const invalidateMethod of ['Network.setCacheDisabled','Network.setBypassServiceWorker'])for(const invalidateEvent of ['Runtime.executionContextsCleared','Page.navigatedWithinDocument']){
+    const f=runnerFixture({invalidateMethod,invalidateEvent}),r=await runInstagramReaderDiagnostic(f.transport,{nonce});
+    assert.equal(f.endpointCalls,0,`${invalidateMethod}: ${invalidateEvent}`);
+    assert.equal(r.primaryCause,'document_changed');assert.equal(r.status,0);assert.equal(r.documentBound,false);assert.equal(r.cleanup,'verified');assertReaderOnly(f);
+  }
+});
+
+test('setup never accepts a foreign root or a non-Home destination',async()=>{
+  for(const options of [{wrongRoot:true},{nonHome:true}]){
+    const f=runnerFixture(options),r=await runInstagramReaderDiagnostic(f.transport,{nonce});
+    assert.equal(f.endpointCalls,0);assert.equal(r.documentBound,false);assert.equal(r.cleanup,'verified');assertReaderOnly(f);
   }
 });

@@ -97,6 +97,21 @@ func TestRuntimeUpdateReadinessFailsClosedWhileWorkIsActive(t *testing.T) {
 		t.Fatalf("active readiness ready=%v reason=%q err=%v", ready, reason, err)
 	}
 	cancel()
+	runtime.mu.Lock()
+	delete(runtime.active, "candidate_evaluation")
+	runtime.processWorkers = 1
+	runtime.mu.Unlock()
+	ready, reason, err = runtime.RuntimeUpdateReadiness(context.Background())
+	if err != nil || ready || reason != "background_work" {
+		t.Fatalf("draining worker readiness ready=%v reason=%q err=%v", ready, reason, err)
+	}
+	runtime.mu.Lock()
+	runtime.processWorkers = 0
+	runtime.mu.Unlock()
+	ready, reason, err = runtime.RuntimeUpdateReadiness(context.Background())
+	if err != nil || !ready || reason != "idle" {
+		t.Fatalf("drained readiness ready=%v reason=%q err=%v", ready, reason, err)
+	}
 }
 
 func TestUpdateStopsBeforeSessionCreationWithoutGrantedActiveSource(t *testing.T) {
