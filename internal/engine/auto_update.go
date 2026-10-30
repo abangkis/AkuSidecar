@@ -260,6 +260,10 @@ func (e *Engine) autoUpdateLoop(ctx context.Context) {
 		case <-ticker.C:
 		case <-e.autoWake:
 		}
+		// Recovery must also run when the Bridge is silent or Auto Update is disabled.
+		if err := e.recoverExpiredBridgeCommands(ctx, time.Now()); err != nil {
+			e.logger.Printf("recover expired Bridge command: %v", err)
+		}
 		if err := e.maybeStartAutoUpdate(ctx); err != nil {
 			e.logger.Printf("Auto Update deferred: %v", err)
 		}

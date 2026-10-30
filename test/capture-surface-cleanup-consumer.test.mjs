@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { isVerifiedSurfaceCleanupReceipt } from "../internal/httpapi/web/capture-surface-cleanup-receipt.js";
-import { releaseCompletedSourceSurfaces } from "../internal/httpapi/web/capture-surface-release-barrier.js";
+import { releaseCompletedSourceSurfaces, sessionUsesBrowserCapture, runUsesBrowserCapture } from "../internal/httpapi/web/capture-surface-release-barrier.js";
 import { isVerifiedSurfaceCleanupReceipt as isVerifiedBridgeCleanupReceipt } from "../../AkuBridge/surface-cleanup-receipt.js";
 
 const appSource = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
@@ -82,6 +82,8 @@ function createAppHarness({ nextOutcome, session, initialPoller = null }) {
     window: fakeBrowserWindow.window,
     isVerifiedSurfaceCleanupReceipt,
     releaseCompletedSourceSurfaces,
+    sessionUsesBrowserCapture,
+    runUsesBrowserCapture,
     api: async (path, options) => {
       calls.api.push({ path, options });
       return { session };
@@ -95,7 +97,7 @@ function createAppHarness({ nextOutcome, session, initialPoller = null }) {
     startPendingFirstCalibration: async () => null,
     requestAnimationFrame() {},
     $(selector) { return { scrollIntoView() {} }; },
-    dispatch() {},
+    dispatch(run) { calls.dispatched = run.id; },
     showError(error) { throw error; },
     console: { warn(...args) { calls.warnings.push(args); } },
     clearInterval(id) { calls.clearedIntervals.push(id); },
@@ -256,6 +258,8 @@ function createWorkerHarness(releaseOutcomes) {
     BACKGROUND_DISPATCH_ALARM: "background-dispatch-alarm",
     backgroundDispatching: false,
     isVerifiedSurfaceCleanupReceipt: isVerifiedBridgeCleanupReceipt,
+    sessionUsesBrowserCapture,
+    runUsesBrowserCapture,
     bridgeHeaders: () => ({}),
     refreshBackgroundHeartbeat: async () => true,
     managedCaptureWindow: {
@@ -303,4 +307,18 @@ test("actual Bridge worker retains an incomplete background lease and stops disp
   assert.equal(Object.hasOwn(harness.storage[configKey], "activeLeaseId"), false);
   assert.equal(Object.hasOwn(harness.storage[configKey], "releasedSources"), false);
   assert.equal(harness.calls.pendingCommands, 1);
+});
+
+test("native-only terminal session never releases an unrelated Browser lease", async () => {
+ const session={id:"native-only",status:"completed",trigger:"scheduled",runs:[{source:"x",status:"completed",captureCollector:"headless"},{source:"instagram",status:"failed",captureCollector:"headless"}]};
+ const harness=createAppHarness({session,initialPoller:"poller",nextOutcome:()=>{throw Error("must not release Browser");}});
+ await harness.context.pollSession();
+ assert.equal(harness.state.session,null);
+ assert.equal(harness.state.captureCleanupPending,null);
+});
+
+for (const source of ["x", "instagram"]) test(`app does not dispatch ${source} native commands through Bridge`, async () => {
+ const session={id:"native",status:"running",runs:[{id:"native-run",source,status:"waiting_for_bridge",bridgeCommandStatus:"queued",captureCollector:"headless"}]};
+ const h=createAppHarness({session,nextOutcome:()=>{throw Error("unexpected release");}});
+ await h.context.pollSession(); assert.equal(h.calls.dispatched,undefined);
 });

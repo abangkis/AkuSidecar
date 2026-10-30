@@ -718,6 +718,7 @@ type Run struct {
 	Status              string         `json:"status"`
 	Stage               string         `json:"stage"`
 	BridgeCommandStatus string         `json:"bridgeCommandStatus,omitempty"`
+	CaptureCollector    string         `json:"captureCollector,omitempty"`
 	CreatedAt           string         `json:"createdAt"`
 	StartedAt           *string        `json:"startedAt"`
 	CompletedAt         *string        `json:"completedAt"`

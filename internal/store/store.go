@@ -1086,7 +1086,7 @@ func (s *Store) SetRunPipelineStage(ctx context.Context, runID, stage string) er
 }
 
 func (s *Store) listRuns(ctx context.Context, sessionID string) ([]domain.Run, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT runs.id,runs.session_id,runs.source,runs.ordinal,runs.status,runs.stage,runs.created_at,runs.started_at,runs.completed_at,runs.summary,runs.coverage_json,runs.error_json,(SELECT bridge_commands.status FROM bridge_commands WHERE bridge_commands.run_id=runs.id ORDER BY bridge_commands.created_at DESC LIMIT 1) FROM runs WHERE runs.session_id=? ORDER BY runs.ordinal`, sessionID)
+	rows, err := s.db.QueryContext(ctx, `SELECT runs.id,runs.session_id,runs.source,runs.ordinal,runs.status,runs.stage,runs.created_at,runs.started_at,runs.completed_at,runs.summary,runs.coverage_json,runs.error_json,(SELECT bridge_commands.status FROM bridge_commands WHERE bridge_commands.run_id=runs.id ORDER BY bridge_commands.created_at DESC LIMIT 1),(SELECT payload_json FROM bridge_commands WHERE bridge_commands.run_id=runs.id ORDER BY created_at,rowid LIMIT 1) FROM runs WHERE runs.session_id=? ORDER BY runs.ordinal`, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -1094,8 +1094,8 @@ func (s *Store) listRuns(ctx context.Context, sessionID string) ([]domain.Run, e
 	var runs []domain.Run
 	for rows.Next() {
 		var run domain.Run
-		var started, completed, coverageRaw, errorRaw, commandStatus sql.NullString
-		if err := rows.Scan(&run.ID, &run.SessionID, &run.Source, &run.Ordinal, &run.Status, &run.Stage, &run.CreatedAt, &started, &completed, &run.Summary, &coverageRaw, &errorRaw, &commandStatus); err != nil {
+		var started, completed, coverageRaw, errorRaw, commandStatus, commandPayload sql.NullString
+		if err := rows.Scan(&run.ID, &run.SessionID, &run.Source, &run.Ordinal, &run.Status, &run.Stage, &run.CreatedAt, &started, &completed, &run.Summary, &coverageRaw, &errorRaw, &commandStatus, &commandPayload); err != nil {
 			return nil, err
 		}
 		if started.Valid {
@@ -1107,7 +1107,11 @@ func (s *Store) listRuns(ctx context.Context, sessionID string) ([]domain.Run, e
 		if commandStatus.Valid {
 			run.BridgeCommandStatus = commandStatus.String
 		}
+		run.CaptureCollector = projectedCaptureCollector(commandPayload)
 		decodeJSON(coverageRaw.String, &run.Coverage)
+		if !commandPayload.Valid && run.Coverage["captureLifecycleOwner"] == "native_daily_v1" {
+			run.CaptureCollector = "headless"
+		}
 		if errorRaw.Valid {
 			var failure domain.Failure
 			decodeJSON(errorRaw.String, &failure)
@@ -1120,8 +1124,8 @@ func (s *Store) listRuns(ctx context.Context, sessionID string) ([]domain.Run, e
 
 func (s *Store) GetRun(ctx context.Context, id string) (domain.Run, error) {
 	var run domain.Run
-	var started, completed, coverageRaw, errorRaw, commandStatus sql.NullString
-	err := s.db.QueryRowContext(ctx, `SELECT runs.id,runs.session_id,runs.source,runs.ordinal,runs.status,runs.stage,runs.created_at,runs.started_at,runs.completed_at,runs.summary,runs.coverage_json,runs.error_json,(SELECT bridge_commands.status FROM bridge_commands WHERE bridge_commands.run_id=runs.id ORDER BY bridge_commands.created_at DESC LIMIT 1) FROM runs WHERE runs.id=?`, id).Scan(&run.ID, &run.SessionID, &run.Source, &run.Ordinal, &run.Status, &run.Stage, &run.CreatedAt, &started, &completed, &run.Summary, &coverageRaw, &errorRaw, &commandStatus)
+	var started, completed, coverageRaw, errorRaw, commandStatus, commandPayload sql.NullString
+	err := s.db.QueryRowContext(ctx, `SELECT runs.id,runs.session_id,runs.source,runs.ordinal,runs.status,runs.stage,runs.created_at,runs.started_at,runs.completed_at,runs.summary,runs.coverage_json,runs.error_json,(SELECT bridge_commands.status FROM bridge_commands WHERE bridge_commands.run_id=runs.id ORDER BY bridge_commands.created_at DESC LIMIT 1),(SELECT payload_json FROM bridge_commands WHERE bridge_commands.run_id=runs.id ORDER BY created_at,rowid LIMIT 1) FROM runs WHERE runs.id=?`, id).Scan(&run.ID, &run.SessionID, &run.Source, &run.Ordinal, &run.Status, &run.Stage, &run.CreatedAt, &started, &completed, &run.Summary, &coverageRaw, &errorRaw, &commandStatus, &commandPayload)
 	if err != nil {
 		return domain.Run{}, err
 	}
@@ -1134,7 +1138,11 @@ func (s *Store) GetRun(ctx context.Context, id string) (domain.Run, error) {
 	if commandStatus.Valid {
 		run.BridgeCommandStatus = commandStatus.String
 	}
+	run.CaptureCollector = projectedCaptureCollector(commandPayload)
 	decodeJSON(coverageRaw.String, &run.Coverage)
+	if !commandPayload.Valid && run.Coverage["captureLifecycleOwner"] == "native_daily_v1" {
+		run.CaptureCollector = "headless"
+	}
 	if errorRaw.Valid {
 		var failure domain.Failure
 		decodeJSON(errorRaw.String, &failure)
@@ -1282,6 +1290,9 @@ func (s *Store) claimCommandWithBehavior(ctx context.Context, runID, bridgeID, c
 			return nil, nil
 		}
 	}
+	if expiredQueuedBridgeCommand(command, s.Now()) {
+		return nil, nil
+	}
 	now := domain.Now()
 	result, err := tx.ExecContext(ctx, `UPDATE bridge_commands SET status='claimed',claimed_by=?,claimed_at=? WHERE id=? AND status='queued'`, bridgeID, now, command.ID)
 	if err != nil {
@@ -1382,7 +1393,7 @@ func (s *Store) ExpiredBridgeCommands(ctx context.Context, now time.Time) ([]dom
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id,run_id,type,status,payload_json,created_at,claimed_at
 		FROM bridge_commands
-		WHERE status='claimed' AND claimed_at IS NOT NULL
+		WHERE (status='queued' OR status='claimed' AND claimed_at IS NOT NULL)
 		AND NOT EXISTS (SELECT 1 FROM runs r JOIN meta m ON m.key='manual_pilot_session_v1:'||r.session_id WHERE r.id=bridge_commands.run_id)
 		ORDER BY claimed_at`)
 	if err != nil {
@@ -1392,11 +1403,19 @@ func (s *Store) ExpiredBridgeCommands(ctx context.Context, now time.Time) ([]dom
 	var expired []domain.BridgeCommand
 	for rows.Next() {
 		var command domain.BridgeCommand
-		var raw, claimedAt string
+		var raw string
+		var claimedAt sql.NullString
 		if err := rows.Scan(&command.ID, &command.RunID, &command.Type, &command.Status, &raw, &command.CreatedAt, &claimedAt); err != nil {
 			return nil, err
 		}
-		claimed, err := time.Parse(time.RFC3339Nano, claimedAt)
+		decodeJSON(raw, &command.Payload)
+		if command.Status == "queued" {
+			if expiredQueuedBridgeCommand(command, now) {
+				expired = append(expired, command)
+			}
+			continue
+		}
+		claimed, err := time.Parse(time.RFC3339Nano, claimedAt.String)
 		if err != nil {
 			continue
 		}
@@ -1404,7 +1423,7 @@ func (s *Store) ExpiredBridgeCommands(ctx context.Context, now time.Time) ([]dom
 		if now.Before(claimed.Add(bridgeCommandLease(command.Payload))) {
 			continue
 		}
-		command.ClaimedAt = &claimedAt
+		command.ClaimedAt = &claimedAt.String
 		expired = append(expired, command)
 	}
 	return expired, rows.Err()
@@ -1681,6 +1700,14 @@ func (s *Store) ResumableReasoningRunIDs(ctx context.Context) ([]string, error) 
 }
 
 func (s *Store) FailCommand(ctx context.Context, commandID, runID string, failure domain.Failure) (bool, error) {
+	return s.failCommand(ctx, commandID, runID, failure, nil)
+}
+
+func (s *Store) ExpireQueuedBridgeCommand(ctx context.Context, commandID, runID string, failure domain.Failure, at time.Time) (bool, error) {
+	return s.failCommand(ctx, commandID, runID, failure, &at)
+}
+
+func (s *Store) failCommand(ctx context.Context, commandID, runID string, failure domain.Failure, queuedAt *time.Time) (bool, error) {
 	now := s.Now().UTC().Format(time.RFC3339Nano)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -1689,6 +1716,22 @@ func (s *Store) FailCommand(ctx context.Context, commandID, runID string, failur
 	defer tx.Rollback()
 	if err := rejectManualPilotRun(ctx, tx, runID); err != nil {
 		return false, err
+	}
+	expectedStatus := "claimed"
+	if queuedAt != nil {
+		var command domain.BridgeCommand
+		var payload string
+		if err := tx.QueryRowContext(ctx, `SELECT status,created_at,payload_json FROM bridge_commands WHERE id=? AND run_id=?`, commandID, runID).Scan(&command.Status, &command.CreatedAt, &payload); err != nil {
+			return false, err
+		}
+		command.Payload, err = decodeCapturePayload(payload)
+		if err != nil {
+			return false, err
+		}
+		if !expiredQueuedBridgeCommand(command, *queuedAt) {
+			return false, errors.New("bridge command is not active")
+		}
+		expectedStatus = "queued"
 	}
 	var runStage string
 	var observationCount int
@@ -1703,7 +1746,7 @@ func (s *Store) FailCommand(ctx context.Context, commandID, runID string, failur
 		failure = domain.SafeXChallenge(failure)
 	}
 	raw, _ := json.Marshal(failure)
-	result, err := tx.ExecContext(ctx, `UPDATE bridge_commands SET status='failed',completed_at=?,error_json=? WHERE id=? AND run_id=? AND status='claimed'`, now, string(raw), commandID, runID)
+	result, err := tx.ExecContext(ctx, `UPDATE bridge_commands SET status='failed',completed_at=?,error_json=? WHERE id=? AND run_id=? AND status=?`, now, string(raw), commandID, runID, expectedStatus)
 	if err != nil {
 		return false, err
 	}
@@ -2741,4 +2784,36 @@ func decodeJSON(raw string, target any) {
 		return
 	}
 	_ = json.Unmarshal([]byte(raw), target)
+}
+
+// projectedCaptureCollector is lifecycle metadata, never proof or authority.
+func projectedCaptureCollector(raw sql.NullString) string {
+	if !raw.Valid {
+		return ""
+	}
+	payload, err := decodeCapturePayload(raw.String)
+	if err != nil {
+		return "unknown"
+	}
+	route, err := CaptureCollector(payload)
+	if err != nil {
+		return "unknown"
+	}
+	return route
+}
+
+// Browser dispatch has a bounded pre-claim budget independent of capture time.
+// Native collectors have their own owner deadline and must not be expired here.
+const bridgeDispatchWait = 2 * time.Minute
+
+func expiredQueuedBridgeCommand(command domain.BridgeCommand, now time.Time) bool {
+	if command.Status != "queued" {
+		return false
+	}
+	route, err := CaptureCollector(command.Payload)
+	if err != nil || route != "bridge" {
+		return false
+	}
+	created, err := time.Parse(time.RFC3339Nano, command.CreatedAt)
+	return err == nil && !now.Before(created.Add(bridgeDispatchWait))
 }

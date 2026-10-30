@@ -1225,7 +1225,26 @@ func (e *Engine) recoverExpiredBridgeCommands(ctx context.Context, now time.Time
 				"claimedAt": command.ClaimedAt,
 			},
 		}
-		if _, err := e.FailCommand(ctx, command.ID, command.RunID, failure); err != nil {
+		if command.Status == "queued" {
+			failure.Code = "capture_dispatch_timeout"
+			failure.Message = "Browser capture command was not claimed within its dispatch budget."
+			failure.Details = map[string]any{"commandId": command.ID, "createdAt": command.CreatedAt}
+		}
+		var failErr error
+		if command.Status == "queued" {
+			var fallback bool
+			fallback, failErr = e.store.ExpireQueuedBridgeCommand(ctx, command.ID, command.RunID, failure, now)
+			if failErr == nil {
+				if fallback {
+					e.launchProcess(command.RunID, false)
+				} else if run, err := e.store.GetRun(ctx, command.RunID); err == nil {
+					_, _ = e.startNext(ctx, run.SessionID)
+				}
+			}
+		} else {
+			_, failErr = e.FailCommand(ctx, command.ID, command.RunID, failure)
+		}
+		if err := failErr; err != nil {
 			if strings.Contains(err.Error(), "bridge command is not active") {
 				continue
 			}

@@ -313,6 +313,11 @@ func (d dailyController) queue(run domain.Run, payload map[string]any) error {
 				_, _ = e.startNext(context.Background(), run.SessionID)
 			}
 		}()
+		// Record lifecycle ownership even if the reader check fails before a command exists.
+		if err := e.store.SetRunCoverageField(work, run.ID, "captureLifecycleOwner", "native_daily_v1"); err != nil {
+			cause = err
+			return
+		}
 		phase = "cooldown"
 		if delay := retryAt.Sub(e.store.Now()); delay > 0 {
 			timer := time.NewTimer(delay)

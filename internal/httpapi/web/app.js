@@ -19,6 +19,7 @@ import { mediaRecaptureTransport, waitForMediaRecapture } from "./media-recaptur
 import { createPlaybackRecoveryQueue } from "./playback-recovery-queue.js";
 import { videoPlaybackMissing } from "./video-recapture-policy.js";
 import { releaseCompletedSourceSurfaces } from "./capture-surface-release-barrier.js";
+import { sessionUsesBrowserCapture, runUsesBrowserCapture } from "./capture-surface-release-barrier.js";
 import { isVerifiedSurfaceCleanupReceipt } from "./capture-surface-cleanup-receipt.js";
 import { bridgeRecoveryState, bridgeReloadVerified, bridgeCaptureBusy } from "./bridge-recovery-state.js";
 import {
@@ -5121,7 +5122,7 @@ async function pollSession() {
     }
     renderSession();
     const captureActive = session.runs?.some((run) => run.status === "waiting_for_bridge" && run.bridgeCommandStatus === "claimed");
-    const captureRun = session.runs?.find((run) => run.status === "waiting_for_bridge" && (!run.bridgeCommandStatus || run.bridgeCommandStatus === "queued"));
+    const captureRun = session.runs?.find((run) => runUsesBrowserCapture(run) && run.status === "waiting_for_bridge" && (!run.bridgeCommandStatus || run.bridgeCommandStatus === "queued"));
     if (!captureActive && captureRun && captureSurfaceBarrier.ready) dispatch(captureRun);
     if (terminalStatuses.has(session.status)) {
       state.dispatchKey = null;
@@ -5181,6 +5182,7 @@ async function pollSession() {
 }
 
 async function releaseCaptureSurface(leaseId, source = null) {
+  if (state.session?.id === leaseId && !sessionUsesBrowserCapture(state.session)) return;
   let lastError = null;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
@@ -5226,6 +5228,7 @@ function releaseCaptureSurfaceOnce(leaseId, source = null) {
 }
 
 function dispatch(run) {
+  if (!runUsesBrowserCapture(run)) return;
   const key = `${run.id}:${run.stage}`;
   if (state.dispatchKey === key) return;
   if ((state.dispatchRetryAfter.get(run.id) || 0) > Date.now()) return;
