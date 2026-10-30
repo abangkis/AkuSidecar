@@ -1672,16 +1672,28 @@ func (e *Engine) failRunAfterProcessError(ctx context.Context, runID string, pro
 		failure.Code = "codex_usage_limit"
 		failure.Retryable = false
 	}
-	if err := e.store.FailRun(ctx, runID, failure); err != nil {
+	run, err := e.store.GetRun(ctx, runID)
+	if err != nil {
 		return err
 	}
-	run, err := e.store.GetRun(ctx, runID)
+	// Capture authority ends when the native collector is retired. Recording
+	// a reasoning failure uses the durable accepted-capture receipt instead;
+	// it must not reopen capture or pass through the generic mutation fence.
+	if run.Status == "reasoning" {
+		err = e.store.FailCapturedRunReasoning(ctx, run, failure)
+	} else {
+		err = e.store.FailRun(ctx, runID, failure)
+	}
 	if err != nil {
 		return err
 	}
 	if usageLimit {
 		e.pauseAutoUpdateForUsageLimit(ctx, run.SessionID, processErr)
-		if err := e.store.FailQueuedRuns(ctx, run.SessionID, failure); err != nil {
+		failedRun, loadErr := e.store.GetRun(ctx, runID)
+		if loadErr != nil {
+			return loadErr
+		}
+		if err := e.store.FailQueuedAfterReasoningFailure(ctx, failedRun, failure); err != nil {
 			return err
 		}
 	}

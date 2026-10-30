@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-const bootstrapReply = `{"schema":"aku.instagram-self-bootstrap-probe.v1","reason":"missing","modulePresent":false,"idString":false,"idSafeNumber":false,"usernameString":false,"documentBound":true,"serverFresh":false,"qualified":false,"scanComplete":true,"budgetExpanded":false,"failureStage":"none","failureCondition":"none","cleanup":"verified","cleanupStage":"none","cleanupCondition":"none"}`
+const bootstrapReply = `{"schema":"aku.instagram-self-bootstrap-probe.v1","reason":"missing","shapeReason":"none","modulePresent":false,"idString":false,"idSafeNumber":false,"usernameString":false,"documentBound":true,"serverFresh":false,"qualified":false,"scanComplete":true,"budgetExpanded":false,"failureStage":"none","failureCondition":"none","cleanup":"verified","cleanupStage":"none","cleanupCondition":"none"}`
 
 func TestInstagramBootstrapProjection(t *testing.T) {
 	if _, err := ValidateInstagramBootstrapDiagnostic([]byte(bootstrapReply)); err != nil {
@@ -70,6 +70,42 @@ func TestInstagramBootstrapScanCompleteContract(t *testing.T) {
 		raw := strings.Replace(bootstrapReply, change.old, change.new, 1)
 		if _, err := ValidateInstagramBootstrapDiagnostic([]byte(raw)); err == nil {
 			t.Fatal("inconsistent scan accepted")
+		}
+	}
+}
+
+func TestInstagramBootstrapShapeReasonProjection(t *testing.T) {
+	shapeReasons := []string{"tuple_arity", "dependencies", "data_object", "missing_id", "missing_username", "id_type", "id_format", "username_type", "username_format"}
+	for _, shapeReason := range shapeReasons {
+		raw := strings.Replace(bootstrapReply, `"reason":"missing"`, `"reason":"shape"`, 1)
+		raw = strings.Replace(raw, `"shapeReason":"none"`, `"shapeReason":"`+shapeReason+`"`, 1)
+		raw = strings.Replace(raw, `"modulePresent":false`, `"modulePresent":true`, 1)
+		raw = strings.Replace(raw, `"scanComplete":true`, `"scanComplete":false`, 1)
+		projected, err := ValidateInstagramBootstrapDiagnostic([]byte(raw))
+		if err != nil {
+			t.Fatalf("%s: %v", shapeReason, err)
+		}
+		if !strings.Contains(string(projected), `"shapeReason":"`+shapeReason+`"`) {
+			t.Fatalf("shape reason lost: %s", shapeReason)
+		}
+	}
+	validShape := strings.Replace(bootstrapReply, `"reason":"missing"`, `"reason":"shape"`, 1)
+	validShape = strings.Replace(validShape, `"shapeReason":"none"`, `"shapeReason":"tuple_arity"`, 1)
+	validShape = strings.Replace(validShape, `"modulePresent":false`, `"modulePresent":true`, 1)
+	validShape = strings.Replace(validShape, `"scanComplete":true`, `"scanComplete":false`, 1)
+	for _, invalid := range []string{
+		strings.Replace(validShape, `"shapeReason":"tuple_arity"`, `"shapeReason":"PRIVATE"`, 1),
+		strings.Replace(validShape, `"shapeReason":"tuple_arity"`, `"shapeReason":"none"`, 1),
+		strings.Replace(bootstrapReply, `"shapeReason":"none"`, `"shapeReason":"tuple_arity"`, 1),
+		strings.Replace(validShape, `"modulePresent":true`, `"modulePresent":false`, 1),
+		strings.Replace(validShape, `"scanComplete":false`, `"scanComplete":true`, 1),
+		strings.Replace(validShape, `"idString":false`, `"idString":true`, 1),
+		strings.Replace(bootstrapReply, `"shapeReason":"none"`, `"shapeReason":null`, 1),
+		strings.Replace(bootstrapReply, `"shapeReason":"none",`, ``, 1),
+		strings.TrimSuffix(bootstrapReply, `}`) + `,"shapeReason":"none"}`,
+	} {
+		if _, err := ValidateInstagramBootstrapDiagnostic([]byte(invalid)); err == nil {
+			t.Fatal("inconsistent or private shape projection accepted")
 		}
 	}
 }

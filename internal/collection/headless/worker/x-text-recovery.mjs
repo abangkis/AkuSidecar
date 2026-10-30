@@ -23,7 +23,7 @@ export function createXTextRecovery({ browser, assets, deadlineAt, perTargetMs =
   let page = null;
   let pagePromise = null;
   let closed = false;
-  const unsupported = browser?.backend === 'browser_quiet_hidden' || typeof browser?.createTemporaryPage !== 'function';
+  const unsupported = (browser?.captureCapabilities && browser.captureCapabilities.temporaryDetailPage !== true) || browser?.backend === 'browser_quiet_hidden' || typeof browser?.createTemporaryPage !== 'function';
 
   async function getPage(at) {
     if (page) return page;

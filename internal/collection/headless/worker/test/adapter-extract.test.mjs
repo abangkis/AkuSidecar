@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 
+const shared = await readFile(new URL('../../../../../../AkuBridge/capture-primitives.js', import.meta.url), 'utf8');
 const extractor = await readFile(new URL('../vendor/adapter-extract.js', import.meta.url), 'utf8');
 
 function element({ tagName = 'DIV', rect = { width: 500, height: 240, left: 0, right: 500, top: 20, bottom: 260 },
@@ -77,6 +78,7 @@ function run(source, adapter, url) {
       body: { innerText: '' }, querySelector: () => null,querySelectorAll:()=>[] },
     AkuSourceAdapters: { get: id => id === source ? adapter : null },
   });
+  vm.runInContext(shared, context);
   vm.runInContext(extractor, context);
   return context.XHeadlessPoC;
 }
@@ -330,5 +332,45 @@ test('LinkedIn and Instagram video posters remain pending until playback is obse
     const hydrated=await api.collect();
     assert.equal(hydrated.posts[0].media[0].playbackUrl,fixture.playbackUrl,fixture.source);
     assert.deepEqual(Array.from(hydrated.posts[0].mediaEvidence.expectedWithoutUrl),[],fixture.source);
+  }
+});
+
+const windowedScript = await readFile(new URL('../../../../../../AkuBridge/content-script.js', import.meta.url), 'utf8');
+function windowedReadiness(adapter) {
+  const context = vm.createContext({URL, Element: Object, innerHeight:900, innerWidth:1280,
+    location: new URL('https://www.instagram.com/'),
+    document:{readyState:'complete',body:{innerText:''},querySelector:()=>null},
+    getComputedStyle:()=>({display:'block',visibility:'visible',opacity:'1'}),
+    chrome:{runtime:{onMessage:{addListener(){}}}},
+    AkuBoundedCapturePolicy:{},AkuCaptureQualityPolicy:{},AkuSourceFreshnessRuntime:{},
+    AkuMediaAcquisitionEngine:{},AkuMediaPostProcessor:{createDeferredInbox:()=>({})},
+    AkuSourceAdapters:{get:()=>adapter,assessReadiness:(_source,context)=>({state:context.state})}});
+  context.window=context;
+  vm.runInContext(shared,context);
+  vm.runInContext(windowedScript,context);
+  let result;
+  context.__akuBrowserSourceBridgeMessageHandler({type:'AKU_BROWSER_PROBE_SOURCE_READY',source:'instagram'},null,r=>result=r);
+  return result.readiness.state;
+}
+
+test('windowed readiness and headless collection share the same bounded base classification',async()=>{
+  const visible = candidate({anchors:[anchor('https://www.instagram.com/p/Fixture123/')]});
+  const hidden = candidate({rect:{top:1200,bottom:1500}});
+  for(const item of [
+    {candidates:[visible],state:'feed_ready'},
+    {candidates:[],structural:[visible],state:'feed_empty'},
+    {candidates:[hidden],state:'feed_not_visible'},
+    {candidates:[],feedRoot:true,state:'selector_mismatch'},
+    {candidates:[],state:'page_shell'},
+    {candidates:[visible],login:true,state:'login_required'},
+  ]) {
+    const adapter=baseAdapter('instagram',item.candidates);
+    adapter.discoverCandidates=()=>({candidates:item.candidates,readinessCandidates:item.structural??item.candidates});
+    adapter.feedRootPresent=()=>item.feedRoot===true;
+    adapter.loginRequired=()=>item.login===true;
+    const snapshot=await run('instagram',adapter,'https://www.instagram.com/').collect();
+    assert.equal(snapshot.sourceReadiness,item.state);
+    assert.equal(windowedReadiness(adapter),item.state);
+    if(item.state==='feed_empty')assert.equal(snapshot.posts.length,0,'structural readiness does not invent a post');
   }
 });

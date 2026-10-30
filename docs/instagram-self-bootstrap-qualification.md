@@ -249,3 +249,30 @@ failure after a candidate was found, escaped names, nested duplicates/conflicts,
 duplicate JSON keys and forged completeness. Package tests verify that the
 central policy is sealed. No native probe, session transfer, runtime staging or
 activation was performed. Previous prepared packages remain unchanged.
+
+## Closed structural rejection predicates
+
+The current offline increment keeps `reason: shape` and adds the required
+`shapeReason` field. Its only values are `none`, `tuple_arity`, `dependencies`,
+`data_object`, `missing_id`, `missing_username`, `id_type`, `id_format`,
+`username_type` and `username_format`. `none` is required for every non-shape
+outcome; it is rejected for a shape outcome. Unknown labels, missing fields,
+duplicate fields, fabricated qualification and inconsistent completeness reject
+at the Node and Go boundaries.
+
+Shape outcomes require modulePresent=true, scanComplete=false and all identity
+shape flags false. A malformed candidate after an earlier valid candidate also
+clears those flags; it must retain the structural reason rather than turn into
+an invalid projection. Tests cover later scripts and nested malformed tuples.
+The parser still requires the same exact candidate schema and strict identity
+types/formats. The new labels diagnose the failed requirement without relaxing
+it or exporting the observed value, arbitrary keys or script/body content.
+
+The preceding live observation encountered a module without budget expansion
+but returned only the older aggregate `shape` category. Its exact structural
+cause cannot be reconstructed from the retained projection. No new probe was
+run in this implementation slice, and the source remains unqualified. A later
+approved package must promote matching Go binary and Node transport together:
+older projections without shapeReason are intentionally rejected by this
+updated closed contract. These diagnostics alone are not a production identity
+verifier or a replacement for account/login pair qualification.

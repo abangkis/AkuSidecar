@@ -2,10 +2,35 @@
 
 Date: 2026-10-30
 
-Status: offline implementation authorized; first integration increment implemented.
+Status: shared-foundation convergence in progress; steps 1–3 of the current
+completion plan are authorized for isolated implementation and offline tests.
 Scope: reuse and complete existing integration, not a replacement architecture.
 This document does not authorize runtime activation, session transfer, login
 changes, database migration, or changes to Auto Update.
+
+## Current completion plan
+
+The consolidated [shared-foundation progress report](shared-capture-foundation-progress.md)
+combines X-versus-IG lifecycle convergence with windowed-versus-native capture
+parity. These are two views of the same effort, not a new roadmap reset.
+
+1. Finish terminal batch transitions and Browser cleanup per lease, then prove
+   repeated offline batches can progress. Native result fences stay unchanged.
+2. Split Instagram bootstrap shape rejection into closed, value-free predicate
+   categories before considering a different identity contract. This is not
+   provider qualification or permission to issue another authenticated probe.
+3. Reuse the stable base readiness decision and make native owner capabilities
+   explicit. Test common decisions and intentional unsupported capabilities with
+   the same offline fixtures; do not enable mutation or temporary targets outside
+   the owner's proven guard scope.
+4. After a separately approved handoff, verify daily repeated mixed-source
+   operation, cancellation, restart, remembered consent and reader preservation.
+5. Retire obsolete paths only after their replacement has demonstrated parity.
+
+Steps 1–3 are the current authorized implementation slice. Live activation,
+provider qualification and acceptance in step 4 remain separate gates. A probe
+that runs successfully but rejects a candidate is diagnostic progress, not a
+successful Instagram capture.
 
 ## Objective
 
@@ -134,14 +159,24 @@ terminate predictably; temporary resources retire and user readers remain.
 | --- | --- | --- |
 | Roadmap documentation and historical review | Complete | Requested by user on 2026-10-30 |
 | 1: Contract map and baseline tests | Complete for the current integration boundary | Existing lifecycle suites reused; ownership projection and UI/Bridge parity added |
-| 2: Cleanup and dispatch integration | Implemented offline for wrong-owner dispatch/release and unclaimed waiting | Native-only completion and mixed-source barriers covered; ambiguous historical Browser ownership remains guarded |
-| 3: Existing lifecycle convergence | Cleanup and operation cancellation/deadline execution shared offline; broader owner migration remains pending | X grant and IG attempt use the existing native kernel; X wire compatibility preserved |
-| 4: Provider completion | Offline diagnostic suite verified; HTTP 400 unresolved | A fresh bounded native diagnostic needs separate authorization |
-| 5: Daily acceptance and retirement | Pending | No live activation, transfer or obsolete-path removal |
+| 2: Cleanup and dispatch integration | Wrong-owner routing and pre-claim expiry committed; per-lease retirement and post-capture reasoning failure prepared and tested offline | Browser retirement does not mutate a newer lease; accepted result receipts permit negative-only reasoning termination after capture authority ends; live repeated-batch acceptance is pending |
+| 3: Existing lifecycle convergence | Cleanup, cancellation and deadlines shared; common base readiness and explicit native capabilities implemented offline | Full controllers are not identical; guarded X quote navigation is disabled explicitly, with unsupported recovery diagnostics; source evidence remains distinct |
+| 4: Provider completion | HTTP 400 unresolved; closed shape predicates implemented offline after passive aggregate shape rejection | Budget separation is active in diagnostic commit 7360d68; the new predicate projection is not deployed and does not qualify an identity source |
+| 5: Daily acceptance and retirement | Pending for the current convergence slice | Earlier X acceptance and the diagnostic-only handoff are not repeated mixed-source acceptance; no obsolete path is retired by this slice |
 
 Record completed evidence and remaining differences here as work proceeds. This
 is the execution checklist; existing design documents remain the detailed
 contract references. Runtime activation remains a separate approval.
+
+### Current isolated completion slice
+
+Completion-plan steps 1–3 have an offline implementation checkpoint in the
+[shared-foundation report](shared-capture-foundation-progress.md#offline-completion-checkpoint).
+This slice preserves the existing core instead of introducing another pipeline.
+The next release must include the matching Bridge readiness primitive/assets,
+Sidecar worker/owner code, Go diagnostic decoder and sealed Node transport.
+Neither the new per-lease cleanup nor the predicate/capability changes are
+active merely because the source tests pass.
 
 ## Implemented increment: lifecycle routing and dispatch recovery
 
@@ -154,8 +189,9 @@ contract references. Runtime activation remains a separate approval.
   lease. UI dispatch also excludes commands owned by native collectors.
 - Legacy and unknown routes remain conservative. Actual Browser lease mismatch,
   incomplete cleanup and browser-generation ambiguity remain blocking conditions.
-  In particular, an old-generation record is not retired merely because its
-  numeric tab ID is absent in a later generation.
+  The original increment did not retire an old-generation record even after
+  successful absence inventory. The current per-lease correction below replaces
+  that rule without granting authority to close an old-generation live tab.
 - Ordinary Browser commands have a two-minute pre-claim budget. Expiry rechecks
   route and queued status transactionally; a competing successful claim cannot
   be failed from an older queued snapshot. Ordinary public failure submissions
@@ -253,3 +289,31 @@ Offline evidence: 78 tests passed across grant/kernel cancellation, exact
 deadline and clock regression, late completion, X daily protocol, main transport,
 IG provider, cleanup conformance and sealed package construction. Native browser
 execution, session transfer, activation and runtime changes were not performed.
+
+## Offline owner / Engine / Store acceptance
+
+The following boundaries were verified after commit `09f4f33`. The adapters
+and account evidence are synthetic; databases and Node actors are test-owned.
+No native Chrome acceptance is implied by these results.
+
+| Boundary | Evidence |
+| --- | --- |
+| X startup cancellation and late owner | Existing `TestXDailyStopJoinsStartupAndRejectsLateOwner`: stop waits for startup retirement; late owner cannot inherit authorization |
+| Capture cancellation and reader preservation | Existing X/IG Stop suites; grant/kernel cancellation suites reject late work |
+| Late native startup result | New `TestSourceNativeLateStartupCannotIssuePermit`: adapter ignores cancellation, but real native owner refuses admission and retains cleanup obligation |
+| Late native capture result | New `TestSourceNativeLateCaptureCannotCommit`: cancellation or expired owner deadline after claim rejects returned observation; Store remains empty |
+| Cleanup failure after capture rejection | New late-result test preserves the first cause separately from cleanup failure and rejects replay |
+| Mixed-source continuation | Existing `TestDailySourceFailureDoesNotDisableOtherSource` covers both source orders, healthy-source completion, remembered permissions and unchanged Auto Update |
+| Shared-resource cleanup uncertainty | Existing predecessor tests block continuation until owned collector cleanup is verified |
+| Go / Node protocol | Existing accountless Node owner diagnostic and shared-protocol fixtures pass without launching Chrome |
+
+Validation: selected tagged Engine and Store suites passed, plus 48 JavaScript
+grant/kernel/protocol/transport tests. Tests exercise these boundaries in
+complementary fixtures; they are not one live end-to-end browser run. No new
+production behavior was required by this acceptance increment. The native-port
+late-result fixture uses the IG generic owner; X remains covered by its own
+compatible owner/controller and shared grant tests, not an assumed migration
+to the generic IG proof adapter.
+
+Next unresolved provider gate remains IG identity HTTP 400. Runtime activation
+and bounded real-provider qualification require their own authorization.

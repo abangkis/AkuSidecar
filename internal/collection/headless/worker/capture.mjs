@@ -1,5 +1,5 @@
 import { applyQuoteRecovery, probeQuoteNavigation } from './quote-navigation.mjs';
-import { canonicalSourceURL, captureError, toObservation } from './observation.mjs';
+import { canonicalSourceURL, captureError, toObservation, projectSourceReadiness } from './observation.mjs';
 import { sourceProvenance } from './provenance.mjs';
 import { resolveStructuredMedia } from './structured-media.mjs';
 import { resolveAdditionalSourceMedia, resolveInstagramNativeTarget, createInstagramVideoRecovery } from './additional-source-media.mjs';
@@ -14,6 +14,28 @@ const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
 const MAX_POST_EVIDENCE_BYTES = 6 * 1024 * 1024;
 const sourceFrontiers = new Map();
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Owner declarations, never request-supplied authority. X's guard covers one
+// requested document; quote clicks and detail pages need a different owner proof.
+export const NATIVE_CAPTURE_CAPABILITIES = Object.freeze({
+  x: Object.freeze({contentExpansion: false, freshnessMutation: false,
+    quoteNavigation: false, temporaryDetailPage: false,
+    limitation: 'guarded_requested_document_only'}),
+  instagram: Object.freeze({contentExpansion: true, freshnessMutation: true,
+    quoteNavigation: false, temporaryDetailPage: true,
+    limitation: 'attempt_owned_pages_and_pair_verification'}),
+});
+
+export function captureCapabilities(browser) {
+  const declared = browser.captureCapabilities;
+  const supports = key => declared ? declared[key] === true : true;
+  return Object.freeze({
+    contentExpansion: browser.backend !== 'browser_quiet_hidden' && supports('contentExpansion'),
+    freshnessMutation: browser.backend !== 'browser_quiet_hidden' && supports('freshnessMutation'),
+    quoteNavigation: supports('quoteNavigation'),
+    temporaryDetailPage: supports('temporaryDetailPage') && typeof browser.createTemporaryPage === 'function',
+  });
+}
 
 export function validateCapture(source, payload = {}) {
   if (!['x','facebook','instagram','linkedin'].includes(source)) throw captureError('unsupported_source', 'no headless collector for this source');
@@ -121,6 +143,12 @@ export async function captureIsolated(browser,assetsBySource,source,payload) {
 
 async function captureScoped(browser, assetsBySource, source, payload, sourceFrontiers) {
   const options = validateCapture(source, payload);
+  const capabilities = captureCapabilities(browser);
+  if (!capabilities.freshnessMutation) {
+    options.pendingContentPolicy = 'detect_only';
+    options.sourceFreshnessPolicy = 'preserve_frontier';
+    options.sameTabMutationAllowed = false;
+  }
   const deadline = Date.now() + options.captureTimeoutMs;
   const page = typeof browser.forSource === 'function' ? await browser.forSource(source) : browser;
   const assets = assetsBySource?.[source];
@@ -159,7 +187,7 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
     await sleep(Math.min(options.continuation.settleMs, timeLeft(deadline)));
   }
 
-  await page.evaluate(`globalThis.AkuHeadlessCapturePolicy={allowContentExpansion:${Boolean(browser.backend !== 'browser_quiet_hidden' && options.acquisitionRound === 1 && options.pendingContentPolicy === 'reveal_if_present' && options.sameTabMutationAllowed)},deadlineAt:${deadline}}`, timeLeft(deadline));
+  await page.evaluate(`globalThis.AkuHeadlessCapturePolicy={allowContentExpansion:${Boolean(capabilities.contentExpansion && options.acquisitionRound === 1 && options.pendingContentPolicy === 'reveal_if_present' && options.sameTabMutationAllowed)},deadlineAt:${deadline}}`, timeLeft(deadline));
   let readinessDeadline = Math.min(deadline, Date.now() + options.hydrationMs);
   let photoResolution = null;
   let mediaSettleDeadline = null;
@@ -247,7 +275,14 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
 
   let quoteRecovery = null;
   let quoteIdentityProbe = null;
-  if (source === 'x' && options.acquisitionRound === 1) {
+  if (source === 'x' && !capabilities.quoteNavigation && options.explicitPageUrl) {
+    const primary = snapshot.posts.find(post => post.permalink === requestedUrl);
+    if (primary?.quotedPost && !primary.quotedPost.permalink) {
+      quoteIdentityProbe = {primaryId: primary.id, status: 'unsupported', restored: false,
+        reason: 'owner_quote_navigation_unsupported'};
+    }
+  }
+  if (source === 'x' && options.acquisitionRound === 1 && capabilities.quoteNavigation) {
     const resolution = await probeQuoteNavigation(page, snapshot, { url: requestedUrl, deadlineAt: deadline }, async () => {
       ensureTime(deadline);
       await inject(page, assets, deadline);
@@ -424,6 +459,7 @@ export function emptyCaptureDiagnostics(snapshots) {
   const flag = value => typeof value === 'boolean' ? value : null;
   const records = value => Array.isArray(value) ? value.filter(item=>item && typeof item==='object' && !Array.isArray(item)) : [];
   return {sampleCount:snapshots.length,samples:records(snapshots).slice(-2).map(snapshot=>({
+    ...projectSourceReadiness(snapshot),
     candidateCount:count(snapshot.candidateCount), rejected:count(snapshot.rejected),
     photoEvidence:{status:['not_photo_route','evidence_limit','photo_metadata_missing','conflicting_photo_binding','photo_owner_missing','photo_image_not_visible','verified_photo_media'].includes(snapshot.photoEvidence?.status)?snapshot.photoEvidence.status:null,
       postBinding:snapshot.photoEvidence?.postBinding==='unverified'?'unverified':null},

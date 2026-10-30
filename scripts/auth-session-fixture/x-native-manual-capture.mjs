@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {captureIsolated,validateCapture} from '../../internal/collection/headless/worker/capture.mjs';
+import {captureIsolated,validateCapture,NATIVE_CAPTURE_CAPABILITIES} from '../../internal/collection/headless/worker/capture.mjs';
 import {sourceAssets} from '../../internal/collection/headless/worker/worker.mjs';
 import {HeaderSafetyGuard} from './x-manual-header-safety.mjs';
 import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
@@ -142,7 +142,7 @@ export async function captureNativeXTarget({request,bridgePath,loadAssets=()=>so
     }};
     stage='worker';
     workerStartedAt=Date.now();
-    const observation=await captureIsolated({backend:'headless_worker',forSource:async source=>{if(source!=='x')throw fail();return page;}},{x:assets},'x',payload);
+    const observation=await captureIsolated({backend:'headless_worker',captureCapabilities:NATIVE_CAPTURE_CAPABILITIES.x,forSource:async source=>{if(source!=='x')throw fail();return page;}},{x:assets},'x',payload);
     stage='coverage';
     await command('Runtime.evaluate',{expression:'void 0',returnByValue:true},session);
     if(expired()||guard.rejection()!=='unknown')throw record(null,'coverage',signal?.aborted?'canceled':unsafe?'header_guard':'deadline');

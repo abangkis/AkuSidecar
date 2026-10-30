@@ -216,7 +216,18 @@
       const loginLink = Boolean(document.querySelector('a[href="/login"], a[href^="/i/flow/login"]'));
       const finalChallenge = primitives.detectXAccessChallenge(document, location);
       if (finalChallenge) return challengeSnapshot(adapter, finalChallenge);
-      return { adapterVersion: adapter.version, visibility: document.visibilityState,
+      const visible = element => { const box = element.getBoundingClientRect();
+        return box.height > 0 && box.bottom > 0 && box.top < innerHeight; };
+      const structural = discovery.readinessCandidates ?? discovery.candidates;
+      const sourceReadiness = primitives.sourceReadinessState({
+        loginRequired: adapter.loginRequired() || (!posts.length && location.pathname === '/home' && loginLink),
+        visibleCandidateCount: discovery.candidates.filter(visible).length,
+        visibleStructuralCandidateCount: structural.filter(visible).length,
+        loading: Boolean(document.querySelector('[aria-busy="true"], .artdeco-loader, [data-test-id*="loading" i]')),
+        documentReady: document.readyState === 'complete', candidateCount: discovery.candidates.length,
+        structuralCandidateCount: structural.length, feedRootPresent: adapter.feedRootPresent?.() === true,
+      });
+      return { sourceReadiness, adapterVersion: adapter.version, visibility: document.visibilityState,
         url: location.href, title: document.title, candidateCount: discovery.candidates.length,
         discoveryStrategy: discovery.strategy, rejected, rejectionReasons, posts,
         scroll: { y: scrollY, height: document.scrollingElement?.scrollHeight ?? null, viewportWidth: innerWidth, viewportHeight: innerHeight },

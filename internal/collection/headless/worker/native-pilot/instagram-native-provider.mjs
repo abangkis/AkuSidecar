@@ -2,7 +2,7 @@ import {randomBytes} from 'node:crypto';
 import {isAbsolute, relative, resolve, sep} from 'node:path';
 import {lstat, realpath} from 'node:fs/promises';
 import {launchChrome} from '../chrome.mjs';
-import {captureIsolated, validateCapture} from '../capture.mjs';
+import {captureIsolated, validateCapture, NATIVE_CAPTURE_CAPABILITIES} from '../capture.mjs';
 import {canonicalSourceURL} from '../observation.mjs';
 import {createNativeSourceAttempt, createNativeOwnedPage, nativeSourceFailure, nativeSourceDiagnostic, annotateNativeSourceCleanup, nativeRecord, nativeRef} from './native-source-kernel.mjs';
 import {sourceTransientClass, SOURCE_RETRY_LIMIT} from './source-retry-policy.mjs';
@@ -184,7 +184,7 @@ export async function createInstagramDailyOwner(params, transport, {loadAssets, 
         if (options.acquisitionRound !== 1 || options.explicitPageUrl) throw nativeSourceFailure('capture', 'scope');
         await pair();
         const assets = await current.attempt.run('assets', () => loadAssets('instagram'));
-        const browser = Object.freeze({backend: 'headless_worker',
+        const browser = Object.freeze({backend: 'headless_worker', captureCapabilities: NATIVE_CAPTURE_CAPABILITIES.instagram,
           forSource: async source => { if (source !== 'instagram') throw nativeSourceFailure('capture', 'source'); return wrapCapturePage(current.home); },
           createTemporaryPage: async () => wrapCapturePage(await current.attempt.own('media', async ms => {
             const page = await current.collector.createTemporaryPage(ms); current.pages.add(page); return page;

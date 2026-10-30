@@ -31,6 +31,47 @@ test('duplicates, conflicts and unsafe numeric identity reject',()=>{
   assert.equal(read([tuple('0')]).reason,'shape');
   assert.equal(read([['PolarisViewer', ['dependency'], {id:'123',username:'self'},1]]).reason,'shape');
 });
+test('shape failures expose only a closed predicate category and remain incomplete',()=>{
+  const data=(value={id:'123',username:'self'})=>['PolarisViewer',[],value,1];
+  const cases=[
+    [tuple().slice(0,3),'tuple_arity'],[tuple().concat(2),'tuple_arity'],
+    [['PolarisViewer',null,{id:'123',username:'self'},1],'dependencies'],
+    [['PolarisViewer',['dependency'],{id:'123',username:'self'},1],'dependencies'],
+    [data(null),'data_object'],[data([]),'data_object'],
+    [data({username:'self'}),'missing_id'],[data({id:'123'}),'missing_username'],
+    [data({id:true,username:'self'}),'id_type'],
+    ...['0','01','9'.repeat(31),0,-1,1.5].map(id=>[data({id,username:'self'}),'id_format']),
+    [data({id:'123',username:7}),'username_type'],
+    ...['','a'.repeat(31),'user-name','\u00e9'].map(username=>[data({id:'123',username}),'username_format']),
+  ];
+  for(const [candidate,shapeReason] of cases){
+    const result=read([candidate]);
+    assert.equal(result.reason,'shape');assert.equal(result.shapeReason,shapeReason);
+    assert.equal(result.modulePresent,true);assert.equal(result.scanComplete,false);
+    assert.equal(result.qualified,false);assert.equal(result.serverFresh,false);
+    assert.equal(result.idString,false);assert.equal(result.idSafeNumber,false);assert.equal(result.usernameString,false);
+    assert.doesNotMatch(JSON.stringify(result),/123|user-name/);
+  }
+});
+test('identity and username formats accept their exact string boundaries',()=>{
+  for(const [id,username] of [['1','a'],['9'.repeat(30),'A'.repeat(30)]]){
+    const result=read([tuple(id,username)]);
+    assert.equal(result.reason,'candidate');assert.equal(result.scanComplete,true);assert.equal(result.shapeReason,'none');
+  }
+});
+test('later malformed candidates clear identity flags from earlier valid candidates',()=>{
+  const later=['PolarisViewer',['dependency'],{id:'later_private_id',username:'later_private_name'},1];
+  const laterScript=read([tuple(),later]);
+  const nested=tuple(123,'earlier_private_name');nested[2].nested=['PolarisViewer',[],{id:'nested_private_id'},1];
+  const nestedTuple=read([nested]);
+  for(const [result,shapeReason] of [[laterScript,'dependencies'],[nestedTuple,'missing_username']]){
+    assert.equal(result.reason,'shape');assert.equal(result.shapeReason,shapeReason);
+    assert.equal(result.modulePresent,true);assert.equal(result.scanComplete,false);
+    assert.equal(result.idString,false);assert.equal(result.idSafeNumber,false);assert.equal(result.usernameString,false);
+    assert.equal(result.qualified,false);assert.equal(result.serverFresh,false);
+    assert.doesNotMatch(JSON.stringify(result),/private/i);
+  }
+});
 const policyFor=changes=>({...structuredClone(INSTAGRAM_BOOTSTRAP_BUDGET),...changes});
 test('irrelevant scripts consume inspection but not candidate parsing budgets',()=>{
   const result=read(['x'.repeat(300000),tuple()],{policy:policyFor({candidateBytes:{initial:128,max:128},parseBytes:{initial:128,max:128}})});
@@ -87,7 +128,16 @@ test('bounds, malformed JSON, login and foreign page return closed outcomes',()=
 });
 test('projection rejects private fields, fabricated qualification and getters',()=>{
   const result=read([tuple()]);
-  for(const forged of [{...result,accountId:'PRIVATE'}, {...result,qualified:true},{...result,serverFresh:true},{...result,reason:'PRIVATE'}])assert.throws(()=>validateInstagramSelfBootstrapProbe(forged));
+  const shape=read([[ 'PolarisViewer',[],{username:'self'},1 ]]);
+  assert.equal(shape.shapeReason,'missing_id');
+  const diagnostic={...shape,failureStage:'none',failureCondition:'none',cleanup:'verified',cleanupStage:'none',cleanupCondition:'none'};
+  assert.equal(validateInstagramBootstrapDiagnostic(diagnostic).shapeReason,'missing_id');
+  for(const forged of [{...result,accountId:'PRIVATE'}, {...result,qualified:true},{...result,serverFresh:true},{...result,reason:'PRIVATE'},
+    {...shape,shapeReason:'PRIVATE'}, {...shape,shapeReason:'none'}, {...result,shapeReason:'missing_id'}, {...shape,modulePresent:false},
+    {...shape,idString:true}, {...shape,scanComplete:true}, Object.fromEntries(Object.entries(shape).filter(([key])=>key!=='shapeReason'))])
+    assert.throws(()=>validateInstagramSelfBootstrapProbe(forged));
+  for(const forged of [{...diagnostic,shapeReason:'PRIVATE'}, {...diagnostic,reason:'missing'}, {...diagnostic,identity:'PRIVATE'}])
+    assert.throws(()=>validateInstagramBootstrapDiagnostic(forged));
   const getter={...result};Object.defineProperty(getter,'reason',{get(){throw Error('getter executed');}});
   assert.throws(()=>validateInstagramSelfBootstrapProbe(getter),/probe_rejected/);
 });

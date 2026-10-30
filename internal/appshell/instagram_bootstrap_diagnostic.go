@@ -19,7 +19,7 @@ func ValidateInstagramBootstrapDiagnostic(raw json.RawMessage) (json.RawMessage,
 	if len(raw) > 1024 || !utf8.Valid(raw) {
 		return reject()
 	}
-	fields := map[string]bool{"schema": true, "reason": true, "modulePresent": true, "idString": true, "idSafeNumber": true, "usernameString": true, "documentBound": true, "serverFresh": true, "qualified": true, "cleanup": true}
+	fields := map[string]bool{"schema": true, "reason": true, "shapeReason": true, "modulePresent": true, "idString": true, "idSafeNumber": true, "usernameString": true, "documentBound": true, "serverFresh": true, "qualified": true, "cleanup": true}
 	for _, key := range []string{"failureStage", "failureCondition", "cleanupStage", "cleanupCondition"} {
 		fields[key] = true
 	}
@@ -41,7 +41,7 @@ func ValidateInstagramBootstrapDiagnostic(raw json.RawMessage) (json.RawMessage,
 		if d.Decode(&v) != nil {
 			return reject()
 		}
-		if k == "schema" || k == "reason" || k == "cleanup" || k == "failureStage" || k == "failureCondition" || k == "cleanupStage" || k == "cleanupCondition" {
+		if k == "schema" || k == "reason" || k == "shapeReason" || k == "cleanup" || k == "failureStage" || k == "failureCondition" || k == "cleanupStage" || k == "cleanupCondition" {
 			if _, ok := v.(string); !ok {
 				return reject()
 			}
@@ -73,6 +73,12 @@ func ValidateInstagramBootstrapDiagnostic(raw json.RawMessage) (json.RawMessage,
 		return reject()
 	}
 	if !allowed[values["reason"]] || (values["cleanup"] != "verified" && values["cleanup"] != "uncertain") {
+		return reject()
+	}
+	shapeReasons := map[string]bool{"none": true, "tuple_arity": true, "dependencies": true, "data_object": true, "missing_id": true, "missing_username": true, "id_type": true, "id_format": true, "username_type": true, "username_format": true}
+	shapeReason, ok := values["shapeReason"].(string)
+	shapeFailure := values["reason"] == "shape"
+	if !ok || !shapeReasons[shapeReason] || shapeFailure != (shapeReason != "none") || shapeFailure && (values["modulePresent"] != true || values["idString"] != false || values["idSafeNumber"] != false || values["usernameString"] != false || values["scanComplete"] != false) {
 		return reject()
 	}
 	enums := map[string][]string{"failureStage": {"none", "target_selection", "attachment", "setup", "frame_before", "evaluation", "frame_after"}, "failureCondition": {"none", "inventory", "missing_home", "ambiguous_home", "ownership", "request_failed", "context_missing", "document_changed", "invalid_operation", "invalid_projection", "exception"}, "cleanupStage": {"none", "detach", "attachment"}, "cleanupCondition": {"none", "request_failed", "attachment_pending"}}

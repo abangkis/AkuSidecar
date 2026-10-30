@@ -679,7 +679,16 @@
     const challengeDetected = /\/checkpoint|\/challenge/i.test(location.pathname)
       || Boolean(document.querySelector('iframe[src*="captcha" i], [data-test-id*="challenge" i], #challenge-running, form[action*="checkpoint" i]'))
       || (posts.length === 0 && /^(?:verify you are human|unusual activity detected|security check required|robot check|captcha)$/im.test(challengeText.trim()));
-    return { ...base, candidateCount: candidates.length, discoveryStrategy: discovery.strategy || 'unknown',
+    const structural = discovery.readinessCandidates ?? candidates;
+    const sourceReadiness = capturePrimitives.sourceReadinessState({
+      availability: sourceUnavailable ? {state:'source_unavailable'} : null, loginRequired,
+      visibleCandidateCount: candidates.filter(isVisible).length,
+      visibleStructuralCandidateCount: structural.filter(isVisible).length,
+      loading: Boolean(document.querySelector('[aria-busy="true"], .artdeco-loader, [data-test-id*="loading" i]')),
+      documentReady: base.documentReady, candidateCount: candidates.length,
+      structuralCandidateCount: structural.length, feedRootPresent: adapter.feedRootPresent?.() === true,
+    });
+    return { ...base, sourceReadiness, candidateCount: candidates.length, discoveryStrategy: discovery.strategy || 'unknown',
       candidateDiagnostics:{structuralCandidates:discovery.readinessCandidates?.length ?? discovery.semanticCandidateCount ?? 0,
         eligibleCandidates:candidates.length,actionAnchoredCandidates:discovery.actionAnchoredCandidateCount || 0,targetFallbackStatus,
         permalinkRecoveryCount:bounded.filter(root=>bindings.get(root)?.provenance==='adapter_recovery').length},

@@ -341,7 +341,8 @@ export function createInstagramVideoRecovery({browser,resolver,feedResolver,insp
   const deadline=Number.isFinite(deadlineAt)?deadlineAt:Date.now()+budgetMs;
   const outcomes=new Map();
   let attempted=0,totalDeadline=null,pagePromise=null,closed=false;
-  const available=browser?.backend!=='browser_quiet_hidden' && typeof browser?.createTemporaryPage==='function'
+  const available=(!browser?.captureCapabilities || browser.captureCapabilities.temporaryDetailPage===true)
+    && browser?.backend!=='browser_quiet_hidden' && typeof browser?.createTemporaryPage==='function'
     && typeof inspectSnapshot==='function' && [resolver,feedResolver].every(r=>r?.available
       && typeof r.functionSource==='string' && r.functionSource.length<=128*1024);
   const authorKey=value=>String(value || '').trim().toLowerCase();

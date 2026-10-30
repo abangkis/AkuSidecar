@@ -2,16 +2,20 @@
 
 ## Scope and compatibility
 
-Daily concurrency is one replacement mechanism with source adapters. Instagram
+Daily concurrency is one replacement mechanism with source adapters. The
+[shared-foundation progress report](shared-capture-foundation-progress.md) maps
+the remaining lifecycle and windowed/native parity work to the convergence
+roadmap. Instagram
 does not receive a copy of the X pipeline. The ordinary Run, Observation,
 deduplication, reasoning and Timeline pipeline remains shared. Existing X
 configuration, endpoints, saved profile permission and acquisition receipts keep
 their compatibility behavior.
 
-This implementation increment is offline. It does not access a signed-in
+The current convergence increment is offline. It does not access a signed-in
 profile, derive a real session, migrate a user database, activate a runtime or
-change Auto Update. Main-dev Instagram stays on its existing Browser route until
-its native adapter has qualified evidence and a separately authorized activation.
+change Auto Update. The default Instagram route remains Browser. An explicitly
+configured native trial and any earlier activation do not qualify its account
+evidence recipe; a new handoff or live probe still needs separate authorization.
 
 ## Responsibilities
 
@@ -21,6 +25,14 @@ lifetime, first-cause diagnostics and independent cleanup. Reader lifetime is
 separate from a disposable batch. Closing a collector or temporary Home target
 does not authorize closing a user reader. A later response cannot release an
 unverified target, commit after expiry or revive a revoked generation.
+
+Browser capture and native collector retirement have different resource owners.
+The Bridge journal reconciles the requested lease's records, not whichever
+lease currently occupies the managed-window singleton. A verified retired lease
+must not starve pending Browser commands. A still-live tab can be closed only
+with matching ownership, generation and source policy; an independently verified
+absence can retire a record without granting authority over a live target. A
+different current lease and user readers must remain untouched.
 
 The source adapter owns native/Home URL policy, account/login/session evidence,
 the transfer manifest and source-specific capture/media operations. It provides
@@ -171,3 +183,31 @@ The main-dev configuration and runtime were not changed. No native IG readiness,
 session transfer or native end-to-end result is inferred from this coverage.
 The legacy PowerShell Store runner's schema expectations were updated and its
 syntax checked; that entire runner was not executed in this increment.
+
+## Post-capture reasoning failures (2026-10-30)
+
+Capture authority and reasoning completion have different lifetimes. A daily
+collector may finish, commit its observation, and close its permit before the
+model finishes evaluating that observation. The retained Store fence must still
+reject new capture claims/results, but must not prevent recording a subsequent
+reasoning failure.
+
+`FailCapturedRunReasoning` is a negative-only transition. For protected daily
+runs it requires the same run, session, source and permit attempt, a completed
+capture command, an accepted observation and its committed result receipt. It
+rejects active capture commands, changed stages and existing terminal outcomes.
+A closed or expired capture permit does not invalidate that historical receipt.
+The generic `FailRun` guard remains unchanged.
+
+An ordinary provider failure terminates that run and allows the next source to
+proceed. The existing quota policy additionally stops untouched queued peers;
+`FailQueuedAfterReasoningFailure` proves the failed anchor and refuses peers
+with capture work, observations or their own authority fence. Neither operation
+renews a permit, retries a model request or changes remembered source consent.
+
+Synthetic regressions cover X and Instagram in both orders, terminal failure,
+accepted evidence preservation, peer continuation, capture-window intent
+release after worker drain, a subsequent successful batch, and quota stopping
+before peer capture. These checks do not establish that Instagram's native
+identity endpoint accepts the current request. That separate HTTP 400 remains
+under investigation through a bounded reader-only diagnostic.

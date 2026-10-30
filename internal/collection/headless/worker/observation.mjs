@@ -1,5 +1,17 @@
 import { createHash } from 'node:crypto';
 
+const SOURCE_READINESS_STATES = new Set(['source_unavailable', 'login_required',
+  'feed_ready', 'feed_empty', 'loading', 'feed_not_visible', 'selector_mismatch', 'page_shell']);
+
+// Observational base classification, not sourceReadiness/account/empty proof.
+// Omit absent or unknown values, preserving the older serialized contract.
+export function projectSourceReadiness(snapshot) {
+  const state = snapshot && typeof snapshot === 'object'
+    ? Object.getOwnPropertyDescriptor(snapshot, 'sourceReadiness')?.value : undefined;
+  return typeof state === 'string' && SOURCE_READINESS_STATES.has(state)
+    ? {sourceReadinessState: state} : {};
+}
+
 const X_POST = /^\/([^/]+)\/status\/(\d+)(?:\/.*)?$/;
 const MAX_STRUCTURED_MEDIA_DIAGNOSTIC_SNAPSHOTS = 8;
 const STRUCTURED_MEDIA_DIAGNOSTIC_COUNTS = [
@@ -277,6 +289,7 @@ export function toObservation({ source, requestedUrl, snapshots, provenance, cap
       sourceUnavailable: last.sourceUnavailable === true,
       authenticatedUiObserved: last.authenticatedUiObserved === true,
       documentReady: last.documentReady === true,
+      ...projectSourceReadiness(last),
       structuredMediaResolution,
       ...(first.quoteIdentityProbe ? { quoteIdentityProbe: structuredClone(first.quoteIdentityProbe) } : {}),
       ...(frontier ? { frontier: structuredClone(frontier) } : {}),
