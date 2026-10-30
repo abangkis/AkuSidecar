@@ -1,3 +1,4 @@
+import {igFailureDetail} from './instagram-diagnostic-trace.mjs';
 // Internal acquisition primitive only. No browser capability is created here.
 // The caller must own a response-stage Fetch stream through a sealed scope;
 // scope.call must enforce its timeout and retain late-resource obligations.
@@ -6,9 +7,9 @@ const MAX_BODY_BYTES = policy.maxBodyBytes;
 const CHUNK_BYTES = policy.chunkBytes;
 const failure = () => new Error('instagram_bootstrap_stream_rejected');
 
-export async function readInstagramBootstrapBodyStream(scope, session, stream, {now = Date.now, deadlineAt, maxBytes = MAX_BODY_BYTES} = {}) {
+export async function readInstagramBootstrapBodyStream(scope, session, stream, {now = Date.now, deadlineAt, maxBytes = MAX_BODY_BYTES, trace} = {}) {
   if (!scope || typeof scope.call !== 'function' || typeof session !== 'string' || !session ||
-      typeof stream !== 'string' || !stream || !Number.isSafeInteger(deadlineAt) ||
+      typeof stream !== 'string' || !stream || !Number.isFinite(deadlineAt) ||
       !Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_BODY_BYTES) throw failure();
   const chunks = [];
   let size = 0, reason = 'none', cleanup = 'uncertain', body;
@@ -16,7 +17,7 @@ export async function readInstagramBootstrapBodyStream(scope, session, stream, {
   try {
     for (;;) {
       const time = now();
-      if (!Number.isSafeInteger(time) || time < previous || time >= deadlineAt) { reason = 'body_deadline'; break; }
+      if (!Number.isFinite(time) || time < previous || time >= deadlineAt) { reason = 'body_deadline'; break; }
       previous = time;
       // The extra byte detects overflow at an exact cap without trusting headers.
       const requested = Math.min(CHUNK_BYTES, maxBytes - size + 1);
@@ -33,16 +34,18 @@ export async function readInstagramBootstrapBodyStream(scope, session, stream, {
       size += chunk.length;
       if (reply.eof) {
         const finished = now();
-        if (!Number.isSafeInteger(finished) || finished < previous || finished >= deadlineAt) { reason = 'body_deadline'; break; }
+        if (!Number.isFinite(finished) || finished < previous || finished >= deadlineAt) { reason = 'body_deadline'; break; }
         body = Buffer.concat(chunks, size);
         break;
       }
       if (!chunk.length) { reason = 'body_read'; break; }
     }
-  } catch { reason = 'body_read'; }
+  } catch(error) { reason = 'body_read';const detail=igFailureDetail(error);if(detail)trace?.fail(detail.stage,detail.condition); }
   finally {
+    if(reason!=='none')trace?.fail('body_read',reason);
     for (const chunk of chunks) chunk.fill(0);
-    try { await scope.call('IO.close', {handle: stream}, session, 1000); cleanup = 'verified'; } catch {}
+    trace?.note('stream_close');
+    try { await scope.call('IO.close', {handle: stream}, session, 1000); cleanup = 'verified';trace?.done('stream_close'); } catch { trace?.cleanup('uncertain','stream_close_failed'); }
   }
   if (cleanup !== 'verified' || reason !== 'none') { body?.fill(0); body = undefined; }
   // Private bytes must be erased by the caller after parsing/replay. This is

@@ -1,3 +1,4 @@
+import {createIGTrace,igFailure,recordIGError,igErrorTrace} from './instagram-diagnostic-trace.mjs';
 import {createHash} from 'node:crypto';
 import {parseStrictJSON} from '../../../../../scripts/auth-session-fixture/x-evidence-ingress.mjs';
 import {MANUAL_TIMING} from '../../../../../scripts/auth-session-fixture/x-manual-timing-policy.mjs';
@@ -135,8 +136,8 @@ export function createMainCDP({input,output,onFailure=()=>{}}){
     subscribe(fn){if(closed||typeof fn!=='function'||listeners.size>=32)throw rejected();listeners.add(fn);return()=>listeners.delete(fn);},
     call:(method,params,sessionId,timeoutMS)=>call(method,params,sessionId,timeoutMS),
     createDiagnosticScope:()=>createMainDiagnosticScope(diagnosticRaw),
-    createBootstrapCorroborationScope:()=>createMainBootstrapCorroborationScope(diagnosticRaw),
-    createBootstrapDiagnosticScope:()=>createMainBootstrapDiagnosticScope(diagnosticRaw),close,
+    createBootstrapCorroborationScope:trace=>createMainBootstrapCorroborationScope(diagnosticRaw,trace),
+    createBootstrapDiagnosticScope:options=>createMainBootstrapDiagnosticScope(diagnosticRaw,options),close,
   });
 }
 
@@ -222,7 +223,7 @@ export function serveMainBrowserTransport({input,output,connect,createX,sourceFa
   const emit=q=>{if(closed)return;const wire=Buffer.from(JSON.stringify(q)+'\n');if(wire.length>8*1024*1024){close();return;}output.write(wire,error=>{wire.fill(0);if(error)close();});};
   const close=()=>{if(closed)return;closed=true;bytes.fill(0);input.pause();void Promise.allSettled([Promise.resolve().then(()=>x?.close()),sources.close()]).finally(()=>{transport?.close();onClosed();});};
   async function handle(line){
-    let q;try{
+    let q,igTrace;try{
       q=parse(line);
       if(!transport){
         if(booting)throw rejected();booting=true;
@@ -262,12 +263,23 @@ export function serveMainBrowserTransport({input,output,connect,createX,sourceFa
           try{result=await sources.execute(q.source,q.operation,q.params,transport);}
           finally{ownerPending--;release();}
         }else if(['main_instagram_reader_diagnostic','main_instagram_bootstrap_diagnostic','main_instagram_bootstrap_corroboration'].includes(q.op)){
-          exact(q,['id','op','nonce']);
+          igTrace=createIGTrace(value=>emit({event:'main_ig_progress',id:q.id,result:value}));igTrace.note('dispatch');
+          try{exact(q,Object.hasOwn(q,'budgetMS')?['id','op','nonce','budgetMS']:['id','op','nonce']);}catch{throw igFailure('dispatch','invalid_request');}
+          if(q.budgetMS!==undefined&&(!Number.isInteger(q.budgetMS)||q.budgetMS<1||q.budgetMS>30000))throw igFailure('dispatch','invalid_request');
+          igTrace.budget(q.budgetMS??30000);
           const bootstrap=q.op==='main_instagram_bootstrap_diagnostic',corroboration=q.op==='main_instagram_bootstrap_corroboration';
           const diagnose=corroboration?diagnoseInstagramBootstrapCorroboration:bootstrap?diagnoseInstagramBootstrap:diagnoseInstagramReader;
-          if(typeof diagnose!=='function'||typeof q.nonce!=='string'||!/^[a-f0-9]{48}$/u.test(q.nonce)||busy||publicPending||ownerPending||diagnosticBlocked)throw rejected();
+          if(typeof diagnose!=='function')throw igFailure('dispatch','factory_missing');
+          if(typeof q.nonce!=='string'||!/^[a-f0-9]{48}$/u.test(q.nonce))throw igFailure('dispatch','nonce_invalid');
+          if(busy)throw igFailure('dispatch','lane_busy');
+          if(publicPending)throw igFailure('dispatch','public_pending');
+          if(ownerPending)throw igFailure('dispatch','owner_pending');
+          if(diagnosticBlocked)throw igFailure('dispatch','cleanup_blocked');
           const release=acquire('diagnostic:instagram');
-          try{result=(corroboration?validateInstagramBootstrapCorroboration:bootstrap?validateInstagramBootstrapDiagnostic:validateInstagramReaderDiagnostic)(await diagnose(transport,{nonce:q.nonce}));diagnosticBlocked=result.cleanup!=='verified';}
+          try{igTrace.disposition('started');result=(corroboration?validateInstagramBootstrapCorroboration:bootstrap?validateInstagramBootstrapDiagnostic:validateInstagramReaderDiagnostic)(await diagnose(transport,{nonce:q.nonce},{trace:igTrace,budgetMS:q.budgetMS??30000}));diagnosticBlocked=result.cleanup!=='verified';
+            igTrace.cleanup(result.cleanup,result.cleanup==='uncertain'?'cleanup_failed':'none');
+            const reason=result.reason??result.primaryCause;if(reason&&!['none','corroborated','observed','cleanup_failed'].includes(reason)){try{igTrace.fail('projection',reason);}catch{igTrace.incomplete();}}
+            igTrace.done('projection');igTrace.disposition('completed');}
           catch(error){diagnosticBlocked=true;throw error;}
           finally{release();}
         }else throw rejected();
@@ -275,6 +287,7 @@ export function serveMainBrowserTransport({input,output,connect,createX,sourceFa
       }finally{pending--;}
     }catch(error){
       let failure={code:'main_transport_rejected'};
+      if(igTrace){recordIGError(igTrace,error,igTrace.snapshot().stage);failure={code:'instagram_diagnostic_rejected',diagnostic:igTrace.snapshot()};}
       if(q?.op==='main_x'&&ownerFailures.has(error))failure=ownerFailures.get(error);
       if(q?.op==='main_source'){
         const reason=sourceOwnerRegistryFailure(error),diagnostic=nativeSourceDiagnostic(error);
@@ -282,6 +295,7 @@ export function serveMainBrowserTransport({input,output,connect,createX,sourceFa
         else if(sourceDiagnosticAllowed(diagnostic))
           failure={code:`native_source_${diagnostic.stage}_${diagnostic.reason}`};
       }
+      const igSideband=igErrorTrace(error);if(igSideband)failure={...failure,diagnostic:igSideband};
       if(q&&Number.isSafeInteger(q.id))emit({id:q.id,ok:false,error:failure});else close();
     }
     finally{line.fill(0);}

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"time"
@@ -73,6 +74,7 @@ type XCaptureStatus struct {
 	RetryAt                      string                   `json:"retryAt,omitempty"`
 	MaintenanceHeld              bool                     `json:"maintenanceHeld,omitempty"`
 	StartupDiagnostic            *XDailyStartupDiagnostic `json:"startupDiagnostic,omitempty"`
+	IGDiagnostic                 json.RawMessage          `json:"igDiagnostic,omitempty"`
 	CleanupDiagnostic            *XDailyCleanupDiagnostic `json:"cleanupDiagnostic,omitempty"`
 	Cleanup                      string                   `json:"cleanup,omitempty"`
 	CleanupScope                 string                   `json:"cleanupScope,omitempty"`
@@ -166,6 +168,9 @@ func (d dailyController) status() XCaptureStatus {
 	status.FailurePhase = d.state.failurePhase
 	status.FailureCode = d.state.failureCode
 	status.StartupDiagnostic = xDailyStartupDetail(d.state.firstFailure)
+	if d.source == domain.SourceInstagram {
+		status.IGDiagnostic = instagramFailureDiagnostic(d.state.firstFailure)
+	}
 	if d.state.owner != nil {
 		status.Cleanup = "verified"
 		status.CleanupScope = "batch_collector"

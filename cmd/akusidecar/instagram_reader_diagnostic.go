@@ -7,6 +7,7 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/appshell"
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
+	"github.com/abangkis/AkuSidecar/internal/igdiagnostic"
 )
 
 // Capture the running owner's identity at composition, without a launcher,
@@ -41,21 +42,55 @@ func bindInstagramDiagnosticAction(action func(context.Context, string) (json.Ra
 	}
 	generation := manager.Snapshot().Generation
 	return func(ctx context.Context, nonce string) (json.RawMessage, error) {
-		rejected := errors.New("existing Instagram diagnostic owner is unavailable")
+		reject := func(cause error, condition string) (json.RawMessage, error) {
+			igdiagnostic.Fail(ctx, "owner", condition)
+			if cause == nil {
+				cause = errors.New("existing Instagram diagnostic owner is unavailable")
+			}
+			return nil, igdiagnostic.Wrap(ctx, cause)
+		}
+		igdiagnostic.Note(ctx, "owner")
 		if ctx == nil || ctx.Err() != nil {
-			return nil, rejected
+			return reject(nil, "context_canceled")
 		}
 		snapshot := manager.Snapshot()
-		if snapshot.State != captureruntime.Ready || snapshot.Driver != "browser" || snapshot.Generation != generation || snapshot.ActiveLeases != 0 || manager.PID() != pid || !manager.Persistent() {
-			return nil, rejected
+		if snapshot.State != captureruntime.Ready {
+			return reject(nil, "owner_not_ready")
+		}
+		if snapshot.Driver != "browser" {
+			return reject(nil, "owner_driver")
+		}
+		if snapshot.Generation != generation {
+			return reject(nil, "owner_generation")
+		}
+		if snapshot.ActiveLeases != 0 {
+			return reject(nil, "lease_present")
+		}
+		if manager.PID() != pid {
+			return reject(nil, "owner_process")
+		}
+		if !manager.Persistent() {
+			return reject(nil, "owner_persistent")
 		}
 		lease, err := manager.Acquire()
 		if err != nil {
-			return nil, rejected
+			return reject(err, "lease_acquire")
 		}
 		defer lease.Release()
-		if lease.Driver() != "browser" || lease.Generation() != generation || !manager.Accepts(generation) || manager.PID() != pid || manager.Snapshot().ActiveLeases != 1 {
-			return nil, rejected
+		if lease.Driver() != "browser" {
+			return reject(nil, "lease_driver")
+		}
+		if lease.Generation() != generation {
+			return reject(nil, "lease_generation")
+		}
+		if !manager.Accepts(generation) {
+			return reject(nil, "lease_invalid")
+		}
+		if manager.PID() != pid {
+			return reject(nil, "owner_process")
+		}
+		if manager.Snapshot().ActiveLeases != 1 {
+			return reject(nil, "lease_count")
 		}
 		return action(ctx, nonce)
 	}

@@ -180,7 +180,7 @@ func (t *instagramMainNativeTransport) call(ctx context.Context, op string, fiel
 	raw, err := t.protocol.CallSource(ctx, "instagram", op, fields)
 	defer clear(raw)
 	if err != nil {
-		return sourceNativeWireFailure(err)
+		return sourceNativeIGWireFailure(ctx, err)
 	}
 	if observation, ok := out.(*domain.Observation); ok {
 		return decodeSourceNativeObservation(raw, domain.SourceInstagram, observation)

@@ -1,3 +1,4 @@
+import {createIGTrace,igAllowed} from './instagram-diagnostic-trace.mjs';
 import {INSTAGRAM_BOOTSTRAP_BUDGET,validateInstagramBootstrapBudget} from './instagram-bootstrap-budget.mjs';
 import {STRICT_JSON_PARSER_SOURCE} from '../../../../../scripts/auth-session-fixture/x-evidence-ingress.mjs';
 // Candidate discovery only. This module never issues identity proof or Store
@@ -158,18 +159,20 @@ export function assessInstagramBootstrapDelivery(value, nowMS) {
 
 // The diagnostic transport chooses an existing, unambiguous Home target.
 // It never creates/navigates/closes a user target; only its attachment retires.
-export async function diagnoseInstagramSelfBootstrap(transport) {
-  const scope=transport.createBootstrapDiagnosticScope();
+export async function diagnoseInstagramSelfBootstrap(transport,_request,{trace=createIGTrace(),budgetMS=30000}={}) {
+  trace.note('scope');
+  const scope=transport.createBootstrapDiagnosticScope({budgetMS});
   let result={schema,reason:'unavailable',shapeReason:'none',usernameReason:'none',modulePresent:false,idString:false,idSafeNumber:false,usernameString:false,duplicateDetected:false,conflictDetected:false,documentBound:false,serverFresh:false,qualified:false,scanComplete:false,budgetExpanded:false};
   let first,cleanup='verified',cleanupStage='none',cleanupCondition='none';
-  const remember=error=>{first??=bootstrapFailureDetail(error)??{stage:'attachment',condition:'request_failed'};};
+  const remember=error=>{first??=bootstrapFailureDetail(error)??{stage:'attachment',condition:'request_failed'};trace.fail(igAllowed('stages',first.stage)?first.stage:'document',igAllowed('conditions',first.condition)?first.condition:'request_failed');};
   try {
-    const page=await scope.attach();
+    trace.note('attachment');trace.cleanup('pending');const page=await scope.attach();trace.note('parsing');
     result=await runInstagramSelfBootstrapProbe(page,remember);
   } catch(error) {remember(error);}
   finally {
-    try{await scope.close();}catch{cleanup='uncertain';const detail=scope.cleanupDetail?.();cleanupStage=detail?.cleanupStage??'detach';cleanupCondition=detail?.cleanupCondition??'request_failed';}
+    trace.note('cleanup');try{await scope.close();}catch{cleanup='uncertain';const detail=scope.cleanupDetail?.();cleanupStage=detail?.cleanupStage??'detach';cleanupCondition=detail?.cleanupCondition??'request_failed';}
   }
+  trace.cleanup(cleanup,cleanup==='uncertain'?'cleanup_failed':'none');
   return validateInstagramBootstrapDiagnostic({...result,failureStage:first?.stage??'none',failureCondition:first?.condition??'none',cleanup,cleanupStage,cleanupCondition});
 }
 

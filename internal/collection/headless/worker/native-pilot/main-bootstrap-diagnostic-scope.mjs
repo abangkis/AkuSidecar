@@ -1,8 +1,10 @@
+import {performance} from 'node:perf_hooks';
 import {instagramSelfBootstrapExpression} from './instagram-self-bootstrap-probe.mjs';
 import {bootstrapFailure} from './instagram-bootstrap-failure.mjs';
 import {INSTAGRAM_BOOTSTRAP_BUDGET} from './instagram-bootstrap-budget.mjs';
 const rejected=()=>new Error('bootstrap_scope_rejected');
-export function createMainBootstrapDiagnosticScope(raw) {
+export function createMainBootstrapDiagnosticScope(raw,{budgetMS=30000}={}) {
+  const until=performance.now()+Math.max(0,budgetMS-3000);
   let session,context,mainFrame,mainLoader,invalidated=false,unsubscribe,closing,attempted=false,pending=0;
   let cleanupStage='none',cleanupCondition='none';
   const detach=async id=>{await raw.call('Target.detachFromTarget',{sessionId:id},'',1000);raw.releaseSession(id);};
@@ -12,7 +14,7 @@ export function createMainBootstrapDiagnosticScope(raw) {
     if(pending){cleanupStage='attachment';cleanupCondition='attachment_pending';throw rejected();}
   })();
   const call=async(stage,method,params,session,ms,late)=>{
-    try{return await raw.call(method,params,session,ms,late);}catch{throw bootstrapFailure(stage,'request_failed');}
+    try{const remaining=Math.floor(until-performance.now());if(remaining<1)throw rejected();return await raw.call(method,params,session,Math.min(ms,remaining),late);}catch{throw bootstrapFailure(stage,'request_failed');}
   };
   return Object.freeze({close,cleanupDetail:()=>({cleanupStage,cleanupCondition}),async attach(){
     if(attempted)throw rejected();attempted=true;

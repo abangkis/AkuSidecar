@@ -13,3 +13,40 @@ $record.ErrorDetails = [Management.Automation.ErrorDetails]::new('{"error":"inst
 $projected = ConvertFrom-InstagramDiagnosticException -Failure $record
 if ($projected.code -cne 'instagram_diagnostic_diagnostic_rejected' -or ($projected | ConvertTo-Json -Compress).Contains('PRIVATE')) { throw 'Exception projection lost flat code or leaked data' }
 Write-Output 'PASS: flat API code retained; unknown/private/oversized bodies excluded.'
+
+$catalog = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../internal/igdiagnostic/catalog.json') -Raw | ConvertFrom-Json
+$evidence = [ordered]@{}
+foreach ($key in $catalog.checks) { $evidence[$key] = 'not_observed' }
+$trace = [ordered]@{
+    schema = 'aku.ig-trace.v1'; stage = 'dispatch'; completed = 'none'; disposition = 'not_started'
+    sequence = 2; cause = @{ stage = 'dispatch'; condition = 'public_pending' }
+    cleanup = @{ state = 'not_started'; condition = 'none' }; complete = $true; elapsedMS = 2
+    attempt = ('a' * 32); operation = 'reader'; revision = 'ig1'
+    delivery = @{ state = 'pending'; condition = 'none' }; evidence = $evidence
+    httpDelivery = @{ state = 'pending'; condition = 'none' }
+    nodeElapsedMS = 1; nodeSequence = 1
+    budgetMS = 30000; remainingMS = 29999
+}
+$body = @{ error = 'instagram_diagnostic_diagnostic_rejected'; message = 'PRIVATE_EXCEPTION'; details = @{ diagnostic = $trace } } | ConvertTo-Json -Depth 9 -Compress
+$value = ConvertTo-InstagramDiagnosticApiFailure -Status 409 -Body $body
+if ($null -eq $value.diagnostic -or $value.diagnostic.cause.condition -cne 'public_pending' -or $value.diagnostic.evidence.cookieMatched -cne 'not_observed' -or $value.retried -or ($value | ConvertTo-Json -Depth 9 -Compress).Contains('PRIVATE')) { throw 'Safe trace lost or private data exposed' }
+foreach ($mode in @('field','cause','condition','number','missing','evidence','large_budget','zero_budget','missing_remaining','missing_budget','remaining_over_budget')) {
+    $invalid = $trace | ConvertTo-Json -Depth 9 -Compress | ConvertFrom-Json
+    switch ($mode) {
+        'field' { $invalid | Add-Member -NotePropertyName token -NotePropertyValue 'PRIVATE_TOKEN' }
+        'cause' { $invalid.cause | Add-Member -NotePropertyName message -NotePropertyValue 'PRIVATE_EXCEPTION' }
+        'condition' { $invalid.cause.condition = 'PRIVATE_ACCOUNT' }
+        'number' { $invalid.elapsedMS = -1 }
+        'missing' { $invalid.PSObject.Properties.Remove('complete') }
+        'evidence' { $invalid.evidence.cookieMatched = 'PRIVATE_COOKIE' }
+        'large_budget' { $invalid.budgetMS = 60000; $invalid.remainingMS = 59000 }
+        'zero_budget' { $invalid.budgetMS = 0; $invalid.remainingMS = 0 }
+        'missing_remaining' { $invalid.remainingMS = $null }
+        'missing_budget' { $invalid.budgetMS = $null }
+        'remaining_over_budget' { $invalid.remainingMS = 30001 }
+    }
+    $badBody = @{ error = 'instagram_diagnostic_diagnostic_rejected'; details = @{ diagnostic = $invalid } } | ConvertTo-Json -Depth 9 -Compress
+    $projected = ConvertTo-InstagramDiagnosticApiFailure -Status 409 -Body $badBody
+    if ($null -ne $projected.diagnostic -or -not $projected.diagnosticIncomplete -or $projected.code -cne 'instagram_diagnostic_diagnostic_rejected' -or ($projected | ConvertTo-Json -Depth 9 -Compress).Contains('PRIVATE')) { throw "Invalid diagnostic accepted: $mode" }
+}
+Write-Output 'PASS: safe trace retained; malformed metadata excluded without replacing API code.'

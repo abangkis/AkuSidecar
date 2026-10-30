@@ -75,7 +75,7 @@ func TestInstagramDiagnosticClientClosedProjection(t *testing.T) {
 			case <-ctx.Done():
 				t.Fatal(ctx.Err())
 			}
-			if len(request) != 3 || request["op"] != "main_instagram_reader_diagnostic" || request["nonce"] != nonce || request["id"] == nil {
+			if len(request) != 4 || request["budgetMS"] == nil || request["op"] != "main_instagram_reader_diagnostic" || request["nonce"] != nonce || request["id"] == nil {
 				t.Fatal("unsealed request")
 			}
 			if _, err := fmt.Fprintf(writer, "{\"id\":%v,\"ok\":true,\"result\":%s}\n", request["id"], reply); err != nil {

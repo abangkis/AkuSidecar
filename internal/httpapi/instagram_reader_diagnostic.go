@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/abangkis/AkuSidecar/internal/engine"
+	"github.com/abangkis/AkuSidecar/internal/igdiagnostic"
 )
 
 // SetInstagramReaderDiagnosticAction binds only an already-running browser.
@@ -33,18 +34,43 @@ func (s *Server) SetInstagramBootstrapCorroborationDiagnosticAction(action func(
 }
 
 func (s *Server) runInstagramReaderDiagnostic(w http.ResponseWriter, r *http.Request) error {
+	path := strings.TrimSuffix(r.URL.Path, "/")
+	bootstrap := path == "/api/diagnostics/instagram-bootstrap"
+	corroboration := path == "/api/diagnostics/instagram-bootstrap-corroboration"
+	operation := "reader"
+	if bootstrap {
+		operation = "bootstrap"
+	} else if corroboration {
+		operation = "corroboration"
+	}
+	ctx, attempt := igdiagnostic.Ensure(r.Context(), operation)
+	if attempt == nil {
+		return apiError{Status: http.StatusServiceUnavailable, Code: "instagram_diagnostic_unavailable", Message: "Instagram diagnostic correlation could not be created."}
+	}
+	r = r.WithContext(ctx)
+	igdiagnostic.Note(ctx, "http")
+	if attempt != nil {
+		w.Header().Set("X-Aku-Diagnostic-ID", attempt.ID())
+	}
+	fail := func(status int, code, message, condition string) error {
+		igdiagnostic.Fail(ctx, "http", condition)
+		err := writeJSON(w, status, map[string]any{"error": code, "message": message, "details": map[string]any{"diagnostic": igdiagnostic.Projection(ctx)}})
+		if err == nil {
+			igdiagnostic.SetHTTPDelivery(ctx, "response_written", "none")
+		} else {
+			igdiagnostic.SetHTTPDelivery(ctx, "unavailable", "response_lost")
+		}
+		return err
+	}
 	if !s.engine.InstagramReaderDiagnosticConfigured() {
 		return notFound("Instagram reader diagnostic")
 	}
 	if r.Header.Get("X-Aku-Split-Epoch") != s.engine.Epoch() {
-		return apiError{Status: http.StatusConflict, Code: "capture_epoch_mismatch", Message: "AkuBrowser restarted; refresh the page."}
+		return fail(http.StatusConflict, "capture_epoch_mismatch", "AkuBrowser restarted; refresh the page.", "epoch_mismatch")
 	}
 	if r.URL.RawQuery != "" {
-		return badRequest("Instagram reader diagnostic does not accept query parameters")
+		return fail(http.StatusBadRequest, "invalid_request", "Instagram reader diagnostic does not accept query parameters", "query_rejected")
 	}
-	path := strings.TrimSuffix(r.URL.Path, "/")
-	bootstrap := path == "/api/diagnostics/instagram-bootstrap"
-	corroboration := path == "/api/diagnostics/instagram-bootstrap-corroboration"
 	keys := []string{"allowAuthenticatedReaderDiagnostic", "acknowledgeBoundedErrorBody"}
 	if bootstrap {
 		keys = []string{"allowPassiveBootstrapInspection"}
@@ -58,7 +84,7 @@ func (s *Server) runInstagramReaderDiagnostic(w http.ResponseWriter, r *http.Req
 		accepted = accepted && consent[key]
 	}
 	if !accepted {
-		return badRequest("Instagram reader diagnostic requires exact, explicit consent")
+		return fail(http.StatusBadRequest, "invalid_request", "Instagram reader diagnostic requires exact, explicit consent", "consent_required")
 	}
 	s.appShellActionsMu.RLock()
 	action := s.instagramReaderDiagnostic
@@ -70,11 +96,11 @@ func (s *Server) runInstagramReaderDiagnostic(w http.ResponseWriter, r *http.Req
 	}
 	s.appShellActionsMu.RUnlock()
 	if action == nil {
-		return apiError{Status: http.StatusConflict, Code: "instagram_diagnostic_unavailable", Message: "The existing main browser diagnostic is unavailable."}
+		return fail(http.StatusConflict, "instagram_diagnostic_unavailable", "The existing main browser diagnostic is unavailable.", "action_missing")
 	}
 	var nonce [24]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
-		return apiError{Status: http.StatusServiceUnavailable, Code: "instagram_diagnostic_unavailable", Message: "Instagram reader diagnostic could not be admitted."}
+		return fail(http.StatusServiceUnavailable, "instagram_diagnostic_unavailable", "Instagram reader diagnostic could not be admitted.", "nonce_failed")
 	}
 	run := s.engine.RunInstagramReaderDiagnostic
 	if bootstrap {
@@ -95,8 +121,38 @@ func (s *Server) runInstagramReaderDiagnostic(w http.ResponseWriter, r *http.Req
 				reason = rejected.Reason
 			}
 		}
-		return apiError{Status: http.StatusConflict, Code: "instagram_diagnostic_" + reason, Message: "Instagram reader diagnostic was rejected; no automatic retry was scheduled."}
+		return fail(http.StatusConflict, "instagram_diagnostic_"+reason, "Instagram reader diagnostic was rejected; no automatic retry was scheduled.", "diagnostic_rejected")
 	}
+	igdiagnostic.Note(ctx, "http")
 	w.Header().Set("Cache-Control", "no-store")
-	return writeJSON(w, http.StatusOK, raw)
+	err = writeJSON(w, http.StatusOK, raw)
+	if err == nil {
+		igdiagnostic.SetHTTPDelivery(ctx, "response_written", "none")
+	} else {
+		igdiagnostic.SetHTTPDelivery(ctx, "unavailable", "response_lost")
+	}
+	return err
+}
+
+// Observation only: the retained snapshot never dispatches browser work and
+// remains readable while an admitted operation settles after client timeout.
+func (s *Server) instagramDiagnosticStatus(w http.ResponseWriter, r *http.Request) error {
+	if !s.engine.InstagramReaderDiagnosticConfigured() {
+		return notFound("Instagram reader diagnostic")
+	}
+	if r.Header.Get("X-Aku-Split-Epoch") != s.engine.Epoch() {
+		return apiError{Status: http.StatusConflict, Code: "capture_epoch_mismatch", Message: "AkuBrowser restarted; refresh the page."}
+	}
+	if r.URL.RawQuery != "" {
+		return badRequest("Instagram diagnostic status does not accept query parameters")
+	}
+	raw := s.engine.InstagramDiagnosticSnapshot()
+	if len(raw) == 0 {
+		return writeJSON(w, http.StatusOK, map[string]any{"diagnostic": nil})
+	}
+	validated, ok := igdiagnostic.ValidateJSON(raw)
+	if !ok {
+		return apiError{Status: http.StatusConflict, Code: "instagram_diagnostic_projection_invalid", Message: "The retained diagnostic is unavailable."}
+	}
+	return writeJSON(w, http.StatusOK, map[string]any{"diagnostic": validated})
 }

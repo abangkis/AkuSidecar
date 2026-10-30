@@ -217,6 +217,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		return s.runInstagramReaderDiagnostic(w, r)
 	case r.Method == http.MethodPost && p == "/api/diagnostics/instagram-bootstrap":
 		return s.runInstagramReaderDiagnostic(w, r)
+	case r.Method == http.MethodGet && p == "/api/diagnostics/instagram/status":
+		return s.instagramDiagnosticStatus(w, r)
 	case r.Method == http.MethodPost && p == "/api/diagnostics/instagram-bootstrap-corroboration":
 		return s.runInstagramReaderDiagnostic(w, r)
 	case r.Method == http.MethodPost && p == "/api/post-screenshots":

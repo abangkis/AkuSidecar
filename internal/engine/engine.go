@@ -17,6 +17,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	semanticengine "github.com/abangkis/AkuSidecar/internal/eventengine"
+	"github.com/abangkis/AkuSidecar/internal/igdiagnostic"
 	"github.com/abangkis/AkuSidecar/internal/livingtopics"
 	"github.com/abangkis/AkuSidecar/internal/mediaprovenance"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
@@ -56,7 +57,8 @@ type Engine struct {
 	operation                                sync.Mutex
 	instagramReaderDiagnosticUsed            bool // guarded by operation
 	instagramReaderDiagnosticMu              sync.RWMutex
-	instagramReaderDiagnosticDone            chan struct{} // guarded by mu
+	instagramReaderDiagnosticDone            chan struct{}         // guarded by mu
+	instagramDiagnosticAttempt               *igdiagnostic.Attempt // latest admitted attempt; guarded by mu
 	captureMu                                sync.Mutex
 	captureOwner                             *captureruntime.Manager
 	captureSessions                          map[string]*captureruntime.Lease

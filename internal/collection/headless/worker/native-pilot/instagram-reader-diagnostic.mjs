@@ -1,3 +1,5 @@
+import {performance} from 'node:perf_hooks';
+import {createIGTrace,igAllowed} from './instagram-diagnostic-trace.mjs';
 // Sealed, reader-only diagnostic. Importing this module performs no I/O.
 export const INSTAGRAM_DIAGNOSTIC_SCHEMA = 'aku.instagram-reader-diagnostic.v1';
 export const INSTAGRAM_DIAGNOSTIC_HOME = 'https://www.instagram.com/';
@@ -81,19 +83,20 @@ export function instagramReaderDiagnosticExpression(nonce) {
 }
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-export async function runInstagramReaderDiagnostic(transport, request) {
+export async function runInstagramReaderDiagnostic(transport, request, {trace=createIGTrace(),budgetMS=30000}={}) {
+  const now=()=>Math.floor(performance.now()),acquisitionUntil=now()+Math.max(0,budgetMS-5000);trace.note('scope');
   const result = {schema: INSTAGRAM_DIAGNOSTIC_SCHEMA, primaryCause: 'none', status: 0, mime: 'missing',
     bodyClass: 'not_read', errorCategory: 'none', documentBound: false, wireMatched: false, cleanup: 'not_started'};
-  const cause = value => { if (result.primaryCause === 'none') result.primaryCause = value; };
+  const cause = value => { if (result.primaryCause === 'none') result.primaryCause = value;if(value!=='none')trace.fail(trace.snapshot().stage,igAllowed('conditions',value)?value:'unknown'); };
   if (!record(request, ['nonce']) || typeof request.nonce !== 'string' || !noncePattern.test(request.nonce)) {
     cause('invalid_request'); return validateInstagramReaderDiagnostic(result);
   }
   let scope, targetId, sessionId, unsubscribe, pinned, attemptedTarget = false, invalidated = false, phase = 'setup_failed', setupRevision = 0;
   let requestID, requestCount = 0, wireStatus, expectedFrame, expectedLoader;
   const contexts = new Map();
-  const setupUntil = Date.now() + 10000;
+  const setupUntil = Math.min(now()+10000,acquisitionUntil);
   const invalidate = () => { if (pinned) { invalidated = true; cause('document_changed'); } };
-  const timeout = () => { const ms = setupUntil - Date.now(); if (ms < 1) throw failure(); return Math.min(8000, ms); };
+  const timeout = () => { const ms = setupUntil - now(); if (ms < 1) throw failure(); return Math.min(8000, ms); };
   const send = (method, params = {}, ms = timeout()) => scope.call(method, params, sessionId ?? '', ms);
   const frame = async (ms, settling = false) => {
     const raw = await send('Page.getFrameTree', {}, ms);
@@ -139,7 +142,7 @@ export async function runInstagramReaderDiagnostic(transport, request) {
         }
       } catch { invalidate(); }
     });
-    attemptedTarget = true;
+    trace.cleanup('pending');attemptedTarget = true;
     const created = await scope.call('Target.createTarget', {url: 'about:blank', background: true, forTab: false}, '', timeout());
     if (typeof created?.targetId !== 'string' || !created.targetId) throw failure();
     targetId = created.targetId;scope.reserveTarget(targetId);
@@ -147,15 +150,15 @@ export async function runInstagramReaderDiagnostic(transport, request) {
     if (typeof attached?.sessionId !== 'string' || !attached.sessionId) throw failure();
     sessionId = attached.sessionId;scope.reserveSession(sessionId);
     for (const method of ['Page.enable', 'Runtime.enable', 'Network.enable']) await send(method);
-    phase = 'navigation_failed';
+    phase = 'navigation_failed';trace.note('navigation');
     const navigation = await send('Page.navigate', {url: INSTAGRAM_DIAGNOSTIC_HOME});
     if (navigation?.errorText || typeof navigation?.frameId !== 'string' || typeof navigation?.loaderId !== 'string' || !navigation.frameId || !navigation.loaderId) throw failure();
     expectedFrame = navigation.frameId;expectedLoader = navigation.loaderId;
-    phase = 'context_unavailable';
+    phase = 'context_unavailable';trace.note('document');
     // Page.navigate acknowledges a navigation; its expected document may not
     // have committed yet. Observe candidates until that exact loader is ready.
     // The evidence pin is immutable only after both frame checks agree.
-    while (Date.now() < setupUntil) {
+    while (now() < setupUntil) {
       const before = await frame(timeout(), true), currentContext = contexts.get(before.id);
       if (before.id !== expectedFrame) { cause('document_changed'); throw failure(); }
       if (before.url === INSTAGRAM_DIAGNOSTIC_HOME && before.loaderId === expectedLoader && currentContext) {
@@ -185,10 +188,10 @@ export async function runInstagramReaderDiagnostic(transport, request) {
     if (invalidated || admitted.id !== pinned.id || admitted.loaderId !== pinned.loaderId || admittedContext?.uniqueId !== pinned.uniqueId) {
       invalidate();throw failure();
     }
-    phase = 'evaluation_failed';
+    phase = 'evaluation_failed';trace.note('identity');
     let evaluation;
     try {
-      evaluation = await send('Runtime.evaluate', {expression: instagramReaderDiagnosticExpression(request.nonce), uniqueContextId: pinned.uniqueId, returnByValue: true, awaitPromise: true, userGesture: false}, 6000);
+      evaluation = await send('Runtime.evaluate', {expression: instagramReaderDiagnosticExpression(request.nonce), uniqueContextId: pinned.uniqueId, returnByValue: true, awaitPromise: true, userGesture: false}, Math.max(1,Math.min(6000,acquisitionUntil-now())));
       if (evaluation?.exceptionDetails) throw failure();
       const value = evaluation?.result?.value;
       if (!record(value, pageKeys) || value.nonce !== request.nonce || !fieldsValid(value) || typeof value.homeAfter !== 'boolean' || Buffer.byteLength(JSON.stringify(value), 'utf8') > 1024) {
@@ -211,14 +214,15 @@ export async function runInstagramReaderDiagnostic(transport, request) {
     if (!result.wireMatched) cause('wire_unmatched');
   } catch { cause(phase); }
   finally {
+    trace.note('cleanup');
     // Cleanup has its own budget and never replaces an earlier primary cause.
     if (attemptedTarget && !targetId) result.cleanup='uncertain';
     if (targetId) {
-      result.cleanup='uncertain';const until=Date.now()+3000;
+      result.cleanup='uncertain';const until=now()+3000;
       try {
         try { await scope.call('Target.closeTarget', {targetId}, '', 1000); } catch {}
-        while (Date.now()<until) {
-          const reply=await scope.call('Target.getTargets', {}, '', Math.max(1,until-Date.now()));
+        while (now()<until) {
+          const reply=await scope.call('Target.getTargets', {}, '', Math.max(1,until-now()));
           if (!Array.isArray(reply?.targetInfos)) throw failure();
           if (!reply.targetInfos.some(t=>t?.targetId===targetId)) {
             if (sessionId) scope.releaseSession(sessionId);scope.releaseTarget(targetId);result.cleanup='verified';break;
@@ -236,5 +240,6 @@ export async function runInstagramReaderDiagnostic(transport, request) {
     try { unsubscribe?.(); } catch {}
     try { scope?.dispose?.(); } catch {}
   }
+  trace.cleanup(result.cleanup,result.cleanup==='uncertain'?'cleanup_failed':'none');
   return validateInstagramReaderDiagnostic(result);
 }

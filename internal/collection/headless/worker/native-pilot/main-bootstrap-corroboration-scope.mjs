@@ -1,16 +1,18 @@
+import {igFailure} from './instagram-diagnostic-trace.mjs';
 import {createMainDiagnosticScope} from './main-browser-diagnostic-scope.mjs';
 import {instagramBootstrapCorroborationExpression} from './instagram-bootstrap-corroboration-expression.mjs';
 import {INSTAGRAM_CORROBORATION_POLICY as policy,INSTAGRAM_CORROBORATION_HOME as home,INSTAGRAM_CORROBORATION_READY as ready} from './instagram-bootstrap-corroboration-policy.mjs';
-const reject=()=>new Error('corroboration_scope_rejected');
+
 const ref=x=>typeof x==='string'&&x.length>0&&x.length<=512&&!/[\u0000-\u001f\u007f]/.test(x);
 const exact=(x,keys)=>x&&typeof x==='object'&&!Array.isArray(x)&&Object.keys(x).length===keys.length&&keys.every(k=>Object.hasOwn(x,k));
 
 // Separate private capability. Ordinary/passive scopes never gain Fetch, IO,
 // arbitrary evaluation, cookie access or a body-returning public operation.
-export function createMainBootstrapCorroborationScope(raw){
+export function createMainBootstrapCorroborationScope(raw,trace){
+ const reject=(condition='invalid_parameters')=>igFailure(trace?.snapshot().stage??'scope',condition);
  const base=createMainDiagnosticScope(raw),listeners=new Set(),streams=new Map();
  let session,paused,disposed=false,pendingStreams=0,taken=false,replayed=false,fetchEnabled=false,navigated=false;
- const own=id=>{if(disposed||id!==session)throw reject();base.reserveSession(id);};
+ const own=id=>{if(disposed)throw reject('scope_disposed');if(id!==session)throw reject('ownership');base.reserveSession(id);};
  const unsubscribe=raw.subscribe(event=>{
   if(disposed||!session||event.sessionId!==session)return;
   if(event.method==='Fetch.requestPaused'){
@@ -31,9 +33,9 @@ export function createMainBootstrapCorroborationScope(raw){
   cleanupVerified(){return base.cleanupVerified()&&pendingStreams===0&&streams.size===0;},
   on(listener){if(disposed||typeof listener!=='function'||listeners.size>=2)throw reject();listeners.add(listener);const off=base.on(listener);return()=>{listeners.delete(listener);off();};},
   async call(method,params={},id='',ms=1000){
-   timeout(ms);if(disposed)throw reject();
-   if(method==='Runtime.evaluate')throw reject();
-   if(method==='Page.navigate'){if(navigated||!fetchEnabled)throw reject();navigated=true;}
+   timeout(ms);if(disposed)throw reject('scope_disposed');
+   if(method==='Runtime.evaluate')throw reject('invalid_operation');
+   if(method==='Page.navigate'){if(navigated||!fetchEnabled)throw reject('method_order');navigated=true;}
    if(method==='Target.attachToTarget'){
     const reply=await base.call(method,params,id,ms);session=reply.sessionId;return reply;
    }
@@ -49,9 +51,9 @@ export function createMainBootstrapCorroborationScope(raw){
      taken=true;pendingStreams++;
      const late=async reply=>{if(ref(reply?.stream)){try{await raw.call('IO.close',{handle:reply.stream},id,1000);pendingStreams--;}catch{}}};
      const reply=await raw.call(method,params,id,ms,late);
-     if(!ref(reply?.stream))throw reject();streams.set(reply.stream,id);pendingStreams--;return reply;
+     if(!ref(reply?.stream))throw reject('invalid_reply');streams.set(reply.stream,id);pendingStreams--;return reply;
     }
-    if(!ref(params?.handle)||streams.get(params.handle)!==id)throw reject();
+    if(!ref(params?.handle)||streams.get(params.handle)!==id)throw reject('ownership');
     if(method==='IO.read'){
      if(!exact(params,['handle','size'])||!Number.isInteger(params.size)||params.size<1||params.size>policy.chunkBytes)throw reject();
     }else if(!exact(params,['handle']))throw reject();

@@ -132,7 +132,7 @@ test('first cause survives stream and target cleanup failures; context change ca
  const cleanup=await runInstagramBootstrapCorroboration(fixture({cleanupFails:true}).transport,{nonce});
  assert.equal(cleanup.reason,'cleanup_failed');assert.equal(cleanup.cleanup,'uncertain');
  const stream=await runInstagramBootstrapCorroboration(fixture({closeStreamFails:true}).transport,{nonce});
- assert.equal(stream.reason,'body_read');assert.equal(stream.cleanup,'uncertain');
+ assert.equal(stream.reason,'cleanup_failed');assert.equal(stream.cleanup,'uncertain');
  const forged=await runInstagramBootstrapCorroboration(fixture({forgedReply:true}).transport,{nonce});
  assert.equal(forged.reason,'projection_invalid');assert.equal(forged.cleanup,'verified');
 });
@@ -155,9 +155,9 @@ test('separate scope rejects arbitrary evaluation, jar APIs, foreign stream and 
 });
 
 test('stale delivery cannot acquire a fresh timestamp from successful page evaluation',async t=>{
- let now=100000;t.mock.method(Date,'now',()=>now);
+ let now=100000;
  const f=fixture({onCookie:()=>{now+=policy.freshMS+1;}});
- const result=await runInstagramBootstrapCorroboration(f.transport,{nonce});
+ const result=await runInstagramBootstrapCorroboration(f.transport,{nonce},{now:()=>now});
  assert.equal(result.reason,'stale_delivery');assert.equal(result.serverFresh,false);assert.equal(result.qualified,false);assert.equal(result.cleanup,'verified');
 });
 test('late stream allocation stays uncertain until the exact late handle closes',async()=>{
@@ -180,9 +180,9 @@ test('maximum body expression fits existing outbound transport without raising i
  assert.throws(()=>instagramBootstrapCorroborationExpression(Buffer.alloc(policy.maxBodyBytes+1),nonce));body.fill(0);
 });
 test('acquisition expiry leaves cleanup and drain time inside the unchanged Go deadline',async t=>{
- const start=100000;let now=start;t.mock.method(Date,'now',()=>now);
+ const start=100000;let now=start;
  const f=fixture({onRead:()=>{now=start+policy.acquisitionMS;},onCloseTarget:()=>{now+=1000;}});
- const result=await runInstagramBootstrapCorroboration(f.transport,{nonce});
+ const result=await runInstagramBootstrapCorroboration(f.transport,{nonce},{now:()=>now});
  assert.equal(result.reason,'body_deadline');assert.equal(result.cleanup,'verified');
  assert.ok(now-start<policy.totalMS);assert.ok(policy.acquisitionMS+1000+policy.cleanupMS<=policy.totalMS-2000);
  assert.ok(f.calls.filter(c=>c.method==='Target.getTargets').every(c=>c.timeoutMS<=policy.cleanupMS));
@@ -201,8 +201,8 @@ test('new wire operation is sealed, factory-gated, exclusive and rejects private
  const f=control(async(_transport,request)=>{calls++;assert.deepEqual(request,{nonce});return new Promise(r=>{resolve=r;});});await tick();
  f.send({id:1,op:'main_instagram_bootstrap_corroboration',nonce,url:home});await tick();assert.equal(calls,0);
  f.send({id:2,op:'main_instagram_bootstrap_corroboration',nonce});await tick();assert.equal(calls,1);
- f.send({id:3,op:'main_instagram_bootstrap_corroboration',nonce});await tick();assert.equal(f.replies.find(v=>v.id===3).ok,false);
+ f.send({id:3,op:'main_instagram_bootstrap_corroboration',nonce});await tick();assert.equal(f.replies.find(v=>!v.event&&v.id===3).ok,false);
  resolve({schema:'aku.instagram-bootstrap-corroboration.v1',reason:'bootstrap_rejected',bodyBound:false,documentBound:false,serverFresh:false,idMatched:false,cookieMatched:false,scanComplete:false,qualified:false,cleanup:'verified',privateID:'SECRET'});await tick();
- assert.equal(f.replies.find(v=>v.id===2).ok,false);assert.ok(!JSON.stringify(f.replies).includes('SECRET'));
- const missing=control();await tick();missing.send({id:1,op:'main_instagram_bootstrap_corroboration',nonce});await tick();assert.equal(missing.replies.find(v=>v.id===1).ok,false);
+ assert.equal(f.replies.find(v=>!v.event&&v.id===2).ok,false);assert.ok(!JSON.stringify(f.replies).includes('SECRET'));
+ const missing=control();await tick();missing.send({id:1,op:'main_instagram_bootstrap_corroboration',nonce});await tick();assert.equal(missing.replies.find(v=>!v.event&&v.id===1).ok,false);
 });

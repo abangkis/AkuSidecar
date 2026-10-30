@@ -297,6 +297,10 @@ func (c *mainBrowserClient) read(input io.Reader) {
 		if id, progress, found, valid := mainBrowserProgressFrame(scan.Bytes()); found {
 			if valid {
 				c.rpc.Progress(id, progress)
+			} else if id > 0 {
+				// A known correlation can record incomplete metadata without
+				// receiving the malformed bytes or changing the operation.
+				c.rpc.Progress(id, nil)
 			}
 			continue
 		}
@@ -378,7 +382,7 @@ func mainBrowserProgressFrame(raw []byte) (id int64, progress []byte, found, val
 		return 0, nil, true, false
 	}
 	var event string
-	if json.Unmarshal(fields["event"], &event) != nil || event != "main_x_progress" || json.Unmarshal(fields["id"], &id) != nil || id < 1 {
+	if json.Unmarshal(fields["event"], &event) != nil || (event != "main_x_progress" && event != "main_ig_progress") || json.Unmarshal(fields["id"], &id) != nil || id < 1 {
 		return 0, nil, true, false
 	}
 	progress = bytes.TrimSpace(fields["result"])
@@ -444,6 +448,31 @@ func (c *mainBrowserClient) requestWithProgress(ctx context.Context, op string, 
 	}
 	return r.Result, nil
 }
+func (c *mainBrowserClient) requestWithIGProgress(ctx context.Context, op string, fields map[string]any, progress func([]byte)) (json.RawMessage, error) {
+	r, err := c.rpc.CallWithLateProgressPrepared(ctx, op, fields, progress, func() (map[string]any, error) {
+		budget := int64(30000)
+		if deadline, ok := ctx.Deadline(); ok && time.Until(deadline).Milliseconds() < budget {
+			budget = time.Until(deadline).Milliseconds()
+		}
+		if budget < 1 {
+			return nil, context.DeadlineExceeded
+		}
+		fresh := make(map[string]any, len(fields))
+		for key, value := range fields {
+			fresh[key] = value
+		}
+		fresh["budgetMS"] = budget
+		return fresh, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if r.Code != "" {
+		clear(r.Result)
+		return nil, &MainBrowserError{Code: r.Code, Diagnostic: r.Diagnostic}
+	}
+	return r.Result, nil
+}
 func (c *mainBrowserClient) Call(ctx context.Context, method string, params any, sessionID string) (json.RawMessage, error) {
 	if params == nil {
 		params = map[string]any{}
@@ -486,35 +515,11 @@ func (c *mainBrowserClient) CallXWithProgress(ctx context.Context, operation str
 func (c *mainBrowserClient) TransportWorker() *OwnedCommand { return c.worker }
 
 func (c *mainBrowserClient) DiagnoseInstagramBootstrap(ctx context.Context, nonce string) (json.RawMessage, error) {
-	if !validInstagramDiagnosticNonce(nonce) {
-		return nil, &MainBrowserError{Code: "instagram_diagnostic_invalid_request"}
-	}
-	raw, err := c.request(ctx, "main_instagram_bootstrap_diagnostic", map[string]any{"nonce": nonce})
-	if err != nil {
-		return nil, &MainBrowserError{Code: "instagram_diagnostic_rejected"}
-	}
-	return ValidateInstagramBootstrapDiagnostic(raw)
+	return instagramTraceRequest(ctx, "main_instagram_bootstrap_diagnostic", nonce, c.requestWithIGProgress, ValidateInstagramBootstrapDiagnostic)
 }
-
 func (c *mainBrowserClient) DiagnoseInstagramBootstrapCorroboration(ctx context.Context, nonce string) (json.RawMessage, error) {
-	if !validInstagramDiagnosticNonce(nonce) {
-		return nil, &MainBrowserError{Code: "instagram_diagnostic_invalid_request"}
-	}
-	raw, err := c.request(ctx, "main_instagram_bootstrap_corroboration", map[string]any{"nonce": nonce})
-	if err != nil {
-		return nil, &MainBrowserError{Code: "instagram_diagnostic_rejected"}
-	}
-	return ValidateInstagramBootstrapCorroborationDiagnostic(raw)
+	return instagramTraceRequest(ctx, "main_instagram_bootstrap_corroboration", nonce, c.requestWithIGProgress, ValidateInstagramBootstrapCorroborationDiagnostic)
 }
-
 func (c *mainBrowserClient) DiagnoseInstagramReader(ctx context.Context, nonce string) (json.RawMessage, error) {
-	if !validInstagramDiagnosticNonce(nonce) {
-		return nil, &MainBrowserError{Code: "instagram_diagnostic_invalid_request"}
-	}
-	raw, err := c.request(ctx, "main_instagram_reader_diagnostic", map[string]any{"nonce": nonce})
-	if err != nil {
-		// Transport diagnostics are untrusted and may contain private browser data.
-		return nil, &MainBrowserError{Code: "instagram_diagnostic_rejected"}
-	}
-	return validateInstagramDiagnosticProjection(raw)
+	return instagramTraceRequest(ctx, "main_instagram_reader_diagnostic", nonce, c.requestWithIGProgress, validateInstagramDiagnosticProjection)
 }

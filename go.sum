@@ -1,5 +1,7 @@
 github.com/abangkis/ai4u-common-execution-profile-go v0.2.0 h1:VUXVGS8e+0UKkVnYuxlozA2dXYmZBSNpzOQjMCVr2fs=
 github.com/abangkis/ai4u-common-execution-profile-go v0.2.0/go.mod h1:J+zBjPD/4F4BQWnrekSuL/AW/mFXhpNZOE4cM4Xjwew=
+github.com/abangkis/ai4u-diagnostics-go v0.1.0-alpha.3 h1:NP+ZHUlFnsG3z2iIxGIkv7BSNxbw0hTkrwPpClK1SL8=
+github.com/abangkis/ai4u-diagnostics-go v0.1.0-alpha.3/go.mod h1:hP3KoczU2ZeEEMiY84VzehN2qd/1hvvqMWbukjlRjQQ=
 github.com/abangkis/ai4u-inference-sdk-go v0.24.0 h1:c0bTmgEXSf4xgEB5jif8HNmIgMjQ4BL7Wn1B7m9QjTc=
 github.com/abangkis/ai4u-inference-sdk-go v0.24.0/go.mod h1:hkVHXuJfuz7vZzWGNmrIGJk31MOXNSQ/2wZ54okqJEM=
 github.com/dlclark/regexp2 v1.11.0 h1:G/nrcoOa7ZXlpoa/91N3X7mM3r8eIlMBBJZvsz/mxKI=
