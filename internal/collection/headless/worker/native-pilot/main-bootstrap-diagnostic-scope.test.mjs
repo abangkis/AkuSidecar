@@ -4,7 +4,7 @@ import {PassThrough} from 'node:stream';
 import {createMainBootstrapDiagnosticScope} from './main-bootstrap-diagnostic-scope.mjs';
 import {diagnoseInstagramSelfBootstrap} from './instagram-self-bootstrap-probe.mjs';
 import {serveMainBrowserTransport,MAIN_TRANSPORT_SCHEMA} from './main-browser-transport-protocol.mjs';
-const result=()=>({schema:'aku.instagram-self-bootstrap-probe.v1',reason:'missing',shapeReason:'none',modulePresent:false,idString:false,idSafeNumber:false,usernameString:false,documentBound:true,serverFresh:false,qualified:false,scanComplete:true,budgetExpanded:false,failureStage:'none',failureCondition:'none',cleanup:'verified',cleanupStage:'none',cleanupCondition:'none'});
+const result=()=>({schema:'aku.instagram-self-bootstrap-probe.v2',reason:'missing',shapeReason:'none',usernameReason:'none',modulePresent:false,idString:false,idSafeNumber:false,usernameString:false,duplicateDetected:false,conflictDetected:false,documentBound:true,serverFresh:false,qualified:false,scanComplete:true,budgetExpanded:false,failureStage:'none',failureCondition:'none',cleanup:'verified',cleanupStage:'none',cleanupCondition:'none'});
 function fixture(options={}){
  const calls=[],sessions=new Set();let listener;
  const raw={alive:()=>true,privateTarget:()=>false,privateSession:id=>sessions.has(id),reserveSession:id=>sessions.add(id),releaseSession:id=>sessions.delete(id),subscribe:fn=>{listener=fn;return()=>{listener=null;};},

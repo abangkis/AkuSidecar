@@ -3,18 +3,20 @@ import {STRICT_JSON_PARSER_SOURCE} from '../../../../../scripts/auth-session-fix
 // Candidate discovery only. This module never issues identity proof or Store
 // authority. Native source qualification must establish the exact self schema.
 import {bootstrapFailure,bootstrapFailureDetail,BOOTSTRAP_STAGES,BOOTSTRAP_CONDITIONS,BOOTSTRAP_CLEANUP_STAGES,BOOTSTRAP_CLEANUP_CONDITIONS} from './instagram-bootstrap-failure.mjs';
-const schema = 'aku.instagram-self-bootstrap-probe.v1';
+const schema = 'aku.instagram-self-bootstrap-probe.v2';
 export const INSTAGRAM_BOOTSTRAP_BOUNDS = Object.freeze(['bounds_script_count','bounds_script_chars','bounds_script_bytes','bounds_total_bytes','bounds_nodes','bounds_depth','bounds_fanout','bounds_candidate_bytes','bounds_parse_bytes','bounds_parse_tokens','bounds_entries','scan_deadline','scan_clock']);
 const reasons = ['candidate', 'missing', 'duplicate', 'conflict', 'shape', 'bounds', ...INSTAGRAM_BOOTSTRAP_BOUNDS, 'invalid_json', 'page_scope', 'login_visible', 'challenge', 'document_changed', 'unavailable'];
-const shapeReasons = ['none', 'tuple_arity', 'dependencies', 'data_object', 'missing_id', 'missing_username', 'id_type', 'id_format', 'username_type', 'username_format'];
-const fields = ['schema', 'reason', 'shapeReason', 'modulePresent', 'idString', 'idSafeNumber', 'usernameString', 'documentBound', 'serverFresh', 'qualified', 'scanComplete', 'budgetExpanded'];
+const shapeReasons = ['none', 'tuple_arity', 'dependencies', 'data_object', 'missing_id', 'id_type', 'id_format'];
+const usernameReasons = ['none', 'missing_username', 'username_type', 'username_format'];
+const booleanFields = ['modulePresent', 'idString', 'idSafeNumber', 'usernameString', 'duplicateDetected', 'conflictDetected', 'documentBound', 'serverFresh', 'qualified', 'scanComplete', 'budgetExpanded'];
+const fields = ['schema', 'reason', 'shapeReason', 'usernameReason', ...booleanFields];
 const rejected = () => new Error('instagram_self_bootstrap_probe_rejected');
 
 // Reads only JSON script nodes; never invokes page modules or executes scripts.
 // PolarisViewer is a discovery candidate, not a qualified Instagram contract.
 function scanInstagramBootstrap(policy,parseJSON){
- const base={schema:'aku.instagram-self-bootstrap-probe.v1',reason:'missing',shapeReason:'none',modulePresent:false,idString:false,idSafeNumber:false,usernameString:false,documentBound:false,serverFresh:false,qualified:false,scanComplete:false,budgetExpanded:false};
- const out=(reason,complete=false,shapeReason='none')=>({...base,reason,shapeReason,...(shapeReason!=='none'?{idString:false,idSafeNumber:false,usernameString:false}:{}),scanComplete:complete});
+ const base={schema:'aku.instagram-self-bootstrap-probe.v2',reason:'missing',shapeReason:'none',usernameReason:'none',modulePresent:false,idString:false,idSafeNumber:false,usernameString:false,duplicateDetected:false,conflictDetected:false,documentBound:false,serverFresh:false,qualified:false,scanComplete:false,budgetExpanded:false};
+ const out=(reason,complete=false)=>({...base,reason,scanComplete:complete});
  const started=performance.now(),deadline=started+policy.deadlineMS;let last=started;
  const check=()=>{const time=performance.now();if(!Number.isFinite(time)||time<last)throw 'scan_clock';last=time;if(time>=deadline)throw 'scan_deadline';};
  const allowance=Object.fromEntries(Object.entries(policy).filter(([,v])=>typeof v==='object').map(([k,v])=>[k,v.initial]));
@@ -27,7 +29,31 @@ function scanInstagramBootstrap(policy,parseJSON){
   // Synchronous inspection keeps this snapshot stable against page JS tasks.
   const scripts=document.querySelectorAll('script[type="application/json"]');check();
   charge('scripts',scripts.length,'bounds_script_count');
-  let scanBytes=0,parseBytes=0,containers=0,entries=0,match,duplicate=false,conflict=false;
+  let scanBytes=0,parseBytes=0,containers=0,entries=0;
+  const ids=new Set();
+  const shape=reason=>{if(base.shapeReason==='none')base.shapeReason=reason;};
+  const usernameFailure=reason=>{if(base.usernameReason==='none')base.usernameReason=reason;};
+  function inspect(value){
+   base.modulePresent=true;
+   if(value.length!==4){shape('tuple_arity');return;}
+   if(!Array.isArray(value[1])||value[1].length!==0){shape('dependencies');return;}
+   if(!value[2]||typeof value[2]!=='object'||Array.isArray(value[2])){shape('data_object');return;}
+   const data=value[2];if(!Object.hasOwn(data,'id')){shape('missing_id');return;}
+   const id=data.id;
+   if(typeof id!=='string'&&typeof id!=='number'){shape('id_type');return;}
+   const idString=typeof id==='string'&&/^[1-9][0-9]{0,29}$/.test(id),idSafeNumber=Number.isSafeInteger(id)&&id>0;
+   if(!(idString||idSafeNumber)){shape('id_format');return;}
+   base.idString ||= idString;base.idSafeNumber ||= idSafeNumber;
+   // Only valid canonical IDs participate in ambiguity checks. Optional
+   // username observations cannot distinguish accounts or grant authority.
+   const canonical=String(id);
+   if(ids.has(canonical))base.duplicateDetected=true;
+   ids.add(canonical);base.conflictDetected=ids.size>1;
+   if(!Object.hasOwn(data,'username'))usernameFailure('missing_username');
+   else if(typeof data.username!=='string')usernameFailure('username_type');
+   else if(!/^[A-Za-z0-9._]{1,30}$/.test(data.username))usernameFailure('username_format');
+   else base.usernameString=true;
+  }
   const encoder=new TextEncoder();
   for(const script of scripts){
    check();const text=script.textContent||'';check();
@@ -52,19 +78,7 @@ function scanInstagramBootstrap(policy,parseJSON){
     if(depth>policy.depth)throw 'bounds_depth';
     charge('containers',++containers,'bounds_nodes');
     if(Array.isArray(value)&&value[0]==='PolarisViewer'){
-     base.modulePresent=true;
-     if(value.length!==4)return out('shape',false,'tuple_arity');
-     if(!Array.isArray(value[1])||value[1].length!==0)return out('shape',false,'dependencies');
-     if(!value[2]||typeof value[2]!=='object'||Array.isArray(value[2]))return out('shape',false,'data_object');
-     const data=value[2];if(!Object.hasOwn(data,'id'))return out('shape',false,'missing_id');if(!Object.hasOwn(data,'username'))return out('shape',false,'missing_username');
-     const id=data.id,username=data.username;
-     const idString=typeof id==='string'&&/^[1-9][0-9]{0,29}$/.test(id),idSafeNumber=Number.isSafeInteger(id)&&id>0;
-     if(typeof id!=='string'&&typeof id!=='number')return out('shape',false,'id_type');
-     if(!(idString||idSafeNumber))return out('shape',false,'id_format');
-     if(typeof username!=='string')return out('shape',false,'username_type');
-     if(!/^[A-Za-z0-9._]{1,30}$/.test(username))return out('shape',false,'username_format');
-     if(match){if(String(match.id)!==String(id)||match.username!==username)conflict=true;else duplicate=true;}
-     else{match={id,username};base.idString=idString;base.idSafeNumber=idSafeNumber;base.usernameString=true;}
+     inspect(value);
      // Keep traversing: a nested tuple can contain a duplicate or conflict.
     }
     const keys=Object.keys(value);check();
@@ -75,7 +89,7 @@ function scanInstagramBootstrap(policy,parseJSON){
   check();
   if(location.origin!=='https://www.instagram.com'||location.pathname!=='/')return out('document_changed');
   if(document.querySelector('input[type="password"],form[action*="login"]'))return out('login_visible');
-  return out(conflict?'conflict':duplicate?'duplicate':match?'candidate':'missing',true);
+  return out(base.shapeReason!=='none'?'shape':base.conflictDetected?'conflict':base.duplicateDetected?'duplicate':ids.size?'candidate':'missing',true);
  }catch(reason){
   const allowed=['bounds_script_count','bounds_script_chars','bounds_script_bytes','bounds_total_bytes','bounds_candidate_bytes','bounds_parse_bytes','bounds_parse_tokens','bounds_nodes','bounds_entries','bounds_depth','scan_deadline','scan_clock','invalid_json'];
   return out(allowed.includes(reason)?reason:'unavailable');
@@ -90,18 +104,23 @@ export function instagramSelfBootstrapExpression(policy=INSTAGRAM_BOOTSTRAP_BUDG
 export function validateInstagramSelfBootstrapProbe(value) {
   if (!value || ![Object.prototype, null].includes(Object.getPrototypeOf(value)) || Reflect.ownKeys(value).length !== fields.length) throw rejected();
   for (const key of fields) if (!Object.hasOwn(Object.getOwnPropertyDescriptor(value, key) ?? {}, 'value')) throw rejected();
-  if (['candidate','missing','duplicate','conflict'].includes(value.reason)!==value.scanComplete) throw rejected();
-  if (value.schema !== schema || !reasons.includes(value.reason) || !shapeReasons.includes(value.shapeReason) || fields.slice(3).some(key => typeof value[key] !== 'boolean') ||
+  if (['candidate','missing','duplicate','conflict','shape'].includes(value.reason)!==value.scanComplete) throw rejected();
+  if (value.schema !== schema || !reasons.includes(value.reason) || !shapeReasons.includes(value.shapeReason) || !usernameReasons.includes(value.usernameReason) || booleanFields.some(key => typeof value[key] !== 'boolean') ||
       value.serverFresh !== false || value.qualified !== false || Buffer.byteLength(JSON.stringify(value)) > 1024) throw rejected();
-  const shapeFailure=value.reason==='shape';
-  if(shapeFailure!==(value.shapeReason!=='none')||shapeFailure&&(value.modulePresent!==true||value.idString||value.idSafeNumber||value.usernameString||value.scanComplete))throw rejected();
+  const hasID=value.idString||value.idSafeNumber,hasShape=value.shapeReason!=='none';
+  if(hasShape&&!value.modulePresent||value.reason==='shape'&&!hasShape||value.scanComplete&&hasShape&&value.reason!=='shape'||
+    hasID&&!value.modulePresent||value.modulePresent&&!hasID&&!hasShape||hasID&&!value.usernameString&&value.usernameReason==='none'||
+    !hasID&&(value.usernameString||value.usernameReason!=='none'||value.duplicateDetected||value.conflictDetected)||
+    value.reason==='candidate'&&(!hasID||value.duplicateDetected||value.conflictDetected)||
+    value.reason==='missing'&&(value.modulePresent||hasID)||
+    value.reason==='duplicate'&&(!value.duplicateDetected||value.conflictDetected)||value.reason==='conflict'&&!value.conflictDetected)throw rejected();
   return Object.freeze(Object.fromEntries(fields.map(key => [key, value[key]])));
 }
 
 // Existing exact owned page only. No allocation, navigation, cookie access or
 // network request. The caller retains ownership and controls its cleanup.
 export async function runInstagramSelfBootstrapProbe(page, onFailure=()=>{}) {
-  const empty = reason => ({schema, reason, shapeReason:'none', modulePresent: false, idString: false, idSafeNumber: false, usernameString: false, documentBound: false, serverFresh: false, qualified: false, scanComplete:false, budgetExpanded:false});
+  const empty = reason => ({schema, reason, shapeReason:'none', usernameReason:'none', modulePresent: false, idString: false, idSafeNumber: false, usernameString: false, duplicateDetected:false, conflictDetected:false, documentBound: false, serverFresh: false, qualified: false, scanComplete:false, budgetExpanded:false});
   const frame = async () => {
     const tree = await page.send('Page.getFrameTree', {}, INSTAGRAM_BOOTSTRAP_BUDGET.frameReadMS);
     const root = tree?.frameTree?.frame;
@@ -135,7 +154,7 @@ export function assessInstagramBootstrapDelivery(value, nowMS) {
 // It never creates/navigates/closes a user target; only its attachment retires.
 export async function diagnoseInstagramSelfBootstrap(transport) {
   const scope=transport.createBootstrapDiagnosticScope();
-  let result={schema,reason:'unavailable',shapeReason:'none',modulePresent:false,idString:false,idSafeNumber:false,usernameString:false,documentBound:false,serverFresh:false,qualified:false,scanComplete:false,budgetExpanded:false};
+  let result={schema,reason:'unavailable',shapeReason:'none',usernameReason:'none',modulePresent:false,idString:false,idSafeNumber:false,usernameString:false,duplicateDetected:false,conflictDetected:false,documentBound:false,serverFresh:false,qualified:false,scanComplete:false,budgetExpanded:false};
   let first,cleanup='verified',cleanupStage='none',cleanupCondition='none';
   const remember=error=>{first??=bootstrapFailureDetail(error)??{stage:'attachment',condition:'request_failed'};};
   try {

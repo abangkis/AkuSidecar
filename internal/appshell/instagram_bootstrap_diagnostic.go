@@ -19,7 +19,7 @@ func ValidateInstagramBootstrapDiagnostic(raw json.RawMessage) (json.RawMessage,
 	if len(raw) > 1024 || !utf8.Valid(raw) {
 		return reject()
 	}
-	fields := map[string]bool{"schema": true, "reason": true, "shapeReason": true, "modulePresent": true, "idString": true, "idSafeNumber": true, "usernameString": true, "documentBound": true, "serverFresh": true, "qualified": true, "cleanup": true}
+	fields := map[string]bool{"schema": true, "reason": true, "shapeReason": true, "usernameReason": true, "modulePresent": true, "idString": true, "idSafeNumber": true, "usernameString": true, "duplicateDetected": true, "conflictDetected": true, "documentBound": true, "serverFresh": true, "qualified": true, "cleanup": true}
 	for _, key := range []string{"failureStage", "failureCondition", "cleanupStage", "cleanupCondition"} {
 		fields[key] = true
 	}
@@ -41,7 +41,7 @@ func ValidateInstagramBootstrapDiagnostic(raw json.RawMessage) (json.RawMessage,
 		if d.Decode(&v) != nil {
 			return reject()
 		}
-		if k == "schema" || k == "reason" || k == "shapeReason" || k == "cleanup" || k == "failureStage" || k == "failureCondition" || k == "cleanupStage" || k == "cleanupCondition" {
+		if k == "schema" || k == "reason" || k == "shapeReason" || k == "usernameReason" || k == "cleanup" || k == "failureStage" || k == "failureCondition" || k == "cleanupStage" || k == "cleanupCondition" {
 			if _, ok := v.(string); !ok {
 				return reject()
 			}
@@ -58,7 +58,7 @@ func ValidateInstagramBootstrapDiagnostic(raw json.RawMessage) (json.RawMessage,
 	if _, e := d.Token(); e != io.EOF {
 		return reject()
 	}
-	if values["schema"] != "aku.instagram-self-bootstrap-probe.v1" || values["qualified"] != false || values["serverFresh"] != false {
+	if values["schema"] != "aku.instagram-self-bootstrap-probe.v2" || values["qualified"] != false || values["serverFresh"] != false {
 		return reject()
 	}
 	allowed := map[any]bool{"candidate": true, "missing": true, "duplicate": true, "conflict": true, "shape": true, "bounds": true, "invalid_json": true, "page_scope": true, "login_visible": true, "challenge": true, "document_changed": true, "unavailable": true}
@@ -68,17 +68,25 @@ func ValidateInstagramBootstrapDiagnostic(raw json.RawMessage) (json.RawMessage,
 	for _, reason := range []string{"bounds_candidate_bytes", "bounds_parse_bytes", "bounds_parse_tokens", "bounds_entries", "scan_deadline", "scan_clock"} {
 		allowed[reason] = true
 	}
-	complete := values["reason"] == "candidate" || values["reason"] == "missing" || values["reason"] == "duplicate" || values["reason"] == "conflict"
+	complete := values["reason"] == "candidate" || values["reason"] == "missing" || values["reason"] == "duplicate" || values["reason"] == "conflict" || values["reason"] == "shape"
 	if values["scanComplete"] != complete {
 		return reject()
 	}
 	if !allowed[values["reason"]] || (values["cleanup"] != "verified" && values["cleanup"] != "uncertain") {
 		return reject()
 	}
-	shapeReasons := map[string]bool{"none": true, "tuple_arity": true, "dependencies": true, "data_object": true, "missing_id": true, "missing_username": true, "id_type": true, "id_format": true, "username_type": true, "username_format": true}
+	shapeReasons := map[string]bool{"none": true, "tuple_arity": true, "dependencies": true, "data_object": true, "missing_id": true, "id_type": true, "id_format": true}
 	shapeReason, ok := values["shapeReason"].(string)
-	shapeFailure := values["reason"] == "shape"
-	if !ok || !shapeReasons[shapeReason] || shapeFailure != (shapeReason != "none") || shapeFailure && (values["modulePresent"] != true || values["idString"] != false || values["idSafeNumber"] != false || values["usernameString"] != false || values["scanComplete"] != false) {
+	usernameReasons := map[any]bool{"none": true, "missing_username": true, "username_type": true, "username_format": true}
+	hasID := values["idString"] == true || values["idSafeNumber"] == true
+	hasShape := shapeReason != "none"
+	if !ok || !shapeReasons[shapeReason] || !usernameReasons[values["usernameReason"]] ||
+		hasShape && values["modulePresent"] != true || values["reason"] == "shape" && !hasShape || complete && hasShape && values["reason"] != "shape" ||
+		hasID && values["modulePresent"] != true || values["modulePresent"] == true && !hasID && !hasShape || hasID && values["usernameString"] != true && values["usernameReason"] == "none" ||
+		!hasID && (values["usernameString"] == true || values["usernameReason"] != "none" || values["duplicateDetected"] == true || values["conflictDetected"] == true) ||
+		values["reason"] == "candidate" && (!hasID || values["duplicateDetected"] == true || values["conflictDetected"] == true) ||
+		values["reason"] == "missing" && (values["modulePresent"] == true || hasID) ||
+		values["reason"] == "duplicate" && (values["duplicateDetected"] != true || values["conflictDetected"] == true) || values["reason"] == "conflict" && values["conflictDetected"] != true {
 		return reject()
 	}
 	enums := map[string][]string{"failureStage": {"none", "target_selection", "attachment", "setup", "frame_before", "evaluation", "frame_after"}, "failureCondition": {"none", "inventory", "missing_home", "ambiguous_home", "ownership", "request_failed", "context_missing", "document_changed", "invalid_operation", "invalid_projection", "exception"}, "cleanupStage": {"none", "detach", "attachment"}, "cleanupCondition": {"none", "request_failed", "attachment_pending"}}

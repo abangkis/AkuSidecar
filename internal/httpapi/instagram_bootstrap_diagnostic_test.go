@@ -15,7 +15,7 @@ func TestInstagramBootstrapOperator(t *testing.T) {
 		t.Skip("development build required")
 	}
 	calls := 0
-	const reply = `{"schema":"aku.instagram-self-bootstrap-probe.v1","reason":"missing","shapeReason":"none","modulePresent":false,"idString":false,"idSafeNumber":false,"usernameString":false,"documentBound":true,"serverFresh":false,"qualified":false,"scanComplete":true,"budgetExpanded":false,"failureStage":"none","failureCondition":"none","cleanup":"verified","cleanupStage":"none","cleanupCondition":"none"}`
+	const reply = `{"schema":"aku.instagram-self-bootstrap-probe.v2","reason":"missing","shapeReason":"none","usernameReason":"none","modulePresent":false,"idString":false,"idSafeNumber":false,"usernameString":false,"duplicateDetected":false,"conflictDetected":false,"documentBound":true,"serverFresh":false,"qualified":false,"scanComplete":true,"budgetExpanded":false,"failureStage":"none","failureCondition":"none","cleanup":"verified","cleanupStage":"none","cleanupCondition":"none"}`
 	s.SetInstagramBootstrapDiagnosticAction(func(context.Context, string) (json.RawMessage, error) { calls++; return json.RawMessage(reply), nil })
 	request := func(body, epoch string) *httptest.ResponseRecorder {
 		r := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:11122/api/diagnostics/instagram-bootstrap", strings.NewReader(body))

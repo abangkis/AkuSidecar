@@ -2,7 +2,7 @@
 
 Status: discovery implementation and offline tests only, 2026-10-30.
 No native identity source is qualified by this document or its fixtures.
-The current offline budget/completeness contract is in the final section below;
+The current offline v2 discovery contract is in the final section below;
 earlier sections retain the historical limits and acceptance evidence.
 
 ## Objective
@@ -250,7 +250,7 @@ duplicate JSON keys and forged completeness. Package tests verify that the
 central policy is sealed. No native probe, session transfer, runtime staging or
 activation was performed. Previous prepared packages remain unchanged.
 
-## Closed structural rejection predicates
+## Historical v1 structural rejection predicates
 
 The current offline increment keeps `reason: shape` and adds the required
 `shapeReason` field. Its only values are `none`, `tuple_arity`, `dependencies`,
@@ -276,3 +276,46 @@ approved package must promote matching Go binary and Node transport together:
 older projections without shapeReason are intentionally rejected by this
 updated closed contract. These diagnostics alone are not a production identity
 verifier or a replacement for account/login pair qualification.
+
+## Current v2: independent ID and username observations
+
+The approved offline increment uses `aku.instagram-self-bootstrap-probe.v2`.
+Node, Go, and the simulated transport require the matching version and exact
+closed field set; earlier v1 projections are rejected. Go and Node must be
+promoted together in a future authorized package. This increment was not
+activated and did not run a real Instagram probe.
+
+The exact four-element tuple, empty dependency list, object data and direct
+canonical `id` requirements remain. A missing, non-string or malformed username
+does not reject discovery of an otherwise valid ID. `usernameReason` retains
+the first such observation among eligible valid-ID tuples: `none`,
+`missing_username`, `username_type`, or `username_format`. `none` means no failure
+was observed, including when there were no valid IDs. `usernameString` means
+at least one eligible tuple had a correctly formatted username; neither field
+provides identity authority.
+
+`shapeReason` now covers only structural and ID failures: `none`, `tuple_arity`,
+`dependencies`, `data_object`, `missing_id`, `id_type`, and `id_format`.
+The scan retains its first shape failure and continues through later scripts
+and nested/escaped tuples. Malformed tuples never contribute an ID. ID flags
+describe observed valid types and are no longer cleared by another malformed
+tuple. Safe numeric IDs are canonicalized to decimal strings for comparison.
+
+`duplicateDetected` means an eligible canonical ID occurred more than once;
+`conflictDetected` means at least two distinct eligible canonical IDs occurred.
+Both can be true. Usernames never discriminate account identity. A matching ID
+with different/missing usernames is a duplicate, not an account conflict.
+
+After a complete scan, reason priority is `shape`, `conflict`, `duplicate`,
+`candidate`, then `missing`. A complete scan can therefore report a shape
+failure and retain later duplicate/conflict flags. JSON, budget, deadline,
+document, login or other hard failures remain incomplete; already observed
+diagnostic fields survive, but false ambiguity flags do not establish absence
+when `scanComplete=false`. Inspection, candidate parsing, depth, fanout and
+deadline caps are unchanged.
+
+All outcomes still require `qualified=false` and `serverFresh=false`. There is
+no raw ID, username, page content, cookie or token in the projection, which
+remains bounded to 1 KiB. Production verifier, Store and source authorization
+are unchanged. This improves discovery coverage; it does not qualify
+`PolarisViewer.id` as authenticated current-self evidence.
