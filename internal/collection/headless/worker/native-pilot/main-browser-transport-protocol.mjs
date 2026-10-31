@@ -1,4 +1,5 @@
 import {createIGTrace,igFailure,recordIGError,igErrorTrace} from './instagram-diagnostic-trace.mjs';
+import {cdpCommandFailure} from './cdp-command-failure.mjs';
 import {createHash} from 'node:crypto';
 import {parseStrictJSON} from '../../../../../scripts/auth-session-fixture/x-evidence-ingress.mjs';
 import {MANUAL_TIMING} from '../../../../../scripts/auth-session-fixture/x-manual-timing-policy.mjs';
@@ -80,7 +81,7 @@ export function createMainCDP({input,output,onFailure=()=>{}}){
   let closed=false,bytes=Buffer.alloc(0),sequence=0;
   const pending=new Map(),listeners=new Set(),privateTargets=new Set(),privateSessions=new Set();
   const close=()=>{if(closed)return;closed=true;bytes.fill(0);bytes=Buffer.alloc(0);
-    for(const p of pending.values()){clearTimeout(p.timer);p.reject(rejected());}pending.clear();listeners.clear();input.destroy();output.destroy();onFailure();};
+    for(const p of pending.values()){clearTimeout(p.timer);p.reject(cdpCommandFailure('transport_closed'));}pending.clear();listeners.clear();input.destroy();output.destroy();onFailure();};
   input.on('data',chunk=>{
     if(closed)return;
     if(bytes.length+chunk.length>16*1024*1024){close();return;}
@@ -93,9 +94,10 @@ export function createMainCDP({input,output,onFailure=()=>{}}){
       if(!object(q)){close();return;}
       if(Object.hasOwn(q,'id')){
         const p=pending.get(q.id);if(!p)continue;pending.delete(q.id);clearTimeout(p.timer);
-        if((q.sessionId??'')!==p.sessionId){p.reject(rejected());close();return;}
+        if((q.sessionId??'')!==p.sessionId){p.reject(cdpCommandFailure('reply_invalid'));close();return;}
         if(p.expired){if(!q.error&&object(q.result))Promise.resolve().then(()=>p.late(q.result)).catch(()=>{});}
-        else if(q.error||!object(q.result))p.reject(rejected());else p.resolve(q.result);
+        else if(q.error)p.reject(cdpCommandFailure('command_rejected'));
+        else if(!object(q.result))p.reject(cdpCommandFailure('reply_invalid'));else p.resolve(q.result);
       }else if(typeof q.method==='string'){
         for(const listener of listeners){try{listener(q);}catch{close();break;}}
       }else{close();return;}
@@ -103,16 +105,17 @@ export function createMainCDP({input,output,onFailure=()=>{}}){
   });
   input.on('end',close);input.on('error',close);output.on('error',close);
   function call(method,params={},sessionId='',timeoutMS=15000,local=false,late){
-    if(closed||pending.size>=32||!bounded(method,128)||!bounded(sessionId,512)||!Number.isInteger(timeoutMS)||timeoutMS<1||timeoutMS>60000)return Promise.reject(rejected());
-    const id=++sequence;if(!Number.isSafeInteger(id)){close();return Promise.reject(rejected());}
+    if(closed)return Promise.reject(cdpCommandFailure('transport_closed'));
+    if(pending.size>=32||!bounded(method,128)||!bounded(sessionId,512)||!Number.isInteger(timeoutMS)||timeoutMS<1||timeoutMS>60000)return Promise.reject(cdpCommandFailure('request_rejected'));
+    const id=++sequence;if(!Number.isSafeInteger(id)){close();return Promise.reject(cdpCommandFailure('request_rejected'));}
     const wire=Buffer.from(JSON.stringify({id,method,params,...(sessionId?{sessionId}:{})})+'\0');
-    if(wire.length>8*1024*1024){wire.fill(0);return Promise.reject(rejected());}
+    if(wire.length>8*1024*1024){wire.fill(0);return Promise.reject(cdpCommandFailure('request_rejected'));}
     return new Promise((resolve,reject)=>{
       const entry={resolve,reject,sessionId,late,expired:false};
       entry.timer=setTimeout(()=>{
         if(!local){close();return;}
         if(typeof late==='function')entry.expired=true;else pending.delete(id);
-        reject(new Error('diagnostic_request_timeout'));
+        reject(cdpCommandFailure('timeout',true));
       },timeoutMS);
       pending.set(id,entry);
       try{output.write(wire,error=>{wire.fill(0);if(error)close();});}catch{wire.fill(0);close();}

@@ -110,6 +110,34 @@ remain different operations. An HTTP 400 from that verifier must not be confused
 with HTTP 409 from local diagnostic admission or transport. Offline tests do not
 qualify either source against a live IG account.
 
+## Stream-read failure classification
+
+The legacy corroboration result can still say `reason:body_read`. The diagnostic
+cause now retains the failed branch independently:
+
+| Condition | Observation |
+| --- | --- |
+| `read_command_failed` | Read threw without trusted transport or scope provenance |
+| `read_command_timeout` | The private CDP read timer expired |
+| `read_transport_closed` | The private transport closed or was already closed |
+| `read_cdp_rejected` | CDP returned an error for this command; provider text is discarded |
+| `read_reply_invalid` | The command result or read reply has an invalid structure |
+| `read_empty_nonfinal` | A valid reply had zero bytes and `eof:false` |
+
+Transport provenance is Node-local WeakMap metadata from trusted call sites;
+arbitrary error messages or properties cannot impersonate it. The transport
+mechanism has no IG vocabulary and is not added to the published library.
+IG owns the mapping to these closed conditions. Reply validation requires own
+data properties and does not invoke accessors. No body, raw reply, stream handle
+or provider error text enters a diagnostic record.
+
+The first cause remains immutable even if another read or cleanup fails.
+Scope-owned rejection metadata remains intact; cleanup stays independent.
+Empty final replies (`eof:true`) remain valid. The existing 1-second read cap,
+total operation deadline, size/encoding limits, cleanup and retry policy are
+unchanged. Synthetic CDP and Go-to-Node tests distinguish the failure branches;
+they cannot retrospectively identify which branch caused an earlier live run.
+
 ## Validation requirements
 
 The contract is tested with synthetic observations and actual Go/Node framing,

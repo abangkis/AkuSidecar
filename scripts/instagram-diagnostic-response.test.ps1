@@ -50,3 +50,11 @@ foreach ($mode in @('field','cause','condition','number','missing','evidence','l
     if ($null -ne $projected.diagnostic -or -not $projected.diagnosticIncomplete -or $projected.code -cne 'instagram_diagnostic_diagnostic_rejected' -or ($projected | ConvertTo-Json -Depth 9 -Compress).Contains('PRIVATE')) { throw "Invalid diagnostic accepted: $mode" }
 }
 Write-Output 'PASS: safe trace retained; malformed metadata excluded without replacing API code.'
+foreach ($condition in @('read_command_failed','read_command_timeout','read_transport_closed','read_cdp_rejected','read_reply_invalid','read_empty_nonfinal')) {
+    $trace.stage = 'body_read'
+    $trace.cause = @{ stage = 'body_read'; condition = $condition }
+    $body = @{ error = 'instagram_diagnostic_diagnostic_rejected'; details = @{ diagnostic = $trace } } | ConvertTo-Json -Depth 9 -Compress
+    $projected = ConvertTo-InstagramDiagnosticApiFailure -Status 409 -Body $body
+    if ($null -eq $projected.diagnostic -or $projected.diagnostic.cause.condition -cne $condition -or $projected.retried) { throw 'Read failure classification lost in operator projection' }
+}
+Write-Output 'PASS: all closed stream-read categories retained without retry.'

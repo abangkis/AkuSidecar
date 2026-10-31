@@ -13,7 +13,7 @@ import (
 )
 
 func TestInstagramRealNodeWire(t *testing.T) {
-	for _, scenario := range []string{"missing", "throw", "scope", "eof", "lost"} {
+	for _, scenario := range []string{"missing", "throw", "scope", "eof", "lost", "read_command", "read_reply", "read_empty", "read_cleanup"} {
 		t.Run(scenario, func(t *testing.T) {
 			cmd := exec.Command("node", "instagram_trace_wire_fixture.mjs", scenario)
 			in, err := cmd.StdinPipe()
@@ -96,6 +96,18 @@ func TestInstagramRealNodeWire(t *testing.T) {
 			}
 			if scenario == "scope" && (err != nil || e.Disposition != "completed" || e.Cleanup.State != "uncertain") {
 				t.Fatalf("scope fault lost: %s", raw)
+			}
+			if expected, ok := map[string]string{"read_command": "read_command_failed", "read_reply": "read_reply_invalid", "read_empty": "read_empty_nonfinal", "read_cleanup": "read_command_failed"}[scenario]; ok {
+				cleanup := "verified"
+				if scenario == "read_cleanup" {
+					cleanup = "uncertain"
+				}
+				if err != nil || e.Disposition != "completed" || e.Cause == nil || e.Cause.Stage != "body_read" || e.Cause.Condition != expected || e.Cleanup.State != cleanup {
+					t.Fatalf("stream failure classification lost across wire: %s", raw)
+				}
+				if scenario == "read_cleanup" && e.Cleanup.Condition != "stream_close_failed" {
+					t.Fatal("cleanup replaced read cause")
+				}
 			}
 		})
 	}

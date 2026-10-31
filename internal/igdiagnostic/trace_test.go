@@ -100,3 +100,26 @@ func TestCatalogParity(t *testing.T) {
 		t.Fatal("Go/Node catalog drift")
 	}
 }
+
+func TestReadFailureConditionsPreserveFirstCauseAcrossProgressAndSnapshot(t *testing.T) {
+	for _, condition := range []string{"read_command_failed", "read_command_timeout", "read_transport_closed", "read_cdp_rejected", "read_reply_invalid", "read_empty_nonfinal"} {
+		t.Run(condition, func(t *testing.T) {
+			ctx, a := Ensure(context.Background(), "corroboration")
+			w := Wire{Schema: Schema, Stage: "body_read", Completed: "root_delivery", Disposition: "started", Sequence: 1, Cause: &Cause{Stage: "body_read", Condition: condition}, Cleanup: Settlement{State: "pending", Condition: "none"}, Complete: true}
+			raw, err := json.Marshal(w)
+			if err != nil || len(raw) > 512 || !a.Observe(raw) {
+				t.Fatal("read condition rejected at wire boundary")
+			}
+			Fail(ctx, "cleanup", "cleanup_failed")
+			SetCleanup(ctx, "uncertain", "stream_close_failed")
+			projection, ok := ValidateJSON(a.SnapshotJSON())
+			if !ok || len(projection) > 2048 {
+				t.Fatal("read condition rejected by snapshot validation")
+			}
+			var e Envelope
+			if json.Unmarshal(projection, &e) != nil || e.Cause.Condition != condition || e.Cleanup.Condition != "stream_close_failed" {
+				t.Fatal("first read failure or cleanup lost")
+			}
+		})
+	}
+}
