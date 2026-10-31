@@ -174,3 +174,56 @@ branded capture diagnostics` test also fails when every modified tracked MJS
 module is restored in memory to baseline `5815244`. The observed last reply is
 ID 2 instead of ID 4. This pre-existing test failure is recorded separately;
 the unrelated owner protocol/test was not changed in this IG repair.
+
+## Continuous owned-document supervision (offline only)
+
+The verifier now installs its document observer synchronously when acquisition
+pins the root frame, loader, URL and execution context. The acquisition observer
+is still attached at that point. The verifier observer remains attached through
+awaited acquisition cleanup, the promise handoff, cookie projection and final
+frame/context readiness checks. It is released on success, rejection and
+cancellation; a retired verifier cannot install a new observer after a late
+acquisition result. Disposal failure remains blocking and independently reported.
+
+Owned acquisition also invalidates its pre-cleanup `documentBound` result when
+an invalidation arrives during `Fetch.disable`. Same-document navigation remains
+invalidating even when the frame, loader and URL are unchanged. Root frame and
+context replacement, context destruction/clear, frame detachment and navigation
+retain fail-closed behavior. Unrelated subframes and non-default contexts do not
+gain proof authority or invalidate the pinned root by themselves.
+
+The diagnostic trace adds only closed, value-free conditions for frame, loader,
+URL and context checks; document invalidation events; failed frame/evaluation
+requests; evaluation exceptions; and false or missing readiness. Go and Node
+share the same catalog. The first observed invalidation survives a later command
+or cleanup failure. Public diagnostic schemas, operational failure vocabulary,
+proof freshness, account/session HMAC bindings, cookie policy and pair guards
+remain unchanged. No browser error text, resource identifiers, URLs, account
+values or cookies enter the trace. The existing AI4UDiagnostics path is retained.
+
+### Continuous-supervision validation receipt
+
+The affected Node suite passed **362/362** tests with the same command recorded
+for the timeout repair above. New cases cover both roles at cleanup, handoff,
+cookie read and final readiness, including fixed frame/loader/URL invalidations,
+distinct check failures, cancellation before a late binding, listener disposal
+failure, repeated success without listener growth and unrelated event filtering.
+The package regression verifies inclusion of the new document-watch module.
+
+An isolated baseline comparison restored the two owning modules from commit
+`2ee8c7f35c18fa26c2c960a9bcaf7228d5786394`. The new cleanup regression then
+failed as expected: baseline returned `corroborated` instead of
+`document_changed`. The patched version passes in the complete Node suite.
+
+Offline Go tests passed for `./internal/igdiagnostic` and the appshell
+`TestInstagram(Bootstrap|RealNodeWire)` selection. New Go cases verify that every
+document condition survives the wire and snapshot validators while cleanup
+remains separate. The published AI4UDiagnostics alpha.3 archive was copied from
+the existing shared cache into the project-local module cache; network lookup
+stayed disabled. Test temporary files and binaries remained project-local.
+
+Local commands, logs and source hashes are retained under
+`build/ig-document-watch-offline-20261031-01a190e6/`.
+This is synthetic/offline acceptance only. It neither establishes the cause of
+the previous native trial failure nor qualifies daily IG capture. No real-account
+trial, session transfer, runtime activation, commit or push is part of this patch.

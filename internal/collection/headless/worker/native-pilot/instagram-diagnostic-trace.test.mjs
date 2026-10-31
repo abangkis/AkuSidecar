@@ -32,3 +32,19 @@ test('production unavailable capability retains a safe acquisition observation',
   const trace=igErrorTrace(error);assert.ok(trace.cause);assert.ok(!JSON.stringify(trace).includes('PRIVATE'));return true;
  });
 });
+
+test('unprojectable IG trace preserves the terminal failure and leaves ordinary transport usable',async t=>{
+ const input=new PassThrough(),output=new PassThrough(),cdpInput=new PassThrough(),cdpOutput=new PassThrough(),replies=[];
+ output.on('data',raw=>replies.push(JSON.parse(raw)));
+ cdpOutput.on('data',raw=>{const request=JSON.parse(raw.toString().slice(0,-1));cdpInput.write(JSON.stringify({id:request.id,result:{product:'synthetic'}})+'\0');});
+ const server=serveMainBrowserTransport({input,output,connect:async()=>({input:cdpInput,output:cdpOutput}),
+  diagnoseInstagramBootstrapCorroboration:(_transport,_request,{trace})=>{trace.note('PRIVATE_STAGE');throw Error('PRIVATE_FAILURE');}});
+ t.after(()=>{server.close();input.destroy();output.destroy();cdpInput.destroy();cdpOutput.destroy();});
+ const send=q=>input.write(JSON.stringify(q)+'\n');
+ send({op:'main_transport_bootstrap',schema:MAIN_TRANSPORT_SCHEMA,nonce,transport:'inherited-stdio'});await tick();
+ send({id:1,op:'main_instagram_bootstrap_corroboration',nonce});await tick();
+ const failure=replies.find(value=>value.id===1&&!value.event);
+ assert.deepEqual(failure.error,{code:'instagram_diagnostic_rejected'});assert.ok(!JSON.stringify(replies).includes('PRIVATE'));
+ send({id:2,op:'main_call',method:'Browser.getVersion',params:{},sessionId:'',timeoutMS:1000});await tick();
+ const ordinary=replies.find(value=>value.id===2&&!value.event);assert.equal(ordinary.ok,true);assert.equal(ordinary.result.product,'synthetic');
+});

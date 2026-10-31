@@ -299,7 +299,7 @@ export function serveMainBrowserTransport({input,output,connect,createX,sourceFa
           try{igTrace.disposition('started');result=(corroboration?validateInstagramBootstrapCorroboration:bootstrap?validateInstagramBootstrapDiagnostic:validateInstagramReaderDiagnostic)(await diagnose(transport,{nonce:q.nonce},{trace:igTrace,budgetMS:q.budgetMS??30000}));diagnosticBlocked=result.cleanup!=='verified';
             igTrace.cleanup(result.cleanup,result.cleanup==='uncertain'?'cleanup_failed':'none');
             const reason=result.reason??result.primaryCause;if(reason&&!['none','corroborated','observed','cleanup_failed'].includes(reason)){try{igTrace.fail('projection',reason);}catch{igTrace.incomplete();}}
-            igTrace.done('projection');igTrace.disposition('completed');}
+            igTrace.done('projection');igTrace.disposition('completed');igTrace.flush();}
           catch(error){diagnosticBlocked=true;throw error;}
           finally{release();}
         }else throw rejected();
@@ -307,7 +307,7 @@ export function serveMainBrowserTransport({input,output,connect,createX,sourceFa
       }finally{pending--;}
     }catch(error){
       let failure={code:'main_transport_rejected'};
-      if(igTrace){recordIGError(igTrace,error,igTrace.snapshot().stage);failure={code:'instagram_diagnostic_rejected',diagnostic:igTrace.snapshot()};}
+      if(igTrace){try{recordIGError(igTrace,error,igTrace.currentStage());failure={code:'instagram_diagnostic_rejected',diagnostic:igTrace.snapshot()};}catch{failure={code:'instagram_diagnostic_rejected'};}}
       if(q?.op==='main_x'&&ownerFailures.has(error))failure=ownerFailures.get(error);
       if(q?.op==='main_source'){
         const reason=sourceOwnerRegistryFailure(error),diagnostic=nativeSourceDiagnostic(error);

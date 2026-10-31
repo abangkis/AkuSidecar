@@ -219,8 +219,13 @@ func (a *Attempt) SnapshotJSON() json.RawMessage {
 	ms := d.Milliseconds(s.Elapsed, policy)
 	lo, hi := int64(0), int64(10000)
 	cp, _ := d.NewCountPolicy(&lo, &hi)
-	count := d.BoundedCount(d.Observed[int64]{Value: int64(s.Sequence), Known: true}, cp)
-	w := Wire{Schema: Schema, Stage: string(s.Location.Phase), Completed: string(s.Completed), Disposition: s.Disposition, Sequence: uint32(count.Value), Cleanup: Settlement{s.Cleanup.State, s.Cleanup.Condition}, Complete: s.Complete && count.Known}
+	sequence := int64(s.Sequence)
+	saturated := sequence > hi
+	if saturated {
+		sequence = hi
+	}
+	count := d.BoundedCount(d.Observed[int64]{Value: sequence, Known: true}, cp)
+	w := Wire{Schema: Schema, Stage: string(s.Location.Phase), Completed: string(s.Completed), Disposition: s.Disposition, Sequence: uint32(count.Value), Cleanup: Settlement{s.Cleanup.State, s.Cleanup.Condition}, Complete: s.Complete && count.Known && !saturated}
 	if ms.Known {
 		w.ElapsedMS = &ms.Value
 	}
@@ -314,6 +319,7 @@ func (a *Attempt) Observe(raw []byte) bool {
 	}
 	a.nodeSequence = w.Sequence
 	a.nodeBudget, a.nodeRemaining = w.BudgetMS, w.RemainingMS
+	a.nodeElapsed = nil
 	if w.ElapsedMS != nil {
 		v := *w.ElapsedMS
 		a.nodeElapsed = &v

@@ -13,7 +13,7 @@ export function createMainBootstrapCorroborationScope(raw,trace){
 }
 
 function createBootstrapCorroborationScope(raw,trace,ownedPage){
- const reject=(condition='invalid_parameters')=>igFailure(trace?.snapshot().stage??'scope',condition);
+ const reject=(condition='invalid_parameters')=>{let stage='scope';try{stage=trace?.currentStage?.()??stage;}catch{try{trace?.incomplete?.();}catch{}}return igFailure(stage,condition);};
  const base=ownedPage?{
   alive:()=>true,reserveSession:id=>{if(id!=='owned')throw reject('ownership');},
   on:listener=>ownedPage.on(event=>{if(!['Fetch.requestPaused','Network.responseReceivedExtraInfo','Network.requestServedFromCache'].includes(event.method))listener({...event,sessionId:'owned'});}),

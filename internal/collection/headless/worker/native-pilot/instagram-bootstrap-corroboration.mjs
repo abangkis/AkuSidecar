@@ -3,6 +3,7 @@ import {createIGTrace,igFailureDetail} from './instagram-diagnostic-trace.mjs';
 import {readInstagramBootstrapBodyStream} from './instagram-bootstrap-body-stream.mjs';
 import {INSTAGRAM_CORROBORATION_POLICY as policy,INSTAGRAM_CORROBORATION_HOME as home} from './instagram-bootstrap-corroboration-policy.mjs';
 import {createOwnedInstagramBootstrapScope} from './main-bootstrap-corroboration-scope.mjs';
+import {instagramDocumentEventCondition,instagramDocumentFrameCondition} from './instagram-document-watch.mjs';
 export const INSTAGRAM_CORROBORATION_SCHEMA='aku.instagram-bootstrap-corroboration.v1';
 export const INSTAGRAM_CORROBORATION_REASONS=Object.freeze(['corroborated','invalid_request','scope_unavailable','setup_failed','navigation_failed','wire_unmatched','http_rejected','delivery_unproven','body_bounds','body_read','body_encoding','body_deadline','body_invalid','context_unavailable','document_changed','stale_delivery','evaluation_failed','projection_invalid','page_scope','login_visible','challenge','bootstrap_rejected','id_mismatch','cookie_unsupported','cookie_missing','cookie_ambiguous','cookie_invalid','cookie_mismatch','cookie_failed','cleanup_failed']);
 const booleans=['bodyBound','documentBound','serverFresh','idMatched','cookieMatched','scanComplete'];
@@ -28,28 +29,32 @@ export async function acquireOwnedInstagramIdentity(page,nonce,options={}){
  return acquireInstagramBootstrap({createBootstrapCorroborationScope:trace=>createOwnedInstagramBootstrapScope(page,trace)},{nonce},options);
 }
 
-async function acquireInstagramBootstrap(transport,request,{trace=createIGTrace(),budgetMS=policy.totalMS,now=()=>Math.floor(performance.now())}={}){
+async function acquireInstagramBootstrap(transport,request,{trace=createIGTrace(),budgetMS=policy.totalMS,now=()=>Math.floor(performance.now()),onDocumentBound=()=>{}}={}){
  let accountId='',observedAtMS,documentBinding;
  const result={schema:INSTAGRAM_CORROBORATION_SCHEMA,reason:'setup_failed',...Object.fromEntries(booleans.map(k=>[k,false])),qualified:false,cleanup:'not_started'};
  if(!record(request,['nonce'])||typeof request.nonce!=='string'||!/^[a-f0-9]{48}$/.test(request.nonce)){result.reason='invalid_request';return {diagnostic:validateInstagramBootstrapCorroboration(result)};}
- let scope,target,session,off,body,attempted=false,phase='setup_failed',firstCause;
- let rootFrame,root,paused,extra,response,finished=false,cached=false,invalidated=false,pinned,context,streamCleanup=true;
+ let scope,target,session,off,body,attempted=false,phase='setup_failed',firstCause,cleanupFirstCause;
+ let rootFrame,root,paused,extra,response,finished=false,cached=false,invalidationCondition=null,pinned,context,streamCleanup=true;
  let requestCount=0,pauseCount=0,extraCount=0,responseCount=0,navigationSettled=false,navigation;
  const until=now()+Math.max(0,Math.min(policy.acquisitionMS,budgetMS-policy.cleanupMS-3000));
  const active=stage=>trace.note(stage);active('scope');
- const mark=(reason,condition=reason,stage=trace.snapshot().stage)=>{firstCause??=reason;trace.fail(stage,condition);};
- const fail=(reason,condition=reason,stage=trace.snapshot().stage)=>{mark(reason,condition,stage);throw reject();};
+ const traceStage=()=>{try{return trace.currentStage();}catch{try{trace.incomplete();}catch{}return 'none';}};
+ const traceFail=(stage,condition)=>{try{trace.fail(stage,condition);}catch{try{trace.incomplete();}catch{}}};
+ const mark=(reason,condition=reason,stage=traceStage())=>{firstCause??=reason;traceFail(stage,condition);};
+ const fail=(reason,condition=reason,stage=traceStage())=>{mark(reason,condition,stage);throw reject();};
  const remaining=()=>{const ms=until-now();if(ms<1)fail(phase);return Math.min(ms,1000);};
  const send=(method,params={},ms=remaining())=>scope.call(method,params,session??'',ms);
- const frame=async()=>{const f=(await send('Page.getFrameTree'))?.frameTree?.frame;if(!f||!reference(f.id)||f.parentId!==undefined)fail('document_changed');return f;};
+ const frame=async()=>{let reply;try{reply=await send('Page.getFrameTree');}catch(error){traceFail(traceStage(),igFailureDetail(error)?.condition??'document_frame_request_failed');throw error;}const f=reply?.frameTree?.frame;if(!f||!reference(f.id)||f.parentId!==undefined)fail('document_changed','document_frame_invalid');return f;};
  const wait=async predicate=>{while(!predicate()){remaining();if(firstCause)throw reject();await pause();}};
  try{
   if(typeof transport?.createBootstrapCorroborationScope!=='function')fail('scope_unavailable');
   scope=transport.createBootstrapCorroborationScope(trace);trace.done('scope');
   off=scope.on(event=>{
    if(!session||event.sessionId!==session)return;
-   const p=event.params??{};
+   const previousInvalidation=invalidationCondition;
    try{
+    const p=event.params??{};
+    if(pinned)invalidationCondition??=instagramDocumentEventCondition(event,documentBinding);
     if(event.method==='Network.requestWillBeSent'&&p.frameId===rootFrame&&p.type==='Document'){
      requestCount++;
      const condition=requestCount!==1?'root_request_duplicate':p.request?.url!==home?'root_url':p.request?.method!=='GET'?'root_method':p.redirectResponse?'root_redirect':!reference(p.requestId)?'root_request_id':!reference(p.loaderId)?'root_loader_id':null;
@@ -71,13 +76,24 @@ async function acquireInstagramBootstrap(transport,request,{trace=createIGTrace(
     else if(event.method==='Network.loadingFailed'&&root&&p.requestId===root.requestId)mark('navigation_failed','navigation_failed','navigation');
     else if(event.method==='Runtime.executionContextCreated'){
      const c=p.context;if(c?.auxData?.isDefault===true&&c.auxData.frameId===rootFrame&&c.origin==='https://www.instagram.com'&&reference(c.uniqueId)){
-      if(pinned&&c.uniqueId!==pinned.uniqueId)invalidated=true;context={uniqueId:c.uniqueId,id:c.id};
+      context={uniqueId:c.uniqueId,id:c.id};
      }
-    }else if(event.method==='Runtime.executionContextsCleared'){if(pinned)invalidated=true;context=undefined;}
-    else if(event.method==='Runtime.executionContextDestroyed'&&context&&(p.executionContextId===context.id||p.executionContextUniqueId===context.uniqueId)){if(pinned)invalidated=true;context=undefined;}
-    else if(event.method==='Page.frameNavigated'&&p.frame?.id===rootFrame){if(root&&(p.frame.loaderId!==root.loaderId||p.frame.url!==home)||pinned)invalidated=true;}
-    else if((event.method==='Page.frameDetached'||event.method==='Page.navigatedWithinDocument')&&p.frameId===rootFrame)invalidated=true;
+    }else if(event.method==='Runtime.executionContextsCleared'){context=undefined;}
+    else if(event.method==='Runtime.executionContextDestroyed'&&context&&(p.executionContextId===context.id||p.executionContextUniqueId===context.uniqueId)){context=undefined;}
+    else if(event.method==='Page.frameNavigated'&&p.frame?.id===rootFrame){if(root&&(p.frame.loaderId!==root.loaderId||p.frame.url!==home))invalidationCondition??='document_frame_navigated';}
+    else if(event.method==='Page.frameDetached'&&p.frameId===rootFrame)invalidationCondition??='document_frame_detached';
+    else if(event.method==='Page.navigatedWithinDocument'&&p.frameId===rootFrame)invalidationCondition??='document_within_navigation';
    }catch{mark('wire_unmatched','invalid_reply','root_delivery');}
+   finally{
+    // Record the observation when it happens, before any later check or event.
+    if(!previousInvalidation&&invalidationCondition)traceFail(traceStage(),invalidationCondition);
+    // Success is provisional until owned cleanup settles. Preserve the first
+    // event that invalidates it, independent of cleanup's own outcome.
+    if(scope?.ownedSession&&result.reason==='corroborated'&&!cleanupFirstCause){
+     if(firstCause)cleanupFirstCause=firstCause;
+     else if(invalidationCondition)cleanupFirstCause='document_changed';
+    }
+   }
   });
   trace.cleanup('pending');attempted=true;
   if(scope.ownedSession){session=scope.ownedSession;}else{
@@ -120,11 +136,15 @@ async function acquireInstagramBootstrap(transport,request,{trace=createIGTrace(
   if(responseCondition)fail('wire_unmatched',responseCondition,'root_delivery');
   if(cached)fail('delivery_unproven','cache_observed','root_delivery');if(response.cache)fail('delivery_unproven',response.cacheKind,'root_delivery');if(response.worker)fail('delivery_unproven','service_worker','root_delivery');
   for(;;){
-   if(invalidated)fail('document_changed');
-   const f=await frame();if(f.id!==rootFrame||f.loaderId!==root.loaderId||f.url!==home)fail('document_changed');
+   if(invalidationCondition)fail('document_changed',invalidationCondition);
+   const f=await frame(),condition=instagramDocumentFrameCondition(f,{id:rootFrame,loaderId:root.loaderId,url:home});if(condition)fail('document_changed',condition);
    const c=context;if(!c)fail('context_unavailable');
    const ready=await scope.ready(c.uniqueId,remaining());
-   if(ready?.result?.value===true&&!ready.exceptionDetails){pinned={uniqueId:c.uniqueId};break;}await pause();remaining();
+   if(ready?.result?.value===true&&!ready.exceptionDetails){
+    pinned={uniqueId:c.uniqueId};documentBinding=Object.freeze({id:rootFrame,loaderId:root.loaderId,url:home,uniqueContextId:c.uniqueId,contextId:c.id});
+    if(scope.ownedSession)onDocumentBound(documentBinding);
+    break;
+   }await pause();remaining();
   }
   const fresh=()=>{const age=now()-extra.receivedAtMS;return age>=0&&age<=policy.freshMS;};
   if(!fresh())fail('stale_delivery');
@@ -138,17 +158,18 @@ async function acquireInstagramBootstrap(transport,request,{trace=createIGTrace(
    value.reason==='corroborated'&&(!value.scanComplete||!value.idMatched||!value.cookieMatched)||Buffer.byteLength(JSON.stringify(value))>1024)fail('projection_invalid');
   for(const k of ['scanComplete','idMatched','cookieMatched'])result[k]=value[k];
   if(value.scanComplete)trace.done('parsing');if(value.idMatched)trace.done('id_comparison');if(value.cookieMatched)trace.done('cookie_comparison');
-  if(value.reason!=='corroborated'){const stage=value.reason.startsWith('cookie_')?'cookie_comparison':value.reason==='id_mismatch'?'id_comparison':'parsing';trace.fail(stage,value.reason);}
+  if(value.reason!=='corroborated'){const stage=value.reason.startsWith('cookie_')?'cookie_comparison':value.reason==='id_mismatch'?'id_comparison':'parsing';traceFail(stage,value.reason);}
   active('post_check');const after=await frame();
   if(firstCause)throw reject();
   if(requestCount!==1)fail('wire_unmatched','root_request_duplicate','root_delivery');if(pauseCount!==1)fail('wire_unmatched','pause_duplicate','root_delivery');if(responseCount!==1)fail('wire_unmatched','response_duplicate','root_delivery');if(extraCount!==1)fail('wire_unmatched','extra_duplicate','root_delivery');
   if(cached)fail('delivery_unproven','cache_observed','root_delivery');if(response.cache)fail('delivery_unproven',response.cacheKind,'root_delivery');if(response.worker)fail('delivery_unproven','service_worker','root_delivery');
-  result.documentBound=!invalidated&&after.id===rootFrame&&after.loaderId===root.loaderId&&after.url===home&&context?.uniqueId===pinned.uniqueId;
-  if(!result.documentBound)fail('document_changed');
+  const documentCondition=invalidationCondition??instagramDocumentFrameCondition(after,documentBinding)??(context?.uniqueId!==pinned.uniqueId?'document_context_mismatch':null);
+  if(documentCondition)fail('document_changed',documentCondition);
+  result.documentBound=true;
   result.serverFresh=fresh();if(!result.serverFresh)fail('stale_delivery');
   result.reason=value.reason;
-  if(privateSuccess){accountId=value.accountId;observedAtMS=extra.receivedAtMS;documentBinding={id:rootFrame,loaderId:root.loaderId,url:home,uniqueContextId:pinned.uniqueId,contextId:context.id};value.accountId='';}
- }catch(error){const detail=igFailureDetail(error);result.reason=firstCause??phase;if(result.reason!=='cleanup_failed')trace.fail(detail?.stage??trace.snapshot().stage,detail?.condition??result.reason);}
+  if(privateSuccess){accountId=value.accountId;observedAtMS=extra.receivedAtMS;value.accountId='';}
+ }catch(error){const detail=igFailureDetail(error);result.reason=firstCause??phase;if(result.reason!=='cleanup_failed')traceFail(detail?.stage??traceStage(),detail?.condition??result.reason);}
  finally{
   active('cleanup');body?.fill(0);body=undefined;paused=undefined;
   if(attempted)result.cleanup='uncertain';
@@ -167,11 +188,20 @@ async function acquireInstagramBootstrap(transport,request,{trace=createIGTrace(
     }
    }catch{}
   }
+  // The owned document stays live during cleanup. A late invalidation cannot
+  // retain the documentBound value computed before the awaited Fetch.disable.
+  if(scope?.ownedSession&&invalidationCondition){
+   result.documentBound=false;
+  }
+  if(scope?.ownedSession&&result.reason==='corroborated'&&cleanupFirstCause)result.reason=cleanupFirstCause;
   if(result.cleanup==='uncertain'&&result.reason==='corroborated')result.reason='cleanup_failed';
   try{off?.();}catch{result.cleanup='uncertain';trace.cleanup('uncertain','dispose_failed');}try{scope?.dispose();}catch{result.cleanup='uncertain';trace.cleanup('uncertain','dispose_failed');}
   trace.cleanup(result.cleanup,result.cleanup==='uncertain'?'cleanup_failed':'none');
  }
  if(result.cleanup==='uncertain'&&result.reason==='corroborated')result.reason='cleanup_failed';
+ // The verifier's observer remains attached while the result crosses the
+ // asynchronous handoff; do not mislabel this interval as cleanup or post-check.
+ if(scope?.ownedSession&&result.reason==='corroborated'&&result.cleanup==='verified')active('handoff');
  const diagnostic=validateInstagramBootstrapCorroboration(result);
  if(diagnostic.reason!=='corroborated'||diagnostic.cleanup!=='verified'){accountId='';observedAtMS=undefined;}
  return {diagnostic,accountId,observedAtMS,documentBinding};

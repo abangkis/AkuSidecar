@@ -87,7 +87,7 @@ export async function runInstagramReaderDiagnostic(transport, request, {trace=cr
   const now=()=>Math.floor(performance.now()),acquisitionUntil=now()+Math.max(0,budgetMS-5000);trace.note('scope');
   const result = {schema: INSTAGRAM_DIAGNOSTIC_SCHEMA, primaryCause: 'none', status: 0, mime: 'missing',
     bodyClass: 'not_read', errorCategory: 'none', documentBound: false, wireMatched: false, cleanup: 'not_started'};
-  const cause = value => { if (result.primaryCause === 'none') result.primaryCause = value;if(value!=='none')trace.fail(trace.snapshot().stage,igAllowed('conditions',value)?value:'unknown'); };
+  const cause = value => { if (result.primaryCause === 'none') result.primaryCause = value;if(value!=='none')trace.fail(trace.currentStage(),igAllowed('conditions',value)?value:'unknown'); };
   if (!record(request, ['nonce']) || typeof request.nonce !== 'string' || !noncePattern.test(request.nonce)) {
     cause('invalid_request'); return validateInstagramReaderDiagnostic(result);
   }

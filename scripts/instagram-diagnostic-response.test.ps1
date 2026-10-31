@@ -58,3 +58,21 @@ foreach ($condition in @('read_command_failed','read_command_timeout','read_tran
     if ($null -eq $projected.diagnostic -or $projected.diagnostic.cause.condition -cne $condition -or $projected.retried) { throw 'Read failure classification lost in operator projection' }
 }
 Write-Output 'PASS: all closed stream-read categories retained without retry.'
+foreach ($stage in @('parsing','cleanup','handoff','cookie','post_check')) {
+    $trace.stage = $stage
+    $trace.cause = @{ stage = $stage; condition = 'document_within_navigation' }
+    $body = @{ error = 'instagram_diagnostic_diagnostic_rejected'; message = 'PRIVATE_EXCEPTION'; details = @{ diagnostic = $trace } } | ConvertTo-Json -Depth 9 -Compress
+    $projected = ConvertTo-InstagramDiagnosticApiFailure -Status 409 -Body $body
+    if ($null -eq $projected.diagnostic -or $projected.diagnostic.stage -cne $stage -or $projected.diagnostic.cause.stage -cne $stage -or $projected.diagnostic.cause.condition -cne 'document_within_navigation' -or $projected.retried -or ($projected | ConvertTo-Json -Depth 9 -Compress).Contains('PRIVATE')) { throw 'Document observation stage lost or unsafe in operator projection' }
+}
+Write-Output 'PASS: bounded document observation stages retained without private data or retry.'
+$trace.stage = 'cleanup'
+$trace.sequence = 10000
+$trace.nodeSequence = 10000
+$trace.complete = $false
+$trace.cause = @{ stage = 'root_delivery'; condition = 'root_request_duplicate' }
+$trace.cleanup = @{ state = 'verified'; condition = 'none' }
+$body = @{ error = 'instagram_diagnostic_diagnostic_rejected'; message = 'PRIVATE_EXCEPTION'; details = @{ diagnostic = $trace } } | ConvertTo-Json -Depth 9 -Compress
+$projected = ConvertTo-InstagramDiagnosticApiFailure -Status 409 -Body $body
+if ($null -eq $projected.diagnostic -or $projected.diagnostic.complete -or $projected.diagnostic.sequence -ne 10000 -or $projected.diagnostic.cause.condition -cne 'root_request_duplicate' -or $projected.diagnostic.cleanup.state -cne 'verified' -or $projected.retried -or ($projected | ConvertTo-Json -Depth 9 -Compress).Contains('PRIVATE')) { throw 'Saturated trace lost bounded failure or cleanup' }
+Write-Output 'PASS: incomplete saturated trace retains first cause and independent cleanup.'
