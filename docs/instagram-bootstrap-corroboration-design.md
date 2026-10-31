@@ -1,7 +1,12 @@
 # Instagram bootstrap corroboration diagnostic
 
-Status: implementation and offline fixtures only. No live qualification or
-runtime activation is authorized by this increment.
+Status: the bounded reader diagnostic passed on source `6c0c3a5` on
+2026-10-31: HTTP 200, `corroborated`, all six evidence checks passed, and
+cleanup verified in 2877 ms. No collector or session transfer was involved;
+native qualification remains false. Shared private acquisition now also powers
+daily proofs in the isolated implementation; offline validation passed and
+runtime activation remains pending. See the
+[daily-proof boundary and native trial plan](instagram-bootstrap-daily-proof.md).
 
 ## Boundary
 
@@ -91,17 +96,19 @@ requires all six observation booleans true, verified cleanup, and
 `qualified=false`. Failure observations and cleanup are separate. Both Node
 and Go reject extra, missing, duplicate, incorrectly typed or private fields.
 
-## Remaining live gate
+## Historical initial live gate and current successor
 
-Only offline synthetic tests are in scope. A future live execution requires
+The initial implementation admitted only offline synthetic tests. Live execution required
 explicit approval for the dedicated Home navigation, bounded response-body
 read and private account-cookie comparison. Offline success does not establish
 availability of Cookie Store/streaming APIs in the deployed browser, real Home
 body size, the meaning of `PolarisViewer.id`, or native collector compatibility.
-Do not replace the production verifier or mark a recipe qualified from this
-diagnostic alone. Once the source is qualified, acquisition belongs inside
-`readInstagramEvidence`; reuse its account/session HMAC, document binding and
-`verifyInstagramPair`. No new Store or proof framework is needed.
+Do not mark a recipe qualified from this diagnostic alone. The separately
+approved daily-proof increment connects private acquisition to
+`readInstagramEvidence` under the existing trial gate, retaining its
+account/session HMAC, document binding and `verifyInstagramPair`. It does not
+promote the public diagnostic result to authority or change Store. Collector
+and repeated-capture acceptance remain pending under the linked trial plan.
 
 Protocol reference: Chromium's official [Fetch domain](https://raw.githubusercontent.com/ChromeDevTools/devtools-protocol/master/pdl/domains/Fetch.pdl)
 requires cancellation or a supplied body after taking the response stream;

@@ -130,6 +130,7 @@ export function createNativeSourceAttempt({source, generation, nonce, profileSco
 // close is insufficient: its absence must be verified before releasing pins.
 export async function createNativeOwnedPage(transport, timeoutMS) {
   let targetId, sessionId, closing;
+  const subscriptions=new Set();
   const setupDeadline = Date.now() + timeoutMS;
   const call = (method, params = {}, session = '', ms) => {
     const budget = ms ?? Math.min(10000, setupDeadline - Date.now());
@@ -137,6 +138,8 @@ export async function createNativeOwnedPage(transport, timeoutMS) {
     return transport.call(method, params, session, budget);
   };
   const close = () => closing ??= (async () => {
+    let subscriptionFailure=false;
+    for(const off of [...subscriptions])try{off();}catch{subscriptionFailure=true;}
     if (!targetId) return;
     await call('Target.closeTarget', {targetId}, '', 1000);
     const until = Date.now() + 2000;
@@ -144,7 +147,9 @@ export async function createNativeOwnedPage(transport, timeoutMS) {
       const result = await call('Target.getTargets', {}, '', Math.max(1, until - Date.now()));
       if (!Array.isArray(result.targetInfos)) throw nativeSourceFailure('cleanup', 'inventory');
       if (!result.targetInfos.some(target => target.targetId === targetId)) {
-        transport.releaseSession?.(sessionId); transport.releaseTarget?.(targetId); return;
+        transport.releaseSession?.(sessionId); transport.releaseTarget?.(targetId);
+        if(subscriptionFailure)throw nativeSourceFailure('cleanup','unverified');
+        return;
       }
       await new Promise(resolve => setTimeout(resolve, 25));
     }
@@ -159,6 +164,13 @@ export async function createNativeOwnedPage(transport, timeoutMS) {
     sessionId = attached.sessionId; transport.reserveSession(sessionId);
     for (const method of ['Page.enable', 'Runtime.enable', 'Network.enable']) await call(method, {}, sessionId);
     return Object.freeze({
+      on(listener) {
+        if(typeof transport.subscribe!=='function'||typeof listener!=='function'||closing)throw nativeSourceFailure('evidence','unavailable');
+        let active=true;
+        const unsubscribe=transport.subscribe(event=>{if(active&&!closing&&event.sessionId===sessionId)listener(event);});
+        const off=()=>{if(!active)return;active=false;subscriptions.delete(off);unsubscribe();};
+        subscriptions.add(off);return off;
+      },
       send: (method, params = {}, ms = timeoutMS) => call(method, params, sessionId, ms),
       navigate: (url, ms = timeoutMS) => call('Page.navigate', {url}, sessionId, ms),
       async evaluate(expression, ms = timeoutMS) {

@@ -9,9 +9,18 @@ const exact=(x,keys)=>x&&typeof x==='object'&&!Array.isArray(x)&&Object.keys(x).
 // Separate private capability. Ordinary/passive scopes never gain Fetch, IO,
 // arbitrary evaluation, cookie access or a body-returning public operation.
 export function createMainBootstrapCorroborationScope(raw,trace){
+ return createBootstrapCorroborationScope(raw,trace);
+}
+
+function createBootstrapCorroborationScope(raw,trace,ownedPage){
  const reject=(condition='invalid_parameters')=>igFailure(trace?.snapshot().stage??'scope',condition);
- const base=createMainDiagnosticScope(raw),listeners=new Set(),streams=new Map();
- let session,paused,disposed=false,pendingStreams=0,taken=false,replayed=false,fetchEnabled=false,navigated=false;
+ const base=ownedPage?{
+  alive:()=>true,reserveSession:id=>{if(id!=='owned')throw reject('ownership');},
+  on:listener=>ownedPage.on(event=>{if(!['Fetch.requestPaused','Network.responseReceivedExtraInfo','Network.requestServedFromCache'].includes(event.method))listener({...event,sessionId:'owned'});}),
+  call:(method,params,id,ms)=>{if(id!=='owned'||method.startsWith('Target.'))throw reject('ownership');return ownedPage.send(method,params,ms);},
+  cleanupVerified:()=>true,dispose(){},
+ }:createMainDiagnosticScope(raw),listeners=new Set(),streams=new Map();
+ let session=ownedPage?'owned':undefined,paused,disposed=false,pendingStreams=0,taken=false,replayed=false,fetchEnabled=false,navigated=false;
  const own=id=>{if(disposed)throw reject('scope_disposed');if(id!==session)throw reject('ownership');base.reserveSession(id);};
  const unsubscribe=raw.subscribe(event=>{
   if(disposed||!session||event.sessionId!==session)return;
@@ -28,6 +37,7 @@ export function createMainBootstrapCorroborationScope(raw,trace){
   return raw.call('Runtime.evaluate',{expression,uniqueContextId:context,returnByValue:true,awaitPromise:true,userGesture:false},session,timeout(ms));
  };
  return Object.freeze({
+  ownedSession:ownedPage?'owned':undefined,
   alive:base.alive,reserveTarget:base.reserveTarget,reserveSession:base.reserveSession,
   releaseTarget:base.releaseTarget,releaseSession:base.releaseSession,
   cleanupVerified(){return base.cleanupVerified()&&pendingStreams===0&&streams.size===0;},
@@ -74,7 +84,23 @@ export function createMainBootstrapCorroborationScope(raw,trace){
    replayed=true;
   },
   ready:(context,ms)=>evaluate(ready,context,ms),
-  inspect:(body,nonce,context,ms)=>evaluate(instagramBootstrapCorroborationExpression(body,nonce),context,ms),
+  inspect:(body,nonce,context,ms)=>evaluate(instagramBootstrapCorroborationExpression(body,nonce,!!ownedPage),context,ms),
+  async retire(ms){
+   if(!ownedPage)throw reject('ownership');
+   // Disabling Fetch releases a paused response. An acquired stream must have
+   // been explicitly closed; otherwise retain uncertain cleanup.
+   if(fetchEnabled)await raw.call('Fetch.disable',{},session,timeout(ms));
+   return pendingStreams===0&&streams.size===0;
+  },
   dispose(){if(disposed)return;disposed=true;unsubscribe();listeners.clear();paused=undefined;streams.clear();base.dispose();},
  });
+}
+
+// Only a batch-owned page can supply this private capability. Public diagnostic
+// RPCs never select the private identity projection or acquire another target.
+export function createOwnedInstagramBootstrapScope(page,trace){
+ if(typeof page?.on!=='function'||typeof page?.send!=='function')throw igFailure('scope','ownership');
+ const raw={subscribe:listener=>page.on(event=>listener({...event,sessionId:'owned'})),
+  call:(method,params,id,ms)=>{if(id!=='owned')throw igFailure('scope','ownership');return page.send(method,params,ms);}};
+ return createBootstrapCorroborationScope(raw,trace,page);
 }

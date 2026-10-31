@@ -21,9 +21,10 @@ export const CAPTURE_PLAYBACK_GUARD_SOURCE = `(() => {
   document.addEventListener('playing', stopPlayback, true);
 })();`;
 
-export async function createTemporaryPage({ send, browserSessionId, closeTargetAndWait, timeoutMs = CDP_TIMEOUT_MS }) {
+export async function createTemporaryPage({ send, subscribe, browserSessionId, closeTargetAndWait, timeoutMs = CDP_TIMEOUT_MS }) {
   let targetId;
   let closePromise = null;
+  const subscriptions=new Set();
   const boundedTimeout = Math.max(1, Math.min(CDP_TIMEOUT_MS, Number.isFinite(timeoutMs) ? timeoutMs : CDP_TIMEOUT_MS));
   const setupDeadline = Date.now() + boundedTimeout;
   const setupTimeLeft = () => {
@@ -44,6 +45,13 @@ export async function createTemporaryPage({ send, browserSessionId, closeTargetA
     await send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId, setupTimeLeft());
     await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false }, sessionId, setupTimeLeft());
     return {
+      on(listener) {
+        if(typeof subscribe!=='function'||typeof listener!=='function'||closePromise)throw new Error('Owned page subscription unavailable.');
+        let active=true;
+        const unsubscribe=subscribe(event=>{if(active&&!closePromise&&event.sessionId===sessionId)listener(event);});
+        const off=()=>{if(!active)return;active=false;subscriptions.delete(off);unsubscribe();};
+        subscriptions.add(off);return off;
+      },
       send: (method, params = {}, operationTimeout = boundedTimeout) => send(method, params, sessionId, operationTimeout),
       async evaluate(expression, operationTimeout = boundedTimeout) {
         const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId, operationTimeout);
@@ -52,7 +60,12 @@ export async function createTemporaryPage({ send, browserSessionId, closeTargetA
       },
       navigate(url, operationTimeout = boundedTimeout) { return send('Page.navigate', { url }, sessionId, operationTimeout); },
       close() {
-        closePromise ??= Promise.resolve().then(() => closeTargetAndWait(targetId)).catch(() => {
+        closePromise ??= Promise.resolve().then(async () => {
+          let subscriptionFailure=false;
+          for(const off of [...subscriptions])try{off();}catch{subscriptionFailure=true;}
+          await closeTargetAndWait(targetId);
+          if(subscriptionFailure)throw new Error('Owned page subscription cleanup failed.');
+        }).catch(() => {
           throw Object.assign(new Error('Chrome could not confirm cleanup of the temporary target.'), { code: 'temporary_target_cleanup_failed' });
         });
         return closePromise;
@@ -126,6 +139,8 @@ async function assertProfileUnowned(profilePath) {
 
 function connectOwnedChrome(child, executable, profilePath) {
   const pending = new Map();
+  const listeners = new Set();
+  const subscribe = listener => { if(closed||typeof listener!=='function'||listeners.size>=32)throw new Error('Owned browser subscription unavailable.');listeners.add(listener);return()=>listeners.delete(listener); };
   let sequence = 0;
   let buffer = '';
   let closed = false;
@@ -167,6 +182,10 @@ function connectOwnedChrome(child, executable, profilePath) {
       if (!frame) continue;
       let message;
       try { message = JSON.parse(frame); } catch { continue; }
+      if(!Object.hasOwn(message,'id')&&typeof message.method==='string'){
+        for(const listener of listeners)try{listener(message);}catch{}
+        continue;
+      }
       const call = pending.get(message.id);
       if (!call) continue;
       pending.delete(message.id);
@@ -179,6 +198,7 @@ function connectOwnedChrome(child, executable, profilePath) {
   function markClosed() {
     if (closed) return;
     closed = true;
+    listeners.clear();
     exitResolve();
   }
   function closePending(error) {
@@ -244,7 +264,7 @@ function connectOwnedChrome(child, executable, profilePath) {
         throw new Error('Chrome did not release its temporary target.');
       }
       async function createPageContext() {
-        const owned = await createTemporaryPage({ send, browserSessionId, closeTargetAndWait });
+        const owned = await createTemporaryPage({ send, subscribe, browserSessionId, closeTargetAndWait });
         const { close, ...context } = owned;
         void close; // Source targets are released together with the owned Chrome process.
         return context;
@@ -263,7 +283,7 @@ function connectOwnedChrome(child, executable, profilePath) {
           return context;
         },
         createTemporaryPage(timeoutMs) {
-          return createTemporaryPage({ send, browserSessionId, closeTargetAndWait, timeoutMs });
+          return createTemporaryPage({ send, subscribe, browserSessionId, closeTargetAndWait, timeoutMs });
         },
         close,
         exited,

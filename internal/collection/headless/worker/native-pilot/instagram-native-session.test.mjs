@@ -82,30 +82,6 @@ test('successful identity remains private, strict and bounded; cancellation reti
   assert.ok(!JSON.stringify(result).includes('PRIVATE'));assert.equal(f.counts().canceled,1);
 });
 
-test('rejection role and category survive evidence validation without cookie access',async()=>{
-  for(const role of ['reader','collector'])for(const category of INSTAGRAM_IDENTITY_REJECTIONS){
-    let cookieReads=0;
-    const projection={nonce,authenticated:false,accountId:'',rejection:category};
-    const page={send:async method=>{
-      if(method==='Network.getCookies')cookieReads++;
-      return{frameTree:{frame:{id:'private-frame',loaderId:'private-document',url:'https://www.instagram.com/'}}};
-    },evaluate:async()=>projection};
-    const attempt={binding:{nonce},run:async(_stage,operation)=>operation(1000)};
-    await assert.rejects(readInstagramEvidence(page,attempt,role,'PRIVATE_OWNER','PRIVATE_PROFILE','PRIVATE_SECRET'),error=>{
-      assert.equal(error.message,'native_source_failed');
-      assert.deepEqual(nativeSourceDiagnostic(error),{stage:'evidence',reason:`${role}_identity_${category}`,cleanup:'not_started'});
-      assert.equal(sourceTransientClass(error),category==='fetch_timeout'?'timeout':'');
-      assert.ok(!JSON.stringify(nativeSourceDiagnostic(error)).includes('PRIVATE'));return true;
-    });
-    assert.equal(cookieReads,0);
-  }
-});
-
-test('projection forgery or unsupported categories cannot inject native error codes',async()=>{
-  for(const patch of [{rejection:'PRIVATE_TOKEN'},...['099','600','200','401','403','429','0400','400.0','400_PRIVATE','400\n'].map(status=>({rejection:`http_status_${status}`})),{nonce:'b'.repeat(48)},{authenticated:true},{accountId:'123456'},{extra:'PRIVATE_BODY'}]){
-    const page={send:async()=>({frameTree:{frame:{id:'f',loaderId:'d',url:'https://www.instagram.com/'}}}),
-      evaluate:async()=>({nonce,authenticated:false,accountId:'',rejection:'http_forbidden',...patch})};
-    await assert.rejects(readInstagramEvidence(page,{binding:{nonce},run:async(_stage,op)=>op(1000)},'reader','','',''),error=>nativeSourceDiagnostic(error).reason==='reader_identity_projection');
-  }
-  assert.equal(nativeSourceDiagnostic(instagramIdentityFailure('PRIVATE_ROLE','PRIVATE_REASON')).reason,'unknown_identity_projection');
+test('legacy diagnostic failure catalog remains bounded',()=>{
+ assert.equal(nativeSourceDiagnostic(instagramIdentityFailure('PRIVATE_ROLE','PRIVATE_REASON')).reason,'unknown_identity_projection');
 });

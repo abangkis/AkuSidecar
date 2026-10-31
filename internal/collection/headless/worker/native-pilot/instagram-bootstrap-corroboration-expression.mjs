@@ -3,9 +3,10 @@ import {INSTAGRAM_BOOTSTRAP_BUDGET} from './instagram-bootstrap-budget.mjs';
 import {STRICT_JSON_PARSER_SOURCE} from '../../../../../scripts/auth-session-fixture/x-evidence-ingress.mjs';
 import {INSTAGRAM_CORROBORATION_POLICY as policy} from './instagram-bootstrap-corroboration-policy.mjs';
 
-// All body/ID/cookie values stay on the private CDP channel. Only equality and
-// closed rejection categories leave the execution context.
-export function instagramBootstrapCorroborationExpression(body,nonce){
+// Body/ID/cookie values stay on the private CDP channel. The diagnostic returns
+// only equality and closed categories; trusted native composition can request
+// the corroborated ID transiently to bind its existing HMAC proof.
+export function instagramBootstrapCorroborationExpression(body,nonce,privateIdentity=false){
  if(!Buffer.isBuffer(body)||body.length>policy.maxBodyBytes||!/^[a-f0-9]{48}$/.test(nonce))throw Error('corroboration_expression_rejected');
  return `(async()=>{
  const out={nonce:${JSON.stringify(nonce)},reason:'bootstrap_rejected',scanComplete:false,idMatched:false,cookieMatched:false};
@@ -43,7 +44,7 @@ export function instagramBootstrapCorroborationExpression(body,nonce){
   if(confirmed.reason!=='candidate')return {...out,reason:'bootstrap_rejected',idMatched:false};
   if(domID!==bodyID)return {...out,reason:'id_mismatch',idMatched:false};
   out.cookieMatched=cookie.value===bodyID;
-  return {...out,reason:out.cookieMatched?'corroborated':'cookie_mismatch'};
+  return {...out,reason:out.cookieMatched?'corroborated':'cookie_mismatch',...(${privateIdentity === true}&&out.cookieMatched?{accountId:bodyID}:{})};
  }catch{return {...out,reason:'body_invalid'};}
  finally{bytes?.fill(0);html='';bodyID='';domID='';cookieRows=undefined;if(template)template.innerHTML='';}
  })()`;

@@ -49,6 +49,18 @@ var sourceNativeReasons = map[string]bool{"scope": true, "clock": true, "closed"
 // No arbitrary reason or native exception text becomes a public diagnostic.
 func init() {
 	for _, role := range []string{"reader", "collector", "unknown"} {
+		// Same closed categories as INSTAGRAM_CORROBORATION_REASONS, excluding
+		// success. These describe private acquisition, never an account value.
+		for _, reason := range []string{
+			"invalid_request", "scope_unavailable", "setup_failed", "navigation_failed", "wire_unmatched",
+			"http_rejected", "delivery_unproven", "body_bounds", "body_read", "body_encoding", "body_deadline",
+			"body_invalid", "context_unavailable", "document_changed", "stale_delivery", "evaluation_failed",
+			"projection_invalid", "page_scope", "login_visible", "challenge", "bootstrap_rejected", "id_mismatch",
+			"cookie_unsupported", "cookie_missing", "cookie_ambiguous", "cookie_invalid", "cookie_mismatch",
+			"cookie_failed", "cleanup_failed",
+		} {
+			sourceNativeReasons[role+"_bootstrap_"+reason] = true
+		}
 		// Same finite contract as INSTAGRAM_HTTP_REJECTIONS: no arbitrary text
 		// or unbounded numeric suffix is admitted across the wire boundary.
 		for status := 100; status <= 599; status++ {

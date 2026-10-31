@@ -44,7 +44,7 @@ export async function createInstagramDailyOwner(params, transport, {loadAssets, 
   const check = () => { if (!initialized || closed || terminal || !transport.alive()) throw nativeSourceFailure('lifetime', 'owner'); };
   const disposeCookies = result => { if (result) eraseInstagramCookies(result.cookies); };
   async function evidence(role, nonce) {
-    const page = role === 'reader' ? batch.reader : batch.home;
+    const page = role === 'reader' ? batch.reader : batch.collectorEvidence;
     const ownerID = role === 'reader' ? descriptor.readerOwnerID : String(batch.collector.pid);
     const profileID = role === 'reader' ? params.readerProfile : batch.profile;
     return readInstagramEvidence(page, batch.attempt, role, ownerID, profileID, secret, now, nonce);
@@ -158,7 +158,6 @@ export async function createInstagramDailyOwner(params, transport, {loadAssets, 
       if (operation === 'source_seed') {
         if (current.state !== 'prepared') throw nativeSourceFailure('session', 'replay');
         current.state = 'seeding';
-        await navigateHome(current.reader);
         let reader;
         try {
           reader = await evidence('reader');
@@ -168,6 +167,9 @@ export async function createInstagramDailyOwner(params, transport, {loadAssets, 
             const page = await current.collector.createTemporaryPage(ms); current.pages.add(page); return page;
           }, page => page.close());
           await current.attempt.run('session', ms => current.home.send('Network.setCookies', {cookies: reader.cookies}, ms));
+          current.collectorEvidence = await current.attempt.own('target', async ms => {
+            const page = await current.collector.createTemporaryPage(ms); current.pages.add(page); return page;
+          }, page => page.close());
         } finally { disposeCookies(reader); }
         await navigateHome(current.home);
         const proof = await pair(); current.state = 'active'; return proof;

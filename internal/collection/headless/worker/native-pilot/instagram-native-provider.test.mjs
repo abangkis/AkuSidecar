@@ -11,6 +11,7 @@ import {resolveInstagramStructuredFeedInMainWorld} from '../../../../../../AkuBr
 import {createInstagramDailyOwner, INSTAGRAM_NATIVE_RECIPE} from './instagram-native-provider.mjs';
 import {createNativeSourceAttempt, createNativeOwnedPage, nativeSourceDiagnostic, nativeSourceFailure} from './native-source-kernel.mjs';
 import {projectInstagramCookies, instagramAccountExpression, verifyInstagramPair} from './instagram-native-session.mjs';
+import {fixture as bootstrapFixture} from './instagram-bootstrap-fixture.mjs';
 
 const nonce = 'a'.repeat(48), profileScope = 'reader-profile-scope';
 const params = {chromePath: resolve('offline/chrome.exe'), readerProfile: resolve('offline/reader'), readerPID: 100,
@@ -21,15 +22,16 @@ const binding = {generation: 1, nonce, profileScope};
 
 function fixture(options = {}) {
   const calls = [], targets = new Set(), pins = new Set(), sessions = new Set();
-  let next = 0, seedCount = 0, collectorClosed = false, documentReads = 0;
+  let next = 0, seedCount = 0, collectorClosed = false;
   const readerCookies = cookies();
-  const frame = () => ({frameTree: {frame: {id: 'root', loaderId: options.changedDocument && ++documentReads > 1 ? 'changed' : 'loader', url: INSTAGRAM_NATIVE_RECIPE.home}}});
+  const bootstrapOptions={bodyID:options.accountId??'123456789',domID:options.accountId??'123456789',cookieID:'123456789',login:options.loggedOut,changeContext:options.changedDocument};
+  const readerBootstrap=bootstrapFixture(bootstrapOptions);
   const projection = expression => {
-    if (!expression.includes('current_user')) return true;
-    return {nonce: JSON.parse(expression.match(/nonce:("[a-f0-9]+")/u)[1]), authenticated: !options.loggedOut,
-      accountId: options.loggedOut ? '' : options.accountId ?? '123456789', rejection: options.loggedOut ? 'login_visible' : 'none'};
+    assert.ok(!expression.includes('current_user'),'production must not request the legacy endpoint');
+    return true;
   };
   const transport = {
+    subscribe:listener=>readerBootstrap.raw.subscribe(event=>listener({...event,sessionId:'session-'+next})),
     alive: () => true,
     reserveTarget: id => pins.add(id), releaseTarget: id => pins.delete(id),
     reserveSession: id => sessions.add(id), releaseSession: id => sessions.delete(id),
@@ -39,11 +41,9 @@ function fixture(options = {}) {
       if (method === 'Target.attachToTarget') return {sessionId: 'session-' + next};
       if (method === 'Target.closeTarget') { if (!options.keepTarget) targets.delete(values.targetId); return {success: true}; }
       if (method === 'Target.getTargets') return {targetInfos: [...targets].map(targetId => ({targetId}))};
-      if (method === 'Page.getFrameTree') return frame();
       if (method === 'Network.setCacheDisabled' && options.failCache) throw new Error('PRIVATE response body must not escape');
       if (method === 'Network.getCookies') return {cookies: structuredClone(readerCookies)};
-      if (method === 'Runtime.evaluate') return {result: {value: projection(values.expression)}};
-      return {};
+      return readerBootstrap.raw.call(method,values,'owned-session',1000);
     },
   };
   const pages = [];
@@ -52,7 +52,9 @@ function fixture(options = {}) {
     let jar = [];
     return {pid: 200, profilePath: configuration.profilePath,
       async createTemporaryPage() {
+        const bootstrap=bootstrapFixture(bootstrapOptions);
         const page = {closed: false, url: 'about:blank',
+          on:listener=>bootstrap.raw.subscribe(listener),
           async send(method, values) {
             calls.push({side: 'collector', method});
             if (method === 'Network.setCookies') { seedCount++; jar = structuredClone(values.cookies).map(cookie => ({...cookie, expires: cookie.expires ?? -1})); return {}; }
@@ -61,8 +63,7 @@ function fixture(options = {}) {
               if (options.collectorMismatch) selected.find(cookie => cookie.name === 'ds_user_id').value = '222';
               return {cookies: selected};
             }
-            if (method === 'Page.getFrameTree') return frame();
-            return {};
+            return bootstrap.raw.call(method,values,'owned-session',1000);
           },
           async navigate(url) { page.url = url; return {}; },
           async evaluate(expression) {
@@ -115,6 +116,19 @@ test('native recipe stays unqualified and has no speculative optional cookie imp
   assert.equal(INSTAGRAM_NATIVE_RECIPE.nativeQualified, false);
   assert.deepEqual(INSTAGRAM_NATIVE_RECIPE.optionalCookies, []);
   assert.throws(() => { INSTAGRAM_NATIVE_RECIPE.nativeQualified = true; });
+});
+
+test('post-capture verification navigates the separate evidence page and preserves capture document',async()=>{
+ const url='https://www.instagram.com/p/ABC123/';
+ const f=await start({runCapture:async browser=>{
+  await (await browser.forSource('instagram')).navigate(url);
+  return {source:'instagram',posts:[],coverage:{}};
+ }});
+ await f.owner.execute('source_seed',binding);
+ await f.owner.execute('source_capture',{...binding,payload:{scrolls:0}});
+ assert.equal(f.pages[0].url,url);assert.equal(f.pages[0].closed,false);
+ assert.equal(f.pages[1].closed,false);
+ await f.owner.close();assert.ok(f.pages.every(page=>page.closed));
 });
 
 test('IG retries use a fresh collector and proof after verified cleanup, then stop at the bound',async()=>{
@@ -183,7 +197,7 @@ test('native provider reuses IG structured video recovery and closes its owned m
   await f.owner.execute('source_seed', binding);
   await f.owner.execute('source_capture', {...binding, payload: {}});
   assert.equal(recovered.posts[0].mediaEvidence.nativeVideoFallback.outcome, 'owned_playback_url_observed');
-  assert.equal(f.pages.length, 2); assert.equal(f.pages[1].closed, true);
+  assert.equal(f.pages.length, 3); assert.equal(f.pages[2].closed, true);
   assert.deepEqual(await f.owner.execute('source_end', binding), {closed: true});
   assert.ok(f.pages.every(page => page.closed)); await f.owner.close();
 });
@@ -209,7 +223,7 @@ test('session manifest rejects duplicate auth names', () => {
   assert.throws(() => projectInstagramCookies({cookies: [...cookies(), cookies()[0]]}, Date.now()));
 });
 
-for (const [name, options] of [['logged out', {loggedOut: true}], ['endpoint/cookie account mismatch', {accountId: '999'}],
+for (const [name, options] of [['logged out', {loggedOut: true}], ['bootstrap/cookie account mismatch', {accountId: '999'}],
   ['collector cookie mismatch', {collectorMismatch: true}], ['root document replacement', {changedDocument: true}], ['cache control rejection', {failCache: true}]]) {
   test(`native evidence rejects ${name} and keeps diagnostics private`, async () => {
     const f = await start(options);

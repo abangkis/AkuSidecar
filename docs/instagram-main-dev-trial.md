@@ -49,12 +49,31 @@ Do not report capture acceptance until the actual run and cleanup are observed.
 
 ## Identity rejection diagnostics
 
+### Bootstrap source implementation (2026-10-31, not activated)
+
+The isolated implementation now uses shared fresh bootstrap acquisition for
+native reader and collector proofs instead of the rejected `current_user`
+request. The existing endpoint expression remains only for legacy diagnostic
+and fixture compatibility. Private acquisition retains complete scans,
+document/context binding, account-cookie agreement and original delivery age;
+native proofs keep their existing HMAC and source/role/owner/profile bindings.
+Collector evidence has a separate batch-owned page, so later verification does
+not reload the page used by capture and media extraction. Diagnostic results
+remain value-free and never authorize a batch.
+
+Offline acceptance passed; native collector/capture acceptance is pending under
+the [concrete activation and trial plan](instagram-bootstrap-daily-proof.md).
+The recipe remains unqualified and no stored disabled permission is enabled by
+this source change.
+
+### Existing endpoint diagnostics
+
 Identity rejection now retains a closed reader/collector category through the
 private RPC, Engine status and first-failure log. For example,
 `native_source_evidence_collector_identity_http_forbidden` identifies a denied
 collector response without exporting its body or account/session values.
 
-The page projection distinguishes page/login state, HTTP rejection class,
+The legacy endpoint page projection distinguishes page/login state, HTTP rejection class,
 origin/MIME, bounded body reading/decoding/JSON parsing, response shape, account
 field validity and page changes. Unknown or contradictory projections become
 `identity_projection`; they cannot inject a server message into an error code.

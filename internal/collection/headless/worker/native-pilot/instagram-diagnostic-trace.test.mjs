@@ -25,8 +25,10 @@ test('Node guards are distinct and cannot claim adapter execution',async t=>{
  finish({schema:'aku.instagram-bootstrap-corroboration.v1',reason:'setup_failed',bodyBound:false,documentBound:false,serverFresh:false,idMatched:false,cookieMatched:false,scanComplete:false,qualified:false,cleanup:'uncertain'});await tick();
  send({id:4,op:'main_instagram_bootstrap_corroboration',nonce});await tick();assert.equal(replies.find(v=>v.id===4&&!v.event).error.diagnostic.cause.condition,'cleanup_blocked');assert.equal(calls,1);assert.ok(!JSON.stringify(replies).includes('PRIVATE_MARKER'));
 });
-test('production current_user HTTP400 retains a separate safe verifier observation',async()=>{
- const page={send:async method=>method==='Page.getFrameTree'?{frameTree:{frame:{id:'PRIVATE_FRAME',loaderId:'PRIVATE_LOADER',url:'https://www.instagram.com/'}}}:{},evaluate:async()=>({nonce,authenticated:false,accountId:'',rejection:'http_status_400'})};
- const attempt={binding:{nonce},run:async(_stage,fn)=>fn(1000)};
- await assert.rejects(readInstagramEvidence(page,attempt,'reader','PRIVATE_OWNER','PRIVATE_PROFILE','PRIVATE_SECRET'),error=>{const trace=igErrorTrace(error);assert.equal(trace.cause.condition,'http_400');assert.equal(trace.stage,'identity');assert.ok(!JSON.stringify(trace).includes('PRIVATE'));return true;});
+test('production unavailable capability retains a safe acquisition observation',async()=>{
+ const page={send:async()=>{throw Error('PRIVATE');}};
+ const attempt={binding:{nonce},run:async(_stage,fn)=>fn(30000)};
+ await assert.rejects(readInstagramEvidence(page,attempt,'reader','PRIVATE_OWNER','PRIVATE_PROFILE','PRIVATE_SECRET'),error=>{
+  const trace=igErrorTrace(error);assert.ok(trace.cause);assert.ok(!JSON.stringify(trace).includes('PRIVATE'));return true;
+ });
 });

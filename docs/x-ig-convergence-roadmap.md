@@ -10,6 +10,17 @@ changes, database migration, or changes to Auto Update.
 
 ## Current completion plan
 
+### IG evidence-source increment (2026-10-31)
+
+The bounded bootstrap reader diagnostic passed without a collector or transfer.
+The private acquisition is now extracted and connected to both owned roles in
+the existing native provider; 196 Node tests, targeted Go suites and an isolated
+development build passed. This preserves the
+daily controller, Store, permission restoration and X recipe. A stored disabled
+IG choice is not a restart persistence failure and must not be silently enabled.
+See the [implementation contract and concrete native trial](instagram-bootstrap-daily-proof.md).
+Native activation/derivation and repeated capture acceptance remain separate.
+
 The consolidated [shared-foundation progress report](shared-capture-foundation-progress.md)
 combines X-versus-IG lifecycle convergence with windowed-versus-native capture
 parity. These are two views of the same effort, not a new roadmap reset.

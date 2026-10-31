@@ -123,13 +123,13 @@ test('diagnostic op is sealed, unavailable without a factory and rejects arbitra
   const f=control(t,async(_transport,request)=>{calls++;assert.deepEqual(request,{nonce:'a'.repeat(48)});return result();});await tick();
   for(const [id,extra]of [[1,{url:'https://outside.invalid/'}],[2,{nonce:'PRIVATE'}],[3,{params:{expression:'PRIVATE'}}]]){
     f.send({id,op:'main_instagram_reader_diagnostic',nonce:'a'.repeat(48),...extra});await tick();
-    assert.equal(f.replies.find(reply=>reply.id===id).ok,false);
+    assert.equal(f.replies.find(reply=>!reply.event&&reply.id===id).ok,false);
   }
   assert.equal(calls,0);
   f.send({id:4,op:'main_instagram_reader_diagnostic',nonce:'a'.repeat(48)});await tick();
-  assert.deepEqual(f.replies.find(reply=>reply.id===4).result,result());assert.equal(calls,1);
+  assert.deepEqual(f.replies.find(reply=>!reply.event&&reply.id===4).result,result());assert.equal(calls,1);
   const disabled=control(t);await tick();disabled.send({id:1,op:'main_instagram_reader_diagnostic',nonce:'a'.repeat(48)});await tick();
-  assert.equal(disabled.replies.find(reply=>reply.id===1).ok,false);
+  assert.equal(disabled.replies.find(reply=>!reply.event&&reply.id===1).ok,false);
 });
 
 test('diagnostic lane stays exclusive and malformed output never reaches the client',async t=>{
@@ -138,13 +138,13 @@ test('diagnostic lane stays exclusive and malformed output never reaches the cli
   f.send({id:1,op:'main_x',operation:'daily_owner_bootstrap',params:{}});await tick();
   f.send({id:2,op:'main_instagram_reader_diagnostic',nonce:'a'.repeat(48)});await tick();
   f.send({id:3,op:'main_x',operation:'daily_batch_begin',params:{}});await tick();
-  assert.equal(f.replies.find(reply=>reply.id===3).ok,false);
+  assert.equal(f.replies.find(reply=>!reply.event&&reply.id===3).ok,false);
   f.send({id:4,op:'main_x',operation:'daily_reader_check',params:{}});await tick();
-  assert.equal(f.replies.find(reply=>reply.id===4).ok,false);
+  assert.equal(f.replies.find(reply=>!reply.event&&reply.id===4).ok,false);
   release({...result(),accountId:'PRIVATE_ACCOUNT'});await tick();
-  assert.equal(f.replies.find(reply=>reply.id===2).ok,false);assert.ok(!JSON.stringify(f.replies).includes('PRIVATE'));
+  assert.equal(f.replies.find(reply=>!reply.event&&reply.id===2).ok,false);assert.ok(!JSON.stringify(f.replies).includes('PRIVATE'));
   f.send({id:5,op:'main_x',operation:'daily_batch_begin',params:{}});await tick();
-  assert.deepEqual(f.replies.find(reply=>reply.id===5).result,{peer:true});
+  assert.deepEqual(f.replies.find(reply=>!reply.event&&reply.id===5).result,{peer:true});
 });
 
 test('diagnostic admission waits for in-flight nonexclusive source or X owner checks',async t=>{
@@ -156,10 +156,10 @@ test('diagnostic admission waits for in-flight nonexclusive source or X owner ch
     f.send(message(1,kind==='x'?'daily_owner_bootstrap':'source_bootstrap'));await tick();
     f.send(message(2,kind==='x'?'daily_reader_check':'source_check'));await tick();
     f.send({id:3,op:'main_instagram_reader_diagnostic',nonce:'a'.repeat(48)});await tick();
-    assert.equal(f.replies.find(reply=>reply.id===3).ok,false);assert.equal(calls,0);
+    assert.equal(f.replies.find(reply=>!reply.event&&reply.id===3).ok,false);assert.equal(calls,0);
     release({peer:true});await tick();
     f.send({id:4,op:'main_instagram_reader_diagnostic',nonce:'a'.repeat(48)});await tick();
-    assert.equal(f.replies.find(reply=>reply.id===4).ok,true);assert.equal(calls,1);
+    assert.equal(f.replies.find(reply=>!reply.event&&reply.id===4).ok,true);assert.equal(calls,1);
   }
 });
 
@@ -168,10 +168,10 @@ test('uncertain diagnostic cleanup blocks another probe without disabling the X 
   const f=control(t,async()=>{calls++;return{...result(),cleanup:'uncertain'};},async()=>({execute:async()=>({peer:true}),close:async()=>{}}));await tick();
   f.send({id:1,op:'main_instagram_reader_diagnostic',nonce:'a'.repeat(48)});await tick();
   f.send({id:2,op:'main_instagram_reader_diagnostic',nonce:'b'.repeat(48)});await tick();
-  assert.equal(f.replies.find(reply=>reply.id===2).ok,false);assert.equal(calls,1);
+  assert.equal(f.replies.find(reply=>!reply.event&&reply.id===2).ok,false);assert.equal(calls,1);
   f.send({id:3,op:'main_x',operation:'daily_owner_bootstrap',params:{}});await tick();
   f.send({id:4,op:'main_x',operation:'daily_reader_check',params:{}});await tick();
-  assert.deepEqual(f.replies.find(reply=>reply.id===4).result,{peer:true});
+  assert.deepEqual(f.replies.find(reply=>!reply.event&&reply.id===4).result,{peer:true});
 });
 
 test('reader runner binds and retires its target through the actual restricted CDP scope',async t=>{

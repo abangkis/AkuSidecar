@@ -12,6 +12,23 @@ import (
 	"testing"
 )
 
+func TestSourceNativeBootstrapFailureWireCategories(t *testing.T) {
+	for _, role := range []string{"reader", "collector", "unknown"} {
+		for _, reason := range []string{"body_read", "body_bounds", "stale_delivery", "document_changed", "bootstrap_rejected", "cookie_mismatch", "cleanup_failed"} {
+			code := "native_source_evidence_" + role + "_bootstrap_" + reason
+			if got := sourceNativeWireFailure(&appshell.MainBrowserError{Code: code}).Error(); got != code {
+				t.Fatalf("lost bounded bootstrap category: %s", got)
+			}
+		}
+		for _, reason := range []string{"corroborated", "private_cookie_value", "http_400"} {
+			code := "native_source_evidence_" + role + "_bootstrap_" + reason
+			if got := sourceNativeWireFailure(&appshell.MainBrowserError{Code: code}).Error(); got != "native_source_wire_unavailable" {
+				t.Fatal("unsupported bootstrap category admitted")
+			}
+		}
+	}
+}
+
 func TestSourceNativeFailureRetainsSafeFirstCause(t *testing.T) {
 	for _, test := range []struct {
 		cause error

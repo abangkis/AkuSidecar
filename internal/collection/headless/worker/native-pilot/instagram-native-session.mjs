@@ -1,10 +1,12 @@
 import {createIGTrace,attachIGTrace} from './instagram-diagnostic-trace.mjs';
 import {createHmac} from 'node:crypto';
-import {nativeSourceFailure, nativeRecord} from './native-source-kernel.mjs';
+import {nativeSourceFailure} from './native-source-kernel.mjs';
 import {markSourceTransient} from './source-retry-policy.mjs';
+import {acquireOwnedInstagramIdentity} from './instagram-bootstrap-corroboration.mjs';
+import {INSTAGRAM_CORROBORATION_POLICY,INSTAGRAM_CORROBORATION_READY} from './instagram-bootstrap-corroboration-policy.mjs';
 
 export const INSTAGRAM_NATIVE_RECIPE = Object.freeze({source: 'instagram', recipe: 'instagram-native-v1', nativeQualified: false,
-  home: 'https://www.instagram.com/', evidenceMaxAgeMS: 6000, responseMaxBytes: 65536, projectionMaxBytes: 4096,
+  home: 'https://www.instagram.com/', evidenceMaxAgeMS: 6000, responseMaxBytes: INSTAGRAM_CORROBORATION_POLICY.maxBodyBytes, projectionMaxBytes: 4096,
   requiredCookies: Object.freeze(['csrftoken', 'ds_user_id', 'sessionid']), optionalCookies: Object.freeze([])});
 
 // Finite HTTP contract: integers 100..599 except 200. Preserve familiar auth
@@ -31,8 +33,8 @@ export function instagramIdentityFailure(role, reason) {
   return markSourceTransient(error, category === 'fetch_timeout' ? 'timeout' : '');
 }
 
-// Candidate endpoint, not a claim of a stable/documented Instagram API. Read
-// one bounded same-origin response and return only the account/login projection.
+// Legacy endpoint diagnostic/fixture helper, never the production identity
+// acquisition. Read one bounded same-origin response and project account/login.
 // The body and its account data never leave the page as a raw response.
 export function instagramAccountExpression(nonce) {
   if (!/^[a-f0-9]{48}$/u.test(nonce)) throw nativeSourceFailure('evidence', 'nonce');
@@ -94,9 +96,6 @@ export function projectInstagramCookies(reply, nowMS) {
 export async function readInstagramEvidence(page, attempt, role, ownerID, profileID, secret, now = Date.now, nonce = attempt.binding.nonce) {
   let cookies;const trace=createIGTrace();trace.disposition('started');trace.note('verifier');
   try {
-    for (const [method, values] of [['Network.setCacheDisabled', {cacheDisabled: true}], ['Network.setBypassServiceWorker', {bypass: true}]]) {
-      await attempt.run('evidence', ms => page.send(method, values, ms));
-    }
     const frame = async () => {
       const value = await attempt.run('evidence', ms => page.send('Page.getFrameTree', {}, ms));
       const root = value?.frameTree?.frame;
@@ -104,27 +103,46 @@ export async function readInstagramEvidence(page, attempt, role, ownerID, profil
           root.url !== INSTAGRAM_NATIVE_RECIPE.home || root.parentId !== undefined) throw nativeSourceFailure('evidence', 'document');
       return {id: root.id, loaderId: root.loaderId, url: root.url};
     };
-    trace.note('document');const before = await frame();
-    trace.note('identity');const projection = await attempt.run('evidence', ms => page.evaluate(instagramAccountExpression(nonce), ms));
-    if (!nativeRecord(projection, ['nonce', 'authenticated', 'accountId', 'rejection']) || projection.nonce !== nonce ||
-        Buffer.byteLength(JSON.stringify(projection), 'utf8') > INSTAGRAM_NATIVE_RECIPE.projectionMaxBytes) throw instagramIdentityFailure(role, 'projection');
-    if (projection.authenticated === false && projection.accountId === '' && INSTAGRAM_IDENTITY_REJECTIONS.includes(projection.rejection)) {
-      const reason=projection.rejection;const condition=reason==='http_status_400'?'http_400':reason==='http_unauthorized'?'http_401':reason==='http_forbidden'?'http_403':reason==='http_rate_limited'?'http_429':reason.startsWith('http_')?'http_other':reason==='fetch_timeout'?'deadline':['page_scope','login_visible','body_read','body_encoding'].includes(reason)?reason:'invalid_reply';
-      trace.fail('identity',condition);throw instagramIdentityFailure(role,reason);
+    // Acquisition navigates only this role's evidence page. Its original
+    // server-delivery time remains the proof time, including cleanup/cookie work.
+    const projection = await attempt.run('evidence', ms => acquireOwnedInstagramIdentity(page,nonce,{trace,now,budgetMS:Math.min(30000,ms-3000)}));
+    if(projection.diagnostic.reason!=='corroborated'||projection.diagnostic.cleanup!=='verified'){
+      const owner=['reader','collector'].includes(role)?role:'unknown';
+      throw nativeSourceFailure('evidence',owner+'_bootstrap_'+projection.diagnostic.reason);
     }
-    if (projection.authenticated !== true || projection.rejection !== 'none' || typeof projection.accountId !== 'string' ||
-        !/^[1-9][0-9]{0,29}$/u.test(projection.accountId)) throw instagramIdentityFailure(role, 'projection');
-    trace.note('cookie');cookies = projectInstagramCookies(await attempt.run('session', ms => page.send('Network.getCookies', {urls: [INSTAGRAM_NATIVE_RECIPE.home]}, ms)), now());
-    trace.note('post_check');const after = await frame();
-    if (before.id !== after.id || before.loaderId !== after.loaderId || before.url !== after.url) throw nativeSourceFailure('evidence', 'document_changed');
-    if (cookies.find(cookie => cookie.name === 'ds_user_id').value !== projection.accountId) throw nativeSourceFailure('evidence', 'account_mismatch');
-    const digest = value => createHmac('sha256', secret).update(value).digest('hex');
-    const observedAtMS = now();
-    const proof = Object.freeze({source: 'instagram', domain: 'native-browser', recipe: INSTAGRAM_NATIVE_RECIPE.recipe,
-      nonce, profileScope: attempt.binding.profileScope, generation: attempt.binding.generation,
-      role, ownerID, profileID, accountKey: digest('account\0' + projection.accountId),
-      sessionRevision: digest('session\0' + JSON.stringify(cookies)), authenticated: true, observedAtMS});
-    trace.done('verifier');trace.disposition('completed');return {proof, cookies};
+    let off,readFailure,invalidated=false;
+    try {
+      const before=projection.documentBinding;
+      off=page.on(event=>{
+        const p=event.params??{};
+        if(event.method==='Runtime.executionContextsCleared'||
+          event.method==='Runtime.executionContextDestroyed'&&(p.executionContextUniqueId===before.uniqueContextId||p.executionContextId===before.contextId)||
+          event.method==='Runtime.executionContextCreated'&&p.context?.auxData?.isDefault===true&&p.context.auxData.frameId===before.id&&p.context.uniqueId!==before.uniqueContextId||
+          ['Page.frameNavigated','Page.frameDetached','Page.navigatedWithinDocument'].includes(event.method)&&(p.frame?.id??p.frameId)===before.id)invalidated=true;
+      });
+      trace.note('cookie');cookies = projectInstagramCookies(await attempt.run('session', ms => page.send('Network.getCookies', {urls: [INSTAGRAM_NATIVE_RECIPE.home]}, ms)), now());
+      trace.note('post_check');const after = await frame();
+      if (before.id !== after.id || before.loaderId !== after.loaderId || before.url !== after.url) throw nativeSourceFailure('evidence', 'document_changed');
+      const context=await attempt.run('evidence',ms=>page.send('Runtime.evaluate',{expression:INSTAGRAM_CORROBORATION_READY,uniqueContextId:before.uniqueContextId,returnByValue:true,awaitPromise:true,userGesture:false},ms));
+      if(invalidated||context?.exceptionDetails||context?.result?.value!==true)throw nativeSourceFailure('evidence','document_changed');
+      if (cookies.find(cookie => cookie.name === 'ds_user_id').value !== projection.accountId) throw nativeSourceFailure('evidence', 'account_mismatch');
+      const digest = value => createHmac('sha256', secret).update(value).digest('hex');
+      const observedAtMS = projection.observedAtMS;
+      const age=now()-observedAtMS;
+      if(!Number.isSafeInteger(observedAtMS)||age<0||age>INSTAGRAM_NATIVE_RECIPE.evidenceMaxAgeMS)throw nativeSourceFailure('evidence','stale');
+      const proof = Object.freeze({source: 'instagram', domain: 'native-browser', recipe: INSTAGRAM_NATIVE_RECIPE.recipe,
+        nonce, profileScope: attempt.binding.profileScope, generation: attempt.binding.generation,
+        role, ownerID, profileID, accountKey: digest('account\0' + projection.accountId),
+        sessionRevision: digest('session\0' + JSON.stringify(cookies)), authenticated: true, observedAtMS});
+      trace.done('verifier');trace.disposition('completed');return {proof, cookies};
+    } catch(error) { readFailure=error;throw error; }
+    finally {
+      projection.accountId='';
+      try { off?.(); } catch {
+        trace.cleanup('uncertain','dispose_failed');
+        if(!readFailure)throw nativeSourceFailure('cleanup','unverified');
+      }
+    }
   } catch (error) { trace.fail(trace.snapshot().stage,'request_failed');if (cookies) eraseInstagramCookies(cookies);throw attachIGTrace(error,trace); }
 }
 export function eraseInstagramCookies(cookies) { for (const cookie of cookies ?? []) cookie.value = ''; if (Array.isArray(cookies)) cookies.length = 0; }
