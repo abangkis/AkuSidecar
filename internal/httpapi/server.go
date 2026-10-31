@@ -267,9 +267,11 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	case r.Method == http.MethodGet && p == "/api/collection/runtime":
 		return writeJSON(w, http.StatusOK, map[string]any{"collectionRuntime": s.engine.CollectionRuntime(), "xManual": s.engine.XManualStatus(), "xCapture": s.engine.XCaptureStatus(), "instagramCapture": s.engine.SourceCaptureStatus(domain.SourceInstagram)})
 	case r.Method == http.MethodPost && p == "/api/development/instagram-trial/start":
-		return s.instagramTrialAction(w, r, ctx, true)
+		return s.instagramTrialAction(w, r, ctx, "start")
+	case r.Method == http.MethodPost && p == "/api/development/instagram-trial/retry":
+		return s.instagramTrialAction(w, r, ctx, "retry")
 	case r.Method == http.MethodPost && p == "/api/development/instagram-trial/stop":
-		return s.instagramTrialAction(w, r, ctx, false)
+		return s.instagramTrialAction(w, r, ctx, "stop")
 	case r.Method == http.MethodPost && p == "/api/development/x-daily/start":
 		if !s.config.Dev {
 			return notFound("development route")

@@ -18,6 +18,11 @@ import {validateInstagramBootstrapCorroboration} from './instagram-bootstrap-cor
 
 export const MAIN_TRANSPORT_SCHEMA='aku.main-browser-transport.v1';
 const rejected=()=>new Error('main_transport_rejected');
+const igRetryNotDispatched=new WeakSet();
+const retryNotDispatched=()=>{const error=rejected();igRetryNotDispatched.add(error);return error;};
+const isIGRetry=q=>q.op==='main_source'&&q.source==='instagram'&&q.operation==='source_retry'&&
+  Object.keys(q).length===5&&['id','op','source','operation','params'].every(key=>Object.hasOwn(q,key))&&
+  object(q.params)&&Reflect.ownKeys(q.params).length===0;
 // Numeric diagnostics are admitted only from the same finite identity catalog
 // used by the IG projection, never by widening arbitrary diagnostic text.
 const instagramHTTPReasons=new Set(['reader','collector','unknown'].flatMap(role=>INSTAGRAM_HTTP_REJECTIONS.map(reason=>`${role}_identity_${reason}`)));
@@ -254,7 +259,8 @@ export function serveMainBrowserTransport({input,output,connect,createX,sourceFa
         transport=createMainCDP({...streams,onFailure:close});publicCall=createMainPublicFacade(transport,{recipes,busy:()=>busy});
         emit({ready:true,schema:MAIN_TRANSPORT_SCHEMA,nonce:q.nonce});return;
       }
-      if(!Number.isSafeInteger(q.id)||q.id<1||q.id<=lastID-1024||seen.has(q.id)||pending>=32)throw rejected();
+      if(!Number.isSafeInteger(q.id)||q.id<1||q.id<=lastID-1024||seen.has(q.id))throw rejected();
+      if(pending>=32)throw isIGRetry(q)?retryNotDispatched():rejected();
       lastID=Math.max(lastID,q.id);seen.add(q.id);for(const id of seen)if(id<=lastID-1024)seen.delete(id);pending++;
       try{
         let result;
@@ -276,9 +282,11 @@ export function serveMainBrowserTransport({input,output,connect,createX,sourceFa
           }finally{ownerPending--;release();}
         }else if(q.op==='main_source'){
           exact(q,['id','op','source','operation','params']);
+          const localRetry=isIGRetry(q);
           const terminal=['source_end','source_close'].includes(q.operation),lane='source:'+q.source;
-          if(typeof q.source!=='string'||typeof q.operation!=='string'||busy&&(!terminal||busy.lane!==lane))throw rejected();
-          const exclusive=['source_bootstrap','source_initialize','source_begin','source_seed','source_end','source_close'].includes(q.operation);
+          if(localRetry&&busy?.lane==='diagnostic:instagram')throw retryNotDispatched();
+          if(typeof q.source!=='string'||typeof q.operation!=='string'||!localRetry&&busy&&(!terminal||busy.lane!==lane))throw rejected();
+          const exclusive=!localRetry&&['source_bootstrap','source_initialize','source_begin','source_seed','source_end','source_close','source_retry'].includes(q.operation);
           if(exclusive&&publicPending&&!terminal)throw rejected();const release=exclusive?acquire(lane,terminal):()=>{};ownerPending++;
           try{result=await sources.execute(q.source,q.operation,q.params,transport);}
           finally{ownerPending--;release();}
@@ -315,6 +323,7 @@ export function serveMainBrowserTransport({input,output,connect,createX,sourceFa
         else if(sourceDiagnosticAllowed(diagnostic))
           failure={code:`native_source_${diagnostic.stage}_${diagnostic.reason}`};
       }
+      if(igRetryNotDispatched.has(error))failure={code:'main_ig_retry_not_dispatched'};
       const igSideband=igErrorTrace(error);if(igSideband)failure={...failure,diagnostic:igSideband};
       if(q&&Number.isSafeInteger(q.id))emit({id:q.id,ok:false,error:failure});else close(controlCause('invalid_frame','framing'));
     }

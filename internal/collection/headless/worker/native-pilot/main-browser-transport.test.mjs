@@ -75,10 +75,10 @@ test('private CDP failure rejects pending work without raw exception text',async
   f.input.write(JSON.stringify({id:f.requests[0].id,error:{message:'synthetic-secret'}})+'\0');
   await assert.rejects(p,error=>error.message==='main_transport_rejected');
 });
-function controlFixture(t,createX,sourceFactories={}){
+function controlFixture(t,createX,sourceFactories={},diagnostics={}){
   const input=new PassThrough(),output=new PassThrough(),rawIn=new PassThrough(),rawOut=new PassThrough(),replies=[];
   output.on('data',b=>replies.push(JSON.parse(b.toString())));
-  const server=serveMainBrowserTransport({input,output,createX,sourceFactories,connect:async()=>({input:rawIn,output:rawOut})});
+  const server=serveMainBrowserTransport({input,output,createX,sourceFactories,...diagnostics,connect:async()=>({input:rawIn,output:rawOut})});
   t.after(()=>server.close());
   const send=q=>input.write(JSON.stringify(q)+'\n');
   send({op:'main_transport_bootstrap',schema:MAIN_TRANSPORT_SCHEMA,nonce:'a'.repeat(48),transport:'inherited-stdio'});
@@ -294,6 +294,90 @@ test('source errors forward only private diagnostic categories, never arbitrary 
   f.send({id:3,op:'main_source',source:'instagram',operation:'source_proof',params:{}});await tick();
   assert.equal(f.replies.find(r=>r.id===3).error.code,'main_transport_rejected');
   assert.ok(!JSON.stringify(f.replies).includes('private-token'));
+});
+
+test('explicit source retry is source-local and preserves ordinary and X transport', async t => {
+  let finishRetry, sourceClosed = false;
+  const operations = [];
+  const f = controlFixture(t, async () => ({execute: async () => ({legacyX: true}), close: async () => {}}), {
+    instagram: async () => ({execute: async (operation, params) => {
+      operations.push([operation, params]);
+      return new Promise(resolve => { finishRetry = resolve; });
+    }, close: async () => { sourceClosed = true; }}),
+    x: async () => ({execute: async () => { assert.fail('source_retry must be IG-only'); }, close: async () => {}}),
+  }); await tick();
+  const send = async (id, source, operation, params = {}) => { f.send({id, op: 'main_source', source, operation, params}); await tick(); };
+  await send(1, 'instagram', 'source_bootstrap');
+  await send(2, 'x', 'source_bootstrap');
+  await send(3, 'x', 'source_retry');
+  await send(4, 'instagram', 'source_retry', {diagnostic: {reason: 'document_changed', cleanup: 'verified'}});
+  assert.equal(f.replies.find(r => r.id === 3).ok, false);
+  assert.equal(f.replies.find(r => r.id === 4).ok, false);
+  assert.equal(operations.length, 0);
+  await send(5, 'instagram', 'source_retry');
+  f.send({id: 6, op: 'main_call', method: 'Browser.getVersion', params: {}, sessionId: '', timeoutMS: 1000}); await tick();
+  f.send({id: 7, op: 'main_x', operation: 'daily_owner_bootstrap', params: {}}); await tick();
+  await send(8, 'instagram', 'source_retry');
+  assert.equal(f.replies.find(r => r.id === 7).ok, false);
+  assert.equal(f.replies.find(r => r.id === 8).error.code, 'native_source_busy');
+  f.rawIn.write(JSON.stringify({id: 1, result: {product: 'Chrome/synthetic'}}) + '\0'); await tick();
+  assert.equal(f.replies.find(r => r.id === 6).result.product, 'Chrome/synthetic');
+  finishRetry({rearmed: true, retryCount: 1, retryLimit: 2}); await tick();
+  assert.deepEqual(f.replies.find(r => r.id === 5).result, {rearmed: true, retryCount: 1, retryLimit: 2});
+  f.send({id: 9, op: 'main_x', operation: 'daily_owner_bootstrap', params: {}}); await tick();
+  f.send({id: 10, op: 'main_x', operation: 'daily_reader_check', params: {}}); await tick();
+  assert.deepEqual(f.replies.find(r => r.id === 10).result, {legacyX: true});
+  f.send({id: 11, op: 'main_call', method: 'Browser.getVersion', params: {}, sessionId: '', timeoutMS: 1000}); await tick();
+  f.rawIn.write(JSON.stringify({id: 2, result: {product: 'Chrome/synthetic'}}) + '\0'); await tick();
+  assert.equal(f.replies.find(r => r.id === 11).result.product, 'Chrome/synthetic');
+  assert.equal(sourceClosed, false);
+});
+
+test('IG retry and X batch begin coexist in both coalesced wire orders',async t=>{
+  for(const retryFirst of [true,false]){
+    let finishX,finishRetry;
+    const f=controlFixture(t,async()=>({execute:()=>new Promise(resolve=>{finishX=resolve;}),close:async()=>{}}),{
+      instagram:async()=>({execute:()=>new Promise(resolve=>{finishRetry=resolve;}),close:async()=>{}})});await tick();
+    f.send({id:1,op:'main_x',operation:'daily_owner_bootstrap',params:{}});await tick();
+    f.send({id:2,op:'main_source',source:'instagram',operation:'source_bootstrap',params:{}});await tick();
+    const retry={op:'main_source',source:'instagram',operation:'source_retry',params:{}},x={op:'main_x',operation:'daily_batch_begin',params:{}};
+    const pair=retryFirst?[retry,x]:[x,retry];
+    f.input.write(pair.map((q,i)=>JSON.stringify({id:i+3,...q})).join('\n')+'\n');await tick();
+    assert.equal(typeof finishX,'function');assert.equal(typeof finishRetry,'function');
+    finishRetry({rearmed:true,retryCount:1,retryLimit:2,descriptor:{source:'instagram'}});finishX({begun:true});await tick();
+    for(const id of [3,4])assert.equal(f.replies.find(r=>r.id===id).ok,true);
+  }
+});
+
+test('IG retry accepts a pending public call and diagnostic fences both orderings',async t=>{
+  let finishRetry,finishDiagnostic,dispatches=0;
+  const f=controlFixture(t,undefined,{instagram:async()=>({execute:()=>{dispatches++;return new Promise(resolve=>{finishRetry=resolve;});},close:async()=>{}})},
+    {diagnoseInstagramReader:()=>new Promise(resolve=>{finishDiagnostic=resolve;})});await tick();
+  f.send({id:1,op:'main_source',source:'instagram',operation:'source_bootstrap',params:{}});await tick();
+  f.send({id:2,op:'main_call',method:'Browser.getVersion',params:{},sessionId:'',timeoutMS:1000});
+  f.send({id:3,op:'main_source',source:'instagram',operation:'source_retry',params:{}});await tick();assert.equal(dispatches,1);
+  f.rawIn.write(JSON.stringify({id:1,result:{product:'Chrome/synthetic'}})+'\0');await tick();
+  f.send({id:4,op:'main_instagram_reader_diagnostic',nonce:'a'.repeat(48)});await tick();
+  assert.equal(f.replies.find(r=>r.id===4&&r.ok===false).error.code,'instagram_diagnostic_rejected');assert.equal(finishDiagnostic,undefined);
+  finishRetry({rearmed:true});await tick();
+  f.send({id:5,op:'main_instagram_reader_diagnostic',nonce:'a'.repeat(48)});await tick();assert.equal(typeof finishDiagnostic,'function');
+  f.send({id:6,op:'main_source',source:'instagram',operation:'source_retry',params:{}});await tick();
+  assert.deepEqual(f.replies.find(r=>r.id===6),{id:6,ok:false,error:{code:'main_ig_retry_not_dispatched'}});assert.equal(dispatches,1);
+  f.send({id:7,op:'main_source',source:'instagram',operation:'source_retry',params:{extra:true}});await tick();
+  assert.equal(f.replies.find(r=>r.id===7).error.code,'main_transport_rejected');
+  finishDiagnostic({});await tick();
+});
+
+test('only validated IG retry receives typed pre-registry saturation rejection',async t=>{
+  let dispatches=0;
+  const f=controlFixture(t,undefined,{instagram:async()=>({execute:async()=>{dispatches++;return {};},close:async()=>{}})});await tick();
+  f.send({id:1,op:'main_source',source:'instagram',operation:'source_bootstrap',params:{}});await tick();
+  for(let id=2;id<34;id++)f.send({id,op:'main_call',method:'Browser.getVersion',params:{},sessionId:'',timeoutMS:1000});
+  const variants=[{source:'instagram',operation:'source_retry',params:{}},{source:'x',operation:'source_retry',params:{}},{source:'instagram',operation:'source_check',params:{}},{source:'instagram',operation:'source_retry',params:{extra:true}},{source:'instagram',operation:'source_retry',params:[]},{source:'instagram',operation:'source_retry',params:{},extra:true}];
+  variants.forEach((q,i)=>f.send({id:34+i,op:'main_source',...q}));await tick();
+  variants.forEach((q,i)=>assert.equal(f.replies.find(r=>r.id===34+i).error.code,i===0?'main_ig_retry_not_dispatched':'main_transport_rejected'));
+  assert.equal(dispatches,0);
+  for(let id=1;id<=32;id++)f.rawIn.write(JSON.stringify({id,result:{product:'Chrome/synthetic'}})+'\0');await tick();
 });
 
 test('source wire preserves every finite IG HTTP identity reason for each role',async t=>{

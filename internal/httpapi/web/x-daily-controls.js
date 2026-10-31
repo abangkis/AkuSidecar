@@ -33,6 +33,7 @@ function normalizeStatus(value) {
   if (typeof cleanup !== "string" || !VALID_CLEANUP.has(cleanup)) return null;
   if (status.rememberedPermission !== undefined && typeof status.rememberedPermission !== "boolean") return null;
   if (status.maintenanceHeld !== undefined && typeof status.maintenanceHeld !== "boolean") return null;
+  if (status.manualRetryAvailable !== undefined && typeof status.manualRetryAvailable !== "boolean") return null;
   return {
     selectedMode: status.selectedMode,
     authorizationPolicy: status.authorizationPolicy,
@@ -43,6 +44,7 @@ function normalizeStatus(value) {
     cleanup,
     rememberedPermission: status.rememberedPermission === true,
     maintenanceHeld: status.maintenanceHeld === true,
+    manualRetryAvailable: status.manualRetryAvailable === true,
   };
 }
 
@@ -221,6 +223,7 @@ export function createDailySourceControls({
   statusField = "xCapture",
   startPath = X_DAILY_START,
   stopPath = X_DAILY_STOP,
+  retryPath = "",
   startConsent = START_CONSENT,
   deriveView = xDailyView,
   deriveNotice = xDailyCaptureNotice,
@@ -277,14 +280,16 @@ export function createDailySourceControls({
       latestStatus.state !== "disabled" || !["process-consent-required", "profile-consent-required", "maintenance-confirmation-required"].includes(latestStatus.reason) ||
       latestStatus.derivationAuthorized !== false || latestStatus.cleanup === "pending" ||
       latestStatus.cleanup === "uncertain" || needsRefresh);
-    setDisabled(startButton, !view.startEnabled);
+    setDisabled(startButton, !view.startEnabled && !view.retryEnabled);
     setSettingsText(startButton, copy(view.startLabel ?? "Start X"));
     setDisabled(stopButton, !view.stopEnabled);
     const displayedStatus = busy
-      ? (busyAction === "stop" ? "Stopping" : "Starting")
+      ? (busyAction === "stop" ? "Stopping" : busyAction === "retry" ? "Retrying" : "Starting")
       : (needsRefresh && latestStatus ? "Status unavailable" : view.statusText);
     const displayedDetail = busy
-      ? "Daily X is starting or stopping. Wait for a confirmed status before taking another action."
+      ? (busyAction === "retry"
+        ? "Daily X manual retry was requested. Wait for a confirmed status before taking another action."
+        : "Daily X is starting or stopping. Wait for a confirmed status before taking another action.")
       : (needsRefresh && latestStatus
         ? "The latest Daily X status could not be confirmed. Stop remains available if permission was previously active; starting is disabled."
         : view.detailText);
@@ -388,7 +393,8 @@ export function createDailySourceControls({
     if (destroyed || busy) return;
     const context = syncContext();
     const view = deriveView(latestStatus, context, consent?.checked === true, busy, needsRefresh);
-    if (!context.development || !context.epoch || (kind === "start" ? !view.startEnabled : !view.stopEnabled)) return;
+    const enabled = kind === "stop" ? view.stopEnabled : kind === "retry" ? view.retryEnabled : view.startEnabled;
+    if (!context.development || !context.epoch || !enabled || kind === "retry" && !retryPath) return;
 
     const epoch = context.epoch;
     const token = ++operationId;
@@ -397,15 +403,16 @@ export function createDailySourceControls({
     busyAction = kind;
     needsRefresh = true;
     setChecked(consent, false);
-    showFeedback(kind === "start" ? "Starting daily X…" : "Stopping daily X…");
+    showFeedback(kind === "stop" ? "Stopping daily X…" : kind === "retry" ? "Retrying daily X…" : "Starting daily X…");
     render();
 
     let result = null;
     let failed = false;
     try {
-      result = await api(kind === "start" ? startPath : stopPath, {
+      const path = kind === "start" ? startPath : kind === "retry" ? retryPath : stopPath;
+      result = await api(path, {
         method: "POST",
-        body: kind === "start" ? { ...startConsent } : {},
+        body: kind === "start" || kind === "retry" ? { ...startConsent } : {},
         instanceEpoch: epoch,
       });
     } catch {
@@ -428,6 +435,8 @@ export function createDailySourceControls({
           : "Daily X stopped. Restart AkuSidecar before requesting permission again.");
       } else if (kind === "start") {
         showFeedback(latestStatus.state === "capturing" ? "Daily X is capturing." : "Daily X is ready.");
+      } else if (kind === "retry") {
+        showFeedback("Daily X retry was accepted. Check the current capture status.");
       } else {
         showFeedback("Daily X status updated.");
       }
@@ -443,7 +452,9 @@ export function createDailySourceControls({
   const onConsentChange = () => render();
   const onStartClick = (event) => {
     event?.preventDefault?.();
-    void mutate("start");
+    const context = syncContext();
+    const view = deriveView(latestStatus, context, consent?.checked === true, busy, needsRefresh);
+    void mutate(view.retryEnabled ? "retry" : "start");
   };
   const onStopClick = (event) => {
     event?.preventDefault?.();

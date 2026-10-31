@@ -352,6 +352,15 @@ func (c *mainBrowserClient) read(input io.Reader) {
 		if !r.OK {
 			reply.Result = nil
 			reply.Code = r.Error.Code
+			if reply.Code == "main_ig_retry_not_dispatched" {
+				var envelope struct {
+					Error json.RawMessage `json:"error"`
+				}
+				if json.Unmarshal(scan.Bytes(), &envelope) != nil || !mainIGRetryNoDispatchError(envelope.Error) {
+					reply.Code = "main_transport_rejected"
+					r.Error.Diagnostic = nil
+				}
+			}
 			if reply.Code == "" || len(reply.Code) > 1024 {
 				reply.Code = "main_transport_rejected"
 			}
@@ -423,6 +432,29 @@ func mainBrowserProgressFrame(raw []byte) (id int64, progress []byte, found, val
 		return 0, nil, true, false
 	}
 	return id, append([]byte(nil), progress...), true, true
+}
+
+// Only this exact private error can prove that an IG retry did not reach its
+// owner. Ordinary errors retain their existing diagnostic format.
+func mainIGRetryNoDispatchError(raw []byte) bool {
+	d := json.NewDecoder(bytes.NewReader(raw))
+	token, err := d.Token()
+	if err != nil || token != json.Delim('{') || !d.More() {
+		return false
+	}
+	key, err := d.Token()
+	if err != nil || key != "code" {
+		return false
+	}
+	var code string
+	if d.Decode(&code) != nil || code != "main_ig_retry_not_dispatched" || d.More() {
+		return false
+	}
+	if token, err = d.Token(); err != nil || token != json.Delim('}') {
+		return false
+	}
+	_, err = d.Token()
+	return err == io.EOF
 }
 
 func mainBrowserTerminalFrame(raw []byte) bool {

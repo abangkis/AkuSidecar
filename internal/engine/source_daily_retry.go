@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/collection/headless"
+	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
 const dailyRetryLimit = 2
@@ -55,6 +56,9 @@ func (d dailyController) finishRetryPolicy(cause error, phase string, cleanupFai
 	if cause == nil && !cleanupFailed {
 		d.state.retryCount = 0
 		d.state.retryAt = time.Time{}
+		if d.source == domain.SourceInstagram {
+			d.state.manualRetryCount = 0
+		}
 		return
 	}
 	allowedPhase := phase == "startup" || phase == "capture"

@@ -41,6 +41,7 @@ export async function createInstagramDailyOwner(params, transport, {loadAssets, 
   const descriptor = Object.freeze({source: 'instagram', recipe: INSTAGRAM_NATIVE_RECIPE.recipe, readerOwnerID: String(params.readerPID), readerProfileID: params.readerProfile});
   let initialized = false, closed = false, generation = 0, batch, terminal = false, busy = false, previousAccount, lastBatchCleanup, closing;
   let recoverable = false, retryCount = 0;
+  let manualRetry, manualRetryCount = 0;
   const check = () => { if (!initialized || closed || terminal || !transport.alive()) throw nativeSourceFailure('lifetime', 'owner'); };
   const disposeCookies = result => { if (result) eraseInstagramCookies(result.cookies); };
   async function evidence(role, nonce) {
@@ -92,7 +93,9 @@ export async function createInstagramDailyOwner(params, transport, {loadAssets, 
   }
   async function end() {
     if (!batch) return lastBatchCleanup ?? {closed: true, cleanup: 'verified', source: 'instagram'};
-    const receipt = await batch.attempt.close();
+    const current = batch;
+    const receipt = await current.attempt.close();
+    if (manualRetry?.attempt === current.attempt) manualRetry.ended = receipt.closed && receipt.cleanup === 'verified';
     if (!receipt.closed) terminal = true;
     else if (recoverable && retryCount <= SOURCE_RETRY_LIMIT && !closed && transport.alive()) terminal = false;
     recoverable = false;
@@ -114,9 +117,19 @@ export async function createInstagramDailyOwner(params, transport, {loadAssets, 
     if (operation === 'source_end') {
       exact(values, keys);
       if (!batch || keys.some(key => values[key] !== batch.attempt.binding[key])) throw nativeSourceFailure('admission', 'binding');
+      if (busy) { batch.canceled = true; manualRetry = undefined; }
       return {closed: (await end()).closed};
     }
     if (busy) throw nativeSourceFailure('admission', 'busy');
+    if (operation === 'source_retry') {
+      exact(values, []);
+      if (!initialized || closed || !terminal || batch || !transport.alive() || !manualRetry?.ended ||
+          manualRetryCount >= SOURCE_RETRY_LIMIT || lastBatchCleanup?.closed !== true || lastBatchCleanup.cleanup !== 'verified') {
+        throw nativeSourceFailure('admission', 'retry');
+      }
+      manualRetry = undefined; manualRetryCount++; terminal = false;
+      return {rearmed: true, retryCount: manualRetryCount, retryLimit: SOURCE_RETRY_LIMIT, descriptor};
+    }
     busy = true;
     try {
       if (operation === 'source_initialize') {
@@ -130,6 +143,7 @@ export async function createInstagramDailyOwner(params, transport, {loadAssets, 
         exact(values, [...keys, 'collectorProfile', 'deadlineMS']);
         if (batch || values.generation !== generation + 1 || !separateProfiles(params.readerProfile, values.collectorProfile)) throw nativeSourceFailure('admission', 'batch');
         const attempt = createNativeSourceAttempt({source: 'instagram', ...values, now});
+        manualRetry = undefined;
         lastBatchCleanup = undefined;
         batch = {attempt, profile: values.collectorProfile, state: 'starting', pages: new Set()}; generation = values.generation;
         // No session read or cookie import occurs until the Go process owner
@@ -196,10 +210,16 @@ export async function createInstagramDailyOwner(params, transport, {loadAssets, 
         if (ms < 1000) throw nativeSourceFailure('capture', 'deadline');
         const result = await current.attempt.run('capture', () => runCapture(browser, {instagram: assets}, 'instagram', {...values.payload, captureTimeoutMs: ms}));
         if (result?.source !== 'instagram' || Buffer.byteLength(JSON.stringify(result), 'utf8') > 512 * 1024) throw nativeSourceFailure('capture', 'observation');
-        await pair(); retryCount = 0; return result;
+        await pair(); retryCount = 0; manualRetryCount = 0; return result;
       }
       throw nativeSourceFailure('admission', 'operation');
     } catch (error) {
+      // Only a privately branded operational cause from this batch can grant a
+      // manual retry. Control params and serialized trace/diagnostic data never
+      // supply authority. Matching source_end must independently verify cleanup.
+      const diagnostic = nativeSourceDiagnostic(error);
+      manualRetry = batch && !batch.canceled && !terminal && !closed && diagnostic?.stage === 'evidence' && diagnostic.reason === 'document_changed'
+        ? {attempt: batch.attempt, ended: false} : undefined;
       recoverable = !terminal && sourceTransientClass(error) !== '';
       if (recoverable) retryCount++;
       terminal = true;

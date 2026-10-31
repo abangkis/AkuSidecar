@@ -43,7 +43,10 @@ function fixture(options = {}) {
       if (method === 'Target.closeTarget') { if (!options.keepTarget) targets.delete(values.targetId); return {success: true}; }
       if (method === 'Target.getTargets') return {targetInfos: [...targets].map(targetId => ({targetId}))};
       if (method === 'Network.setCacheDisabled' && options.failCache) throw new Error('PRIVATE response body must not escape');
-      if (method === 'Network.getCookies') return {cookies: structuredClone(readerCookies)};
+      if (method === 'Network.getCookies') {
+        if (options.documentChangedAfterCookies) readerBootstrap.emit('Runtime.executionContextsCleared', {});
+        return {cookies: structuredClone(readerCookies)};
+      }
       if (method === 'IO.read' && options.bodyFailure === 'reader') throw new Error('synthetic reader body failure');
       return readerBootstrap.raw.call(method,values,'owned-session',1000);
     },
@@ -161,6 +164,128 @@ test('IG retries use a fresh collector and proof after verified cleanup, then st
   }
   assert.equal(f.seedCount,3);assert.equal(f.targets.size,0);
   await assert.rejects(f.owner.execute('source_begin',{...binding,generation:4,collectorProfile:resolve('offline/collector-4'),deadlineMS:Date.now()+60000}));
+  await f.owner.close();
+});
+
+test('explicit IG document recovery requires matching end, rearms once and is bounded independently', async () => {
+  const f = await start({runCapture: async () => { throw nativeSourceFailure('evidence', 'document_changed'); }});
+  await assert.rejects(f.owner.execute('source_retry', {}));
+  let accountKey;
+  for (let generation = 1; generation <= 3; generation++) {
+    const q = {...binding, generation, nonce: generation.toString().repeat(48)};
+    if (generation === 1) q.nonce = nonce;
+    else await f.owner.execute('source_begin', {...q, collectorProfile: resolve('offline/manual-collector-' + generation), deadlineMS: Date.now() + 60000});
+    const proof = await f.owner.execute('source_seed', q);
+    accountKey ??= proof.reader.accountKey;
+    assert.equal(proof.reader.accountKey, accountKey);
+    assert.equal(proof.reader.generation, generation);
+    assert.equal(proof.reader.nonce, q.nonce);
+    await assert.rejects(f.owner.execute('source_capture', {...q, payload: {}}), error => {
+      assert.deepEqual(nativeSourceDiagnostic(error), {stage: 'evidence', reason: 'document_changed', cleanup: 'verified'}); return true;
+    });
+    await assert.rejects(f.owner.execute('source_retry', {}));
+    await assert.rejects(f.owner.execute('source_end', {...q, generation: generation + 1}));
+    assert.deepEqual(await f.owner.execute('source_end', q), {closed: true});
+    // Invalid control input supplies no recovery authority and consumes no retry.
+    await assert.rejects(f.owner.execute('source_retry', {diagnostic: {stage: 'evidence', reason: 'document_changed', cleanup: 'verified'}}));
+    if (generation === 3) await assert.rejects(f.owner.execute('source_retry', {}));
+    else {
+      const callsBefore=f.calls.length;
+      const receipt=await f.owner.execute('source_retry', {});
+      assert.equal(f.calls.length,callsBefore,'rearm must issue no CDP calls');
+      assert.equal(Object.isFrozen(receipt.descriptor),true);
+      assert.equal(receipt.descriptor,await f.owner.execute('source_check',{}));
+      assert.deepEqual(receipt, {rearmed: true, retryCount: generation, retryLimit: 2, descriptor: {source: 'instagram', recipe: INSTAGRAM_NATIVE_RECIPE.recipe, readerOwnerID: String(params.readerPID), readerProfileID: params.readerProfile}});
+      await assert.rejects(f.owner.execute('source_retry', {}));
+    }
+  }
+  assert.equal(f.seedCount, 3); assert.equal(f.targets.size, 0); assert.equal(f.pins.size, 0);
+  await f.owner.close();
+});
+
+test('actual post-acquisition document invalidation rearms only after explicit verified end', async () => {
+  const options = {documentChangedAfterCookies: true};
+  const f = await start(options);
+  await assert.rejects(f.owner.execute('source_seed', binding), error => {
+    assert.deepEqual(nativeSourceDiagnostic(error), {stage: 'evidence', reason: 'document_changed', cleanup: 'verified'}); return true;
+  });
+  assert.equal(f.seedCount, 0);
+  await assert.rejects(f.owner.execute('source_retry', {}));
+  assert.deepEqual(await f.owner.execute('source_end', binding), {closed: true});
+  assert.deepEqual(await f.owner.execute('source_retry', {}), {rearmed: true, retryCount: 1, retryLimit: 2, descriptor: {source: 'instagram', recipe: INSTAGRAM_NATIVE_RECIPE.recipe, readerOwnerID: String(params.readerPID), readerProfileID: params.readerProfile}});
+  options.documentChangedAfterCookies = false;
+  const q = {...binding, generation: 2, nonce: 'b'.repeat(48)};
+  await f.owner.execute('source_begin', {...q, collectorProfile: resolve('offline/document-retry'), deadlineMS: Date.now() + 60000});
+  await f.owner.execute('source_seed', q);
+  await f.owner.execute('source_capture', {...q, payload: {}});
+  assert.deepEqual(await f.owner.execute('source_end', q), {closed: true});
+  assert.equal(f.seedCount, 1); assert.equal(f.targets.size, 0);
+  await f.owner.close();
+});
+
+for (const [name, failure] of [
+  ['unbranded diagnostic JSON', () => Object.assign(new Error('document_changed'), {diagnostic: {stage: 'evidence', reason: 'document_changed', cleanup: 'verified'}})],
+  ['bootstrap document alias', () => nativeSourceFailure('evidence', 'reader_bootstrap_document_changed')],
+  ['account mismatch', () => nativeSourceFailure('evidence', 'account_mismatch')],
+  ['challenge', () => nativeSourceFailure('evidence', 'reader_bootstrap_challenge')],
+  ['unknown cause', () => new Error('PRIVATE')],
+  ['cancellation', () => nativeSourceFailure('capture', 'canceled')],
+  ['wrong stage', () => nativeSourceFailure('capture', 'document_changed')],
+]) test('manual IG recovery rejects ' + name, async () => {
+  const f = await start({runCapture: async () => { throw failure(); }});
+  await f.owner.execute('source_seed', binding);
+  await assert.rejects(f.owner.execute('source_capture', {...binding, payload: {}}));
+  assert.deepEqual(await f.owner.execute('source_end', binding), {closed: true});
+  await assert.rejects(f.owner.execute('source_retry', {}));
+  await f.owner.close();
+});
+
+test('document recovery rejects uncertain cleanup and closed or dead owners', async () => {
+  for (const state of ['uncertain', 'closed', 'transport']) {
+    const f = await start({pageCloseFailure: state === 'uncertain', runCapture: async () => { throw nativeSourceFailure('evidence', 'document_changed'); }});
+    await f.owner.execute('source_seed', binding);
+    await assert.rejects(f.owner.execute('source_capture', {...binding, payload: {}}));
+    assert.deepEqual(await f.owner.execute('source_end', binding), {closed: state !== 'uncertain'});
+    if (state === 'closed') await f.owner.close();
+    if (state === 'transport') f.transport.alive = () => false;
+    await assert.rejects(f.owner.execute('source_retry', {}));
+    if (state === 'uncertain') await assert.rejects(f.owner.close());
+    else await f.owner.close();
+  }
+});
+
+test('manual recovery cannot rearm during capture or after cancellation and a late document cause', async () => {
+  let rejectCapture;
+  const f = await start({runCapture: async () => new Promise((_, reject) => { rejectCapture = reject; })});
+  await f.owner.execute('source_seed', binding);
+  const capture = f.owner.execute('source_capture', {...binding, payload: {}});
+  const rejected = assert.rejects(capture);
+  while (!rejectCapture) await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(f.owner.execute('source_retry', {}));
+  assert.deepEqual(await f.owner.execute('source_end', binding), {closed: true});
+  await rejected;
+  rejectCapture(nativeSourceFailure('evidence', 'document_changed'));
+  await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(f.owner.execute('source_retry', {}));
+  await f.owner.close();
+});
+
+test('only a successful capture resets the separate manual recovery count', async () => {
+  let fail = true;
+  const f = await start({runCapture: async () => {
+    if (fail) throw nativeSourceFailure('evidence', 'document_changed');
+    return {source: 'instagram', posts: []};
+  }});
+  for (let generation = 1; generation <= 3; generation++) {
+    const q = {...binding, generation, nonce: generation === 1 ? nonce : generation.toString().repeat(48)};
+    if (generation > 1) await f.owner.execute('source_begin', {...q, collectorProfile: resolve('offline/reset-collector-' + generation), deadlineMS: Date.now() + 60000});
+    await f.owner.execute('source_seed', q);
+    fail = generation !== 2;
+    if (fail) await assert.rejects(f.owner.execute('source_capture', {...q, payload: {}}));
+    else await f.owner.execute('source_capture', {...q, payload: {}});
+    await f.owner.execute('source_end', q);
+    if (fail) assert.deepEqual(await f.owner.execute('source_retry', {}), {rearmed: true, retryCount: 1, retryLimit: 2, descriptor: {source: 'instagram', recipe: INSTAGRAM_NATIVE_RECIPE.recipe, readerOwnerID: String(params.readerPID), readerProfileID: params.readerProfile}});
+  }
   await f.owner.close();
 });
 

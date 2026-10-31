@@ -3,9 +3,18 @@ import {createDailySourceControls, xDailyView, xDailyCaptureNotice} from "./x-da
 export function instagramTrialView(value, context, consent, busy, needsRefresh) {
   const view = xDailyView(value, context, consent, busy, needsRefresh);
   view.visible = view.visible && value?.authorizationPolicy === "profile";
-  view.startEnabled = view.visible && view.startEnabled;
+  const retryEnabled = view.visible && !busy && !needsRefresh && consent === true &&
+    value?.manualRetryAvailable === true && value?.cleanup === "verified" &&
+    value?.rememberedPermission === true && value?.state === "stopped" &&
+    value?.reason === "batch-failed" && value?.derivationAuthorized === false;
+  view.startEnabled = view.visible && view.startEnabled && !retryEnabled;
   view.stopEnabled = view.visible && view.stopEnabled;
-  view.detailText = value?.maintenanceHeld && value?.reason === "maintenance-confirmation-required"
+  view.retryEnabled = retryEnabled;
+  view.startLabel = retryEnabled ? "Retry X" : view.startLabel;
+  if (retryEnabled) view.statusText = "Failed — retry available";
+  view.detailText = retryEnabled
+    ? "The last experimental IG batch failed and cleanup is verified. Press Retry IG to re-enable IG; a later manual or scheduled update will verify the account and session again."
+    : value?.maintenanceHeld && value?.reason === "maintenance-confirmation-required"
     ? "Native IG capture is held for this activation. Saved permission and Auto Update are unchanged. Press Resume IG to permit fresh account/session verification and future batches using this experimental recipe."
     : value?.state === "retry-wait" && value?.cleanup === "verified"
     ? "Experimental IG capture is waiting after a temporary failure. Cleanup is verified; a limited retry can run on the next update after a cooldown, with fresh account/session verification. Saved permission is unchanged."
@@ -23,10 +32,21 @@ export function createInstagramTrialControls(options) {
   return createDailySourceControls({...options,
     sourceLabel: "IG", statusField: "instagramCapture",
     startPath: "/api/development/instagram-trial/start", stopPath: "/api/development/instagram-trial/stop",
+    retryPath: "/api/development/instagram-trial/retry",
     startConsent: {acknowledgeLimitations: true, allowProcessSessionDerivation: true, acknowledgeUnqualifiedRecipe: true},
     deriveView: instagramTrialView,
     deriveNotice: (value, context, sources, stale) => {
       const notice = xDailyCaptureNotice(value, context, sources?.includes("instagram") ? ["x"] : [], stale);
+      if (!stale && sources?.includes("instagram") && value?.manualRetryAvailable === true &&
+          value?.cleanup === "verified" && value?.rememberedPermission === true &&
+          value?.state === "stopped" && value?.reason === "batch-failed" &&
+          value?.authorizationPolicy === "profile" && value?.derivationAuthorized === false) {
+        return {
+          visible: true,
+          title: "IG capture failed; manual retry is available",
+          detail: "Cleanup is verified. Retry IG in Settings to re-enable it; a later manual or scheduled update will verify the account and session again.",
+        };
+      }
       return {...notice, title: notice.title.replace(/\bX\b/g, "IG"), detail: notice.detail.replace(/\bX\b/g, "IG")};
     },
   });

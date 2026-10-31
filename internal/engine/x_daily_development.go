@@ -47,6 +47,10 @@ type sourceDailyRouting struct {
 	retryCount                 int
 	retryAt                    time.Time
 	retryWaiting               bool
+	manualRetryEligible        bool
+	manualRetryInProgress      bool
+	manualRetryCanceled        bool
+	manualRetryCount           int
 }
 
 // XDailySelection owns only the restart-required routing selection. Step two
@@ -68,6 +72,7 @@ type XCaptureStatus struct {
 	RememberedPermission         bool                     `json:"rememberedPermission"`
 	MaxBatchMS                   int                      `json:"maxBatchMs,omitempty"`
 	DerivationAuthorized         bool                     `json:"derivationAuthorized"`
+	ManualRetryAvailable         bool                     `json:"manualRetryAvailable,omitempty"`
 	FailurePhase                 string                   `json:"failurePhase,omitempty"`
 	FailureCode                  string                   `json:"failureCode,omitempty"`
 	RetryCount                   int                      `json:"retryCount,omitempty"`
@@ -158,6 +163,7 @@ func (d dailyController) status() XCaptureStatus {
 	d.state.mu.RLock()
 	defer d.state.mu.RUnlock()
 	status.RememberedPermission = d.state.rememberedPermission
+	status.ManualRetryAvailable = d.manualRetryAvailableLocked()
 	status.MaintenanceHeld = d.maintenanceHeld()
 	status.RetryCount, status.RetryLimit = d.state.retryCount, dailyRetryLimit
 	if !d.state.retryAt.IsZero() {
@@ -202,6 +208,9 @@ func (d dailyController) status() XCaptureStatus {
 				status.State, status.Reason = "retry-wait", "transient-batch-failure"
 			}
 		}
+	}
+	if d.state.manualRetryInProgress {
+		status.State, status.Reason, status.DerivationAuthorized = "starting", "manual-retry-pending", false
 	}
 	if d.state.owner == nil && d.state.reason != "" {
 		status.State, status.Reason = "disabled", d.state.reason

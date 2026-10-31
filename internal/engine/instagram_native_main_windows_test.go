@@ -5,9 +5,11 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/abangkis/AkuSidecar/internal/appshell"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
@@ -15,6 +17,65 @@ import (
 type nativeMainOfflineProtocol struct {
 	raw []byte
 	err error
+}
+
+func TestInstagramNativeRetryReceiptValidation(t *testing.T) {
+	const valid = `{"rearmed":true,"retryCount":1,"retryLimit":2,"descriptor":{"source":"instagram","recipe":"instagram-native-v1","readerOwnerID":"123","readerProfileID":"fixture-profile"}}`
+	tests := map[string]string{
+		"valid":              valid,
+		"missing descriptor": `{"rearmed":true,"retryCount":1,"retryLimit":2}`,
+		"wrong source":       strings.Replace(valid, `"source":"instagram"`, `"source":"x"`, 1),
+		"wrong owner":        strings.Replace(valid, `"readerOwnerID":"123"`, `"readerOwnerID":"124"`, 1),
+		"wrong profile":      strings.Replace(valid, `"fixture-profile"`, `"other-profile"`, 1),
+		"wrong recipe":       strings.Replace(valid, `instagram-native-v1`, `other`, 1),
+		"wrong count":        strings.Replace(valid, `"retryCount":1`, `"retryCount":3`, 1),
+		"wrong limit":        strings.Replace(valid, `"retryLimit":2`, `"retryLimit":3`, 1),
+		"duplicate":          strings.Replace(valid, `"rearmed":true`, `"rearmed":true,"rearmed":true`, 1),
+		"extra field":        strings.Replace(valid, `"rearmed":true`, `"rearmed":true,"extra":1`, 1),
+		"null":               `null`,
+	}
+	for name, raw := range tests {
+		t.Run(name, func(t *testing.T) {
+			transport := &instagramMainNativeTransport{protocol: nativeMainOfflineProtocol{raw: []byte(raw)}}
+			transport.reader.chrome.PID = 123
+			transport.reader.profile = "fixture-profile"
+			var reply instagramRetryReceipt
+			err := transport.call(context.Background(), "source_retry", nil, &reply)
+			if err == nil {
+				err = transport.validateRetryReceipt(reply, 1)
+			}
+			if (err == nil) != (name == "valid") {
+				t.Fatalf("receipt validation: %v", err)
+			}
+		})
+	}
+}
+
+func TestInstagramNativeRetryNoDispatchClassification(t *testing.T) {
+	ctx := context.Background()
+	for _, test := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"typed", &appshell.MainBrowserError{Code: "main_ig_retry_not_dispatched"}, true},
+		{"generic", &appshell.MainBrowserError{Code: "main_transport_rejected"}, false},
+		{"text", errors.New("main_ig_retry_not_dispatched"), false},
+		{"disconnect", errors.New("disconnected"), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			transport := &instagramMainNativeTransport{protocol: nativeMainOfflineProtocol{err: test.err}}
+			err := transport.call(ctx, "source_retry", nil, nil)
+			if instagramRetryDefinitelyNotDispatched(ctx, err) != test.want {
+				t.Fatalf("classification: %v", err)
+			}
+			canceled, cancel := context.WithCancel(ctx)
+			cancel()
+			if instagramRetryDefinitelyNotDispatched(canceled, err) {
+				t.Fatal("canceled context restored retry authority")
+			}
+		})
+	}
 }
 
 func (p nativeMainOfflineProtocol) CallSource(context.Context, string, string, map[string]any) (json.RawMessage, error) {

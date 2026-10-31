@@ -1,6 +1,6 @@
 const failures=new WeakMap();
 const operations=new Set(['source_initialize','source_check','source_begin','source_seed','source_proof',
-  'source_capture','source_end','source_close']);
+  'source_capture','source_end','source_close','source_retry']);
 const record=value=>value&&[Object.prototype,null].includes(Object.getPrototypeOf(value));
 const reject=reason=>{const error=new Error('native_source_control_rejected');failures.set(error,reason);return error;};
 
@@ -37,6 +37,7 @@ export function createSourceOwnerRegistry(factories={}){
       return{bound:true};
     }
     if(!operations.has(operation))throw reject('source_operation');
+    if(operation==='source_retry'&&(source!=='instagram'||Reflect.ownKeys(params).length!==0))throw reject('source_operation');
     const slot=slots.get(source);
     if(!slot||slot.closing)throw reject('source_unavailable');
     if(operation==='source_close'){

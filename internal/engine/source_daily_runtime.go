@@ -193,7 +193,7 @@ func (d dailyController) install(parent context.Context, owner sourceDailyOwner)
 func (d dailyController) ready() bool {
 	d.state.mu.RLock()
 	defer d.state.mu.RUnlock()
-	return d.configured() && !d.maintenanceHeld() && d.state.owner != nil && d.state.authorized && !d.state.closed && d.state.parent != nil && d.state.parent.Err() == nil
+	return d.configured() && !d.maintenanceHeld() && d.state.owner != nil && d.state.authorized && !d.state.closed && !d.state.manualRetryInProgress && d.state.parent != nil && d.state.parent.Err() == nil
 }
 
 func (d dailyController) prepareReader(ctx context.Context, req readerbroker.Request, marker string) (readerbroker.NativePostPreparation, error) {
@@ -220,7 +220,7 @@ func (d dailyController) queue(run domain.Run, payload map[string]any) error {
 		d.state.mu.Unlock()
 		return nil
 	}
-	if !d.state.authorized || d.state.closed || d.state.owner == nil || d.state.done != nil || d.state.generation == ^uint64(0) || d.maintenanceHeld() {
+	if !d.state.authorized || d.state.closed || d.state.manualRetryInProgress || d.state.owner == nil || d.state.done != nil || d.state.generation == ^uint64(0) || d.maintenanceHeld() {
 		d.state.mu.Unlock()
 		return d.failure("batch unavailable")
 	}
@@ -262,6 +262,7 @@ func (d dailyController) queue(run domain.Run, payload map[string]any) error {
 			// Freeze the operational cause before cancellation or cleanup can
 			// produce a secondary failure. Diagnostics never grant authority.
 			d.rememberFailure(cause, phase)
+			wasCanceled := work.Err() != nil
 			cancel()
 			cleanup, stop := context.WithTimeout(context.Background(), 30*time.Second)
 			cleanupFailed := false
@@ -287,11 +288,17 @@ func (d dailyController) queue(run domain.Run, payload map[string]any) error {
 			if recovered, ok := batch.(dailyRetryCleanup); ok && !cleanupFailed {
 				retryReady = recovered.dailyRetryReady()
 			}
+			manualReady := false
+			if recovered, ok := batch.(dailyManualRetryBatch); ok && !cleanupFailed && !wasCanceled {
+				manualReady = recovered.manualRetryReady()
+			}
 			d.state.mu.Lock()
 			if cleanupFailed {
 				d.state.cleanupUncertain = true
 			}
 			d.finishRetryPolicy(cause, phase, cleanupFailed, retryReady)
+			d.state.manualRetryEligible = d.source == domain.SourceInstagram && manualReady &&
+				d.state.reason == "batch-failed" && (phase == "startup" || phase == "capture")
 			d.state.retryWaiting = false
 			// Generation and done identity prevent a late completion retiring a successor.
 			if d.state.generation == generation && d.state.done == done {
@@ -385,6 +392,9 @@ func (d dailyController) queue(run domain.Run, payload map[string]any) error {
 func (d dailyController) stop(ctx context.Context) error {
 	d.state.mu.Lock()
 	d.state.authorized = false
+	if d.state.manualRetryInProgress {
+		d.state.manualRetryCanceled = true
+	}
 	if d.state.reason == "" {
 		d.state.reason = "opted-out"
 	}

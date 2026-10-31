@@ -22,7 +22,7 @@ func TestInstagramTrialRoutesRemainDevelopmentAndEpochBound(t *testing.T) {
 		s, _ := splitTestServer(t)
 		s.config.Dev = true
 		s.config.Capture.InstagramTrial = trial
-		for _, action := range []string{"start", "stop"} {
+		for _, action := range []string{"start", "retry", "stop"} {
 			r := httptest.NewRequest("POST", "http://127.0.0.1:11122/api/development/instagram-trial/"+action, strings.NewReader(`{}`))
 			r.Header.Set("Content-Type", "application/json")
 			r.Header.Set("Origin", "http://127.0.0.1:11122")
@@ -43,5 +43,40 @@ func TestInstagramTrialRoutesRemainDevelopmentAndEpochBound(t *testing.T) {
 		if json.Unmarshal(w.Body.Bytes(), &reply) != nil || reply["instagramCapture"] == nil {
 			t.Fatal("IG runtime status missing")
 		}
+	}
+}
+
+func TestInstagramTrialRetryRequiresExactConsentAndFailsClosed(t *testing.T) {
+	s, _ := splitTestServer(t)
+	s.config.Dev = true
+	s.config.Capture.InstagramTrial = true
+	valid := `{"acknowledgeLimitations":true,"allowProcessSessionDerivation":true,"acknowledgeUnqualifiedRecipe":true}`
+	for _, tc := range []struct {
+		name, body, origin string
+		code               int
+	}{
+		{"missing consent", `{}`, "", http.StatusBadRequest},
+		{"unknown field", `{"acknowledgeLimitations":true,"allowProcessSessionDerivation":true,"acknowledgeUnqualifiedRecipe":true,"force":true}`, "", http.StatusBadRequest},
+		{"duplicate field", `{"acknowledgeLimitations":true,"acknowledgeLimitations":true,"allowProcessSessionDerivation":true,"acknowledgeUnqualifiedRecipe":true}`, "", http.StatusBadRequest},
+		{"trailing value", valid + `{}`, "", http.StatusBadRequest},
+		{"foreign origin", valid, "https://example.com", http.StatusForbidden},
+		{"valid consent but unavailable engine", valid, "", http.StatusConflict},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:11122/api/development/instagram-trial/retry", strings.NewReader(tc.body))
+			r.Header.Set("Content-Type", "application/json")
+			r.Header.Set("X-Aku-Split-Epoch", s.engine.Epoch())
+			if tc.origin != "" {
+				r.Header.Set("Origin", tc.origin)
+			}
+			w := httptest.NewRecorder()
+			s.security(s.api()).ServeHTTP(w, r)
+			if w.Code != tc.code {
+				t.Fatalf("status=%d want=%d body=%s", w.Code, tc.code, w.Body.String())
+			}
+			if tc.name == "valid consent but unavailable engine" && !strings.Contains(w.Body.String(), `"error":"instagram_trial_retry_unavailable"`) {
+				t.Fatalf("retry failure was not returned as a generic fail-closed response: %s", w.Body.String())
+			}
+		})
 	}
 }

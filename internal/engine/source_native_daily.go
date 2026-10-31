@@ -71,15 +71,17 @@ type sourceNativeCollector interface {
 	Close(context.Context) error
 }
 type sourceNativeOwner struct {
-	engine          *Engine
-	source          domain.Source
-	recipe, profile string
-	transport       sourceNativeTransport
-	mu              sync.Mutex
-	generation      uint64
-	account         string
-	closed, failed  bool
-	batch           *sourceNativeBatch
+	engine                                     *Engine
+	source                                     domain.Source
+	recipe, profile                            string
+	transport                                  sourceNativeTransport
+	mu                                         sync.Mutex
+	generation                                 uint64
+	account                                    string
+	closed, failed                             bool
+	batch                                      *sourceNativeBatch
+	manualRetryEligible, manualRetryInProgress bool
+	manualRetryCount                           int
 }
 type sourceNativeBatch struct {
 	owner     *sourceNativeOwner
@@ -95,6 +97,7 @@ type sourceNativeBatch struct {
 	once      sync.Once
 	closeErr  error
 	failure   error
+	captured  bool
 }
 
 func (o *sourceNativeOwner) CheckReader(ctx context.Context) error {
@@ -242,6 +245,9 @@ func (b *sourceNativeBatch) Capture(ctx context.Context, command string) (result
 	if err != nil {
 		return run, sourceNativeFail(err, "capture", "unavailable")
 	}
+	b.mu.Lock()
+	b.captured = true
+	b.mu.Unlock()
 	return run, nil
 }
 func (b *sourceNativeBatch) Close(ctx context.Context) error {
@@ -263,6 +269,19 @@ func (b *sourceNativeBatch) Close(ctx context.Context) error {
 		} else if b.owner.batch == b {
 			b.owner.batch = nil
 			b.mu.Lock()
+			if b.captured {
+				b.owner.manualRetryCount = 0
+			}
+			var original *sourceNativeFailure
+			_, supported := b.owner.transport.(interface {
+				retryDocument(context.Context, int) error
+			})
+			if b.owner.source == domain.SourceInstagram && supported && !b.owner.closed &&
+				b.parent.Err() == nil && !errors.Is(b.failure, context.Canceled) &&
+				errors.As(b.failure, &original) && original.stage == "evidence" && original.reason == "document_changed" {
+				b.owner.failed = true
+				b.owner.manualRetryEligible = true
+			}
 			if dailyTransientClass(b.failure) != "" && !b.owner.closed {
 				b.owner.failed = false
 			}
@@ -271,6 +290,55 @@ func (b *sourceNativeBatch) Close(ctx context.Context) error {
 		b.owner.mu.Unlock()
 	})
 	return b.closeErr
+}
+
+func (b *sourceNativeBatch) manualRetryReady() bool {
+	b.owner.mu.Lock()
+	defer b.owner.mu.Unlock()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.closed && b.closeErr == nil && b.owner.batch == nil && b.owner.failed &&
+		!b.owner.closed && b.owner.manualRetryEligible && b.owner.manualRetryCount < dailyRetryLimit
+}
+
+// manualRetry never reuses the old proof. The private transport verifies its
+// own terminal cause, receipt, reader ownership and retry counter independently.
+func (o *sourceNativeOwner) manualRetry(ctx context.Context, count int) error {
+	if ctx == nil || ctx.Err() != nil {
+		return sourceNativeFail(nil, "admission", "canceled")
+	}
+	o.mu.Lock()
+	transport, supported := o.transport.(interface {
+		retryDocument(context.Context, int) error
+	})
+	if o.source != domain.SourceInstagram || !supported || o.closed || !o.failed || o.batch != nil ||
+		!o.manualRetryEligible || o.manualRetryInProgress || count != o.manualRetryCount+1 || count > dailyRetryLimit {
+		o.mu.Unlock()
+		return sourceNativeFail(nil, "admission", "unavailable")
+	}
+	o.manualRetryEligible = false
+	o.manualRetryInProgress = true
+	o.manualRetryCount = count
+	o.mu.Unlock()
+	err := transport.retryDocument(ctx, count)
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.manualRetryInProgress = false
+	if errors.Is(err, errInstagramRetryNotDispatched) {
+		if ctx.Err() == nil && !o.closed && o.batch == nil && o.failed &&
+			!o.manualRetryEligible && o.manualRetryCount == count {
+			o.manualRetryCount--
+			o.manualRetryEligible = true
+			return errInstagramRetryNotDispatched
+		}
+		// Do not propagate the rollback signal when owner state has changed.
+		return sourceNativeFail(nil, "ownership", "unavailable")
+	}
+	if err != nil || ctx.Err() != nil || o.closed || o.batch != nil {
+		return sourceNativeFail(err, "ownership", "unavailable")
+	}
+	o.failed = false
+	return nil
 }
 
 func (b *sourceNativeBatch) dailyRetryReady() bool {

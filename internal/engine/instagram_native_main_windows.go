@@ -190,22 +190,86 @@ func (t *instagramMainNativeTransport) call(ctx context.Context, op string, fiel
 	}
 	return nil
 }
-func (t *instagramMainNativeTransport) CheckReader(ctx context.Context) error {
+func (t *instagramMainNativeTransport) checkReaderOwnership(ctx context.Context) error {
 	t.mu.Lock()
 	closed := t.closed
 	t.mu.Unlock()
-	if closed || t.host.readerLease.Validate() != nil {
+	if ctx == nil || ctx.Err() != nil || closed || t.host.readerLease.Validate() != nil {
 		return errors.New("native Instagram reader ownership lost")
 	}
 	if _, err := (&xManualPilotWindowsBackend{roles: map[string]xManualPilotWindowsRole{"reader": t.reader}}).snapshot(ctx, "reader"); err != nil {
+		return err
+	}
+	return nil
+}
+func (t *instagramMainNativeTransport) validateReaderDescriptor(reply nativeMainDescriptor) error {
+	if reply.Source != domain.SourceInstagram || reply.Recipe != instagramNativeRecipe || reply.ReaderOwnerID != strconv.FormatUint(uint64(t.reader.chrome.PID), 10) || reply.ReaderProfileID != t.reader.profile {
+		return errors.New("native Instagram reader changed")
+	}
+	return nil
+}
+func (t *instagramMainNativeTransport) CheckReader(ctx context.Context) error {
+	if err := t.checkReaderOwnership(ctx); err != nil {
 		return err
 	}
 	var reply nativeMainDescriptor
 	if err := t.call(ctx, "source_check", nil, &reply); err != nil {
 		return err
 	}
-	if reply.Source != domain.SourceInstagram || reply.Recipe != instagramNativeRecipe || reply.ReaderOwnerID != strconv.FormatUint(uint64(t.reader.chrome.PID), 10) || reply.ReaderProfileID != t.reader.profile {
-		return errors.New("native Instagram reader changed")
+	return t.validateReaderDescriptor(reply)
+}
+
+type instagramRetryReceipt struct {
+	Rearmed    bool                 `json:"rearmed"`
+	RetryCount int                  `json:"retryCount"`
+	RetryLimit int                  `json:"retryLimit"`
+	Descriptor nativeMainDescriptor `json:"descriptor"`
+}
+
+func (t *instagramMainNativeTransport) validateRetryReceipt(reply instagramRetryReceipt, count int) error {
+	if !reply.Rearmed || reply.RetryCount < 1 || reply.RetryCount > dailyRetryLimit || reply.RetryLimit != dailyRetryLimit || count < 1 || count > dailyRetryLimit {
+		return errors.New("native Instagram retry receipt rejected")
+	}
+	return t.validateReaderDescriptor(reply.Descriptor)
+}
+
+func instagramRetryDefinitelyNotDispatched(ctx context.Context, err error) bool {
+	var response *appshell.MainBrowserError
+	return ctx != nil && ctx.Err() == nil && errors.As(err, &response) && response.Code == "main_ig_retry_not_dispatched"
+}
+
+// Retry only re-arms the existing source owner after independently checking
+// the borrowed reader. It does not replace or close the shared transport.
+func (t *instagramMainNativeTransport) retryDocument(ctx context.Context, count int) error {
+	t.mu.Lock()
+	available := !t.closed && t.batch == nil
+	t.mu.Unlock()
+	if ctx == nil || ctx.Err() != nil || !available {
+		return errors.New("native Instagram retry ownership unavailable")
+	}
+	if err := t.checkReaderOwnership(ctx); err != nil {
+		return err
+	}
+	var reply instagramRetryReceipt
+	if err := t.call(ctx, "source_retry", nil, &reply); err != nil {
+		if instagramRetryDefinitelyNotDispatched(ctx, err) {
+			return errInstagramRetryNotDispatched
+		}
+		return err
+	}
+	// Node can complete capture before the later Go/Store post-check finishes,
+	// so its consecutive-success counter can legitimately reset first. Each
+	// layer enforces its own bound; require a valid Node receipt, not equality.
+	if err := t.validateRetryReceipt(reply, count); err != nil {
+		return err
+	}
+	if err := t.checkReaderOwnership(ctx); err != nil {
+		return err
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.closed || t.batch != nil || ctx.Err() != nil {
+		return errors.New("native Instagram retry superseded")
 	}
 	return nil
 }

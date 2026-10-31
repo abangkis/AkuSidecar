@@ -30,6 +30,23 @@ verify account/session again. X exposes explicit private operational codes for
 branded capture transport timeouts/network errors, separate from diagnostic
 JSON. A peer rendezvous timeout or diagnostic text alone cannot authorize retry.
 
+Separately, an operator may explicitly re-arm the experimental IG source after
+a privately identified `evidence/document_changed` failure. The Go and Node
+owners independently require verified cleanup, the original failure and an
+available retry allowance; Go also requires Store reconciliation, the saved
+profile permission and a live reader. The retry action starts no batch. A later
+manual or scheduled update creates a fresh run, generation, collector and paired
+proofs. This is limited to two consecutive recoveries until successful capture
+and cleanup. Unknown failures, challenge, account mismatch, cancellation and
+uncertain cleanup cannot use this path; diagnostic text is never authority.
+The re-arm is local to the existing IG owner and can coexist with an X batch or
+public browser call. The Node receipt binds the existing reader identity; Go
+checks it and the reader lease before accepting recovery. A validated rejection
+known to occur before dispatch can restore the operator's allowance when the
+owner, permission and cancellation state remain unchanged. A lost or malformed
+receipt, disconnect, or other ambiguous failure consumes the allowance and stays
+fail-closed.
+
 The source status exposes `retry-wait`, `retryCount`, `retryLimit`, and `retryAt`.
 Settings and Timeline distinguish cooldown from a terminal failure requiring
 restart. The first cause remains fixed through each attempt's cleanup; a new

@@ -23,8 +23,16 @@ selected browser profile, including its Chrome subprofile, using the existing
 source-scoped permission Store. Restart restores the choice through a new owner;
 it never restores old account/session evidence. Each batch still requires fresh
 verification. Stop removes the saved IG grant and ends process permission.
-Restart is required before a consumed/failed trial can start again. X permission
-is independent. The earlier process-only trial policy is superseded.
+After a verified `evidence/document_changed` batch failure, the operator can use
+Retry IG without restarting the process. Retry requires the saved profile
+permission, verified batch cleanup and Store reconciliation, a live reader and
+transport, and an independently verified source-owner receipt. It re-arms IG
+only; a later manual or scheduled update creates a new batch and fresh proofs.
+At most two consecutive manual recoveries are allowed, reset by successful
+capture and cleanup. Other terminal failures, revoked permission, pending or
+uncertain cleanup and exhausted recovery remain unavailable in this process.
+X permission is independent. The earlier process-only trial policy is
+superseded.
 
 Only `sessionid`, `csrftoken` and `ds_user_id` can be derived to a temporary
 collector. Every batch retains the existing 60-second maximum, paired fresh
