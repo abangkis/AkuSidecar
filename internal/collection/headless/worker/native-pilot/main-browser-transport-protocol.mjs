@@ -8,7 +8,8 @@ import {SETTINGS_WAIT_STATES} from '../../../../../scripts/auth-session-fixture/
 import {createSourceOwnerRegistry,sourceOwnerRegistryFailure} from './source-owner-registry.mjs';
 import {nativeSourceDiagnostic} from './native-source-kernel.mjs';
 import {INSTAGRAM_HTTP_REJECTIONS} from './instagram-native-session.mjs';
-import {createMainDiagnosticScope} from './main-browser-diagnostic-scope.mjs';
+import {createMainDiagnosticScope,createMainInstagramOwnedScope} from './main-browser-diagnostic-scope.mjs';
+import {mainTransportLifecycle} from './main-transport-lifecycle.mjs';
 import {validateInstagramReaderDiagnostic} from './instagram-reader-diagnostic.mjs';
 import {createMainBootstrapDiagnosticScope} from './main-bootstrap-diagnostic-scope.mjs';
 import {validateInstagramBootstrapDiagnostic} from './instagram-self-bootstrap-probe.mjs';
@@ -80,45 +81,46 @@ export function mainOwnerFailure(reply){
 export function createMainCDP({input,output,onFailure=()=>{}}){
   let closed=false,bytes=Buffer.alloc(0),sequence=0;
   const pending=new Map(),listeners=new Set(),privateTargets=new Set(),privateSessions=new Set();
-  const close=()=>{if(closed)return;closed=true;bytes.fill(0);bytes=Buffer.alloc(0);
-    for(const p of pending.values()){clearTimeout(p.timer);p.reject(cdpCommandFailure('transport_closed'));}pending.clear();listeners.clear();input.destroy();output.destroy();onFailure();};
+  const close=(cause={reason:'explicit_close',domain:'cdp',method:'none',role:'unknown',stage:'shutdown'})=>{if(closed)return;closed=true;bytes.fill(0);bytes=Buffer.alloc(0);
+    for(const p of pending.values()){clearTimeout(p.timer);p.reject(cdpCommandFailure('transport_closed'));}pending.clear();listeners.clear();input.destroy();output.destroy();onFailure(mainTransportLifecycle(cause));};
+  const fail=(reason,stage='framing',method='none',role='unknown')=>close({reason,domain:'cdp',method,role,stage});
   input.on('data',chunk=>{
     if(closed)return;
-    if(bytes.length+chunk.length>16*1024*1024){close();return;}
+    if(bytes.length+chunk.length>16*1024*1024){fail('inbound_limit');return;}
     const previous=bytes;bytes=Buffer.concat([previous,chunk]);previous.fill(0);
     let end;
     while(!closed&&(end=bytes.indexOf(0))>=0){
       const frame=bytes.subarray(0,end);let q;
-      try{q=parse(frame);}catch{close();return;}
+      try{q=parse(frame);}catch{fail('invalid_frame');return;}
       const rest=Buffer.from(bytes.subarray(end+1));bytes.fill(0);bytes=rest;
-      if(!object(q)){close();return;}
+      if(!object(q)){fail('invalid_frame');return;}
       if(Object.hasOwn(q,'id')){
         const p=pending.get(q.id);if(!p)continue;pending.delete(q.id);clearTimeout(p.timer);
-        if((q.sessionId??'')!==p.sessionId){p.reject(cdpCommandFailure('reply_invalid'));close();return;}
+        if((q.sessionId??'')!==p.sessionId){p.reject(cdpCommandFailure('reply_invalid'));fail('reply_scope','command',p.method,p.role);return;}
         if(p.expired){if(!q.error&&object(q.result))Promise.resolve().then(()=>p.late(q.result)).catch(()=>{});}
         else if(q.error)p.reject(cdpCommandFailure('command_rejected'));
         else if(!object(q.result))p.reject(cdpCommandFailure('reply_invalid'));else p.resolve(q.result);
       }else if(typeof q.method==='string'){
-        for(const listener of listeners){try{listener(q);}catch{close();break;}}
-      }else{close();return;}
+        for(const listener of listeners){try{listener(q);}catch{fail('listener_failure');break;}}
+      }else{fail('invalid_frame');return;}
     }
   });
-  input.on('end',close);input.on('error',close);output.on('error',close);
-  function call(method,params={},sessionId='',timeoutMS=15000,local=false,late){
+  input.on('end',()=>fail('input_end','stream'));input.on('error',()=>fail('input_error','stream'));output.on('error',()=>fail('output_error','stream'));
+  function call(method,params={},sessionId='',timeoutMS=15000,local=false,late,role='ordinary'){
     if(closed)return Promise.reject(cdpCommandFailure('transport_closed'));
     if(pending.size>=32||!bounded(method,128)||!bounded(sessionId,512)||!Number.isInteger(timeoutMS)||timeoutMS<1||timeoutMS>60000)return Promise.reject(cdpCommandFailure('request_rejected'));
-    const id=++sequence;if(!Number.isSafeInteger(id)){close();return Promise.reject(cdpCommandFailure('request_rejected'));}
+    const id=++sequence;if(!Number.isSafeInteger(id)){fail('sequence_limit','command',method,role);return Promise.reject(cdpCommandFailure('request_rejected'));}
     const wire=Buffer.from(JSON.stringify({id,method,params,...(sessionId?{sessionId}:{})})+'\0');
     if(wire.length>8*1024*1024){wire.fill(0);return Promise.reject(cdpCommandFailure('request_rejected'));}
     return new Promise((resolve,reject)=>{
-      const entry={resolve,reject,sessionId,late,expired:false};
+      const entry={resolve,reject,sessionId,late,method,role,expired:false};
       entry.timer=setTimeout(()=>{
-        if(!local){close();return;}
+        if(!local){fail('command_timeout','command',method,role);return;}
         if(typeof late==='function')entry.expired=true;else pending.delete(id);
         reject(cdpCommandFailure('timeout',true));
       },timeoutMS);
       pending.set(id,entry);
-      try{output.write(wire,error=>{wire.fill(0);if(error)close();});}catch{wire.fill(0);close();}
+      try{output.write(wire,error=>{wire.fill(0);if(error)fail('output_error','command',method,role);});}catch{wire.fill(0);fail('output_error','command',method,role);}
     });
   }
   const diagnosticRaw={
@@ -128,7 +130,7 @@ export function createMainCDP({input,output,onFailure=()=>{}}){
     reserveSession(id){if(!bounded(id,512)||!id||privateSessions.size>=2048)throw rejected();privateSessions.add(id);},
     releaseTarget:id=>privateTargets.delete(id),releaseSession:id=>privateSessions.delete(id),
     subscribe(fn){if(closed||typeof fn!=='function'||listeners.size>=32)throw rejected();listeners.add(fn);return()=>listeners.delete(fn);},
-    call:(method,params,sessionId,timeoutMS,late)=>call(method,params,sessionId,timeoutMS,true,late),
+    call:(method,params,sessionId,timeoutMS,late)=>call(method,params,sessionId,timeoutMS,true,late,'diagnostic'),
   };
   return Object.freeze({
     alive:()=>!closed,
@@ -139,6 +141,7 @@ export function createMainCDP({input,output,onFailure=()=>{}}){
     subscribe(fn){if(closed||typeof fn!=='function'||listeners.size>=32)throw rejected();listeners.add(fn);return()=>listeners.delete(fn);},
     call:(method,params,sessionId,timeoutMS)=>call(method,params,sessionId,timeoutMS),
     createDiagnosticScope:()=>createMainDiagnosticScope(diagnosticRaw),
+    createInstagramOwnedScope:()=>createMainInstagramOwnedScope({...diagnosticRaw,call:(method,params,sessionId,timeoutMS,late)=>call(method,params,sessionId,timeoutMS,true,late,'ig_reader')}),
     createBootstrapCorroborationScope:trace=>createMainBootstrapCorroborationScope(diagnosticRaw,trace),
     createBootstrapDiagnosticScope:options=>createMainBootstrapDiagnosticScope(diagnosticRaw,options),close,
   });
@@ -216,6 +219,7 @@ export function createMainPublicFacade(transport,{recipes=[],busy=()=>false}={})
 // an error can return raw CDP frames, headers, cookies or protocol exceptions.
 export function serveMainBrowserTransport({input,output,connect,createX,sourceFactories={},diagnoseInstagramReader,diagnoseInstagramBootstrap,diagnoseInstagramBootstrapCorroboration,recipes=[],expectedNonce,onClosed=()=>{}}){
   let bytes=Buffer.alloc(0),closed=false,booting=false,transport,publicCall,x,xAttempted=false,busy=null,lastID=0,pending=0,publicPending=0,ownerPending=0,diagnosticBlocked=false;
+  let firstLifecycle,lifecycleWritten=Promise.resolve();
   const sources=createSourceOwnerRegistry(sourceFactories);
   const acquire=(lane,terminal=false)=>{
     if(busy&&(!terminal||busy.lane!==lane))throw rejected();
@@ -223,8 +227,21 @@ export function serveMainBrowserTransport({input,output,connect,createX,sourceFa
     return()=>{if(--lock.holders===0&&busy===lock)busy=null;};
   };
   const seen=new Set();
-  const emit=q=>{if(closed)return;const wire=Buffer.from(JSON.stringify(q)+'\n');if(wire.length>8*1024*1024){close();return;}output.write(wire,error=>{wire.fill(0);if(error)close();});};
-  const close=()=>{if(closed)return;closed=true;bytes.fill(0);input.pause();void Promise.allSettled([Promise.resolve().then(()=>x?.close()),sources.close()]).finally(()=>{transport?.close();onClosed();});};
+  const reportLifecycle=cause=>{
+    if(firstLifecycle)return;firstLifecycle=mainTransportLifecycle(cause);
+    const wire=Buffer.from(JSON.stringify({event:'main_transport_lifecycle',result:firstLifecycle})+'\n');
+    // Diagnostics can be lost on an already broken output. Never retry them or
+    // substitute exception text; the Go observer retains unknown in that case.
+    lifecycleWritten=new Promise(resolve=>{try{output.write(wire,()=>{wire.fill(0);resolve();});}catch{wire.fill(0);resolve();}});
+  };
+  const flushLifecycle=async()=>{let timer;try{await Promise.race([lifecycleWritten,new Promise(resolve=>{timer=setTimeout(resolve,100);})]);}finally{clearTimeout(timer);}};
+  const controlCause=(reason,stage='stream')=>({reason,domain:'control',method:'none',role:'unknown',stage});
+  const emit=q=>{if(closed)return;const wire=Buffer.from(JSON.stringify(q)+'\n');if(wire.length>8*1024*1024){wire.fill(0);close(controlCause('control_output_limit','framing'));return;}
+    try{output.write(wire,error=>{wire.fill(0);if(error)close(controlCause('output_error'));});}catch{wire.fill(0);close(controlCause('output_error'));}};
+  const close=(cause={reason:'explicit_close',domain:'owner',method:'none',role:'unknown',stage:'shutdown'})=>{
+    if(closed)return;reportLifecycle(cause);closed=true;bytes.fill(0);input.pause();
+    void Promise.allSettled([Promise.resolve().then(()=>x?.close()),sources.close()]).finally(async()=>{transport?.close();await flushLifecycle();onClosed(firstLifecycle);});
+  };
   async function handle(line){
     let q,igTrace;try{
       q=parse(line);
@@ -299,12 +316,12 @@ export function serveMainBrowserTransport({input,output,connect,createX,sourceFa
           failure={code:`native_source_${diagnostic.stage}_${diagnostic.reason}`};
       }
       const igSideband=igErrorTrace(error);if(igSideband)failure={...failure,diagnostic:igSideband};
-      if(q&&Number.isSafeInteger(q.id))emit({id:q.id,ok:false,error:failure});else close();
+      if(q&&Number.isSafeInteger(q.id))emit({id:q.id,ok:false,error:failure});else close(controlCause('invalid_frame','framing'));
     }
     finally{line.fill(0);}
   }
-  input.on('data',chunk=>{if(closed)return;if(bytes.length+chunk.length>8*1024*1024){close();return;}const old=bytes;bytes=Buffer.concat([old,chunk]);old.fill(0);let at;
+  input.on('data',chunk=>{if(closed)return;if(bytes.length+chunk.length>8*1024*1024){close(controlCause('control_input_limit','framing'));return;}const old=bytes;bytes=Buffer.concat([old,chunk]);old.fill(0);let at;
     while(!closed&&(at=bytes.indexOf(10))>=0){const line=Buffer.from(bytes.subarray(0,at)),rest=Buffer.from(bytes.subarray(at+1));bytes.fill(0);bytes=rest;void handle(line);}});
-  input.on('end',close);input.on('error',close);output.on('error',close);
-  return{close};
+  input.on('end',()=>close(controlCause('control_end')));input.on('error',()=>close(controlCause('control_error')));output.on('error',()=>close(controlCause('output_error')));
+  return{close,reportLifecycle};
 }

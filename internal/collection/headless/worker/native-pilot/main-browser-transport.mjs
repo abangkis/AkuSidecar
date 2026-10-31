@@ -9,6 +9,7 @@ import {parseStrictJSON} from '../../../../../scripts/auth-session-fixture/x-evi
 import {createInstagramDailyOwner} from './instagram-native-provider.mjs';
 import {INSTAGRAM_NATIVE_RECIPE} from './instagram-native-session.mjs';
 import {nativeSourceFailure} from './native-source-kernel.mjs';
+import {monitorMainTransportProcess} from './main-transport-lifecycle.mjs';
 import {runInstagramReaderDiagnostic} from './instagram-reader-diagnostic.mjs';
 import {diagnoseInstagramSelfBootstrap} from './instagram-self-bootstrap-probe.mjs';
 import {runInstagramBootstrapCorroboration} from './instagram-bootstrap-corroboration.mjs';
@@ -84,7 +85,8 @@ export async function runMainBrowserTransport(){
   if(extra.length||typeof controlPipe!=='string'||!/^\\\\\.\\pipe\\AkuBrowser\.main-transport\.[a-f0-9]{48}$/u.test(controlPipe)||
     typeof nonce!=='string'||!/^[a-f0-9]{48}$/u.test(nonce))throw rejected();
   const control=await connectPipe(controlPipe);
-  return serveMainBrowserTransport({input:control,output:control,expectedNonce:nonce,
+  let unmonitor=()=>{};
+  const server=serveMainBrowserTransport({input:control,output:control,expectedNonce:nonce,
     // Standard inherited handles become valid Node fd 0/1. Go retains its
     // duplicate endpoints without consuming bytes, preventing transport-worker
     // exit alone from sending EOF to the independently owned main Chrome.
@@ -94,6 +96,8 @@ export async function runMainBrowserTransport(){
     diagnoseInstagramReader:runInstagramReaderDiagnostic,
     diagnoseInstagramBootstrap:diagnoseInstagramSelfBootstrap,
     diagnoseInstagramBootstrapCorroboration:runInstagramBootstrapCorroboration,
-    onClosed:()=>{control.destroy();process.stdin.destroy();process.stdout.end();process.exitCode=0;},
+    onClosed:()=>{unmonitor();control.destroy();process.stdin.destroy();process.stdout.end();process.exitCode=0;},
   });
+  unmonitor=monitorMainTransportProcess(server.reportLifecycle);
+  return server;
 }

@@ -33,12 +33,13 @@ type mainBrowserPipe struct {
 	argsv                []string
 }
 type mainBrowserClient struct {
-	worker  *OwnedCommand
-	rpc     *ownedrpc.Client
-	control *mainControlConn
-	ready   chan error
-	nonce   string
-	once    sync.Once
+	diagnostic *mainWorkerDiagnostic
+	worker     *OwnedCommand
+	rpc        *ownedrpc.Client
+	control    *mainControlConn
+	ready      chan error
+	nonce      string
+	once       sync.Once
 }
 type mainControlConn struct {
 	handle windows.Handle
@@ -149,7 +150,19 @@ func newMainBrowserProtocolLaunch(parent context.Context, cfg MainBrowserTranspo
 		closeRaw()
 		return nil, err
 	}
+	diagnostic := newMainWorkerDiagnostic(cfg.ObserveWorkerDiagnostic)
+	// Closed is a broadcast after Wait and owned-tree drain; Done is a single
+	// consumable result and must remain available to the lifecycle owner.
+	go func() {
+		<-worker.Closed()
+		code := -1
+		if worker.command.ProcessState != nil {
+			code = worker.command.ProcessState.ExitCode()
+		}
+		diagnostic.exited(code, worker.cleanupErr)
+	}()
 	fail := func(err error) (captureProtocolLaunch, error) {
+		diagnostic.intentional()
 		worker.Terminate()
 		wait, stop := context.WithTimeout(context.Background(), 5*time.Second)
 		defer stop()
@@ -163,7 +176,7 @@ func newMainBrowserProtocolLaunch(parent context.Context, cfg MainBrowserTranspo
 	}
 	life, stop := context.WithCancel(context.Background())
 	conn := &mainControlConn{handle: control, ctx: life, cancel: stop}
-	c := &mainBrowserClient{worker: worker, control: conn, rpc: ownedrpc.New(conn), ready: make(chan error, 1), nonce: token}
+	c := &mainBrowserClient{worker: worker, control: conn, rpc: ownedrpc.New(conn), ready: make(chan error, 1), nonce: token, diagnostic: diagnostic}
 	p.client = c
 	go c.read(conn)
 	if json.NewEncoder(conn).Encode(map[string]any{"op": "main_transport_bootstrap", "schema": mainBrowserSchema, "nonce": token, "transport": "inherited-stdio"}) != nil {
@@ -259,7 +272,12 @@ func (p *mainBrowserPipe) childStarted() error {
 }
 func (p *mainBrowserPipe) protocol() CaptureProtocol { return p.client }
 func (p *mainBrowserPipe) closeAfterOwnerExit() error {
-	p.client.once.Do(func() { p.client.rpc.Close(); p.client.control.Close(); p.client.worker.Terminate() })
+	p.client.once.Do(func() {
+		p.client.diagnostic.intentional()
+		p.client.rpc.Close()
+		p.client.control.Close()
+		p.client.worker.Terminate()
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := p.client.worker.WaitForCleanup(ctx); err != nil {
@@ -280,6 +298,7 @@ func (c *mainBrowserClient) read(input io.Reader) {
 	scan := bufio.NewScanner(input)
 	scan.Buffer(make([]byte, 4096), 8<<20)
 	hello := false
+	readKind := "eof"
 	for scan.Scan() {
 		if !hello {
 			var h struct {
@@ -288,10 +307,19 @@ func (c *mainBrowserClient) read(input io.Reader) {
 				Nonce  string `json:"nonce"`
 			}
 			if json.Unmarshal(scan.Bytes(), &h) != nil || !h.Ready || h.Schema != mainBrowserSchema || h.Nonce != c.nonce {
+				readKind = "handshake_rejected"
 				break
 			}
 			hello = true
 			c.ready <- nil
+			continue
+		}
+		if cause, found, valid := mainWorkerLifecycleFrame(scan.Bytes()); found {
+			if valid {
+				c.diagnostic.report(cause)
+			} else {
+				c.diagnostic.readEnded("frame_rejected")
+			}
 			continue
 		}
 		if id, progress, found, valid := mainBrowserProgressFrame(scan.Bytes()); found {
@@ -317,6 +345,7 @@ func (c *mainBrowserClient) read(input io.Reader) {
 			} `json:"error"`
 		}
 		if json.Unmarshal(scan.Bytes(), &r) != nil || r.ID < 1 {
+			readKind = "frame_rejected"
 			break
 		}
 		reply := ownedrpc.Reply{Result: r.Result}
@@ -330,6 +359,10 @@ func (c *mainBrowserClient) read(input io.Reader) {
 		}
 		c.rpc.Deliver(r.ID, reply)
 	}
+	if scan.Err() != nil {
+		readKind = "read_error"
+	}
+	c.diagnostic.readEnded(readKind)
 	if !hello {
 		select {
 		case c.ready <- errors.New("main transport handshake rejected"):
@@ -493,7 +526,11 @@ func (c *mainBrowserClient) CallSource(ctx context.Context, source, operation st
 	if source != "instagram" {
 		return nil, errors.New("main browser source rejected")
 	}
-	return c.request(ctx, "main_source", map[string]any{"source": source, "operation": operation, "params": params})
+	result, err := c.request(ctx, "main_source", map[string]any{"source": source, "operation": operation, "params": params})
+	if err != nil {
+		return nil, &mainBrowserSourceError{cause: err, diagnostic: c.diagnostic.json}
+	}
+	return result, nil
 }
 func (c *mainBrowserClient) CallXWithProgress(ctx context.Context, operation string, params map[string]any, progress func([]byte)) (json.RawMessage, error) {
 	var mu sync.Mutex

@@ -8,7 +8,18 @@ const events=new Set(['Runtime.executionContextCreated','Runtime.executionContex
   'Page.frameNavigated','Page.navigatedWithinDocument','Page.frameDetached','Network.requestWillBeSent','Network.responseReceived','Network.loadingFailed','Network.loadingFinished']);
 
 export function createMainDiagnosticScope(raw){
+  return createOwnedScope(raw,false);
+}
+
+// Only the sealed IG owner receives this capability. Public/X callers retain
+// the ordinary transport timeout policy and cannot select a local deadline.
+export function createMainInstagramOwnedScope(raw){
+  return createOwnedScope(raw,true);
+}
+
+function createOwnedScope(raw,instagram){
   const targets=new Set(),sessions=new Map(),absent=new Set(),subscriptions=new Set();
+  const streams=new Map(),paused=new Map();
   let disposed=false,creating=false,creationAttempted=false,allocationsPending=0;
   function adoptTarget(value){
     if(!record(value)||!ref(value.targetId)||raw.privateTarget(value.targetId))throw failure();
@@ -29,9 +40,11 @@ export function createMainDiagnosticScope(raw){
   function releaseTarget(id){
     if(!targets.has(id)||!absent.has(id))throw failure();
     raw.releaseTarget(id);targets.delete(id);absent.delete(id);
+    for(const [handle,session]of streams)if(sessions.get(session)===id)streams.delete(handle);
   }
   function releaseSession(id){
     if(!sessions.has(id)||!absent.has(sessions.get(id))&&targets.has(sessions.get(id)))throw failure();
+    for(const [handle,session]of streams)if(session===id)streams.delete(handle);
     raw.releaseSession(id);sessions.delete(id);
   }
   async function retireLateTarget(value){
@@ -56,24 +69,37 @@ export function createMainDiagnosticScope(raw){
       if(!targets.has(target)||absent.has(target))releaseSession(value.sessionId);
     }catch{/* No late reply can acquire a peer's resource. */}
   }
+  async function lateStream(value,session,late){
+    try{
+      if(!record(value)||!ref(value.stream)||streams.has(value.stream))throw failure();
+      streams.set(value.stream,session);allocationsPending--;
+      // The caller may have already canceled/disposed its bootstrap scope.
+      // Retire only this late returned handle; never publish its bytes.
+      if(typeof late==='function')await late(value);
+      else{await raw.call('IO.close',{handle:value.stream},session,1000);streams.delete(value.stream);}
+    }catch{/* Unverified stream ownership remains pinned. */}
+  }
   return Object.freeze({
     alive:()=>!disposed&&raw.alive(),
-    cleanupVerified:()=>allocationsPending===0&&targets.size===0&&sessions.size===0,
+    cleanupVerified:()=>allocationsPending===0&&targets.size===0&&sessions.size===0&&streams.size===0,
     reserveTarget(id){if(disposed||!targets.has(id))throw failure();},
     reserveSession(id){if(disposed||!sessions.has(id))throw failure();},
     releaseTarget,releaseSession,
     on(listener){
-      if(disposed||typeof listener!=='function'||subscriptions.size>=4)throw failure();
+      if(disposed||typeof listener!=='function'||subscriptions.size>=(instagram?32:4))throw failure();
       const unsubscribe=raw.subscribe(event=>{
-        if(disposed||!sessions.has(event.sessionId)||!events.has(event.method))return;
+        if(disposed||!sessions.has(event.sessionId)||!instagram&&!events.has(event.method))return;
+        if(instagram&&event.method==='Fetch.requestPaused'&&ref(event.params?.requestId))paused.set(event.sessionId,event.params.requestId);
         // A diagnostic observer cannot tear down the shared CDP reader.
-        try{listener(event);}catch{}
+        if(instagram)listener(event);else try{listener(event);}catch{}
       });
       subscriptions.add(unsubscribe);
       return()=>{subscriptions.delete(unsubscribe);unsubscribe();};
     },
-    async call(method,params={},session='',timeoutMS=10000){
-      if(disposed||!raw.alive()||!Number.isInteger(timeoutMS)||timeoutMS<1||timeoutMS>15000)throw failure();
+    async call(method,params={},session='',timeoutMS=10000,late){
+      // A late stream disposer may outlive its page observer. It retains only
+      // the exact IO.close obligation, never evaluation or proof authority.
+      if(disposed&&!(instagram&&method==='IO.close'&&streams.get(params.handle)===session)||!raw.alive()||!Number.isInteger(timeoutMS)||timeoutMS<1||timeoutMS>(instagram?60000:15000))throw failure();
       if(session===''){
         if(method==='Target.createTarget'){
           if(creating||creationAttempted||targets.size||!exact(params,['url','background','forTab'])||params.url!=='about:blank'||params.background!==true||params.forTab!==false)throw failure();
@@ -105,11 +131,32 @@ export function createMainDiagnosticScope(raw){
       }else if(method==='Network.setBypassServiceWorker'){
         if(!exact(params,['bypass'])||params.bypass!==true)throw failure();
       }else if(method==='Runtime.evaluate'){
-        if(!exact(params,['expression','returnByValue','awaitPromise','userGesture','uniqueContextId'])||
-          typeof params.expression!=='string'||params.expression.length>32768||params.returnByValue!==true||params.awaitPromise!==true||
-          params.userGesture!==false||!ref(params.uniqueContextId))throw failure();
+        const keys=['expression','returnByValue','awaitPromise','userGesture'];
+        if(!instagram||Object.hasOwn(params,'uniqueContextId'))keys.push('uniqueContextId');
+        if(!exact(params,keys)||typeof params.expression!=='string'||params.expression.length>(instagram?7*1024*1024:32768)||params.returnByValue!==true||params.awaitPromise!==true||
+          params.userGesture!==false||keys.includes('uniqueContextId')&&!ref(params.uniqueContextId))throw failure();
+      }else if(instagram&&method==='Network.getCookies'){
+        if(!exact(params,['urls'])||!Array.isArray(params.urls)||params.urls.length!==1||params.urls[0]!=='https://www.instagram.com/')throw failure();
+      }else if(instagram&&method==='Fetch.enable'){
+        if(!exact(params,['patterns'])||!Array.isArray(params.patterns)||params.patterns.length!==1||
+          !exact(params.patterns[0],['urlPattern','resourceType','requestStage'])||params.patterns[0].urlPattern!=='https://www.instagram.com/'||params.patterns[0].resourceType!=='Document'||params.patterns[0].requestStage!=='Response')throw failure();
+      }else if(instagram&&method==='Fetch.disable'){
+        if(!exact(params,[]))throw failure();
+      }else if(instagram&&method==='Fetch.takeResponseBodyAsStream'){
+        if(!exact(params,['requestId'])||params.requestId!==paused.get(session))throw failure();
+        allocationsPending++;
+        const value=await raw.call(method,params,session,timeoutMS,value=>lateStream(value,session,late));
+        if(!record(value)||!ref(value.stream)||streams.has(value.stream))throw failure();
+        streams.set(value.stream,session);allocationsPending--;return value;
+      }else if(instagram&&['IO.read','IO.close'].includes(method)){
+        if(streams.get(params.handle)!==session||!exact(params,method==='IO.read'?['handle','size']:['handle'])||
+          method==='IO.read'&&(!Number.isInteger(params.size)||params.size<1||params.size>65536))throw failure();
+        const value=await raw.call(method,params,session,timeoutMS,late);if(method==='IO.close')streams.delete(params.handle);return value;
+      }else if(instagram&&method==='Fetch.fulfillRequest'){
+        if(!exact(params,['requestId','responseCode','responseHeaders','body'])||params.requestId!==paused.get(session)||params.responseCode!==200||
+          !Array.isArray(params.responseHeaders)||typeof params.body!=='string'||params.body.length>6*1024*1024)throw failure();
       }else throw failure();
-      return raw.call(method,params,session,timeoutMS);
+      return raw.call(method,params,session,timeoutMS,late);
     },
     dispose(){if(disposed)return;disposed=true;for(const unsubscribe of subscriptions)unsubscribe();subscriptions.clear();},
   });

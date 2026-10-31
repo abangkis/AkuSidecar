@@ -1,6 +1,8 @@
 // Source-independent native attempt lifetime. Source recipes alone choose URLs,
 // session material and account projections; this kernel never interprets them.
 import {markSourceTransient} from './source-retry-policy.mjs';
+import {createMainInstagramOwnedScope} from './main-browser-diagnostic-scope.mjs';
+import {cdpCommandFailureDetail} from './cdp-command-failure.mjs';
 const diagnostics = new WeakMap();
 export const nativeSourceDiagnostic = error => diagnostics.get(error) ?? null;
 export function annotateNativeSourceCleanup(error, cleanup) {
@@ -130,25 +132,34 @@ export function createNativeSourceAttempt({source, generation, nonce, profileSco
 // close is insufficient: its absence must be verified before releasing pins.
 export async function createNativeOwnedPage(transport, timeoutMS) {
   let targetId, sessionId, closing;
+  // The native IG reader gets a sealed local-timeout capability with the same
+  // exact-resource ledger as diagnostics. Ordinary transport.call is unchanged.
+  const owned=typeof transport.createInstagramOwnedScope==='function'?transport.createInstagramOwnedScope():createMainInstagramOwnedScope({
+    alive:()=>transport.alive?.()??true,privateTarget:id=>transport.privateTarget?.(id)??false,privateSession:id=>transport.privateSession?.(id)??false,
+    reserveTarget:id=>transport.reserveTarget(id),reserveSession:id=>transport.reserveSession(id),
+    releaseTarget:id=>transport.releaseTarget?.(id),releaseSession:id=>transport.releaseSession?.(id),
+    subscribe:fn=>transport.subscribe(fn),call:(...args)=>transport.call(...args),
+  });
   const subscriptions=new Set();
   const setupDeadline = Date.now() + timeoutMS;
-  const call = (method, params = {}, session = '', ms) => {
+  const call = (method, params = {}, session = '', ms, late) => {
     const budget = ms ?? Math.min(10000, setupDeadline - Date.now());
     if (budget < 1) throw nativeSourceFailure('target', 'deadline');
-    return transport.call(method, params, session, budget);
+    return owned.call(method, params, session, budget, late);
   };
   const close = () => closing ??= (async () => {
     let subscriptionFailure=false;
     for(const off of [...subscriptions])try{off();}catch{subscriptionFailure=true;}
-    if (!targetId) return;
+    if (!targetId) { if(!owned.cleanupVerified())throw nativeSourceFailure('cleanup','target_unverified');return; }
     await call('Target.closeTarget', {targetId}, '', 1000);
     const until = Date.now() + 2000;
     while (Date.now() < until) {
       const result = await call('Target.getTargets', {}, '', Math.max(1, until - Date.now()));
       if (!Array.isArray(result.targetInfos)) throw nativeSourceFailure('cleanup', 'inventory');
       if (!result.targetInfos.some(target => target.targetId === targetId)) {
-        transport.releaseSession?.(sessionId); transport.releaseTarget?.(targetId);
-        if(subscriptionFailure)throw nativeSourceFailure('cleanup','unverified');
+        if(sessionId)owned.releaseSession(sessionId);owned.releaseTarget(targetId);
+        if(subscriptionFailure||!owned.cleanupVerified())throw nativeSourceFailure('cleanup','unverified');
+        owned.dispose();
         return;
       }
       await new Promise(resolve => setTimeout(resolve, 25));
@@ -158,20 +169,20 @@ export async function createNativeOwnedPage(transport, timeoutMS) {
   try {
     const target = await call('Target.createTarget', {url: 'about:blank', background: true, forTab: false});
     if (!nativeRef(target.targetId)) throw nativeSourceFailure('target', 'identity');
-    targetId = target.targetId; transport.reserveTarget(targetId);
+    targetId = target.targetId;
     const attached = await call('Target.attachToTarget', {targetId, flatten: true});
     if (!nativeRef(attached.sessionId)) throw nativeSourceFailure('target', 'identity');
-    sessionId = attached.sessionId; transport.reserveSession(sessionId);
+    sessionId = attached.sessionId;
     for (const method of ['Page.enable', 'Runtime.enable', 'Network.enable']) await call(method, {}, sessionId);
     return Object.freeze({
       on(listener) {
         if(typeof transport.subscribe!=='function'||typeof listener!=='function'||closing)throw nativeSourceFailure('evidence','unavailable');
         let active=true;
-        const unsubscribe=transport.subscribe(event=>{if(active&&!closing&&event.sessionId===sessionId)listener(event);});
+        const unsubscribe=owned.on(event=>{if(active&&!closing&&event.sessionId===sessionId)listener(event);});
         const off=()=>{if(!active)return;active=false;subscriptions.delete(off);unsubscribe();};
         subscriptions.add(off);return off;
       },
-      send: (method, params = {}, ms = timeoutMS) => call(method, params, sessionId, ms),
+      send: (method, params = {}, ms = timeoutMS, late) => call(method, params, sessionId, ms, late),
       navigate: (url, ms = timeoutMS) => call('Page.navigate', {url}, sessionId, ms),
       async evaluate(expression, ms = timeoutMS) {
         const reply = await call('Runtime.evaluate', {expression, returnByValue: true, awaitPromise: true, userGesture: false}, sessionId, ms);
@@ -180,7 +191,8 @@ export async function createNativeOwnedPage(transport, timeoutMS) {
       }, close,
     });
   } catch (error) {
-    try { await close(); } catch { throw nativeSourceFailure('cleanup', 'target_unverified'); }
-    throw nativeSourceDiagnostic(error) ? error : nativeSourceFailure('target', 'unavailable');
+    const failure=nativeSourceDiagnostic(error)?error:nativeSourceFailure('target',cdpCommandFailureDetail(error)?.kind==='timeout'?'deadline':'unavailable');
+    try { await close(); } catch { annotateNativeSourceCleanup(failure,'uncertain'); }
+    throw failure;
   }
 }

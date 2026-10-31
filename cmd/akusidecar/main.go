@@ -492,6 +492,13 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 		fatal(logger, err)
 		mainTransport, err := engine.MainBrowserTransportOptions(cfg)
 		fatal(logger, err)
+		if mainTransport != nil {
+			mainTransport.ObserveWorkerDiagnostic = func(raw json.RawMessage) {
+				if appshell.ValidateMainBrowserWorkerDiagnostic(raw) {
+					logger.Printf("main_transport_worker %s", raw)
+				}
+			}
+		}
 		capture, err = appshell.Launch(context.Background(), appshell.LaunchOptions{
 			Executable: result.Executable, ExtensionPath: extensionPath,
 			UserDataDir: captureProfile, URL: captureURL, StartMinimized: true, PrivateCDP: true, ExtraArgs: []string{"--start-minimized", "--profile-directory=" + captureProfileDirectory},

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/appshell"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
@@ -75,6 +76,7 @@ type XCaptureStatus struct {
 	MaintenanceHeld              bool                     `json:"maintenanceHeld,omitempty"`
 	StartupDiagnostic            *XDailyStartupDiagnostic `json:"startupDiagnostic,omitempty"`
 	IGDiagnostic                 json.RawMessage          `json:"igDiagnostic,omitempty"`
+	WorkerDiagnostic             json.RawMessage          `json:"workerDiagnostic,omitempty"`
 	CleanupDiagnostic            *XDailyCleanupDiagnostic `json:"cleanupDiagnostic,omitempty"`
 	Cleanup                      string                   `json:"cleanup,omitempty"`
 	CleanupScope                 string                   `json:"cleanupScope,omitempty"`
@@ -170,6 +172,7 @@ func (d dailyController) status() XCaptureStatus {
 	status.StartupDiagnostic = xDailyStartupDetail(d.state.firstFailure)
 	if d.source == domain.SourceInstagram {
 		status.IGDiagnostic = instagramFailureDiagnostic(d.state.firstFailure)
+		status.WorkerDiagnostic = appshell.MainBrowserWorkerFailureDiagnostic(d.state.firstFailure)
 	}
 	if d.state.owner != nil {
 		status.Cleanup = "verified"

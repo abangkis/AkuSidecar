@@ -3,6 +3,7 @@ import { access, mkdir, realpath } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
 import { promisify } from 'node:util';
+import {createChromeCommandSender,settleChromeCommandReply} from './chrome-command-queue.mjs';
 
 const CDP_TIMEOUT_MS = 15000;
 const TARGET_CLEANUP_TIMEOUT_MS = 1000;
@@ -21,8 +22,10 @@ export const CAPTURE_PLAYBACK_GUARD_SOURCE = `(() => {
   document.addEventListener('playing', stopPlayback, true);
 })();`;
 
-export async function createTemporaryPage({ send, subscribe, browserSessionId, closeTargetAndWait, timeoutMs = CDP_TIMEOUT_MS }) {
+export async function createTemporaryPage({ send, subscribe, browserSessionId, closeTargetAndWait, timeoutMs = CDP_TIMEOUT_MS, retainLateResources = false }) {
   let targetId;
+  let allocationsPending=0,targetRetired=false;
+  const streams=new Set();
   let closePromise = null;
   const subscriptions=new Set();
   const boundedTimeout = Math.max(1, Math.min(CDP_TIMEOUT_MS, Number.isFinite(timeoutMs) ? timeoutMs : CDP_TIMEOUT_MS));
@@ -32,12 +35,35 @@ export async function createTemporaryPage({ send, subscribe, browserSessionId, c
     if (left < 1) throw Object.assign(new Error('Temporary Chrome page setup timed out.'), { code: 'capture_timeout' });
     return left;
   };
+  const retireTarget=async id=>{await closeTargetAndWait(id);if(id===targetId)targetRetired=true;};
+  const lateTarget=async value=>{if(typeof value?.targetId!=='string'||!value.targetId)return;await retireTarget(value.targetId);allocationsPending--;};
+  const lateSession=async value=>{if(typeof value?.sessionId!=='string'||!value.sessionId)return;if(!targetRetired)await retireTarget(targetId);allocationsPending--;};
+  const streamHandle=value=>{if(typeof value?.stream!=='string'||!value.stream||value.stream.length>512||streams.has(value.stream))throw new Error('Chrome stream ownership is unverified.');streams.add(value.stream);return value;};
   try {
+    if(retainLateResources)allocationsPending++;
     ({ targetId } = await send('Target.createTarget', {
       url: 'about:blank', background: true, forTab: false,
-    }, browserSessionId, setupTimeLeft()));
+    }, browserSessionId, setupTimeLeft(),retainLateResources?lateTarget:undefined));
     if (typeof targetId !== 'string' || !targetId) throw new Error('Chrome returned no temporary target identity.');
-    const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true }, browserSessionId, setupTimeLeft());
+    if(retainLateResources){allocationsPending--;allocationsPending++;}
+    const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true }, browserSessionId, setupTimeLeft(),retainLateResources?lateSession:undefined);
+    if(retainLateResources){if(typeof sessionId!=='string'||!sessionId)throw new Error('Chrome returned no temporary session identity.');allocationsPending--;}
+    async function sendOwned(method,params={},operationTimeout=boundedTimeout,late){
+      if(!retainLateResources)return send(method,params,sessionId,operationTimeout);
+      if(closePromise&&!(method==='IO.close'&&streams.has(params.handle)))throw new Error('Owned page is retired.');
+      if(method==='Fetch.takeResponseBodyAsStream'){
+        allocationsPending++;
+        const retireLate=async value=>{
+          streamHandle(value);
+          if(typeof late==='function')await late(value);else await sendOwned('IO.close',{handle:value.stream},1000);
+          if(!streams.has(value.stream))allocationsPending--;
+        };
+        const value=streamHandle(await send(method,params,sessionId,operationTimeout,retireLate));allocationsPending--;return value;
+      }
+      if(['IO.read','IO.close'].includes(method)&&!streams.has(params.handle))throw new Error('Chrome stream ownership is unverified.');
+      const value=await send(method,params,sessionId,operationTimeout,late);
+      if(method==='IO.close')streams.delete(params.handle);return value;
+    }
     await send('Page.enable', {}, sessionId, setupTimeLeft());
     await send('Runtime.enable', {}, sessionId, setupTimeLeft());
     await send('Network.enable', {}, sessionId, setupTimeLeft());
@@ -52,7 +78,7 @@ export async function createTemporaryPage({ send, subscribe, browserSessionId, c
         const off=()=>{if(!active)return;active=false;subscriptions.delete(off);unsubscribe();};
         subscriptions.add(off);return off;
       },
-      send: (method, params = {}, operationTimeout = boundedTimeout) => send(method, params, sessionId, operationTimeout),
+      send:sendOwned,
       async evaluate(expression, operationTimeout = boundedTimeout) {
         const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId, operationTimeout);
         if (result.exceptionDetails) throw new Error(`Page evaluation failed: ${result.exceptionDetails.exception?.description || result.exceptionDetails.text || 'exception'}`);
@@ -63,8 +89,9 @@ export async function createTemporaryPage({ send, subscribe, browserSessionId, c
         closePromise ??= Promise.resolve().then(async () => {
           let subscriptionFailure=false;
           for(const off of [...subscriptions])try{off();}catch{subscriptionFailure=true;}
-          await closeTargetAndWait(targetId);
-          if(subscriptionFailure)throw new Error('Owned page subscription cleanup failed.');
+          await retireTarget(targetId);
+          streams.clear();
+          if(subscriptionFailure||allocationsPending!==0)throw new Error('Owned page subscription cleanup failed.');
         }).catch(() => {
           throw Object.assign(new Error('Chrome could not confirm cleanup of the temporary target.'), { code: 'temporary_target_cleanup_failed' });
         });
@@ -73,16 +100,17 @@ export async function createTemporaryPage({ send, subscribe, browserSessionId, c
     };
   } catch (error) {
     if (targetId) {
-      try { await closeTargetAndWait(targetId); }
+      try { await retireTarget(targetId); }
       catch {
         throw Object.assign(new Error('Chrome could not confirm cleanup of a failed temporary target.'), { code: 'temporary_target_cleanup_failed' });
       }
     }
+    if(retainLateResources&&allocationsPending!==0)throw Object.assign(new Error('Chrome temporary resource cleanup is unverified.'),{code:'temporary_target_cleanup_failed'});
     throw error;
   }
 }
 
-export async function launchChrome({ chromePath, profilePath, profileDirectory = 'Default' }) {
+export async function launchChrome({ chromePath, profilePath, profileDirectory = 'Default', retainLateResources = false }) {
   if (!isAbsolute(chromePath) || !isAbsolute(profilePath)) throw new Error('Chrome and profile paths must be absolute.');
   const executable = await realpath(chromePath);
   await access(executable, constants.X_OK).catch(() => access(executable));
@@ -108,7 +136,7 @@ export async function launchChrome({ chromePath, profilePath, profileDirectory =
     windowsHide: true,
     stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'],
   });
-  return connectOwnedChrome(child, executable, userData);
+  return connectOwnedChrome(child, executable, userData,retainLateResources);
 }
 
 async function assertProfileUnowned(profilePath) {
@@ -137,11 +165,10 @@ async function assertProfileUnowned(profilePath) {
   }
 }
 
-function connectOwnedChrome(child, executable, profilePath) {
+function connectOwnedChrome(child, executable, profilePath,retainLateResources=false) {
   const pending = new Map();
   const listeners = new Set();
   const subscribe = listener => { if(closed||typeof listener!=='function'||listeners.size>=32)throw new Error('Owned browser subscription unavailable.');listeners.add(listener);return()=>listeners.delete(listener); };
-  let sequence = 0;
   let buffer = '';
   let closed = false;
   let closePromise = null;
@@ -186,12 +213,7 @@ function connectOwnedChrome(child, executable, profilePath) {
         for(const listener of listeners)try{listener(message);}catch{}
         continue;
       }
-      const call = pending.get(message.id);
-      if (!call) continue;
-      pending.delete(message.id);
-      clearTimeout(call.timer);
-      if (message.error) call.reject(new Error(`CDP ${call.method}: ${message.error.message || 'command failed'}`));
-      else call.resolve(message.result || {});
+      settleChromeCommandReply(pending,message);
     }
   });
 
@@ -208,24 +230,7 @@ function connectOwnedChrome(child, executable, profilePath) {
       pending.delete(id);
     }
   }
-  function send(method, params = {}, sessionId, timeoutMs = CDP_TIMEOUT_MS) {
-    if (closed) return Promise.reject(new Error('Chrome is closed.'));
-    const id = ++sequence;
-    return new Promise((resolveCall, reject) => {
-      const timer = setTimeout(() => {
-        pending.delete(id);
-        reject(Object.assign(new Error(`CDP timeout: ${method}`), { code: 'capture_timeout' }));
-      }, Math.max(1, Math.min(CDP_TIMEOUT_MS, Number.isFinite(timeoutMs) ? timeoutMs : CDP_TIMEOUT_MS)));
-      pending.set(id, { resolve: resolveCall, reject, timer, method });
-      child.stdio[3].write(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }) + '\0', error => {
-        if (error && pending.has(id)) {
-          pending.delete(id);
-          clearTimeout(timer);
-          reject(error);
-        }
-      });
-    });
-  }
+  const send=createChromeCommandSender({pending,write:(wire,callback)=>child.stdio[3].write(wire,callback),isClosed:()=>closed,retainLateResources,timeoutMS:CDP_TIMEOUT_MS});
   async function close() {
     closePromise ??= closeOwned();
     return closePromise;
@@ -283,7 +288,7 @@ function connectOwnedChrome(child, executable, profilePath) {
           return context;
         },
         createTemporaryPage(timeoutMs) {
-          return createTemporaryPage({ send, subscribe, browserSessionId, closeTargetAndWait, timeoutMs });
+          return createTemporaryPage({ send, subscribe, browserSessionId, closeTargetAndWait, timeoutMs, retainLateResources });
         },
         close,
         exited,

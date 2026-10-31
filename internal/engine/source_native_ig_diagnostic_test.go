@@ -5,6 +5,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -13,6 +14,39 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/igdiagnostic"
 )
+
+type syntheticIGWorkerError struct {
+	cause error
+	raw   json.RawMessage
+}
+
+func (e *syntheticIGWorkerError) Error() string                { return "synthetic worker failure" }
+func (e *syntheticIGWorkerError) Unwrap() error                { return e.cause }
+func (e *syntheticIGWorkerError) WorkerDiagnosticJSON() []byte { return append([]byte(nil), e.raw...) }
+
+func TestInstagramWorkerDiagnosticIsIndependentAndSourceBound(t *testing.T) {
+	const safe = `{"schema":"aku.main-transport-worker.v1","reason":"command_timeout","domain":"cdp","method":"IO.read","role":"ig_reader","stage":"command","reported":true,"controlRead":"eof","exited":true,"exitCode":0,"intentional":false,"cleanup":"verified","complete":true}`
+	carrier := &syntheticIGWorkerError{cause: &appshell.MainBrowserError{Code: "native_source_wire_unavailable"}, raw: json.RawMessage(safe)}
+	err := sourceNativeIGWireFailure(context.Background(), fmt.Errorf("wrapped: %w", carrier))
+	e, _ := testEngine(t)
+	e.config.Capture.InstagramMode = config.XCaptureConcurrent
+	e.config.Capture.XMode = config.XCaptureConcurrent
+	d := e.dailyController(domain.SourceInstagram)
+	d.rememberFailure(err, "startup")
+	status := d.status()
+	if status.FailureCode != "native_source_wire_unavailable" || !appshell.ValidateMainBrowserWorkerDiagnostic(status.WorkerDiagnostic) || len(status.IGDiagnostic) != 0 {
+		t.Fatal("worker trace changed operation or IG trace")
+	}
+	x := e.dailyController(domain.SourceX)
+	x.rememberFailure(err, "startup")
+	if len(x.status().WorkerDiagnostic) != 0 {
+		t.Fatal("IG diagnostic changed X status")
+	}
+	carrier.raw = json.RawMessage(`{"token":"PRIVATE"}`)
+	if len(d.status().WorkerDiagnostic) != 0 {
+		t.Fatal("unsafe worker trace escaped")
+	}
+}
 
 func TestInstagramVerifierDiagnosticRetainedWithoutChangingOperationalFailure(t *testing.T) {
 	code := "native_source_evidence_reader_identity_http_status_400"

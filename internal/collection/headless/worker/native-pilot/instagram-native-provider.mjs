@@ -23,7 +23,7 @@ async function launchNativeCollector(options) {
   // source_seed. Do not create arbitrary caller-supplied profile directories.
   const info = await lstat(options.profilePath);
   if (!info.isDirectory() || info.isSymbolicLink() || await realpath(options.profilePath) !== options.profilePath) throw nativeSourceFailure('admission', 'profile');
-  return launchChrome(options);
+  return launchChrome({...options,retainLateResources:true});
 }
 
 // Private sealed composition only. This implements the native candidate recipe;

@@ -113,3 +113,64 @@ real Chrome/Instagram qualification.
 
 The trial remains pending until these observations are recorded. One successful
 reader diagnostic or offline suite does not qualify general native IG capture.
+
+## IG-local timeout and worker lifecycle repair
+
+The subsequent native trial failed with `native_source_wire_unavailable` and
+uncertain cleanup. The worker was no longer present. Its exact initiating
+command and process exit code were not retained; they cannot be inferred from
+the generic wire error. A separate `reader_bootstrap_document_changed` result
+belongs to an earlier run and is not the cause established for this incident.
+
+Offline reproduction with production transport modules established a concrete
+failure mechanism: an IG-owned `Target.createTarget` timeout used the ordinary
+CDP call path, which closes the shared transport. That close could suppress the
+operation's terminal reply and end the Node worker. The diagnostic bootstrap
+scope already had request-local timeouts, but the native scope did not carry
+that ownership capability or all late-disposal callbacks through its layers.
+
+The repair keeps request-local failure private to IG-owned evidence resources.
+It tracks late target, session and stream replies, retires only resources that
+belong to that operation, and does not report cleanup as verified while late
+creation remains unresolved. No late reply can authorize proof or replace a
+terminal operation result. Ordinary calls and X keep their fatal timeout
+behavior. Broken framing, wrong-session replies and transport EOF remain fatal.
+Proof freshness, account/session bindings and batch deadlines are unchanged.
+
+The private Node control channel now emits a bounded, closed-vocabulary first
+close report before teardown. Go records it through the shared diagnostic
+recorder, with control-read outcome, process exit and owned-tree cleanup as
+independent observations. These fields are not retry authority. IG failure
+status exposes a revalidated `workerDiagnostic` sideband; ordinary/X failures
+retain their existing error contract. A validated lifecycle snapshot is logged
+as `main_transport_worker`. No stderr, command parameters, resource IDs, account
+identifiers, paths, response bodies or cookie/token values are included.
+Missing delivery remains incomplete with an unknown cause, even if an exit
+code is subsequently observed. An exit code of zero alone is not evidence that
+the batch or cleanup succeeded.
+
+This repair is offline-only until a matched candidate is reviewed and activated.
+It does not authorize another native probe, session derivation, or capture trial.
+
+### Timeout repair validation receipt
+
+The affected Node suite passed **289/289** tests, including the production
+transport's surviving terminal reply, late reader/collector resource cleanup,
+post-retirement uncertainty, ordinary/X timeout and framing guards, fatal Node
+exception/rejection behavior, and sealed-package module inclusion:
+
+```text
+node --test "internal/collection/headless/worker/native-pilot/*.test.mjs" "internal/collection/headless/worker/test/chrome*.test.mjs" scripts/build-x-daily-owner.test.mjs scripts/x-daily-development-package.test.mjs scripts/x-development-pilot-package.test.mjs
+```
+
+The Go appshell, owned RPC, shared trace and IG trace packages passed. Targeted
+tagged Engine tests covered IG failure metadata, source isolation, source-native
+failure classifications and existing X daily behavior. Ordinary and
+`auth_session_dev` main binaries compiled offline; they were not executed.
+
+An expanded run including `scripts/x-native-owner.test.mjs` passed 294/295.
+Its existing `manual requests remain concurrent for rendezvous, cancel and
+branded capture diagnostics` test also fails when every modified tracked MJS
+module is restored in memory to baseline `5815244`. The observed last reply is
+ID 2 instead of ID 4. This pre-existing test failure is recorded separately;
+the unrelated owner protocol/test was not changed in this IG repair.

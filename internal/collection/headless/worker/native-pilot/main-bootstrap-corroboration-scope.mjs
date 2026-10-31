@@ -101,6 +101,6 @@ function createBootstrapCorroborationScope(raw,trace,ownedPage){
 export function createOwnedInstagramBootstrapScope(page,trace){
  if(typeof page?.on!=='function'||typeof page?.send!=='function')throw igFailure('scope','ownership');
  const raw={subscribe:listener=>page.on(event=>listener({...event,sessionId:'owned'})),
-  call:(method,params,id,ms)=>{if(id!=='owned')throw igFailure('scope','ownership');return page.send(method,params,ms);}};
+   call:(method,params,id,ms,late)=>{if(id!=='owned')throw igFailure('scope','ownership');return page.send(method,params,ms,late);}};
  return createBootstrapCorroborationScope(raw,trace,page);
 }

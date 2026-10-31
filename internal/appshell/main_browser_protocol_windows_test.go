@@ -31,7 +31,7 @@ func syntheticMainBrowserClient(t *testing.T) (*mainBrowserClient, *io.PipeWrite
 	client := &mainBrowserClient{rpc: ownedrpc.New(mainBrowserTestWriter(func(raw []byte) (int, error) {
 		writes <- append([]byte(nil), raw...)
 		return len(raw), nil
-	})), ready: make(chan error, 1), nonce: "synthetic-main-nonce"}
+	})), ready: make(chan error, 1), nonce: "synthetic-main-nonce", diagnostic: newMainWorkerDiagnostic(nil)}
 	go client.read(reader)
 	if _, err := io.WriteString(writer, `{"ready":true,"schema":"`+mainBrowserSchema+`","nonce":"synthetic-main-nonce"}`+"\n"); err != nil {
 		t.Fatal(err)

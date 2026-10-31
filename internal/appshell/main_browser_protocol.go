@@ -12,6 +12,8 @@ type MainBrowserTransportOptions struct {
 	Node, Driver             string
 	NodeSHA256, DriverSHA256 string
 	StartupTimeout           time.Duration
+	// ObserveWorkerDiagnostic receives only the closed lifecycle projection.
+	ObserveWorkerDiagnostic func(json.RawMessage)
 }
 
 // MainBrowserProtocol adds a private X lane to the ordinary projected calls.
