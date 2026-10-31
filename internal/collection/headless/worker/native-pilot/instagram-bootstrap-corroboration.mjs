@@ -121,13 +121,20 @@ async function acquireInstagramBootstrap(transport,request,{trace=createIGTrace(
   phase='delivery_unproven';active('root_delivery');await wait(()=>extra);
   if(extraCount!==1)fail('delivery_unproven','extra_duplicate','root_delivery');if(extra.status!==200)fail('delivery_unproven','extra_status','root_delivery');if(cached)fail('delivery_unproven','cache_observed','root_delivery');trace.done('root_delivery');
   phase='body_read';active('body_read');
-  const handle=(await send('Fetch.takeResponseBodyAsStream',{requestId:paused.requestId}))?.stream;
+  // Preserve time for replay, document checks and parsing within the original
+  // delivery's freshness window. A body chunk never renews that timestamp.
+  const bodyDeadlineAt=Math.min(until,extra.receivedAtMS+policy.freshMS-2000),bodyStart=now();
+  if(!Number.isSafeInteger(extra.receivedAtMS)||extra.receivedAtMS<0||!Number.isSafeInteger(bodyDeadlineAt)||
+   !Number.isSafeInteger(bodyStart)||bodyStart<extra.receivedAtMS||bodyStart>=bodyDeadlineAt)fail('body_deadline');
+  const handle=(await send('Fetch.takeResponseBodyAsStream',{requestId:paused.requestId},Math.min(1000,bodyDeadlineAt-bodyStart)))?.stream;
   if(!reference(handle))fail('body_read');
-  const read=await readInstagramBootstrapBodyStream(scope,session,handle,{deadlineAt:until,now,trace});
+  const bodyNow=()=>{const time=now();return Number.isSafeInteger(time)&&time>=bodyStart?time:NaN;};
+  const read=await readInstagramBootstrapBodyStream(scope,session,handle,{deadlineAt:bodyDeadlineAt,now:bodyNow,trace});
   streamCleanup=read.cleanup==='verified';body=read.body;
   if(read.reason!=='none')fail(read.reason);
   if(!streamCleanup){trace.cleanup('uncertain','stream_close_failed');phase='cleanup_failed';throw reject();}if(!body)fail('body_read');result.bodyBound=true;trace.done('body_read');
-  if(now()-extra.receivedAtMS>policy.freshMS)fail('stale_delivery');
+  const fresh=()=>{const time=now(),age=time-extra.receivedAtMS;return Number.isSafeInteger(time)&&age>=0&&age<=policy.freshMS;};
+  if(!fresh())fail('stale_delivery');
   active('replay');await scope.replay(body,remaining());trace.done('replay');
   phase='navigation_failed';active('navigation');await wait(()=>navigationSettled);await navigationTask;
   if(!navigation||navigation.errorText)fail('navigation_failed','navigation_error');if(navigation.frameId!==rootFrame)fail('navigation_failed','navigation_frame');if(navigation.loaderId!==root.loaderId)fail('navigation_failed','navigation_loader');
@@ -146,7 +153,6 @@ async function acquireInstagramBootstrap(transport,request,{trace=createIGTrace(
     break;
    }await pause();remaining();
   }
-  const fresh=()=>{const age=now()-extra.receivedAtMS;return age>=0&&age<=policy.freshMS;};
   if(!fresh())fail('stale_delivery');
   phase='evaluation_failed';active('parsing');
   const reply=await scope.inspect(body,request.nonce,pinned.uniqueId,Math.min(policy.evaluationMS,until-now()));

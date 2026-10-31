@@ -87,8 +87,9 @@ function createBootstrapCorroborationScope(raw,trace,ownedPage){
   inspect:(body,nonce,context,ms)=>evaluate(instagramBootstrapCorroborationExpression(body,nonce,!!ownedPage),context,ms),
   async retire(ms){
    if(!ownedPage)throw reject('ownership');
-   // Disabling Fetch releases a paused response. An acquired stream must have
-   // been explicitly closed; otherwise retain uncertain cleanup.
+   // Disabling Fetch could release an unreplayed navigation, including a late
+   // pause or stream. Leave exact target retirement to the owning batch.
+   if((navigated||taken)&&!replayed)return false;
    if(fetchEnabled)await raw.call('Fetch.disable',{},session,timeout(ms));
    return pendingStreams===0&&streams.size===0;
   },

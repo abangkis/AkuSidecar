@@ -46,7 +46,8 @@ test('native reader body timeout is local and the owned stream can still retire'
   await assert.rejects(scope.call('IO.read',{handle:'owned-stream',size:1},'owned',10),error=>cdpCommandFailureDetail(error)?.kind==='timeout');
   assert.equal(f.transport.alive(),true);assert.equal(f.failures.length,0);
   await scope.call('IO.close',{handle:'owned-stream'},'owned',1000);
-  assert.equal(await scope.retire(1000),true);scope.dispose();await page.close();
+  assert.equal(await scope.retire(1000),false);
+  assert.equal(f.requests.some(q=>q.method==='Fetch.disable'),false);scope.dispose();await page.close();
   assert.deepEqual([...f.targets],['peer-target']);
 });
 
@@ -92,11 +93,13 @@ test('private local capability rejects peer targets, sessions and stream handles
   assert.equal(f.requests.length,0);assert.equal(f.transport.alive(),true);owned.dispose();
 });
 
-test('actual source server delivers one IG terminal result after local timeout and still serves ordinary calls',async t=>{
+test('actual source server delivers one IG terminal result after local timeout and still serves ordinary and X calls',async t=>{
   const input=new PassThrough(),output=new PassThrough(),rawInput=new PassThrough(),rawOutput=new PassThrough(),f=peer(rawInput,rawOutput),replies=[];
   output.on('data',wire=>replies.push(JSON.parse(wire)));
   let page,serverClosed=0;
-  const server=serveMainBrowserTransport({input,output,connect:async()=>({input:rawInput,output:rawOutput}),onClosed:()=>serverClosed++,sourceFactories:{instagram:async(_params,transport)=>({
+  const server=serveMainBrowserTransport({input,output,connect:async()=>({input:rawInput,output:rawOutput}),onClosed:()=>serverClosed++,
+    createX:async(_params,transport)=>({execute:async()=>transport.call('Browser.getVersion',{},'',1000),close:async()=>{}}),
+    sourceFactories:{instagram:async(_params,transport)=>({
     execute:async operation=>{
       if(operation!=='source_seed')return {};
       page=await createNativeOwnedPage(transport,1000);const scope=await bootstrapScope({input:rawInput},page);
@@ -108,10 +111,15 @@ test('actual source server delivers one IG terminal result after local timeout a
   })}});t.after(()=>server.close());
   const send=q=>input.write(JSON.stringify(q)+'\n');
   send({op:'main_transport_bootstrap',schema:MAIN_TRANSPORT_SCHEMA,nonce:'a'.repeat(48),transport:'inherited-stdio'});await waitFor(()=>replies.some(q=>q.ready));
-  send({id:1,op:'main_source',source:'instagram',operation:'source_bootstrap',params:{}});await waitFor(()=>replies.some(q=>q.id===1));
-  send({id:2,op:'main_source',source:'instagram',operation:'source_seed',params:{}});await waitFor(()=>f.held.length>0);
-  await new Promise(resolve=>setTimeout(resolve,20));await waitFor(()=>replies.some(q=>q.id===2));
-  assert.equal(replies.filter(q=>q.id===2).length,1);assert.equal(replies.find(q=>q.id===2).error.code,'native_source_evidence_reader_bootstrap_body_read');
-  send({id:3,op:'main_call',method:'Browser.getVersion',params:{},sessionId:'',timeoutMS:1000});await waitFor(()=>replies.some(q=>q.id===3));
-  assert.equal(replies.find(q=>q.id===3).ok,true);assert.equal(serverClosed,0);assert.equal(replies.some(q=>q.event==='main_transport_lifecycle'),false);
+  send({id:1,op:'main_x',operation:'daily_owner_bootstrap',params:{}});await waitFor(()=>replies.some(q=>q.id===1));
+  assert.equal(replies.find(q=>q.id===1).ok,true);
+  send({id:2,op:'main_source',source:'instagram',operation:'source_bootstrap',params:{}});await waitFor(()=>replies.some(q=>q.id===2));
+  send({id:3,op:'main_source',source:'instagram',operation:'source_seed',params:{}});await waitFor(()=>f.held.length>0);
+  await new Promise(resolve=>setTimeout(resolve,20));await waitFor(()=>replies.some(q=>q.id===3));
+  assert.equal(replies.filter(q=>q.id===3).length,1);assert.equal(replies.find(q=>q.id===3).error.code,'native_source_evidence_reader_bootstrap_body_read');
+  send({id:4,op:'main_call',method:'Browser.getVersion',params:{},sessionId:'',timeoutMS:1000});await waitFor(()=>replies.some(q=>q.id===4));
+  assert.equal(replies.find(q=>q.id===4).ok,true);
+  send({id:5,op:'main_x',operation:'daily_reader_check',params:{}});await waitFor(()=>replies.some(q=>q.id===5));
+  const x=replies.find(q=>q.id===5);assert.equal(x.ok,true);assert.equal(x.result.product,'Chrome/synthetic');
+  assert.equal(serverClosed,0);assert.equal(replies.some(q=>q.event==='main_transport_lifecycle'),false);
 });

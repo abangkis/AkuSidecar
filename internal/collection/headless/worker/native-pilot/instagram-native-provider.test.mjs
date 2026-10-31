@@ -12,6 +12,7 @@ import {createInstagramDailyOwner, INSTAGRAM_NATIVE_RECIPE} from './instagram-na
 import {createNativeSourceAttempt, createNativeOwnedPage, nativeSourceDiagnostic, nativeSourceFailure} from './native-source-kernel.mjs';
 import {projectInstagramCookies, instagramAccountExpression, verifyInstagramPair} from './instagram-native-session.mjs';
 import {fixture as bootstrapFixture} from './instagram-bootstrap-fixture.mjs';
+import {igErrorTrace} from './instagram-diagnostic-trace.mjs';
 
 const nonce = 'a'.repeat(48), profileScope = 'reader-profile-scope';
 const params = {chromePath: resolve('offline/chrome.exe'), readerProfile: resolve('offline/reader'), readerPID: 100,
@@ -36,13 +37,14 @@ function fixture(options = {}) {
     reserveTarget: id => pins.add(id), releaseTarget: id => pins.delete(id),
     reserveSession: id => sessions.add(id), releaseSession: id => sessions.delete(id),
     async call(method, values, session) {
-      calls.push({side: 'reader', method});
+      calls.push({side: 'reader', method,...(method==='Target.closeTarget'?{targetId:values.targetId}:{})});
       if (method === 'Target.createTarget') { const targetId = 'target-' + ++next; targets.add(targetId); return {targetId}; }
       if (method === 'Target.attachToTarget') return {sessionId: 'session-' + next};
       if (method === 'Target.closeTarget') { if (!options.keepTarget) targets.delete(values.targetId); return {success: true}; }
       if (method === 'Target.getTargets') return {targetInfos: [...targets].map(targetId => ({targetId}))};
       if (method === 'Network.setCacheDisabled' && options.failCache) throw new Error('PRIVATE response body must not escape');
       if (method === 'Network.getCookies') return {cookies: structuredClone(readerCookies)};
+      if (method === 'IO.read' && options.bodyFailure === 'reader') throw new Error('synthetic reader body failure');
       return readerBootstrap.raw.call(method,values,'owned-session',1000);
     },
   };
@@ -57,6 +59,7 @@ function fixture(options = {}) {
           on:listener=>bootstrap.raw.subscribe(listener),
           async send(method, values) {
             calls.push({side: 'collector', method});
+            if (method === 'IO.read' && options.bodyFailure === 'collector') throw new Error('synthetic collector body failure');
             if (method === 'Network.setCookies') { seedCount++; jar = structuredClone(values.cookies).map(cookie => ({...cookie, expires: cookie.expires ?? -1})); return {}; }
             if (method === 'Network.getCookies') {
               const selected = structuredClone(jar);
@@ -116,6 +119,22 @@ test('native recipe stays unqualified and has no speculative optional cookie imp
   assert.equal(INSTAGRAM_NATIVE_RECIPE.nativeQualified, false);
   assert.deepEqual(INSTAGRAM_NATIVE_RECIPE.optionalCookies, []);
   assert.throws(() => { INSTAGRAM_NATIVE_RECIPE.nativeQualified = true; });
+});
+
+for(const role of ['reader','collector'])test('provider retires only exact batch targets after unreplayed '+role+' acquisition failure',async()=>{
+  const f=await start({bodyFailure:role});f.targets.add('user-owned-reader');
+  await assert.rejects(f.owner.execute('source_seed',binding),error=>{
+    assert.equal(nativeSourceDiagnostic(error).reason,role+'_bootstrap_body_read');
+    assert.equal(igErrorTrace(error).cleanup.state,'uncertain','acquisition cannot verify an unreplayed document');
+    assert.equal(nativeSourceDiagnostic(error).cleanup,'verified','parent independently retires and verifies the target');return true;
+  });
+  assert.equal(f.calls.filter(q=>q.side===role&&q.method==='IO.read').length,1);
+  assert.equal(f.calls.some(q=>q.side===role&&q.method==='Fetch.disable'),false);
+  assert.deepEqual(f.calls.filter(q=>q.method==='Target.closeTarget').map(q=>q.targetId),['target-1']);
+  assert.deepEqual([...f.targets],['user-owned-reader']);assert.equal(f.pins.size,0);assert.equal(f.sessions.size,0);
+  assert.ok(f.pages.every(page=>page.closed));assert.equal(f.collectorClosed,true);
+  await assert.rejects(f.owner.execute('source_proof',binding));
+  assert.deepEqual(await f.owner.execute('source_end',binding),{closed:true});await f.owner.close();
 });
 
 test('post-capture verification navigates the separate evidence page and preserves capture document',async()=>{

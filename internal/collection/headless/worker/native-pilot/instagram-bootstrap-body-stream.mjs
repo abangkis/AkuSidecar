@@ -33,7 +33,7 @@ function readCommandCondition(error){
 
 export async function readInstagramBootstrapBodyStream(scope, session, stream, {now = Date.now, deadlineAt, maxBytes = MAX_BODY_BYTES, trace} = {}) {
   if (!scope || typeof scope.call !== 'function' || typeof session !== 'string' || !session ||
-      typeof stream !== 'string' || !stream || !Number.isFinite(deadlineAt) ||
+      typeof stream !== 'string' || !stream || !Number.isSafeInteger(deadlineAt) || deadlineAt < 1 ||
       !Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_BODY_BYTES) throw failure();
   const chunks = [];
   let size = 0, reason = 'none', cleanup = 'uncertain', body, condition;
@@ -41,11 +41,11 @@ export async function readInstagramBootstrapBodyStream(scope, session, stream, {
   try {
     for (;;) {
       const time = now();
-      if (!Number.isFinite(time) || time < previous || time >= deadlineAt) { reason = 'body_deadline'; break; }
+      if (!Number.isSafeInteger(previous) || previous < 0 || !Number.isSafeInteger(time) || time < previous || time >= deadlineAt) { reason = 'body_deadline'; break; }
       previous = time;
       // The extra byte detects overflow at an exact cap without trusting headers.
       const requested = Math.min(CHUNK_BYTES, maxBytes - size + 1);
-      const reply = await scope.call('IO.read', {handle: stream, size: requested}, session, Math.min(1000, deadlineAt - time));
+      const reply = await scope.call('IO.read', {handle: stream, size: requested}, session, Math.min(3000, deadlineAt - time));
       if (!validReadReply(reply)) { reason = 'body_read'; condition = 'read_reply_invalid'; break; }
       // Bound decoding allocation, including a provider that violates IO.read size.
       if (reply.data.length > (reply.base64Encoded ? 4 * Math.ceil(requested / 3) : requested)) { reason = 'body_bounds'; break; }
@@ -56,7 +56,7 @@ export async function readInstagramBootstrapBodyStream(scope, session, stream, {
       size += chunk.length;
       if (reply.eof) {
         const finished = now();
-        if (!Number.isFinite(finished) || finished < previous || finished >= deadlineAt) { reason = 'body_deadline'; break; }
+        if (!Number.isSafeInteger(finished) || finished < previous || finished >= deadlineAt) { reason = 'body_deadline'; break; }
         body = Buffer.concat(chunks, size);
         break;
       }
