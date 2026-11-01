@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics feature below.
+approved CL-3.2 diagnostics and Bridge status features below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -352,10 +352,55 @@ The provider-selection micro-extraction was declined after analysis: the
 single-caller helper offers insufficient value. No such helper was implemented.
 Prefer complete responsibility boundaries over further small Settings splits.
 
-No push, activation or live trial was performed. Next proposal: read-only
-analysis of Bridge status/compatibility and its protocol/capability/source
-readiness predicates. Assess one cohesive feature module while retaining
-heartbeat mutation, revocation, command recovery, reload and scheduler effects
-with Engine. Preserve `e.mu`, legacy negotiation, output categories and all
-origin/source/capability guards; map tests and missing characterization before
-requesting implementation approval. No further code change is approved here.
+No push, activation or live trial was performed for this increment. At that
+checkpoint the next proposal was read-only analysis of Bridge status/compatibility.
+That analysis was completed and its bounded feature move was separately approved;
+the result follows below.
+
+## CL-3.2 Bridge status feature result (2026-11-01)
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Bridge status/compatibility feature | `7b2d0d8`: nine functions and the two public status/negotiation types moved to `internal/engine/bridge_status.go`; existing callers and Engine receiver retained | [Receipt](../runtime/qa/bridge-status-20261101/validation.json): identical characterization passes 38 results before and after relocation; default 623 pass/38 skip, dev 1,296 pass/48 skip, zero failures; four build-tag graphs and eight Windows amd64 artifacts | Not performed | Scoped source/test review found no blocking issue; committed. Constants, `expectedBridgeActions`, locks, protocol, origin/source/capability guards, heartbeat pointer guard and side-effect order retained; CL-3 remains partial |
+
+The receipt identifies parent `ee9a2a2` and the pre-commit worktree. Its three
+source hashes map to the payload now committed as
+`7b2d0d8dd935b17287f42002417c2736fa80581c`.
+The [review](../runtime/qa/bridge-status-review-20261101/review.json)
+checks the source/log/artifact hashes and repeats exact moved-block
+and Engine-remainder comparisons. Both types and all nine function bodies,
+including the full `e.mu.RLock` scope, are unchanged. At review, the other 1,359
+tracked-file hashes and unrelated Browser changes remained intact. Existing
+passing suites were reused after matching inputs; historical receipts were not
+rewritten as post-commit executions.
+
+Characterization covers status/negotiation JSON keys and null/omission behavior,
+ordered reasons/warnings and incompatible precedence, capability count/length/
+syntax boundaries, source-readiness consistency, origin allowlist normalization,
+read-only status behavior and independent heartbeat action/adapter projections.
+Existing regressions also pass for legacy v2 negotiation, future protocol minors,
+surface policy, strict authority/limits, multiple origins, headless revocation,
+reload completion, expired claims and diagnostics projection. A valid unready
+source can remain compatible without acquiring permission; existing admission
+checks retain that authority. The existing empty-config test-engine path remains
+unchanged, not a new production allowlist bypass.
+
+`RecordHeartbeat` remains in Engine with its original pointer check, retained
+authority update, command recovery, reload observation and scheduler notification
+order. A status read does not gain heartbeat/origin expiry or lifecycle effects.
+Constants and `expectedBridgeActions` stay in `engine.go`; the unchanged Browser
+identity checker still finds version/revision/ID markers there. Its release-tuple
+checker was not executed; source anchors were verified. No new concurrency,
+copying or protocol policy was introduced.
+
+This is a Sidecar CL-3.2 increment. CL-6 still concerns extension background
+dispatch and surface ownership; neither it nor comprehensive cleanup is closed.
+No push, activation or live trial was performed.
+
+Next proposal: read-only analysis of HTTP Bridge command handlers (next, pending,
+observation and failure) as one coherent module. Retain route predicates, Server
+receiver, request context, authentication, DTO/status/error contracts and native
+trace order. Engine/Store keep admission, claim/result fencing and lifecycle
+ownership. Do not introduce a service layer or include heartbeat, surface events
+or media recapture routes. Define missing characterization before requesting
+implementation approval; no further code change is approved by this record.

@@ -1,7 +1,7 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-01 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `1068e35` (diagnostics export feature separation, after `c303ed4`/`8dc3f5e`),
+Reviewed local source: AkuSidecar `7b2d0d8` (Bridge status feature separation, after diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
 The Browser worktree contains pre-existing build/cache changes; those changes
@@ -81,6 +81,12 @@ combined passing suites. The provider-selection micro-extraction proposal was
 subsequently declined: keep the existing 98-line `SaveSettings` cohesive rather
 than adding another single-caller wrapper. No provider-selection helper was added.
 
+CL-3.2 also separates Bridge status/compatibility as `7b2d0d8`, with unchanged
+constants, action catalog, lock scopes and heartbeat side effects. Its
+[result](cl1-cleanup-candidates.md#cl-32-bridge-status-feature-result-2026-11-01)
+records the latest characterization/regression/Windows evidence. This is a
+Sidecar backend increment, not completion of CL-6 extension responsibility work.
+
 | Increment | Implemented commit | Tested evidence | Activated | Acceptance |
 | --- | --- | --- | --- | --- |
 | Remove unused Personal Memory wrappers | `f348b9b` | Accepted cleanup review and regression history | Not recorded | Bounded removal only; not a repository-wide legacy audit |
@@ -100,6 +106,7 @@ than adding another single-caller wrapper. No provider-selection helper was adde
 | E01 executable-change preparation | `c303ed4` | [Initial extraction receipt](../runtime/qa/settings-executable-20261101/validation.json): 20 characterization results pass before/after extraction; exact helper/caller equivalence. Its native-pilot failures remain historical. [Review](../runtime/qa/settings-executable-review-20261101/review.json) verifies the unchanged payload against the latest combined passing evidence below | Not performed | Scoped review complete and committed; receiver, locks, trim-equal no-op, errors, active-provider ownership, pre-save discovery and post-save activation retained |
 | Offline Node startup timing validation detour | `8dc3f5e` | [Combined receipt](../runtime/qa/native-pilot-node-integration-20261101/validation.json): default 568 pass/38 skip, dev 1,241 pass/48 skip, zero failures; 98 Node tests; two independent 100-iteration integration batches; four build-tag graphs and eight Windows artifacts. Review verifies hashes, raw logs and staging pins | Not performed | Scoped fixture/test correction reviewed and committed; real bounded scheduling intervals, original monotonic clock, protocol, timestamps, document/freshness/deadline guards retained. This is fixture stabilization, not universal clock synchronization or live-provider acceptance |
 | CL-3.2 diagnostics export feature | `1068e35` | [Receipt](../runtime/qa/diagnostics-export-20261101/validation.json): identical characterization tests pass 17 results before and after the move; latest default 585 pass/38 skip, dev 1,258 pass/48 skip, zero failures; four build-tag graphs and eight Windows artifacts. [Review](../runtime/qa/diagnostics-export-review-20261101/review.json) verifies source equivalence, raw logs and artifact hashes | Not performed | Scoped source/test review complete and committed; `DiagnosticsExport` and nine helpers relocated unchanged, Engine receiver and Store/read/error/output/protocol/guard contracts preserved. Default-range zero usage remains existing behavior; no operational acceptance claim |
+| CL-3.2 Bridge status/compatibility feature | `7b2d0d8` | [Receipt](../runtime/qa/bridge-status-20261101/validation.json): identical characterization passes 38 results before/after relocation; latest default 623 pass/38 skip, dev 1,296 pass/48 skip, zero failures; four build-tag graphs and eight Windows artifacts. [Review](../runtime/qa/bridge-status-review-20261101/review.json) checks source/log/artifact hashes, existing protocol/guard regressions and identity-checker anchors | Not performed | Scoped source/test review complete and committed; nine functions/two types relocated unchanged; constants, `expectedBridgeActions`, `e.mu`, heartbeat/revocation/recovery/reload/scheduler ordering retained. No protocol, authority, freshness or operational acceptance change |
 
 Counts include subtests and repeated build-tag selections; do not add them as
 unique test cases. Receipts captured before commit may retain `committed:false`
@@ -116,15 +123,15 @@ legacy/compatibility inventory. These are proposals,
 not authorization to implement or delete. Scheduler drain and further execution
 refactors have not been added to this completed slice.
 
-Next source-cleanup proposal: read-only analysis of Bridge status/compatibility
-in `engine.go`. Map `BridgeStatus`, expected-heartbeat/protocol/capability/source
-readiness predicates and their callers; assess one cohesive feature module.
-Keep `RecordHeartbeat` state mutation, authority revocation, command recovery,
-reload and scheduler side effects with Engine. Preserve `e.mu` scopes, legacy
-negotiation, bounded capabilities, origin/source gates and output/error order.
-Identify missing characterization before requesting implementation approval.
-No further implementation is approved by this status update; the separate
-operational/IG diagnostic boundary below remains unchanged.
+Next source-cleanup proposal: read-only analysis of the HTTP Bridge command
+handlers in `server.go` (next, pending, observation and failure) as one coherent
+protocol feature. Keep route predicates, request context, Bridge authentication,
+DTOs, status/error mappings and native-trace ordering unchanged. Engine/Store
+retain command admission, claim/result fencing and lifecycle ownership. Assess
+one module using the existing Server receiver; do not introduce a service layer
+or absorb heartbeat, surface events or media recapture routes. Identify missing
+characterization before requesting implementation approval. No further code or
+operational change is approved by this status update.
 
 ## Product and installation roadmaps
 

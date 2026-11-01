@@ -105,7 +105,7 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-0: inherited bounded cleanup | Eight increments above complete | Scoped receipts retained | Cleanup activation not recorded | Bounded code reviews complete; no whole-repository completion claim |
 | CL-1: consumer and compatibility inventory | [Entry/consumer map](cl1-consumer-inventory.md) and [32-boundary candidate ledger](cl1-cleanup-candidates.md) delivered | Read-only four-tag metadata, native/package/reference and source-preservation checks; no product test/build | Not applicable to an audit | Ready for review; external-consumer and offline Browser dependency limits explicit; no implementation approved |
 | CL-2: proven obsolete-code retirement | Earlier wrappers plus G10 `DeleteMemoryItem` removal committed with roadmap as `21ac9ad` | G10 exact remainder check, full Store/HTTP regressions and four-mode Windows compilation passed | Not performed for G10 | G10 reviewed/committed; comprehensive retirement remains scoped by the remaining ledger entries |
-| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Engine/HTTP/config/application suites: default 585 pass/38 skip, dev 1,258 pass/48 skip, zero failures; 17 characterization results before/after diagnostics move, four build-tag graphs and eight Windows artifacts pass. Earlier Node/cancellation stress and profile contracts retain their own receipt scope | Not performed for these increments | Scoped changes reviewed/committed; diagnostics feature and E01 boundaries established; further Engine/HTTP boundaries pending. Provider-selection micro-extraction declined; keep Settings cohesive; CL-3 remains partial |
+| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Engine/HTTP/config/application suites: default 623 pass/38 skip, dev 1,296 pass/48 skip, zero failures; 38 Bridge characterization results before/after relocation, four build-tag graphs and eight Windows artifacts pass. Earlier diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Scoped changes reviewed/committed; diagnostics/Bridge status and E01 boundaries established; further Engine/HTTP boundaries pending. Provider-selection micro-extraction declined; keep Settings cohesive; CL-3 remains partial |
 | CL-4: frontend feature ownership | Existing navigation module retained; broader extraction proposed | Existing baseline only | Not recorded | Timeline/Settings/app orchestration pending |
 | CL-5: native runtime and QA boundaries | Factory/shared-helper separation complete; fixture-only timing correction `8dc3f5e` committed; deeper runtime split proposed | 98 Node tests, 200 offline integration iterations and dependency-pinned staging verified for this fixture correction; existing baseline only for remaining seams | Not performed for this correction | Bounded fixture acceptance only; remaining operation/transport/QA separation pending; no universal cross-runtime clock or real-provider qualification claim |
 | CL-6: Bridge responsibility boundaries | Existing source/lifecycle modules retained; further split proposed | Existing baseline only for remaining seams | No new rollout | Background dispatch/surface integration pending |
@@ -166,15 +166,18 @@ Do not delete a consumer merely to make the dependency scan appear clean.
   post-save error behavior. Analyze one coherent seam before considering a
   broader service interface.
 - **CL-3.2 Engine:** diagnostics export and its nine helpers are separated unchanged
-  in `diagnostics_export.go` as `1068e35`, with characterization and passing
-  combined regressions/Windows compilation. Next analyze the coherent Bridge
-  status/compatibility feature read-only. Remaining command adaptation, observation
+  in `diagnostics_export.go` as `1068e35`; Bridge status's nine functions/two types
+  follow in `bridge_status.go` as `7b2d0d8`, retaining constants, action catalog,
+  lock scopes and heartbeat side effects. Both have characterization and passing
+  combined regressions/Windows compilation. Remaining command adaptation, observation
   acceptance, source admission, enrichment and read-model boundaries still need
   evidence. Keep the Engine facade and existing Store authority; do not repeat
   completed lifecycle/session moves or split small blocks merely to reduce size.
 - **CL-3.3 HTTP capture:** separate request/response adaptation from application
   orchestration where a complete use case is identifiable. Preserve endpoint
   shapes, authentication/admission, status codes, error categories and call order.
+  Next proposal: read-only analysis of the four Bridge command endpoints as one
+  module, retaining Server/Engine/Store ownership and existing route predicates.
 
 Exit: a reviewed responsibility map and separately validated extractions, with
 no second source of state, broader admission, new concurrency or wire changes.
@@ -361,14 +364,24 @@ All ten declarations and the original Engine remainder are equivalent; the
 17 characterization results pass before and after the move. The default-range
 unsupported usage window remains deliberately unchanged, not repaired here.
 
-The next proposal is read-only analysis of Bridge status/compatibility in
-`engine.go`: assess one module for status projection and existing protocol,
-capability and source-readiness predicates. Leave heartbeat mutation, authority
-revocation, command recovery, reload/scheduler effects and ownership with Engine.
-Map callers and existing tests, preserve `e.mu`, legacy negotiation and every
-origin/source/capability guard, and identify missing characterization before
-implementation approval. No further refactor, protocol change or compatibility
-removal is approved by this status update.
+The user subsequently approved the complete Bridge status/compatibility move.
+Nine functions and two types now belong to `bridge_status.go`, committed as
+`7b2d0d8`. See the [result](cl1-cleanup-candidates.md#cl-32-bridge-status-feature-result-2026-11-01),
+[validation](../runtime/qa/bridge-status-20261101/validation.json) and
+[review](../runtime/qa/bridge-status-review-20261101/review.json). Constants and
+`expectedBridgeActions` remain in Engine; AkuBrowser's text-based identity checker
+retains its original anchors. `RecordHeartbeat`, revocation, recovery, reload and
+scheduler ordering are unchanged. This is CL-3.2, not CL-6 extension completion.
+
+The next proposal is read-only analysis of the HTTP Bridge command handlers:
+next, pending, observation and failure. Assess one coherent module with the
+existing Server receiver while keeping route predicates, request context,
+authentication, DTOs, status/error behavior and tracing order unchanged.
+Engine/Store keep admission, claim/result fencing and lifecycle authority. Do
+not introduce a service layer or include heartbeat, surface-event or recapture
+routes. Map callers/tests and define missing characterization before requesting
+implementation approval. No further refactor, protocol or guard change is
+approved by this status update.
 
 No calendar estimate or cleanup percentage is assigned: this bounded inventory
 does not establish a complete repository-wide denominator or close every

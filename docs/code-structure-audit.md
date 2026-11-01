@@ -3,7 +3,7 @@
 ## Status synchronization (2026-11-01)
 
 The original audit and its validation below are historical. Current source is
-reviewed through `1068e35`, including diagnostics export feature separation; see the [roadmap status index](roadmap-status.md)
+reviewed through `7b2d0d8`, including Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
 for commit-to-receipt mappings. Cleanup is not provider qualification.
 
 | Increment | Implemented | Tested | Activated | Acceptance |
@@ -21,7 +21,8 @@ for commit-to-receipt mappings. Cleanup is not provider qualification.
 | Reader cancellation validation detour | `edb246d` | Deterministic regression and 300 stress passes; recorded default 547 pass/38 skip, dev 1,220 pass/48 skip, zero failures; three profile contracts, four build-tag graphs and eight Windows artifacts | Not performed | Existing waiter cancellation takes precedence over stopped reporting; new closed-transport requests remain rejected; protocol and guards retained |
 | Executable-change preparation | `c303ed4` | 20 characterization results pass before/after extraction; exact helper/caller equivalence. Initial native-pilot failures remain historical; latest combined evidence below passes | Not performed | Scoped helper/test review complete and committed; operation/work lock scopes, no-op and error contracts, discovery before persistence and activation before provider swap retained |
 | Offline Node startup timing detour | `8dc3f5e` | Recorded default 568 pass/38 skip, dev 1,241 pass/48 skip, zero failures; 98 Node tests, 200 repeated integration iterations, four build-tag graphs and eight Windows artifacts; [review](../runtime/qa/settings-executable-review-20261101/review.json) matches source/log/artifact and staging hashes | Not performed | Scoped fixture/test correction committed; original clock, timestamps, protocol, document, cancellation, freshness and deadline guards retained. This bounded fixture scheduling does not establish universal clock synchronization or live-source acceptance |
-| Diagnostics export feature | `1068e35` | Identical characterization passes 17 results before/after relocation; latest default 585 pass/38 skip, dev 1,258 pass/48 skip, zero failures; four build-tag graphs and eight Windows artifacts; [review](../runtime/qa/diagnostics-export-review-20261101/review.json) verifies unchanged declarations/remainder and source/log/artifact hashes | Not performed | Scoped source/test review complete and committed; ten declarations moved together, receiver, Store ownership, read/error order, JSON/protocol/guard behavior retained; default-range zero usage remains existing behavior |
+| Diagnostics export feature | `1068e35` | Identical characterization passes 17 results before/after relocation; recorded default 585 pass/38 skip, dev 1,258 pass/48 skip, zero failures; four build-tag graphs and eight Windows artifacts; [review](../runtime/qa/diagnostics-export-review-20261101/review.json) verifies unchanged declarations/remainder and source/log/artifact hashes | Not performed | Scoped source/test review complete and committed; ten declarations moved together, receiver, Store ownership, read/error order, JSON/protocol/guard behavior retained; default-range zero usage remains existing behavior |
+| Bridge status/compatibility feature | `7b2d0d8` | Identical characterization passes 38 results before/after relocation; latest default 623 pass/38 skip, dev 1,296 pass/48 skip, zero failures; four build-tag graphs and eight Windows artifacts; [review](../runtime/qa/bridge-status-review-20261101/review.json) verifies source/log/artifact hashes and identity-checker anchors | Not performed | Scoped source/test review complete and committed; nine functions/two types moved unchanged; constants, action catalog, full read-lock scope, heartbeat pointer guard and revocation/recovery/reload/scheduler order retained. This is Sidecar CL-3.2, not extension CL-6 completion |
 
 No code change, activation or trial is performed by this status update. Existing
 test receipts are reused at their verified source/artifact scope, not rerun.
@@ -97,9 +98,12 @@ The backend Settings orchestration boundary is established in
 `settings_execution.go`; profile-map merge and executable preparation have their
 own focused files. The provider-selection micro-extraction was declined: keep
 the remaining 98-line `SaveSettings` cohesive rather than adding another wrapper.
-The complete diagnostics export feature now belongs to `diagnostics_export.go`.
-Next analyze Bridge status/compatibility as a coherent feature while retaining
-heartbeat/recovery/scheduler effects and authority with Engine. Other remaining
+The complete diagnostics export feature now belongs to `diagnostics_export.go`;
+Bridge status/compatibility and its public types belong to `bridge_status.go`,
+with constants/actions and heartbeat/recovery/scheduler effects retained in
+Engine. Next analyze the HTTP Bridge command handlers as one protocol feature,
+preserving route/authentication/context/status/error behavior and Engine/Store
+authority. No new service layer is proposed. Other remaining
 candidates include feature-level Timeline/frontend Settings orchestration,
 probe mode dispatch, HTTP capture-service boundaries and broader legacy/consumer
 review. They require separate bounded analysis/approval, not a deletion list or
