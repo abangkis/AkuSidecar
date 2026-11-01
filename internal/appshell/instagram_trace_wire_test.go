@@ -128,7 +128,7 @@ func TestInstagramRealNodeWire(t *testing.T) {
 			if scenario == "scope" && (err != nil || e.Disposition != "completed" || e.Cleanup.State != "uncertain") {
 				t.Fatalf("scope fault lost: %s", raw)
 			}
-			if scenario == "document_handoff" && (err != nil || e.Cause == nil || e.Cause.Stage != "handoff" || e.Cause.Condition != "document_within_navigation" || e.Cleanup.State != "verified" || e.Evidence["documentBound"] != "invalidated") {
+			if scenario == "document_handoff" && (e.Document == nil || e.Document.History == nil || e.Document.History.Method != "replaceState" || e.Document.History.CallerScript != "https://static.cdninstagram.com/rsrc.php/v4/x/r/router.js" || e.Document.History.Line == nil || *e.Document.History.Line != 1329 || e.Document.History.Column == nil || *e.Document.History.Column != 21 || e.Document.NavigationType != "historyApi" || e.Document.Role != "collector" || e.Document.VerifierStep != "handoff" || err != nil || e.Cause == nil || e.Cause.Stage != "handoff" || e.Cause.Condition != "document_within_navigation" || e.Cleanup.State != "verified" || e.Evidence["documentBound"] != "invalidated") {
 				t.Fatalf("document handoff observation lost across wire: %s", raw)
 			}
 			if scenario == "trace_saturation" && (err != nil || e.Complete || e.NodeSequence != 10000 || e.Disposition != "completed" || e.Cause == nil || e.Cause.Condition != "root_request_duplicate" || e.Cleanup.State != "verified") {

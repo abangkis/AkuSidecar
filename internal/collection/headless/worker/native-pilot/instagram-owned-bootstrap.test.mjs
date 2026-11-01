@@ -15,6 +15,8 @@ function owned(options={}){
  const cookies=['csrftoken','ds_user_id','sessionid'].map(name=>({name,value:name==='ds_user_id'?'123':'PRIVATE_'+name,domain:'.instagram.com',path:'/',secure:true,httpOnly:name==='sessionid',expires:-1}));
  const page={on:f.raw.subscribe,async send(method,params,ms){
   calls.push(method);
+  if(method==='Page.addScriptToEvaluateOnNewDocument')return {identifier:'history-script'};
+  if(method==='Page.removeScriptToEvaluateOnNewDocument')return {};
   if(method==='Network.getCookies')return {cookies:structuredClone(cookies)};
   if(method==='Fetch.disable'&&options.disableFails)throw Error('PRIVATE');
   return f.raw.call(method,params,'owned-session',ms);
@@ -22,6 +24,82 @@ function owned(options={}){
  return {page,f,calls,cookies};
 }
 const attempt={binding,run:async(stage,fn)=>fn(60000)};
+
+test('History API caller is retained with first cause and cannot authorize invalidated evidence',async()=>{
+ const f=owned(),send=f.page.send,callerScript='https://static.cdninstagram.com/rsrc.php/v4/x/r/router.js';
+ f.page.send=async(command,...args)=>{
+  const value=await send(command,...args);
+  if(command==='Network.getCookies'){
+   f.f.emit('Runtime.consoleAPICalled',{type:'debug',executionContextId:7,args:[{type:'string',value:'aku.ig.history.v1'},{type:'string',value:'replace'}],stackTrace:{callFrames:[{url:'aku-instagram-history-diagnostic',lineNumber:0,columnNumber:0},{url:callerScript,lineNumber:1328,columnNumber:20,functionName:'PRIVATE'}]}});
+   f.f.emit('Page.navigatedWithinDocument',{frameId:'root-frame',navigationType:'historyApi'});
+  }
+  return value;
+ };
+ await assert.rejects(readInstagramEvidence(f.page,attempt,'reader','PRIVATE','PRIVATE','PRIVATE'),error=>{
+  assert.equal(nativeSourceDiagnostic(error).reason,'document_changed');
+  const trace=igErrorTrace(error);assert.ok(validateIGTrace(trace));
+  assert.deepEqual(trace.document.history,{method:'replaceState',callerScript,line:1329,column:21});
+  assert.equal(trace.cause.condition,'document_within_navigation');assert.ok(!JSON.stringify(trace).includes('PRIVATE'));return true;
+ });
+ assert.equal(f.f.listeners.size,0);
+});
+test('navigation during diagnostic retirement still blocks proof publication',async()=>{
+ const f=owned(),send=f.page.send;
+ f.page.send=async(command,...args)=>{const value=await send(command,...args);if(command==='Page.removeScriptToEvaluateOnNewDocument')f.f.emit('Page.navigatedWithinDocument',{frameId:'root-frame',navigationType:'historyApi'});return value;};
+ await assert.rejects(readInstagramEvidence(f.page,attempt,'reader','PRIVATE','PRIVATE','PRIVATE'),error=>nativeSourceDiagnostic(error).reason==='document_changed');
+ assert.equal(f.f.listeners.size,0);
+});
+test('unavailable caller instrumentation cannot authorize a changed document or change proof policy',async()=>{
+ for(const invalidate of [false,true]){
+  const f=owned(),send=f.page.send;
+  f.page.send=async(command,...args)=>{
+   if(command==='Page.addScriptToEvaluateOnNewDocument')throw Error('PRIVATE_DIAGNOSTIC');
+   const value=await send(command,...args);
+   if(invalidate&&command==='Network.getCookies')f.f.emit('Page.navigatedWithinDocument',{frameId:'root-frame',navigationType:'historyApi'});
+   return value;
+  };
+  if(invalidate)await assert.rejects(readInstagramEvidence(f.page,attempt,'reader','PRIVATE','PRIVATE','PRIVATE'),error=>nativeSourceDiagnostic(error).reason==='document_changed');
+  else assert.equal((await readInstagramEvidence(f.page,attempt,'reader','1','p','s')).proof.authenticated,true);
+  assert.equal(f.f.listeners.size,0);
+ }
+});
+
+test('unreadable optional navigation metadata cannot interrupt invalidation or cleanup',async()=>{
+ const f=owned(),send=f.page.send;
+ f.page.send=async(command,...args)=>{
+  const value=await send(command,...args);
+  if(command==='Fetch.disable')f.f.emit('Page.navigatedWithinDocument',{frameId:'root-frame',get navigationType(){throw Error('PRIVATE');}});
+  return value;
+ };
+ await assert.rejects(readInstagramEvidence(f.page,attempt,'reader','PRIVATE','PRIVATE','PRIVATE'),error=>{
+  assert.equal(nativeSourceDiagnostic(error).reason,'reader_bootstrap_document_changed');
+  const trace=igErrorTrace(error);assert.equal(trace.cause.condition,'document_within_navigation');assert.equal(trace.document.navigationType,'unknown');assert.equal(trace.cleanup.state,'verified');return true;
+ });
+ assert.equal(f.f.listeners.size,0);
+});
+
+test('navigation metadata identifies role and exact verifier window without authorizing changed documents',async()=>{
+ for(const role of ['reader','collector'])for(const step of ['cookies','frame','readiness'])for(const navigationType of ['historyApi','fragment','other',undefined,'PRIVATE']){
+  const f=owned(),send=f.page.send;
+  f.page.send=async(command,...args)=>{
+   const result=await send(command,...args);
+   if(step==='cookies'&&command==='Network.getCookies'||step==='frame'&&command==='Page.getFrameTree'&&f.calls.includes('Network.getCookies')||step==='readiness'&&command==='Runtime.evaluate'&&f.calls.includes('Network.getCookies')){
+    f.f.emit('Page.navigatedWithinDocument',{frameId:'unrelated',url:'PRIVATE',navigationType:'fragment'});
+    f.f.emit('Page.navigatedWithinDocument',{frameId:'root-frame',url:'https://www.instagram.com/',navigationType});
+    f.f.emit('Page.navigatedWithinDocument',{frameId:'root-frame',url:'PRIVATE',navigationType:'fragment'});
+   }
+   return result;
+  };
+  await assert.rejects(readInstagramEvidence(f.page,attempt,role,'PRIVATE','PRIVATE','PRIVATE'),error=>{
+   assert.equal(nativeSourceDiagnostic(error).reason,'document_changed');
+   const trace=igErrorTrace(error);
+   assert.deepEqual(trace.document,{navigationType:['historyApi','fragment','other'].includes(navigationType)?navigationType:'unknown',role,verifierStep:step});
+   assert.equal(trace.cause.condition,'document_within_navigation');assert.equal(trace.cleanup.state,'verified');
+   assert.ok(validateIGTrace(trace));assert.ok(!JSON.stringify(trace).includes('PRIVATE'));return true;
+  });
+  assert.equal(f.f.listeners.size,0);
+ }
+});
 
 test('private acquisition preserves live owned targets and original delivery time',async()=>{
  const f=owned();let time=10000;
@@ -111,7 +189,7 @@ const assertDocumentFailure=(error,condition,reason='document_changed',cleanup='
  assert.equal(nativeSourceDiagnostic(error).reason,reason);
  const trace=igErrorTrace(error);assert.ok(validateIGTrace(trace));
  assert.deepEqual(trace.cause,{stage,condition});assert.equal(trace.cleanup.state,cleanup);
- assert.ok(!JSON.stringify(trace).includes('PRIVATE'));assert.ok(Buffer.byteLength(JSON.stringify(trace))<=512);return true;
+ assert.ok(!JSON.stringify(trace).includes('PRIVATE'));assert.ok(Buffer.byteLength(JSON.stringify(trace))<=1536);return true;
 };
 
 test('each invalidation blocks both roles during cleanup, handoff, cookies and final readiness',async t=>{
@@ -346,8 +424,8 @@ test('cancellation before binding cannot install a late verifier observer',async
 
 test('watcher disposal failure blocks success and preserves an earlier document failure',async()=>{
  for(const invalidate of [false,true]){
-  const f=owned(),on=f.page.on,send=f.page.send;let subscriptions=0;
-  f.page.on=listener=>{const off=on(listener);const verifier=++subscriptions===3;return()=>{off();if(verifier)throw Error('PRIVATE_DISPOSE');};};
+  const f=owned(),on=f.page.on,send=f.page.send;
+  f.page.on=listener=>{const off=on(listener);const verifier=f.calls.includes('Runtime.evaluate');return()=>{off();if(verifier)throw Error('PRIVATE_DISPOSE');};};
   f.page.send=async(method,...args)=>{const result=await send(method,...args);if(invalidate&&method==='Network.getCookies')f.f.emit('Page.navigatedWithinDocument',{frameId:'root-frame'});return result;};
   await assert.rejects(readInstagramEvidence(f.page,attempt,'reader','1','p','s'),error=>{
    assert.equal(nativeSourceDiagnostic(error).reason,invalidate?'document_changed':'unverified');

@@ -4,7 +4,28 @@ import {PassThrough} from 'node:stream';
 import {createIGTrace,validateIGTrace,igFailure,igFailureDetail,recordIGError,igErrorTrace} from './instagram-diagnostic-trace.mjs';
 import {serveMainBrowserTransport,MAIN_TRANSPORT_SCHEMA} from './main-browser-transport-protocol.mjs';
 import {readInstagramEvidence} from './instagram-native-session.mjs';
+import {IG_DIAGNOSTIC_CATALOG as catalog} from './instagram-diagnostic-catalog.mjs';
 const tick=()=>new Promise(r=>setImmediate(r)),nonce='a'.repeat(48);
+test('document context is closed, copied and frozen with the first cause',()=>{
+ const frames=[],trace=createIGTrace(v=>frames.push(v));
+ trace.documentRole('reader');trace.verifierStep('frame');trace.documentNavigation('historyApi');trace.fail('post_check','document_within_navigation');
+ trace.documentRole('collector');trace.verifierStep('proof');trace.documentNavigation('fragment');trace.cleanup('verified');
+ const value=trace.snapshot();
+ assert.deepEqual(value.document,{navigationType:'historyApi',role:'reader',verifierStep:'frame'});
+ assert.ok(frames.every(validateIGTrace));
+ value.document.role='collector';assert.equal(trace.snapshot().document.role,'reader');
+ for(const document of [null,{}, {...value.document,url:'PRIVATE'}, {...value.document,navigationType:'PRIVATE'}, {...value.document,role:'PRIVATE'}, {...value.document,verifierStep:'PRIVATE'}])assert.equal(validateIGTrace({...value,document}),false);
+ const unknown=createIGTrace();unknown.documentRole('PRIVATE');unknown.documentNavigation('PRIVATE');
+ assert.deepEqual(unknown.snapshot().document,{navigationType:'unknown',role:'unknown',verifierStep:'acquisition'});
+ assert.ok(!JSON.stringify(unknown.snapshot()).includes('PRIVATE'));
+});
+test('maximum catalog values including document context fit the closed wire bound',()=>{
+ const longest=kind=>catalog[kind].reduce((a,b)=>a.length>b.length?a:b);
+ const value={schema:'aku.ig-trace.v1',stage:longest('stages'),completed:longest('stages'),disposition:longest('dispositions'),sequence:10000,cause:{stage:longest('stages'),condition:longest('conditions')},cleanup:{state:'uncertain',condition:longest('conditions')},complete:false,elapsedMS:60000,budgetMS:30000,remainingMS:30000,document:{navigationType:longest('navigationTypes'),role:longest('documentRoles'),verifierStep:longest('verifierSteps')}};
+ const prefix='https://static.cdninstagram.com/rsrc.php/v4/';
+ value.document.history={method:'replaceState',callerScript:prefix+'a'.repeat(512-prefix.length-3)+'.js',line:10000000,column:10000000};
+ assert.ok(Buffer.byteLength(JSON.stringify(value))<=1536);assert.ok(validateIGTrace(value));
+});
 test('closed trace keeps first cause independent, stays bounded and rejects forged metadata',()=>{
  const frames=[],trace=createIGTrace(value=>frames.push(value));trace.budget(30000);trace.note('body_read');trace.disposition('started');trace.fail('body_read','body_encoding');trace.fail('cleanup','cleanup_failed');trace.cleanup('uncertain','stream_close_failed');trace.cleanup('uncertain','cleanup_failed');
  const v=trace.snapshot();assert.equal(v.cause.condition,'body_encoding');assert.equal(v.cleanup.condition,'stream_close_failed');assert.ok(frames.every(v=>validateIGTrace(v)&&Buffer.byteLength(JSON.stringify(v))<=512));

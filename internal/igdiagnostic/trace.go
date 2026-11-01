@@ -46,18 +46,47 @@ type Settlement struct {
 	State     string `json:"state"`
 	Condition string `json:"condition"`
 }
+type HistoryCaller struct {
+	Method       string `json:"method"`
+	CallerScript string `json:"callerScript"`
+	Line         *int64 `json:"line"`
+	Column       *int64 `json:"column"`
+}
+type DocumentContext struct {
+	History        *HistoryCaller `json:"history,omitempty"`
+	NavigationType string         `json:"navigationType"`
+	Role           string         `json:"role"`
+	VerifierStep   string         `json:"verifierStep"`
+}
+
+var historyScriptPattern = regexp.MustCompile(`^https://static\.cdninstagram\.com/rsrc\.php/(?:[A-Za-z0-9_-]+/)+[A-Za-z0-9_-]+\.js$`)
+
+func validHistoryCaller(h *HistoryCaller) bool {
+	if h == nil {
+		return true
+	}
+	if h.Method != "pushState" && h.Method != "replaceState" {
+		return false
+	}
+	if h.CallerScript == "" {
+		return h.Line == nil && h.Column == nil
+	}
+	return len(h.CallerScript) <= 512 && (h.CallerScript == "https://www.instagram.com/" || historyScriptPattern.MatchString(h.CallerScript)) && h.Line != nil && h.Column != nil && *h.Line >= 1 && *h.Line <= 10000000 && *h.Column >= 1 && *h.Column <= 10000000
+}
+
 type Wire struct {
-	BudgetMS    *int64     `json:"budgetMS"`
-	RemainingMS *int64     `json:"remainingMS"`
-	Schema      string     `json:"schema"`
-	Stage       string     `json:"stage"`
-	Completed   string     `json:"completed"`
-	Disposition string     `json:"disposition"`
-	Sequence    uint32     `json:"sequence"`
-	Cause       *Cause     `json:"cause"`
-	Cleanup     Settlement `json:"cleanup"`
-	Complete    bool       `json:"complete"`
-	ElapsedMS   *int64     `json:"elapsedMS"`
+	Document    *DocumentContext `json:"document,omitempty"`
+	BudgetMS    *int64           `json:"budgetMS"`
+	RemainingMS *int64           `json:"remainingMS"`
+	Schema      string           `json:"schema"`
+	Stage       string           `json:"stage"`
+	Completed   string           `json:"completed"`
+	Disposition string           `json:"disposition"`
+	Sequence    uint32           `json:"sequence"`
+	Cause       *Cause           `json:"cause"`
+	Cleanup     Settlement       `json:"cleanup"`
+	Complete    bool             `json:"complete"`
+	ElapsedMS   *int64           `json:"elapsedMS"`
 }
 type Envelope struct {
 	Wire
@@ -71,6 +100,7 @@ type Envelope struct {
 	Evidence      map[string]string `json:"evidence"`
 }
 type Attempt struct {
+	document                  *DocumentContext
 	httpDelivery              Settlement
 	nodeBudget, nodeRemaining *int64
 	recorder                  *diagnostictrace.Recorder
@@ -240,6 +270,10 @@ func (a *Attempt) SnapshotJSON() json.RawMessage {
 	nodeMS, nodeSeq := a.nodeElapsed, a.nodeSequence
 	httpDelivery := a.httpDelivery
 	w.BudgetMS, w.RemainingMS = a.nodeBudget, a.nodeRemaining
+	if a.document != nil {
+		copy := *a.document
+		w.Document = &copy
+	}
 	a.mu.Unlock()
 	raw, err := json.Marshal(Envelope{HTTPDelivery: httpDelivery, NodeElapsedMS: nodeMS, NodeSequence: nodeSeq, Wire: w, Attempt: a.id, Operation: a.operation, Revision: "ig1", Delivery: Settlement{s.Delivery.State, s.Delivery.Condition}, Evidence: e})
 	if err != nil || len(raw) > 2048 {
@@ -304,18 +338,26 @@ func unique(d *json.Decoder, depth int) bool {
 	return false
 }
 func validWire(w Wire) bool {
-	return validBudget(w) && w.Schema == Schema && Allowed("stages", w.Stage) && Allowed("stages", w.Completed) && Allowed("dispositions", w.Disposition) && w.Sequence > 0 && w.Sequence <= 10000 && Allowed("cleanup", w.Cleanup.State) && Allowed("conditions", w.Cleanup.Condition) && (w.Cleanup.State == "uncertain" || w.Cleanup.Condition == "none") && (w.Cause == nil || Allowed("stages", w.Cause.Stage) && Allowed("conditions", w.Cause.Condition) && w.Cause.Condition != "none") && (w.ElapsedMS == nil || *w.ElapsedMS >= 0 && *w.ElapsedMS <= 60000)
+	return (w.Document == nil || validHistoryCaller(w.Document.History) && Allowed("navigationTypes", w.Document.NavigationType) && Allowed("documentRoles", w.Document.Role) && Allowed("verifierSteps", w.Document.VerifierStep)) && validBudget(w) && w.Schema == Schema && Allowed("stages", w.Stage) && Allowed("stages", w.Completed) && Allowed("dispositions", w.Disposition) && w.Sequence > 0 && w.Sequence <= 10000 && Allowed("cleanup", w.Cleanup.State) && Allowed("conditions", w.Cleanup.Condition) && (w.Cleanup.State == "uncertain" || w.Cleanup.Condition == "none") && (w.Cause == nil || Allowed("stages", w.Cause.Stage) && Allowed("conditions", w.Cause.Condition) && w.Cause.Condition != "none") && (w.ElapsedMS == nil || *w.ElapsedMS >= 0 && *w.ElapsedMS <= 60000)
 }
 func (a *Attempt) Observe(raw []byte) bool {
 	var w Wire
-	if !exactKeys(raw, 11) || !Decode(raw, 512, &w) || !validWire(w) {
+	if !exactKeys(raw, 11) || !Decode(raw, 1536, &w) || !validWire(w) {
 		a.recorder.Incomplete()
 		return false
 	}
+	firstCauseUnset := a.recorder.Snapshot().Cause == nil
 	a.mu.Lock()
 	if w.Sequence <= a.nodeSequence {
 		a.mu.Unlock()
 		return false
+	}
+	if firstCauseUnset {
+		a.document = nil
+		if w.Document != nil {
+			copy := *w.Document
+			a.document = &copy
+		}
 	}
 	a.nodeSequence = w.Sequence
 	a.nodeBudget, a.nodeRemaining = w.BudgetMS, w.RemainingMS
@@ -339,8 +381,43 @@ func (a *Attempt) Observe(raw []byte) bool {
 }
 func exactKeys(raw []byte, n int) bool {
 	var v map[string]json.RawMessage
-	if json.Unmarshal(raw, &v) != nil || len(v) != n {
+	if json.Unmarshal(raw, &v) != nil {
 		return false
+	}
+	document, hasDocument := v["document"]
+	expected := n
+	if hasDocument {
+		expected++
+	}
+	if len(v) != expected {
+		return false
+	}
+	if hasDocument {
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(document, &fields) != nil || (len(fields) != 3 && len(fields) != 4) {
+			return false
+		}
+		if history, exists := fields["history"]; exists {
+			var value map[string]json.RawMessage
+			if json.Unmarshal(history, &value) != nil || len(value) != 4 {
+				return false
+			}
+			for _, key := range []string{"method", "callerScript", "line", "column"} {
+				if _, ok := value[key]; !ok {
+					return false
+				}
+			}
+			if string(value["callerScript"]) == "null" {
+				return false
+			}
+		} else if len(fields) != 3 {
+			return false
+		}
+		for _, key := range []string{"navigationType", "role", "verifierStep"} {
+			if _, ok := fields[key]; !ok {
+				return false
+			}
+		}
 	}
 	keys := []string{"schema", "stage", "completed", "disposition", "sequence", "cause", "cleanup", "complete", "elapsedMS", "budgetMS", "remainingMS"}
 	if n == 19 {

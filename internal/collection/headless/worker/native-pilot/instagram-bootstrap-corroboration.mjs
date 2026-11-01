@@ -86,7 +86,10 @@ async function acquireInstagramBootstrap(transport,request,{trace=createIGTrace(
    }catch{mark('wire_unmatched','invalid_reply','root_delivery');}
    finally{
     // Record the observation when it happens, before any later check or event.
-    if(!previousInvalidation&&invalidationCondition)traceFail(traceStage(),invalidationCondition);
+    if(!previousInvalidation&&invalidationCondition){
+     if(invalidationCondition==='document_within_navigation')try{trace.documentNavigation?.(event.params?.navigationType);}catch{try{trace.incomplete();}catch{}}
+     traceFail(traceStage(),invalidationCondition);
+    }
     // Success is provisional until owned cleanup settles. Preserve the first
     // event that invalidates it, independent of cleanup's own outcome.
     if(scope?.ownedSession&&result.reason==='corroborated'&&!cleanupFirstCause){
@@ -165,7 +168,7 @@ async function acquireInstagramBootstrap(transport,request,{trace=createIGTrace(
   for(const k of ['scanComplete','idMatched','cookieMatched'])result[k]=value[k];
   if(value.scanComplete)trace.done('parsing');if(value.idMatched)trace.done('id_comparison');if(value.cookieMatched)trace.done('cookie_comparison');
   if(value.reason!=='corroborated'){const stage=value.reason.startsWith('cookie_')?'cookie_comparison':value.reason==='id_mismatch'?'id_comparison':'parsing';traceFail(stage,value.reason);}
-  active('post_check');const after=await frame();
+  trace.verifierStep?.('bootstrap_post_check');active('post_check');const after=await frame();
   if(firstCause)throw reject();
   if(requestCount!==1)fail('wire_unmatched','root_request_duplicate','root_delivery');if(pauseCount!==1)fail('wire_unmatched','pause_duplicate','root_delivery');if(responseCount!==1)fail('wire_unmatched','response_duplicate','root_delivery');if(extraCount!==1)fail('wire_unmatched','extra_duplicate','root_delivery');
   if(cached)fail('delivery_unproven','cache_observed','root_delivery');if(response.cache)fail('delivery_unproven',response.cacheKind,'root_delivery');if(response.worker)fail('delivery_unproven','service_worker','root_delivery');
@@ -177,7 +180,7 @@ async function acquireInstagramBootstrap(transport,request,{trace=createIGTrace(
   if(privateSuccess){accountId=value.accountId;observedAtMS=extra.receivedAtMS;value.accountId='';}
  }catch(error){const detail=igFailureDetail(error);result.reason=firstCause??phase;if(result.reason!=='cleanup_failed')traceFail(detail?.stage??traceStage(),detail?.condition??result.reason);}
  finally{
-  active('cleanup');body?.fill(0);body=undefined;paused=undefined;
+  trace.verifierStep?.('bootstrap_cleanup');active('cleanup');body?.fill(0);body=undefined;paused=undefined;
   if(attempted)result.cleanup='uncertain';
   if(scope?.ownedSession){try{if(await scope.retire(Math.max(1,Math.min(1000,policy.cleanupMS))))result.cleanup=streamCleanup?'verified':'uncertain';}catch{}}
   if(target){
@@ -207,7 +210,7 @@ async function acquireInstagramBootstrap(transport,request,{trace=createIGTrace(
  if(result.cleanup==='uncertain'&&result.reason==='corroborated')result.reason='cleanup_failed';
  // The verifier's observer remains attached while the result crosses the
  // asynchronous handoff; do not mislabel this interval as cleanup or post-check.
- if(scope?.ownedSession&&result.reason==='corroborated'&&result.cleanup==='verified')active('handoff');
+ if(scope?.ownedSession&&result.reason==='corroborated'&&result.cleanup==='verified'){trace.verifierStep?.('handoff');active('handoff');}
  const diagnostic=validateInstagramBootstrapCorroboration(result);
  if(diagnostic.reason!=='corroborated'||diagnostic.cleanup!=='verified'){accountId='';observedAtMS=undefined;}
  return {diagnostic,accountId,observedAtMS,documentBinding};

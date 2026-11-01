@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {PassThrough} from 'node:stream';
 import {createMainCDP,serveMainBrowserTransport,MAIN_TRANSPORT_SCHEMA} from './main-browser-transport-protocol.mjs';
 import {runInstagramReaderDiagnostic} from './instagram-reader-diagnostic.mjs';
+import {IG_HISTORY_SOURCE} from './instagram-history-diagnostic.mjs';
 
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const result=()=>({schema:'aku.instagram-reader-diagnostic.v1',primaryCause:'http_rejected',status:400,mime:'json',
@@ -21,6 +22,33 @@ async function own(f){
   f.answer(f.requests.at(-1),{sessionId:'owned-session'});await attached;
   return scope;
 }
+
+test('IG-only passive script capability admits one fixed source and retires only its returned identifier',async t=>{
+ const f=fixture(t),scope=f.transport.createInstagramOwnedScope();
+ const created=scope.call('Target.createTarget',{url:'about:blank',background:true,forTab:false},'',1000);f.answer(f.requests.at(-1),{targetId:'ig-owned'});await created;
+ const attached=scope.call('Target.attachToTarget',{targetId:'ig-owned',flatten:true},'',1000);f.answer(f.requests.at(-1),{sessionId:'ig-session'});await attached;
+ const before=f.requests.length;
+ for(const [method,params]of [['Page.addScriptToEvaluateOnNewDocument',{source:'PRIVATE'}],['Page.addScriptToEvaluateOnNewDocument',{source:IG_HISTORY_SOURCE,runImmediately:true}],['Page.removeScriptToEvaluateOnNewDocument',{identifier:'foreign'}]])await assert.rejects(scope.call(method,params,'ig-session',1000));
+ assert.equal(f.requests.length,before);
+ const add=scope.call('Page.addScriptToEvaluateOnNewDocument',{source:IG_HISTORY_SOURCE},'ig-session',1000);f.answer(f.requests.at(-1),{identifier:'owned-script'});await add;
+ await assert.rejects(scope.call('Page.addScriptToEvaluateOnNewDocument',{source:IG_HISTORY_SOURCE},'ig-session',1000));
+ await assert.rejects(scope.call('Page.removeScriptToEvaluateOnNewDocument',{identifier:'foreign'},'ig-session',1000));
+ const remove=scope.call('Page.removeScriptToEvaluateOnNewDocument',{identifier:'owned-script'},'ig-session',1000);f.answer(f.requests.at(-1),{});await remove;
+ await assert.rejects(scope.call('Page.removeScriptToEvaluateOnNewDocument',{identifier:'owned-script'},'ig-session',1000));
+ const other=fixture(t),ordinary=await own(other);await assert.rejects(ordinary.call('Page.addScriptToEvaluateOnNewDocument',{source:IG_HISTORY_SOURCE},'owned-session',1000));ordinary.dispose();
+ scope.dispose();assert.equal(f.transport.alive(),true);
+});
+test('late passive-script reply stays scoped and leaves the shared CDP connection usable',async t=>{
+ const f=fixture(t),scope=f.transport.createInstagramOwnedScope();
+ const created=scope.call('Target.createTarget',{url:'about:blank',background:true,forTab:false},'',1000);f.answer(f.requests.at(-1),{targetId:'ig-late'});await created;
+ const attached=scope.call('Target.attachToTarget',{targetId:'ig-late',flatten:true},'',1000);f.answer(f.requests.at(-1),{sessionId:'ig-late-session'});await attached;
+ const add=scope.call('Page.addScriptToEvaluateOnNewDocument',{source:IG_HISTORY_SOURCE},'ig-late-session',10),request=f.requests.at(-1);
+ await assert.rejects(add);assert.equal(f.transport.alive(),true);
+ await assert.rejects(scope.call('Page.addScriptToEvaluateOnNewDocument',{source:IG_HISTORY_SOURCE},'ig-late-session',1000));
+ f.answer(request,{identifier:'late-script'});await tick();
+ const remove=scope.call('Page.removeScriptToEvaluateOnNewDocument',{identifier:'late-script'},'ig-late-session',1000);f.answer(f.requests.at(-1),{});await remove;
+ assert.equal(f.transport.alive(),true);scope.dispose();
+});
 
 test('diagnostic evaluation timeout and late reply leave the ordinary CDP connection alive',async t=>{
   const f=fixture(t),scope=await own(f);

@@ -1,4 +1,5 @@
 import {createIGTrace,attachIGTrace} from './instagram-diagnostic-trace.mjs';
+import {createIGHistoryDiagnostic} from './instagram-history-diagnostic.mjs';
 import {createHmac} from 'node:crypto';
 import {nativeSourceFailure} from './native-source-kernel.mjs';
 import {markSourceTransient} from './source-retry-policy.mjs';
@@ -95,7 +96,7 @@ export function projectInstagramCookies(reply, nowMS) {
 }
 
 export async function readInstagramEvidence(page, attempt, role, ownerID, profileID, secret, now = Date.now, nonce = attempt.binding.nonce) {
-  let cookies;const trace=createIGTrace();trace.disposition('started');trace.note('verifier');
+  let cookies;const trace=createIGTrace();trace.documentRole(role);trace.disposition('started');trace.note('verifier');
   try {
     const rejectDocument=condition=>{trace.fail('post_check',condition);throw nativeSourceFailure('evidence','document_changed');};
     const frame = async () => {
@@ -108,29 +109,34 @@ export async function readInstagramEvidence(page, attempt, role, ownerID, profil
       if(root.url!==INSTAGRAM_NATIVE_RECIPE.home){trace.fail('post_check','document_url_mismatch');throw nativeSourceFailure('evidence','document');}
       return {id: root.id, loaderId: root.loaderId, url: root.url};
     };
-    const documentWatch=createInstagramDocumentWatch(page,condition=>{try{trace.fail(trace.currentStage(),condition);}catch{try{trace.incomplete();}catch{}}});
-    let projection,readFailure;
+    const documentWatch=createInstagramDocumentWatch(page,(condition,navigationType)=>{try{if(condition==='document_within_navigation')trace.documentNavigation(navigationType);trace.fail(trace.currentStage(),condition);}catch{try{trace.incomplete();}catch{}}});
+    let projection,readFailure,historyDisposed=false;
+    const historyDiagnostic=createIGHistoryDiagnostic(page,value=>trace.documentHistory(value));
     try {
+      if(!await attempt.run('evidence',ms=>historyDiagnostic.install(Math.min(ms,1000))))trace.incomplete();
       // Install the verifier observer at binding, before acquisition cleanup or
       // any promise handoff. The original server time remains the proof time.
-      projection = await attempt.run('evidence', ms => acquireOwnedInstagramIdentity(page,nonce,{trace,now,budgetMS:Math.min(30000,ms-3000),onDocumentBound:documentWatch.bind}));
+      projection = await attempt.run('evidence', ms => acquireOwnedInstagramIdentity(page,nonce,{trace,now,budgetMS:Math.min(30000,ms-3000),onDocumentBound:binding=>{historyDiagnostic.bind(binding);documentWatch.bind(binding);}}));
       if(projection.diagnostic.reason!=='corroborated'||projection.diagnostic.cleanup!=='verified'){
         const owner=['reader','collector'].includes(role)?role:'unknown';
         throw nativeSourceFailure('evidence',owner+'_bootstrap_'+projection.diagnostic.reason);
       }
       const before=projection.documentBinding;
       const checkDocument=()=>{const condition=documentWatch.condition();if(condition)rejectDocument(condition);};
-      trace.note('post_check');checkDocument();
-      trace.note('cookie');cookies = projectInstagramCookies(await attempt.run('session', ms => page.send('Network.getCookies', {urls: [INSTAGRAM_NATIVE_RECIPE.home]}, ms)), now());
-      trace.note('post_check');const after = await frame();
+      trace.verifierStep('before_cookies');trace.note('post_check');checkDocument();
+      trace.verifierStep('cookies');trace.note('cookie');cookies = projectInstagramCookies(await attempt.run('session', ms => page.send('Network.getCookies', {urls: [INSTAGRAM_NATIVE_RECIPE.home]}, ms)), now());
+      trace.verifierStep('frame');trace.note('post_check');const after = await frame();
       checkDocument();const frameCondition=instagramDocumentFrameCondition(after,before);if(frameCondition)rejectDocument(frameCondition);
       let context;
+      trace.verifierStep('readiness');
       try { context=await attempt.run('evidence',ms=>page.send('Runtime.evaluate',{expression:INSTAGRAM_CORROBORATION_READY,uniqueContextId:before.uniqueContextId,returnByValue:true,awaitPromise:true,userGesture:false},ms)); }
       catch(error) {trace.fail('post_check','document_evaluation_request_failed');throw error;}
-      checkDocument();
+      if(!await historyDiagnostic.dispose())trace.incomplete();historyDisposed=true;
+      trace.verifierStep('final_check');checkDocument();
       if(context?.exceptionDetails)rejectDocument('document_evaluation_exception');
       if(context?.result?.value!==true)rejectDocument('document_not_ready');
       if (cookies.find(cookie => cookie.name === 'ds_user_id').value !== projection.accountId) throw nativeSourceFailure('evidence', 'account_mismatch');
+      trace.verifierStep('proof');
       const digest = value => createHmac('sha256', secret).update(value).digest('hex');
       const observedAtMS = projection.observedAtMS;
       const age=now()-observedAtMS;
@@ -143,6 +149,7 @@ export async function readInstagramEvidence(page, attempt, role, ownerID, profil
     } catch(error) { readFailure=error;throw error; }
     finally {
       if(projection)projection.accountId='';
+      if(!historyDisposed&&!await historyDiagnostic.dispose())trace.incomplete();
       try { documentWatch.dispose(); } catch {
         trace.cleanup('uncertain','dispose_failed');
         if(!readFailure)throw nativeSourceFailure('cleanup','unverified');

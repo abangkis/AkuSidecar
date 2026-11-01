@@ -10,7 +10,7 @@ const options={input:process.stdin,output:process.stdout,connect:async()=>({inpu
 if(scenario==='scope')options.diagnoseInstagramBootstrapCorroboration=runInstagramBootstrapCorroboration;
 if(scenario==='throw')options.diagnoseInstagramBootstrapCorroboration=()=>{throw Object.assign(new Error('PRIVATE_MARKER'),{diagnostic:{body:'PRIVATE_MARKER'}});};
 if(scenario==='document_handoff')options.diagnoseInstagramBootstrapCorroboration=(_transport,_request,{trace})=>{
- trace.note('handoff');trace.fail('handoff','document_within_navigation');trace.cleanup('verified');
+ trace.documentRole('collector');trace.verifierStep('handoff');trace.documentHistory({method:'replaceState',callerScript:'https://static.cdninstagram.com/rsrc.php/v4/x/r/router.js',line:1329,column:21});trace.documentNavigation('historyApi');trace.note('handoff');trace.fail('handoff','document_within_navigation');trace.cleanup('verified');
  return {schema:'aku.instagram-bootstrap-corroboration.v1',reason:'document_changed',bodyBound:true,documentBound:false,serverFresh:false,idMatched:true,cookieMatched:true,scanComplete:true,qualified:false,cleanup:'verified'};
 };
 if(scenario==='elapsed_unknown')options.diagnoseInstagramBootstrapCorroboration=(_transport,_request,{trace})=>{

@@ -30,7 +30,7 @@ export function createInstagramDocumentWatch(page,onInvalidation=()=>{}){
     // An unreadable event makes document observation uncertain; it must not
     // escape into the shared transport or authorize a proof.
     try{condition=instagramDocumentEventCondition(event,pinned);}catch{condition='unavailable';}
-    if(condition)try{onInvalidation(condition);}catch{}
+    if(condition)try{onInvalidation(condition,condition==='document_within_navigation'?event.params?.navigationType:undefined);}catch{}
    });
   },
   condition:()=>condition,

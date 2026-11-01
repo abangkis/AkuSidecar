@@ -1,5 +1,6 @@
 // A sealed diagnostic owns its target and session. It cannot acquire another
 // owner's resources or use its request-local timeout policy on ordinary calls.
+import {IG_HISTORY_SOURCE} from './instagram-history-diagnostic.mjs';
 const failure=()=>new Error('diagnostic_scope_rejected');
 const record=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const exact=(value,keys)=>record(value)&&Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
@@ -19,7 +20,7 @@ export function createMainInstagramOwnedScope(raw){
 
 function createOwnedScope(raw,instagram){
   const targets=new Set(),sessions=new Map(),absent=new Set(),subscriptions=new Set();
-  const streams=new Map(),paused=new Map();
+  const streams=new Map(),paused=new Map(),historyScripts=new Map(),historyPending=new Set();
   let disposed=false,creating=false,creationAttempted=false,allocationsPending=0;
   function adoptTarget(value){
     if(!record(value)||!ref(value.targetId)||raw.privateTarget(value.targetId))throw failure();
@@ -45,7 +46,7 @@ function createOwnedScope(raw,instagram){
   function releaseSession(id){
     if(!sessions.has(id)||!absent.has(sessions.get(id))&&targets.has(sessions.get(id)))throw failure();
     for(const [handle,session]of streams)if(session===id)streams.delete(handle);
-    raw.releaseSession(id);sessions.delete(id);
+    raw.releaseSession(id);sessions.delete(id);historyScripts.delete(id);historyPending.delete(id);
   }
   async function retireLateTarget(value){
     // A create reply may arrive after its local deadline. Adopt only that
@@ -135,6 +136,14 @@ function createOwnedScope(raw,instagram){
         if(!instagram||Object.hasOwn(params,'uniqueContextId'))keys.push('uniqueContextId');
         if(!exact(params,keys)||typeof params.expression!=='string'||params.expression.length>(instagram?7*1024*1024:32768)||params.returnByValue!==true||params.awaitPromise!==true||
           params.userGesture!==false||keys.includes('uniqueContextId')&&!ref(params.uniqueContextId))throw failure();
+      }else if(instagram&&method==='Page.addScriptToEvaluateOnNewDocument'){
+        if(!exact(params,['source'])||params.source!==IG_HISTORY_SOURCE||historyPending.has(session)||historyScripts.has(session))throw failure();
+        historyPending.add(session);
+        const adopt=value=>{if(sessions.has(session)&&ref(value?.identifier)){historyScripts.set(session,value.identifier);historyPending.delete(session);}return value;};
+        return adopt(await raw.call(method,params,session,timeoutMS,adopt));
+      }else if(instagram&&method==='Page.removeScriptToEvaluateOnNewDocument'){
+        if(!exact(params,['identifier'])||!historyScripts.has(session)||params.identifier!==historyScripts.get(session))throw failure();
+        const value=await raw.call(method,params,session,timeoutMS);historyScripts.delete(session);return value;
       }else if(instagram&&method==='Network.getCookies'){
         if(!exact(params,['urls'])||!Array.isArray(params.urls)||params.urls.length!==1||params.urls[0]!=='https://www.instagram.com/')throw failure();
       }else if(instagram&&method==='Fetch.enable'){

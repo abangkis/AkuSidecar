@@ -45,6 +45,88 @@ func TestTraceContract(t *testing.T) {
 		t.Fatal("evidence state rejected")
 	}
 }
+
+func TestDocumentContextRoundTripAndFirstCause(t *testing.T) {
+	_, a := Ensure(nil, "verifier")
+	w := Wire{Schema: Schema, Stage: "post_check", Completed: "cookie_comparison", Disposition: "started", Sequence: 1, Cleanup: Settlement{"verified", "none"}, Complete: true, Cause: &Cause{"post_check", "document_within_navigation"}, Document: &DocumentContext{NavigationType: "historyApi", Role: "reader", VerifierStep: "frame"}}
+	raw, _ := json.Marshal(w)
+	if !a.Observe(raw) {
+		t.Fatal("valid document metadata rejected")
+	}
+	w.Sequence++
+	w.Document = &DocumentContext{NavigationType: "fragment", Role: "collector", VerifierStep: "proof"}
+	raw, _ = json.Marshal(w)
+	if !a.Observe(raw) {
+		t.Fatal("late cleanup rejected")
+	}
+	projected, ok := ValidateJSON(a.SnapshotJSON())
+	if !ok {
+		t.Fatal("invalid document envelope")
+	}
+	var e Envelope
+	_ = json.Unmarshal(projected, &e)
+	if e.Document == nil || *e.Document != (DocumentContext{NavigationType: "historyApi", Role: "reader", VerifierStep: "frame"}) || e.Cause.Condition != "document_within_navigation" {
+		t.Fatal("first-cause metadata changed")
+	}
+	for _, bad := range []string{`null`, `{}`, `{"navigationType":"historyApi","role":"reader","verifierStep":"frame","url":"PRIVATE"}`, `{"navigationType":"PRIVATE","role":"reader","verifierStep":"frame"}`, `{"navigationType":"historyApi","role":"PRIVATE","verifierStep":"frame"}`, `{"navigationType":"historyApi","role":"reader","verifierStep":null}`, `{"navigationType":"historyApi","role":"reader","role":"collector","verifierStep":"frame"}`} {
+		var fields map[string]json.RawMessage
+		_ = json.Unmarshal(raw, &fields)
+		fields["document"] = json.RawMessage(bad)
+		invalid, _ := json.Marshal(fields)
+		_, fresh := Ensure(nil, "verifier")
+		if fresh.Observe(invalid) {
+			t.Fatalf("unsafe document accepted: %s", bad)
+		}
+	}
+}
+
+func TestHistoryCallerWirePrivacyAndFirstCause(t *testing.T) {
+	line, column := int64(1329), int64(21)
+	history := &HistoryCaller{Method: "replaceState", CallerScript: "https://static.cdninstagram.com/rsrc.php/v4/x/r/router.js", Line: &line, Column: &column}
+	w := Wire{Schema: Schema, Stage: "post_check", Completed: "cookie_comparison", Disposition: "started", Sequence: 1, Cause: &Cause{"post_check", "document_within_navigation"}, Cleanup: Settlement{"verified", "none"}, Complete: true, Document: &DocumentContext{NavigationType: "historyApi", Role: "reader", VerifierStep: "frame", History: history}}
+	raw, _ := json.Marshal(w)
+	_, a := Ensure(nil, "verifier")
+	if !a.Observe(raw) {
+		t.Fatal("caller rejected")
+	}
+	w.Sequence++
+	w.Document.History = &HistoryCaller{Method: "pushState", CallerScript: "", Line: nil, Column: nil}
+	later, _ := json.Marshal(w)
+	if !a.Observe(later) {
+		t.Fatal("later frame rejected")
+	}
+	projected, ok := ValidateJSON(a.SnapshotJSON())
+	var envelope Envelope
+	if !ok || json.Unmarshal(projected, &envelope) != nil || envelope.Document.History.Method != "replaceState" || *envelope.Document.History.Line != 1329 {
+		t.Fatal("first cause caller lost")
+	}
+	for _, bad := range []string{`null`, `{}`, `{"method":"replaceState","callerScript":null,"line":null,"column":null}`, `{"method":"replaceState","callerScript":"https://static.cdninstagram.com/rsrc.php/v4/x/r/router.js?PRIVATE","line":1,"column":1}`, `{"method":"PRIVATE","callerScript":"","line":null,"column":null}`, `{"method":"replaceState","callerScript":"https://www.instagram.com/","line":0,"column":1}`, `{"method":"replaceState","callerScript":"https://www.instagram.com/","line":1.5,"column":1}`, `{"method":"replaceState","callerScript":"","line":null,"column":null,"stack":"PRIVATE"}`, `{"method":"replaceState","method":"pushState","callerScript":"","line":null,"column":null}`} {
+		var fields map[string]json.RawMessage
+		_ = json.Unmarshal(raw, &fields)
+		var document map[string]json.RawMessage
+		_ = json.Unmarshal(fields["document"], &document)
+		document["history"] = json.RawMessage(bad)
+		fields["document"], _ = json.Marshal(document)
+		invalid, _ := json.Marshal(fields)
+		_, fresh := Ensure(nil, "verifier")
+		if fresh.Observe(invalid) {
+			t.Fatalf("unsafe caller accepted: %s", bad)
+		}
+	}
+	// The longest admitted URL and numeric coordinates must fit both boundaries.
+	prefix := "https://static.cdninstagram.com/rsrc.php/v4/"
+	limit := int64(10000000)
+	w.Document.History = &HistoryCaller{Method: "replaceState", CallerScript: prefix + strings.Repeat("a", 512-len(prefix)-3) + ".js", Line: &limit, Column: &limit}
+	w.Sequence = 1
+	bounded, _ := json.Marshal(w)
+	_, max := Ensure(nil, "verifier")
+	if len(bounded) > 1536 || !max.Observe(bounded) {
+		t.Fatal("bounded caller rejected")
+	}
+	if _, ok := ValidateJSON(max.SnapshotJSON()); !ok {
+		t.Fatal("bounded envelope rejected")
+	}
+}
 func TestTracePeerAndKnownness(t *testing.T) {
 	_, a := Ensure(nil, "reader")
 	if _, ok := ValidateJSON(a.SnapshotJSON()); !ok {
