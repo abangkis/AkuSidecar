@@ -284,7 +284,7 @@ func TestXApplicationRouteShutdownClosesEngineBeforeOwnerCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 	var schedulerCanceled atomic.Bool
-	x.e.autoCancel = func() { schedulerCanceled.Store(true) }
+	x.e.scheduler.cancel = func() { schedulerCanceled.Store(true) }
 	var orderFailure atomic.Bool
 	r := startApplicationFixture(t, x, context.Background(), applicationPrepared, func(ctx context.Context) error {
 		if !x.e.mu.TryRLock() {

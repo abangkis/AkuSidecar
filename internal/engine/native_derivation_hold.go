@@ -10,7 +10,7 @@ import (
 func (e *Engine) BindNativeDerivationHold(guard *activationguard.Guard) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if guard == nil || e.nativeDerivationHold != nil || e.autoCancel != nil {
+	if guard == nil || e.nativeDerivationHold != nil || e.scheduler.hasStarted() {
 		return errors.New("native maintenance hold binding rejected")
 	}
 	for _, source := range dailySources {

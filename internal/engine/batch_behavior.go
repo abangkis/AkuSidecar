@@ -67,9 +67,6 @@ func (e *Engine) ConfirmXCaptureRecovery(ctx context.Context, id string) error {
 	if err := e.store.ConfirmXCaptureRecovery(ctx, id); err != nil {
 		return err
 	}
-	select {
-	case e.autoWake <- struct{}{}:
-	default:
-	}
+	e.scheduler.notify()
 	return nil
 }

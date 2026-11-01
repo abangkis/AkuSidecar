@@ -2065,7 +2065,7 @@ func TestCodexUsageLimitPausesSchedulerUntilUserConfirmation(t *testing.T) {
 		t.Fatalf("usage-limit stopper must run before scheduler receipt: receipts=%+v err=%v", receipts, err)
 	}
 	select {
-	case <-runtime.autoWake:
+	case <-runtime.scheduler.wake:
 	default:
 	}
 
@@ -2074,7 +2074,7 @@ func TestCodexUsageLimitPausesSchedulerUntilUserConfirmation(t *testing.T) {
 		t.Fatalf("restored status=%+v err=%v", restored, err)
 	}
 	select {
-	case <-runtime.autoWake:
+	case <-runtime.scheduler.wake:
 	default:
 		t.Fatal("restored usage did not wake scheduler")
 	}
@@ -2233,7 +2233,7 @@ func TestBothSchedulerModesConsumeTickBeforeSharedStopperCheck(t *testing.T) {
 			blocked := New(state, reasoning.Deterministic{}, config.Config{}, log.New(io.Discard, "", 0))
 			if mode == "adaptive" {
 				blocked.RecordUIAccess(ctx)
-				<-blocked.autoWake
+				<-blocked.scheduler.wake
 			}
 			if _, err := blocked.startAutoUpdate(ctx, false); err == nil || !strings.Contains(err.Error(), "AkuBridge is not ready") {
 				t.Fatalf("first scheduled tick error=%v", err)
@@ -2299,7 +2299,7 @@ func TestAdaptiveSchedulerUsesRecentDemandAndBoundedRefillCadence(t *testing.T) 
 
 	blocked.RecordUIAccess(ctx)
 	select {
-	case <-blocked.autoWake:
+	case <-blocked.scheduler.wake:
 	default:
 		t.Fatal("user activity did not wake the scheduler")
 	}
@@ -2329,7 +2329,7 @@ func TestAdaptiveSchedulerUsesRecentDemandAndBoundedRefillCadence(t *testing.T) 
 	clock.now = initial.Add(40 * time.Minute)
 	blocked.RecordUIAccess(ctx)
 	select {
-	case <-blocked.autoWake:
+	case <-blocked.scheduler.wake:
 	default:
 		t.Fatal("new user activity did not wake the scheduler")
 	}

@@ -95,8 +95,7 @@ type Engine struct {
 	aiDeep                                   aidetector.Resolver
 	mediaOrigin                              mediaprovenance.Inspector
 	topics                                   livingtopics.Resolver
-	autoCancel                               context.CancelFunc
-	autoWake                                 chan struct{}
+	scheduler                                autoUpdateLifecycle
 	captureBehaviorMu                        sync.Mutex
 	xManual                                  xManualRouting
 	xDaily                                   xDailyRouting
@@ -111,7 +110,7 @@ func New(state *store.Store, provider reasoning.Provider, cfg config.Config, log
 	if len(eventEngines) > 0 {
 		events = eventEngines[0]
 	}
-	return &Engine{store: state, provider: provider, config: cfg, epoch: domain.NewID("epoch"), work: newEngineWorkState(), bridgeOrigins: map[string]time.Time{}, logger: logger, reloads: NewReloadActions(15 * time.Second), events: events, autoWake: make(chan struct{}, 1)}
+	return &Engine{store: state, provider: provider, config: cfg, epoch: domain.NewID("epoch"), work: newEngineWorkState(), bridgeOrigins: map[string]time.Time{}, logger: logger, reloads: NewReloadActions(15 * time.Second), events: events, scheduler: newAutoUpdateLifecycle()}
 }
 func (e *Engine) SetAIDeepResolver(value aidetector.Resolver)         { e.aiDeep = value }
 func (e *Engine) SetLivingTopicsResolver(value livingtopics.Resolver) { e.topics = value }
@@ -258,10 +257,7 @@ func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domai
 	if _, err := e.store.EnforceRetention(ctx, saved); err != nil {
 		return domain.Settings{}, fmt.Errorf("apply retention settings: %w", err)
 	}
-	select {
-	case e.autoWake <- struct{}{}:
-	default:
-	}
+	e.scheduler.notify()
 	return saved, nil
 }
 func (e *Engine) Onboarding(ctx context.Context) (domain.OnboardingState, error) {
@@ -334,10 +330,7 @@ func (e *Engine) RecordHeartbeat(value domain.BridgeHeartbeat) BridgeStatus {
 		e.logger.Printf("recover expired Bridge command: %v", err)
 	}
 	e.reloads.Observe(value)
-	select {
-	case e.autoWake <- struct{}{}:
-	default:
-	}
+	e.scheduler.notify()
 	return e.BridgeStatus()
 }
 
@@ -843,10 +836,7 @@ func (e *Engine) startNextLocked(ctx context.Context, sessionID string) (*domain
 			if recordErr := e.store.RecordAutoUpdateSuccess(ctx); recordErr != nil {
 				e.logger.Printf("record auto update success for session %s failed: %v", sessionID, recordErr)
 			}
-			select {
-			case e.autoWake <- struct{}{}:
-			default:
-			}
+			e.scheduler.notify()
 		}
 		if _, retentionErr := e.store.EnforceRetention(ctx, settings); retentionErr != nil {
 			e.logger.Printf("retention after session %s failed: %v", sessionID, retentionErr)
@@ -1643,10 +1633,7 @@ func (e *Engine) pauseAutoUpdateForUsageLimit(ctx context.Context, sessionID str
 		e.logger.Printf("pause Auto Update after Codex usage limit: %v", pauseErr)
 		return false
 	}
-	select {
-	case e.autoWake <- struct{}{}:
-	default:
-	}
+	e.scheduler.notify()
 	return true
 }
 
@@ -1675,10 +1662,7 @@ func (e *Engine) clearAutoUpdateUsageLimitAfterSuccessfulUserSession(ctx context
 		return
 	}
 	e.logger.Printf("restored Auto Update after model-backed user session %s completed successfully", session.ID)
-	select {
-	case e.autoWake <- struct{}{}:
-	default:
-	}
+	e.scheduler.notify()
 }
 
 func modelUsageProvesCodexRestored(report domain.ModelUsageReport) bool {

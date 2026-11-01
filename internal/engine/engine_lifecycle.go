@@ -87,9 +87,7 @@ func (e *Engine) CancelSession(ctx context.Context, id string) error {
 func (e *Engine) Shutdown() {
 	e.mu.Lock()
 	e.work.beginShutdown()
-	if e.autoCancel != nil {
-		e.autoCancel()
-	}
+	e.scheduler.stop()
 	e.work.cancelActive()
 	e.mu.Unlock()
 	e.shutdownXManual()

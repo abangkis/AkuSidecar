@@ -128,10 +128,7 @@ func (plan *providerSwapPlan) apply(e *Engine) {
 	e.aiDeep = plan.aiResolver
 	e.topics = plan.topicsResolver
 	e.logger.Printf("reasoning provider switched %s -> %s", previous, plan.candidate.Name())
-	select {
-	case e.autoWake <- struct{}{}:
-	default:
-	}
+	e.scheduler.notify()
 }
 
 // swapProviderPlan applies a prepared plan under the operation lock while

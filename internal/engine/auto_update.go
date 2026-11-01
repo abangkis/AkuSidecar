@@ -44,26 +44,11 @@ func (e *Engine) estimatedAutoUpdateTokens(ctx context.Context) int64 {
 	return estimate
 }
 
-func (e *Engine) StartAutoUpdateScheduler() {
-	e.mu.Lock()
-	if e.autoCancel != nil {
-		e.mu.Unlock()
-		return
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	e.autoCancel = cancel
-	e.mu.Unlock()
-	go e.autoUpdateLoop(ctx)
-}
-
 func (e *Engine) RecordUIAccess(ctx context.Context) {
 	if err := e.store.RecordAutoUpdateUIAccess(ctx); err != nil {
 		e.logger.Printf("record UI access for Auto Update failed: %v", err)
 	}
-	select {
-	case e.autoWake <- struct{}{}:
-	default:
-	}
+	e.scheduler.notify()
 }
 
 func (e *Engine) AutoUpdateStatus(ctx context.Context) (domain.AutoUpdateStatus, error) {
@@ -211,10 +196,7 @@ func (e *Engine) RevealPreparedBatch(ctx context.Context, sessionID, presentatio
 				e.logger.Printf("record adaptive demand after batch reveal failed: %v", activityErr)
 			}
 		}
-		select {
-		case e.autoWake <- struct{}{}:
-		default:
-		}
+		e.scheduler.notify()
 	}
 	return batch, err
 }
@@ -225,10 +207,7 @@ func (e *Engine) ResetAutoUpdateDailyQuota(ctx context.Context) (domain.AutoUpda
 	if _, err := e.store.ResetAutoUpdateDailyQuota(ctx); err != nil {
 		return domain.AutoUpdateStatus{}, err
 	}
-	select {
-	case e.autoWake <- struct{}{}:
-	default:
-	}
+	e.scheduler.notify()
 	return e.AutoUpdateStatus(ctx)
 }
 
@@ -243,31 +222,8 @@ func (e *Engine) ConfirmAutoUpdateUsageRestored(ctx context.Context) (domain.Aut
 	if err := e.store.ConfirmAutoUpdateUsageRestored(ctx); err != nil {
 		return domain.AutoUpdateStatus{}, err
 	}
-	select {
-	case e.autoWake <- struct{}{}:
-	default:
-	}
+	e.scheduler.notify()
 	return e.AutoUpdateStatus(ctx)
-}
-
-func (e *Engine) autoUpdateLoop(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		case <-e.autoWake:
-		}
-		// Recovery must also run when the Bridge is silent or Auto Update is disabled.
-		if err := e.recoverExpiredBridgeCommands(ctx, time.Now()); err != nil {
-			e.logger.Printf("recover expired Bridge command: %v", err)
-		}
-		if err := e.maybeStartAutoUpdate(ctx); err != nil {
-			e.logger.Printf("Auto Update deferred: %v", err)
-		}
-	}
 }
 
 func (e *Engine) maybeStartAutoUpdate(ctx context.Context) error {
