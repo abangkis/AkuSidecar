@@ -1,5 +1,22 @@
 # Product source structure audit — 2026-10-25
 
+## Status synchronization (2026-11-01)
+
+The original audit and its validation below are historical. Current source is
+reviewed through `ae1a535`; see the [roadmap status index](roadmap-status.md)
+for commit-to-receipt mappings. Cleanup is not provider qualification.
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Unused wrappers | Removed in `f348b9b` | Scoped cleanup validation | Not recorded | Bounded removal; no whole-repository dead-code claim |
+| Native factory / QA separation | `29ec2b4` | Equivalence and production package checks; later relevant provenance tests 148/148 | Not recorded | Production factory no longer belongs to the fixture workflow |
+| Standalone owner harness | `cd8fd60` | Staging regression and Windows compile | Not recorded | Production transient-error dependency included; guards unchanged |
+| Production shared helpers | `2ba01bb` | Source equivalence, production dependency graphs and Windows checks | Not recorded | Callers moved out of fixture-folder helpers |
+| Engine work, scheduler, execution and finalization | `202ecbb`, `056b53b`, `d897130`, `ae1a535` | Respective equivalence/regression receipts; finalization adds seven Store checks and eight Windows artifacts | Not recorded | Scoped refactors reviewed; `e.mu`, schedule lock, start-once/wake, side effects and error contracts retained |
+
+No code change, activation or trial is performed by this status update. Existing
+test receipts are reused at their verified source/artifact scope, not rerun.
+
 ## Scope and method
 
 Read-only inventory covers tracked source in AkuSidecar, AkuBridge and AkuBrowser.
@@ -49,19 +66,29 @@ the narrow `app.js` reference scan; this is not whole-program dead-code proof.
 
 ## Remaining structural debt
 
-`app.js` is still approximately 9,900 lines, `engine.go` 3,123, the native probe
-driver 2,439, and Bridge `service-worker.js` 2,524. Size identifies review targets,
-not evidence that code is removable. Follow-up extraction should move complete
+The original audit measured `app.js` at approximately 9,900 lines, `engine.go`
+at 3,123, the native probe driver at 2,439, and Bridge `service-worker.js` at
+2,524. These are historical measurements, not current counts: production
+factory/helper and Engine extractions have since changed the source layout.
+Size identifies review targets, not evidence that code is removable.
+Follow-up extraction should move complete
 features with their tests: Timeline rendering, Settings orchestration, then
 probe mode dispatch. Avoid moving all pages at once or hiding authority behind a
 generic helper merely to reduce line count.
 
-The main-dev provider remains unfinished because Windows/profile ownership is
-currently tied to a fixture factory. Promoting that lifecycle is substantive
-implementation, not deleting tags or adding a setting. Native QA acceptance and
-explicit activation remain separate from this cleanup.
+The earlier fixture-factory coupling has been addressed by `29ec2b4` and
+`2ba01bb`; it is no longer the outstanding blocker stated by this audit.
+Remaining candidates include feature-level Timeline/Settings orchestration,
+probe mode dispatch, HTTP capture-service boundaries and a broader inventory of
+legacy/compatibility consumers. They are proposals requiring separate bounded
+analysis/approval, not a deletion list or authorization to continue refactoring.
+Native IG qualification and operational acceptance remain open for their own
+document-continuity reasons, not because the production factory is still in QA.
 
 ## Validation
+
+The following results belong to the original 2026-10-25 audit. Later cleanup
+validation is linked in the 2026-11-01 matrix and status index above.
 
 - Full Store suite passed in default, development, fixture and combined builds.
 - All 226 frontend tests passed, including the new page registry regressions.

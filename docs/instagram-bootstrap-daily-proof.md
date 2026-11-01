@@ -1,14 +1,37 @@
 # Instagram bootstrap evidence for daily capture
 
-Date: 2026-10-31
+Created: 2026-10-31. Status synchronized: 2026-11-01.
 
 Scope: implement the approved shared private evidence source and validate it
 offline. Runtime activation, account access and session transfer remain separate
 operator decisions. This increment does not change the daily controller, Store
 schema, cookie manifest, remembered consent or Auto Update.
 
-Status: implementation and offline acceptance completed in the isolated source
-checkout. No runtime activation or native capture acceptance is claimed.
+Status: implementation/offline checks completed; one later diagnostic activation
+is recorded, but native daily IG acceptance has not passed. See the
+[roadmap evidence index](roadmap-status.md) for source/artifact identities.
+
+## Current status by evidence dimension
+
+| Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- |
+| Shared bootstrap acquisition, continuous document observer and History method/caller diagnostics through `32b8552` | Historical Node/Go receipts below and accountless Chrome 156 fixture | Recorded `32b8552` IG-only artifact with `sourceDirty=true`, 93 verified artifacts, activation exit 0 | Trial failed with `native_source_evidence_document_changed`; reader `historyApi` invalidation at verifier `readiness`; recipe remains unqualified |
+
+The [latest local trial receipt](../runtime/qa/ig-history-caller/live-32b8552/trial-summary.json)
+finished on 2026-11-01 at 12:36:49 WIB. Cleanup and temporary settings restoration
+were verified. Its final document diagnostic contains no History method/caller
+tuple; the responsible script and location are still unknown. The
+[accountless fixture](../runtime/qa/ig-history-caller/offline-chromium-result-chrome156.json)
+captured both `replaceState` and `pushState` caller locations while leaving native
+methods and invalidation behavior unchanged. Fixture attribution is not proof
+of attribution on the authenticated reader.
+
+The earlier HTTP 400 finding belongs to the replaced `current_user` endpoint.
+It is not the failure observed in this latest trial. Later cleanup commits
+through `ae1a535` are implemented/tested, with no activation receipt recorded.
+The original offline-only/commit wording in the dated sections below applies
+to those original patches, not to all subsequent work. No new activation or
+trial is part of this synchronization; the observer and proof guards remain strict.
 
 ## Evidence and remaining boundary
 
@@ -24,7 +47,8 @@ checkpoint. This implementation replaces that dependency with the same
 bounded bootstrap acquisition used by the diagnostic. A cached diagnostic
 success or its public booleans must never become batch authority.
 
-Read-only inspection of the two permission metadata records found valid matching
+At the original 2026-10-31 checkpoint, read-only inspection of the two permission
+metadata records found valid matching
 profile scopes, X enabled and IG disabled. Restart faithfully restores the stored
 choice. Start saves consent before owner verification; a proof failure does not
 revoke it. Stop IG persists revocation. The record contains no action timestamp

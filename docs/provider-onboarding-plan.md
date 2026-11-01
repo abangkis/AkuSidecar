@@ -6,6 +6,16 @@ for the local-provider readiness flow covering Codex App Server plus unavailable
 Ollama runtimes. The dialog exposes the checked result beside its action and
 fits the accepted development window without requiring incidental scrolling.
 
+## Status synchronization (2026-11-01)
+
+| Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- |
+| Stages 1-6 recorded complete in the 2026-08-28 development checkpoint | Historical dialog, credential, provider-swap and local-readiness E2E above | Historical development use; no fresh runtime identity or rollout established here | Complete for that development scope; installed real-key/project/quota acceptance remains the separate INST-05 gate |
+
+See the [roadmap status index](roadmap-status.md). This synchronization does not
+retest providers, access credentials, activate a runtime or close installation
+issues merely because development acceptance passed.
+
 ## Problem
 
 The first-run flow never asks which reasoning provider the user wants. The

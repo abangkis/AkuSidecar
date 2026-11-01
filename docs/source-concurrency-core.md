@@ -1,5 +1,13 @@
 # Shared daily concurrency core: X and Instagram
 
+Status synchronized: 2026-11-01. The contracts below retain their authority;
+the [status index](roadmap-status.md) separates implemented, tested, activated
+and acceptance. The shared implementation exists in source; cleanup through
+`ae1a535` has offline evidence but no activation receipt. The later recorded
+IG `32b8552` diagnostic artifact was activated for one failed trial, with
+dirty-source provenance; it did not qualify the IG recipe. Historical
+offline-only wording describes the original increments, not all later activity.
+
 ## Scope and compatibility
 
 Daily concurrency is one replacement mechanism with source adapters. The
@@ -11,9 +19,9 @@ deduplication, reasoning and Timeline pipeline remains shared. Existing X
 configuration, endpoints, saved profile permission and acquisition receipts keep
 their compatibility behavior.
 
-The current convergence increment is offline. It does not access a signed-in
-profile, derive a real session, migrate a user database, activate a runtime or
-change Auto Update. The default Instagram route remains Browser. An explicitly
+The original convergence increment was implemented offline. It did not access a
+signed-in profile, derive a real session, migrate a user database, activate a
+runtime or change Auto Update. The default Instagram route remains Browser. An explicitly
 configured native trial and any earlier activation do not qualify its account
 evidence recipe; a new handoff or live probe still needs separate authorization.
 

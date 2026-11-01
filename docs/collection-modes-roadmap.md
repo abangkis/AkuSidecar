@@ -1,8 +1,22 @@
 # Browser and headless collection roadmap
 
-**Current checkpoint:** [X concurrency dev readiness](concurrency-dev-readiness.md).
+**Status synchronized: 2026-11-01. Current evidence index:** [roadmap status](roadmap-status.md).
+Detailed daily-X evidence remains in [X concurrency dev readiness](concurrency-dev-readiness.md).
 The dated entries below preserve experiment history. Their old blocker/next-step
 wording must not override the current checkpoint.
+
+| Workstream | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Selected daily native X | Existing daily route and later diagnostic improvements | Historical MVP evidence and completed 2026-11-01 X-only repeat | Dated receipts only; current runtime not inspected | Selected main-dev MVP accepted; renewal/rotation/hot switching remain deferred |
+| Shared X/IG foundation | Existing lifecycle/Store integration; cleanup extractions through `ae1a535` | Offline conformance plus Go/Windows regression evidence | No activation of the later cleanup commits recorded | Full repeated real mixed-source acceptance pending |
+| Native IG | Bootstrap verifier and History caller diagnostic in `32b8552` | Offline contracts and accountless History fixture | One recorded IG-only diagnostic artifact, dirty-source provenance | Failed document continuity; reader/historyApi/readiness; recipe unqualified |
+| General headless/Quiet parity | Driver/ownership/Settings foundations present | Historical component and selected source proofs | Historical selected modes, not a new rollout | Broader integrated handoff, login/media/package acceptance remains partial |
+| Shared capture reservation | Proposal only | No reservation acceptance established | Not recorded | Deferred; preserve the existing predecessor guard |
+
+The original phase ledger below is historical and does not reopen the accepted
+X MVP. IG's latest gate is document continuity/missing caller attribution, not
+the former HTTP 400 endpoint. No code, runtime, configuration or trial change is
+part of this synchronization.
 
 ### Native Instagram provider implementation (2026-10-29)
 
@@ -1923,6 +1937,11 @@ visibility through live Windows observation; do not promise zero blinking merely
 because DOM capture passed. Browser remains default after this gate.
 
 ## Progress ledger
+
+Historical ledger from the original browser/headless candidate. The dated
+2026-11-01 matrix above and the linked status index distinguish subsequent
+implementation, testing, activation and acceptance; old pending wording is not
+a new prerequisite for the accepted selected daily-X route.
 
 | Phase | Status | Evidence / next action |
 | --- | --- | --- |

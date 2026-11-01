@@ -3,6 +3,16 @@
 Status: proposed follow-up, not implemented or activated.
 Date: 2026-10-28.
 
+Status reconfirmed from the roadmap scope on 2026-11-01; see the
+[status index](roadmap-status.md). This is a deferred architecture proposal.
+
+| Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- |
+| Reservation lifecycle proposed only; current predecessor guard is a different mechanism | Existing predecessor-drain regressions do not prove atomic reservation | Not recorded | Deferred; not a new gate for the accepted daily-X MVP |
+
+Engine lifecycle/execution/finalization extractions through `ae1a535` do not
+implement this reservation contract or authorize its schema/admission changes.
+
 ## Problem and current MVP correction
 
 The daily-X scheduler branch could start a disposable collector and derive a

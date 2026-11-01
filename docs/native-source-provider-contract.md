@@ -1,5 +1,16 @@
 # Native source providers: shared core and Instagram implementation
 
+Status synchronized: 2026-11-01; see the [roadmap evidence index](roadmap-status.md).
+
+| Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- |
+| Existing shared native provider; bootstrap verifier and diagnostics through `32b8552`; production factory/helper separation through `2ba01bb` | Offline source/transport/Store checks, package/equivalence evidence and accountless History fixture | Recorded dirty-source `32b8552` IG-only trial artifact; later cleanup activation not recorded | Native IG remains unqualified after reader/historyApi/readiness document invalidation; caller tuple absent |
+
+This checkpoint updates progress, not the protocol, qualification flags, cookie
+manifest, owner capability, configuration defaults or admission guards. The
+original offline implementation statements below are scoped to that increment;
+they must not erase later separately authorized diagnostic trials.
+
 ## Implementation boundary
 
 This increment implements the native Instagram provider and its main-browser
@@ -10,9 +21,10 @@ RPC parameters and synthetic evidence cannot qualify the recipe. The separately
 approved main-dev trial is an explicit exception for execution, not qualification;
 see [trial operation and rollback](instagram-main-dev-trial.md).
 
-No signed-in profile, session transfer, user database, running service or Auto
-Update setting is accessed or changed by this offline implementation. The main
-configuration continues to select Browser for Instagram.
+The original offline implementation did not access or change a signed-in profile,
+session transfer, user database, running service or Auto Update setting. At that
+checkpoint the main configuration selected Browser for Instagram. This is not a
+readback of the configuration used by later authorized native diagnostic trials.
 
 ## Shared responsibilities
 

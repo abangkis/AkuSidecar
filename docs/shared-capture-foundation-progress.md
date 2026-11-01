@@ -1,12 +1,24 @@
 # Shared capture foundation and completion status
 
-Date: 2026-10-30
+Created: 2026-10-30. Status synchronized: 2026-11-01.
 
 This report combines the X/Instagram lifecycle comparison and the comparison of
 native headless capture with the established windowed Bridge path. The current
-authorization is documentation, isolated implementation and offline validation
-of completion-plan steps 1–3. It does not authorize activation, session transfer,
-account probes, user database changes or changes to Auto Update.
+follow-up is documentation only. Earlier isolated implementations and trials
+retain their own evidence; no new activation, session transfer, account probe,
+user database or Auto Update change is authorized here.
+
+## Current status by evidence dimension
+
+| Scope | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Shared lifecycle/dispatch foundation | Present in reviewed source; production helpers and Engine responsibilities separated through `ae1a535` | Existing offline mixed-source conformance and later regression/equivalence receipts | No activation receipt for the later cleanup commits | Offline boundary covered; repeated real mixed X/IG operation remains pending |
+| IG evidence and diagnostics | Bootstrap verifier, continuous observer and History caller diagnostic in `32b8552` | Node/Go contracts and accountless History fixture | Recorded IG-only `32b8552` artifact with `sourceDirty=true`; not a clean-tuple claim | Rejected reader/historyApi/readiness document change; caller attribution absent; native IG unqualified |
+| X daily path | Existing selected main-dev implementation | Historical lifecycle tests and later completed X-only repeat | Historical daily-MVP and later trial artifacts | Accepted selected X MVP remains valid; no full rotation or mixed IG acceptance inferred |
+
+Exact commit/receipt mappings and limits are in the [status index](roadmap-status.md).
+HTTP 400 below is the former IG endpoint's historical failure. It must not replace
+the later bootstrap/document-continuity finding as the current diagnostic gate.
 
 ## Shared foundation
 
@@ -29,6 +41,8 @@ Convergence means one implementation per shared responsibility, not identical
 identity endpoints or authority for every source/backend.
 
 ## Observations and implementation status
+
+Historical observations at the original 2026-10-30 checkpoint:
 
 - Six recent LinkedIn Browser commands were never claimed and timed out after
   124–149 seconds. Stale-lease cleanup can prevent the pending-command query
@@ -53,6 +67,9 @@ identity endpoints or authority for every source/backend.
 
 ## Current authorized work and exit conditions
 
+The heading is retained for existing links. The table records the original
+completion slice; it does not renew implementation or operational authorization.
+
 | Step | Offline exit condition | Separate operational gate |
 | --- | --- | --- |
 | 1. Predictable batch termination | Per-lease cleanup and accepted-capture reasoning failures preserve authority, evidence and independent source progression; repeated synthetic batches drain | Approved release/handoff and repeated real Browser/native batch acceptance |
@@ -63,9 +80,12 @@ identity endpoints or authority for every source/backend.
 
 ## Offline completion checkpoint
 
-The implementation for steps 1–3 is prepared in isolated Sidecar and Bridge
-worktrees. It is not committed, activated or demonstrated against signed-in
-providers in this slice. Existing main checkout changes remain untouched.
+This section records the original isolated offline checkpoint, before its later
+integration and the separate diagnostic activations. At that time the source
+was prepared in worktrees and was not committed or activated by that slice.
+Do not carry that Git-state statement forward: current commits and tested
+payloads are mapped in the status index. Neither later diagnostics nor source
+cleanup establish complete real-provider convergence.
 
 Step 1 reuses the per-lease Bridge correction and adds the reviewed Engine/Store
 terminal-failure integration. Closed or expired daily capture authority cannot
@@ -114,9 +134,9 @@ It is distinct from admission's sourceReadiness/account proof. Native X's privat
 failure DTO remains unchanged and does not carry this additional classification;
 the Node projection still selects its fixed fields and Go rejects unknown ones.
 
-Next operational gate is a reviewed paired Sidecar/Bridge package and approved
-graceful handoff. Only after that can repeated real batches and a separately
-approved passive IG diagnostic establish deployment behavior. The matching Go
+The original next operational gate required a reviewed paired Sidecar/Bridge
+package and approved graceful handoff. Later diagnostics do not certify the
+full repeated real-batch gate. The matching Go
 binary and Node transport must agree on the required shapeReason projection.
 
 Capabilities that are intentionally unsupported must stay visible in the

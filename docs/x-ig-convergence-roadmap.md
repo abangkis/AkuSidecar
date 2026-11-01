@@ -1,16 +1,20 @@
 # X and Instagram implementation convergence
 
-Date: 2026-10-30
+Created: 2026-10-30. Status synchronized: 2026-11-01.
 
-Status: shared-foundation convergence in progress; steps 1–3 of the current
-completion plan are authorized for isolated implementation and offline tests.
+Status: shared-foundation implementation and offline validation have advanced;
+native daily IG and repeated mixed-source acceptance remain open. Use the
+[status/evidence index](roadmap-status.md) to distinguish implemented, tested,
+activated and acceptance. Reviewed Sidecar source is `ae1a535`; no activation
+of the later cleanup commits is recorded. The latest recorded IG trial used
+the `32b8552` artifact with `sourceDirty=true`, not a certified clean tuple.
 Scope: reuse and complete existing integration, not a replacement architecture.
 This document does not authorize runtime activation, session transfer, login
 changes, database migration, or changes to Auto Update.
 
 ## Current completion plan
 
-### IG evidence-source increment (2026-10-31)
+### IG evidence-source and diagnostic checkpoint (2026-11-01)
 
 The bounded bootstrap reader diagnostic passed without a collector or transfer.
 The private acquisition is now extracted and connected to both owned roles in
@@ -18,8 +22,13 @@ the existing native provider; 196 Node tests, targeted Go suites and an isolated
 development build passed. This preserves the
 daily controller, Store, permission restoration and X recipe. A stored disabled
 IG choice is not a restart persistence failure and must not be silently enabled.
-See the [implementation contract and concrete native trial](instagram-bootstrap-daily-proof.md).
-Native activation/derivation and repeated capture acceptance remain separate.
+See the [implementation contract and diagnostic checkpoint](instagram-bootstrap-daily-proof.md).
+The later authorized IG-only trial reached the bootstrap verifier but failed
+at reader `historyApi` document invalidation during `readiness`; cleanup and
+temporary-setting restoration passed. Method/caller diagnostics are implemented
+and pass an accountless fixture, but no caller tuple appears in that real trial's
+final receipt. HTTP 400 describes the former endpoint, not this latest failure.
+Diagnostic activation is not successful native capture or provider qualification.
 
 The consolidated [shared-foundation progress report](shared-capture-foundation-progress.md)
 combines X-versus-IG lifecycle convergence with windowed-versus-native capture
@@ -38,8 +47,9 @@ parity. These are two views of the same effort, not a new roadmap reset.
    operation, cancellation, restart, remembered consent and reader preservation.
 5. Retire obsolete paths only after their replacement has demonstrated parity.
 
-Steps 1–3 are the current authorized implementation slice. Live activation,
-provider qualification and acceptance in step 4 remain separate gates. A probe
+Steps 1–3 describe the implemented/offline-tested integration slice, not a new
+authorization to repeat it. Provider qualification and acceptance in step 4
+remain separate gates. The current follow-up is documentation only. A probe
 that runs successfully but rejects a candidate is diagnostic progress, not a
 successful Instagram capture.
 
@@ -52,8 +62,9 @@ shared-resource dependency makes continuation unsafe. Preserve user readers.
 
 ## Existing architecture and historical evidence
 
-Review baseline: main commit `7b3acc6`. The working tree also contains
-uncommitted diagnostics and unrelated changes.
+Historical review baseline: main commit `7b3acc6`. The current reviewed source
+checkpoint is `ae1a535`; see the status index for intervening cleanup commits.
+The original uncommitted-work wording is not the current Git state.
 
 The existing [shared core design](source-concurrency-core.md) already assigns
 permission, admission, generations, cancellation, deadlines and cleanup to a
@@ -73,7 +84,7 @@ adoption and integration, not evidence that these abstractions never existed.
 | Native resource lifecycle | `internal/collection/headless/worker/native-pilot/native-source-kernel.mjs` | Extend only for demonstrated missing behavior; no parallel kernel |
 | Native owner factory | `main-browser-transport.mjs`, `source-owner-registry.mjs` in the same directory | Preserve sealed selection; bridge X compatibility incrementally |
 | X native implementation | `development_x_daily_owner_windows.go` and historical X driver | Keep proven behavior while extracting responsibilities; no wholesale rewrite |
-| IG evidence implementation | `instagram-native-session.mjs` | Retain provider-specific validation; resolve HTTP 400 independently |
+| IG evidence implementation | `instagram-native-session.mjs` | Retain provider-specific validation; investigate the latest document-continuity/caller-attribution rejection |
 | Browser surface ownership | AkuBridge `surface-cleanup-journal.js` and `capture-window-runtime.js` | Reuse; reconcile source/run/lease ownership with native cleanup |
 | UI release barrier | `internal/httpapi/web/capture-surface-release-barrier.js` | Align dispatch with the actual resource owner |
 | Capture, reasoning, Timeline and Store | Existing shared pipeline | Preserve authority checks and output behavior |
@@ -85,6 +96,9 @@ IG's current-user request merely to normalize code.
 
 ## Observed failure and evidence limits
 
+Historical incident checkpoint: 2026-10-30. The current diagnostic gate is
+recorded above and in the status index.
+
 On 2026-10-30, the 01:27 WIB user batch failed IG identity verification with
 HTTP 400. LinkedIn's command remained unclaimed until batch cancellation at
 01:31:58; X never started. The source-release barrier repeatedly rejected
@@ -92,10 +106,12 @@ cleanup. Some receipts reported zero expected/pending targets and complete=true
 while their event outcome remained cleanup_pending. The exact stale owner/lease
 still requires confirmation; zero targets alone must not bypass ownership checks.
 
-The UI barrier currently applies to every completed/failed source without
-distinguishing its capture resource owner. Command expiry in Store covers
+At that baseline, the UI barrier applied to every completed/failed source without
+distinguishing its capture resource owner. Command expiry in Store covered
 claimed commands, leaving pre-claim waiting outside that particular timeout.
-These are integration gaps to investigate and cover, not grounds to remove
+The ownership-aware routing and pre-claim recovery increments below address
+those source gaps; repeated real mixed-source acceptance is still separate.
+These historical failures are not grounds to remove
 identity or cleanup guards. Scheduler backoff is a downstream effect and must
 not be disabled to hide these failures.
 
@@ -142,7 +158,9 @@ X behavior; IG's newer implementation is not automatically the reference truth.
 ### 4. Complete provider contracts and IG qualification
 
 - Keep cookie allowlists and account proof rules source-specific.
-- Diagnose IG HTTP 400 using bounded evidence, not speculative header changes.
+- Preserve the historical HTTP 400 finding for the former endpoint. Investigate
+  document continuity and missing History caller attribution on the replacement
+  bootstrap path using bounded evidence, without relaxing the observer.
 - Normalize proof and diagnostic envelopes; keep primary failure separate from
   cleanup failure and redact bodies, tokens and account identifiers.
 
@@ -166,14 +184,13 @@ terminate predictably; temporary resources retire and user readers remain.
 
 ## Approval and progress tracking
 
-| Stage | State | Approval / evidence |
-| --- | --- | --- |
-| Roadmap documentation and historical review | Complete | Requested by user on 2026-10-30 |
-| 1: Contract map and baseline tests | Complete for the current integration boundary | Existing lifecycle suites reused; ownership projection and UI/Bridge parity added |
-| 2: Cleanup and dispatch integration | Wrong-owner routing and pre-claim expiry committed; per-lease retirement and post-capture reasoning failure prepared and tested offline | Browser retirement does not mutate a newer lease; accepted result receipts permit negative-only reasoning termination after capture authority ends; live repeated-batch acceptance is pending |
-| 3: Existing lifecycle convergence | Cleanup, cancellation and deadlines shared; common base readiness and explicit native capabilities implemented offline | Full controllers are not identical; guarded X quote navigation is disabled explicitly, with unsupported recovery diagnostics; source evidence remains distinct |
-| 4: Provider completion | HTTP 400 unresolved; closed shape predicates implemented offline after passive aggregate shape rejection | Budget separation is active in diagnostic commit 7360d68; the new predicate projection is not deployed and does not qualify an identity source |
-| 5: Daily acceptance and retirement | Pending for the current convergence slice | Earlier X acceptance and the diagnostic-only handoff are not repeated mixed-source acceptance; no obsolete path is retired by this slice |
+| Stage | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| 1: Contract map and baseline | Existing ownership map and contract reuse | Lifecycle, ownership and parity fixtures | Not an activation gate | Complete for the reviewed integration boundary |
+| 2: Cleanup and dispatch | Ownership-aware routing, pre-claim recovery and per-lease/negative-only terminal handling in source | Offline mixed-source/Store/cleanup checks recorded | A complete paired rollout is not established by the diagnostic receipt | Repeated real mixed-source acceptance pending |
+| 3: Lifecycle convergence | Shared cleanup/deadlines, readiness/capabilities; production helper and Engine extractions through `ae1a535` | Existing conformance plus scoped equivalence/Go/Windows evidence | Cleanup commits `f348b9b` through `ae1a535`: not recorded | Bounded extraction reviews complete; full owner equivalence and live convergence not implied |
+| 4: IG qualification | Bootstrap verifier, continuous observer and caller diagnostic in `32b8552` | Historical offline suites and passing accountless History fixture | Recorded `32b8552` artifact, dirty-source provenance, one IG-only trial | Failed `document_within_navigation`, reader/historyApi/readiness; caller remains unknown; recipe unqualified |
+| 5: Daily acceptance and retirement | Existing daily machinery; only reviewed obsolete wrappers/helpers retired | Synthetic repeated batches and regression evidence | No new activation recorded | Full repeated X/IG, cancellation/restart/reader/consent acceptance pending; older X MVP remains accepted in its own scope |
 
 Record completed evidence and remaining differences here as work proceeds. This
 is the execution checklist; existing design documents remain the detailed
@@ -181,10 +198,15 @@ contract references. Runtime activation remains a separate approval.
 
 ### Current isolated completion slice
 
+The heading is retained for existing links; this section describes the original
+isolated slice and its relationship to the later source checkpoint.
+
 Completion-plan steps 1–3 have an offline implementation checkpoint in the
 [shared-foundation report](shared-capture-foundation-progress.md#offline-completion-checkpoint).
 This slice preserves the existing core instead of introducing another pipeline.
-The next release must include the matching Bridge readiness primitive/assets,
+Its original prepared/uncommitted wording is historical; current implementation,
+test and commit mappings are in the [status index](roadmap-status.md).
+A complete rollout must include the matching Bridge readiness primitive/assets,
 Sidecar worker/owner code, Go diagnostic decoder and sealed Node transport.
 Neither the new per-lease cleanup nor the predicate/capability changes are
 active merely because the source tests pass.
@@ -234,8 +256,8 @@ active merely because the source tests pass.
 - Existing target lifetime, user reader protection, old-generation ambiguity,
   provider/registry cancellation and first-cause suites remain required.
 
-This increment does not claim resolution of the current IG HTTP 400, retirement
-of unknown historical Browser resources, or complete migration of the X native
+At its original checkpoint, this increment did not resolve IG HTTP 400, retire
+unknown historical Browser resources, or complete migration of the X native
 owner. Those claims require their own evidence; none is inferred from offline
 passing tests or from the shared controller already existing.
 
@@ -265,9 +287,11 @@ the X daily owner includes the shared kernel without running the owner.
 
 Remaining adoption work: compare and consolidate cancellation/deadline adapters
 where X's qualified startup and seed lifecycle can preserve their exact guards.
-The full X owner migration and live daily acceptance are not complete. IG HTTP
-400 qualification remains a separate provider issue. No runtime, login, session
-transfer or Auto Update change occurred in this increment.
+The full X owner migration and live mixed-source acceptance are not complete.
+IG qualification remains a separate provider issue; the latest blocker is in
+the bootstrap document-continuity diagnostic, not the former HTTP 400 endpoint.
+No runtime, login, session transfer or Auto Update change occurred in this
+increment.
 
 ## Owner convergence increment: cancellation and operation deadlines
 
@@ -326,5 +350,8 @@ late-result fixture uses the IG generic owner; X remains covered by its own
 compatible owner/controller and shared grant tests, not an assumed migration
 to the generic IG proof adapter.
 
-Next unresolved provider gate remains IG identity HTTP 400. Runtime activation
-and bounded real-provider qualification require their own authorization.
+The current unresolved provider gate is IG bootstrap document continuity and
+missing History caller attribution; see the 2026-11-01 status index. The earlier
+HTTP 400 checkpoint is retained as history. Runtime activation and bounded
+real-provider qualification require their own authorization; none is requested
+or performed by this documentation synchronization.

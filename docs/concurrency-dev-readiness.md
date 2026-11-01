@@ -3,6 +3,23 @@
 This page is the current checkpoint. Historical experiments in the design and
 roadmap are evidence, not a new list of prerequisites.
 
+## Status synchronization (2026-11-01)
+
+The [roadmap status index](roadmap-status.md) records exact commits and local
+receipts. Source is reviewed through `ae1a535`; this is not a runtime readback.
+
+| Scope | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Daily X | Existing selected route plus `ab2dc40` diagnostics | Historical daily evidence and completed X-only repeat on 2026-11-01 | Historical `41ecd1c` and later `ab2dc40` trial artifact (`sourceDirty=true`) | Selected MVP remains accepted; the repeat does not qualify IG or full rotation |
+| Native IG | Bootstrap verifier/observer and caller diagnostic through `32b8552` | Offline suites and accountless Chrome 156 History fixture | Recorded `32b8552` trial artifact (`sourceDirty=true`); no clean-tuple claim | Failed `document_within_navigation`, reader/historyApi/readiness; final caller tuple absent |
+| Production/QA and Engine separation | Commits `f348b9b` through `ae1a535` | Scoped source equivalence, regression suites and Windows builds | Not recorded for these cleanup commits | Bounded code review complete; no new operational acceptance |
+
+Keep the accepted daily-X scope and the unqualified native-IG scope separate.
+The older 2026-10-29 statements below describe their original increments; they
+do not mean that later IG diagnostic activation never occurred. Full repeated
+mixed-source acceptance remains pending. No trial or activation is performed
+or authorized by this document update.
+
 ## Shared X/Instagram core: offline integration (2026-10-29)
 
 The following native-provider increment implements the IG candidate recipe,
