@@ -105,9 +105,9 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-0: inherited bounded cleanup | Eight increments above complete | Scoped receipts retained | Cleanup activation not recorded | Bounded code reviews complete; no whole-repository completion claim |
 | CL-1: consumer and compatibility inventory | [Entry/consumer map](cl1-consumer-inventory.md) and [32-boundary candidate ledger](cl1-cleanup-candidates.md) delivered | Read-only four-tag metadata, native/package/reference and source-preservation checks; no product test/build | Not applicable to an audit | Ready for review; external-consumer and offline Browser dependency limits explicit; no implementation approved |
 | CL-2: proven obsolete-code retirement | Earlier wrappers plus G10 `DeleteMemoryItem` removal committed with roadmap as `21ac9ad` | G10 exact remainder check, full Store/HTTP regressions and four-mode Windows compilation passed | Not performed for G10 | G10 reviewed/committed; comprehensive retirement remains scoped by the remaining ledger entries |
-| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; pure profile merge `aea3867`; cancellation validation detour `edb246d`; earlier lifecycle/session seams retained | Latest combined Engine/HTTP/config/application suites: default 547 pass/38 skip, dev 1,220 pass/48 skip, zero failures; 300 cancellation stress passes, three profile contracts, four build-tag graphs and eight Windows artifacts pass | Not performed for these increments | Scoped changes reviewed/committed; E01 file and profile-merge boundaries established; further Settings decomposition and HTTP/remaining Engine scope pending |
+| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Engine/HTTP/config/application suites: default 568 pass/38 skip, dev 1,241 pass/48 skip, zero failures; 98 Node tests, 200 Node integration iterations, four build-tag graphs and eight Windows artifacts pass. Prior cancellation stress/profile contracts retain their own receipt scope | Not performed for these increments | Scoped changes reviewed/committed; E01 file, profile-merge and executable-preparation boundaries established; further Settings decomposition and HTTP/remaining Engine scope pending |
 | CL-4: frontend feature ownership | Existing navigation module retained; broader extraction proposed | Existing baseline only | Not recorded | Timeline/Settings/app orchestration pending |
-| CL-5: native runtime and QA boundaries | Factory/shared-helper separation complete; deeper runtime split proposed | Existing baseline only for remaining seams | Not recorded | Remaining operation/transport/QA separation pending |
+| CL-5: native runtime and QA boundaries | Factory/shared-helper separation complete; fixture-only timing correction `8dc3f5e` committed; deeper runtime split proposed | 98 Node tests, 200 offline integration iterations and dependency-pinned staging verified for this fixture correction; existing baseline only for remaining seams | Not performed for this correction | Bounded fixture acceptance only; remaining operation/transport/QA separation pending; no universal cross-runtime clock or real-provider qualification claim |
 | CL-6: Bridge responsibility boundaries | Existing source/lifecycle modules retained; further split proposed | Existing baseline only for remaining seams | No new rollout | Background dispatch/surface integration pending |
 | CL-7: build, packaging and test organization | Existing packaging retained; full consumer reconciliation proposed | Partial prior package evidence | No new rollout | Supported-entry/build-tag closure pending |
 | CL-8: integration and source sign-off | Not started for the comprehensive roadmap | Final matrix pending | Separate operational gate | Comprehensive source acceptance pending; runtime acceptance separate |
@@ -156,8 +156,10 @@ Do not delete a consumer merely to make the dependency scan appear clean.
 - **CL-3.1 Settings:** candidate failure cleanup is committed as `7d00d9c`;
   the first file boundary moves `SaveSettings` unchanged to
   `settings_execution.go` in `02e063e`; pure profile-map merge follows in
-  `aea3867`. Cancellation validation detour `edb246d` resolves the observed
-  baseline failure while preserving reader guards. Further validation/planning,
+  `aea3867`; executable preparation follows in `settings_executable.go` as
+  `c303ed4`. Validation detours `edb246d` and `8dc3f5e` resolve observed reader
+  cancellation and offline Node clock-boundary failures while preserving guards.
+  Further validation/planning,
   persistence and runtime-effect decomposition remains proposed. Reuse `providerSwapPlan`;
   preserve candidate cleanup, `operation` locking, profile projection and
   post-save error behavior. Analyze one coherent seam before considering a
@@ -332,14 +334,21 @@ cancellation race was separately fixed in `edb246d`. See the
 and [latest combined passing evidence](../runtime/qa/split-reader-cancellation-20261101/validation.json).
 Historical non-green receipts are retained; no broader service was introduced.
 
-The next proposal is read-only analysis of reasoning-executable change
-validation inside `SaveSettings`. Map `ExecutableRuntime` capability checks,
-active-session/work rejection, `DiscoverExecutable` and path projection before
-the Store save, plus `UseExecutable` afterward. Determine one bounded helper
-and any missing failure-path regressions while preserving `operation`, nested
-`e.mu`, `providerSwapPlan`, candidate disposal, side-effect order and post-save
-errors. No executable helper implementation, compatibility removal or further
-refactor is approved by this status update.
+Executable preparation was subsequently approved, characterized and extracted
+as `c303ed4`. The separately approved Node fixture correction is `8dc3f5e`.
+The [result and limits](cl1-cleanup-candidates.md#e01-executable-preparation-and-node-fixture-validation-detour-2026-11-01)
+and [review](../runtime/qa/settings-executable-review-20261101/review.json)
+retain the initial failing receipt and verify the latest combined passing
+source, logs, dependency pins and Windows artifacts. No runtime was activated.
+
+The next proposal is read-only analysis of the provider-selection validation
+block at the start of `SaveSettings`, before executable discovery. Assess a
+small extraction reusing `ensureReasoningProviderReady`; retain empty/same-provider
+and empty-catalog bypasses, lock scope, probe/Store-read count and error order.
+Define characterization for rejection without discovery/persistence, successful
+ordering and the existing bypasses. Persistence, post-save effects and swap
+planning stay outside this proposed increment. No implementation, compatibility
+removal or further refactor is approved by this status update.
 
 No calendar estimate or cleanup percentage is assigned: this bounded inventory
 does not establish a complete repository-wide denominator or close every

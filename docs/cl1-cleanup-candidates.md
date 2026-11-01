@@ -2,8 +2,8 @@
 
 Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory.md).
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
-provider-candidate cleanup, E01 file/profile-merge extractions and the cancellation
-validation detour below.
+provider-candidate cleanup, E01 file/profile-merge/executable-preparation
+extractions and the cancellation/Node-fixture validation detours below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -17,7 +17,8 @@ Other candidates remain proposals or retained contracts.
 | `unverified` | 4 | Evidence or contract decision still needed |
 
 **Approval at the CL-1 checkpoint was inventory only.** G10, G06, candidate cleanup,
-the narrow E01 file move, profile merge and cancellation correction were
+the narrow E01 file move, profile merge, executable preparation and separately
+approved cancellation/Node-fixture corrections were
 subsequently approved and applied. Further E01 phase decomposition and
 implementation of the other rows remain unapproved. Retained
 rows are not deletion candidates. No global absence of out-of-tree consumers
@@ -54,7 +55,7 @@ Paths in this section are relative to AkuSidecar.
 
 | ID | Disposition | Target and role | Supported consumers / evidence | Checks and rollback constraint before any change |
 | --- | --- | --- | --- | --- |
-| E01 | `extract` | `internal/engine/settings_execution.go:SaveSettings` and pure `settings_profiles.go:mergeReasoningProfilesByProvider` | HTTP settings/onboarding/provider paths; existing `providerSwapPlan` | Candidate cleanup `7d00d9c`, file move `02e063e`, profile merge `aea3867` reviewed/committed; cancellation validation detour `edb246d` resolved the observed baseline failure. Lock, disposal, normalization, errors and side-effect order preserved. Further decomposition requires a separate proposal |
+| E01 | `extract` | `internal/engine/settings_execution.go:SaveSettings`, pure `settings_profiles.go:mergeReasoningProfilesByProvider` and `settings_executable.go:prepareReasoningExecutableChange` | HTTP settings/onboarding/provider paths; existing `providerSwapPlan` | Candidate cleanup `7d00d9c`, file move `02e063e`, profile merge `aea3867`, executable preparation `c303ed4` reviewed/committed; cancellation/Node-fixture validation detours `edb246d`/`8dc3f5e` resolved observed failures. Lock, disposal, normalization, errors and side-effect order preserved. Further decomposition requires a separate proposal |
 | E02 | `extract` | `internal/httpapi/server.go` capture/application adaptation | HTTP routes, Bridge contract/token checks, split-capture ownership and Engine calls | Preserve route/DTO/status/error shapes, request context and owner gates; identify one complete use case before a service layer |
 | E03 | `retain-required` | Work/scheduler/Engine/session lifecycle files completed in CL-0 | Cross-source admission, cancellation, restart and deferred-cleanup consumers; existing equivalence and build receipts | Retain `e.mu`, `schedule`, worker count through cleanup, sticky scheduler start and wake semantics; do not redo completed moves or add drain |
 
@@ -263,8 +264,52 @@ validate or activate a provider. Existing guards still reject invalid IDs and
 more than 32 providers; tests retain the valid 32-provider boundary. Remaining
 Store/runtime effects and their error order are unchanged.
 
+No push, activation or live trial was performed for these increments. The next
+proposal at that checkpoint was read-only analysis of reasoning-executable
+change validation in `SaveSettings`, covering capability checks, busy-session/work rejection and
+discovery before persistence, with activation still after persistence. The
+later separately approved executable helper and fixture correction follow below.
+
+## E01 executable preparation and Node fixture validation detour (2026-11-01)
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Executable-change preparation | `c303ed4`: `Engine.prepareReasoningExecutableChange` in `settings_executable.go`; `SaveSettings` retains persistence and activation | [Initial extraction receipt](../runtime/qa/settings-executable-20261101/validation.json): 20 characterization results pass before/after extraction, helper/caller structural equivalence and eight Windows artifacts. The original dev-suite native-pilot failure is historical; latest combined evidence below is green | Not performed | Scoped source/test review found no blocking issue; committed. Receiver, operation/work locks, trim-equal bypass, original errors, active-provider ownership and side-effect order preserved; CL-3 remains partial |
+| Offline Node startup timing detour | `8dc3f5e`: shared fixture wall-wait helper, bounded observation/reply scheduling, failure-only diagnostics and staging dependency pin | [Combined receipt](../runtime/qa/native-pilot-node-integration-20261101/validation.json): default 568 pass/38 skip, dev 1,241 pass/48 skip, zero failures; 98 Node tests; two independent 100-iteration integration batches, including unchanged wrong-document rejection; four tag graphs and eight Windows amd64 artifacts | Not performed | Scoped fixture/test review found no blocking issue; committed. Original monotonic clock, timestamps, receipt shape, document binding, cancellation, freshness and deadline guards retained. Bounded fixture stabilization only; not universal cross-runtime clock synchronization or live-source qualification |
+
+Both original receipts identify parent `eaee999` and the pre-commit worktree.
+The extraction payload is now committed as
+`c303ed4ff5f37f869c6057baff9ae872c7fc0151`; the combined tested payload is
+complete through `8dc3f5e7dcd04af6995fbf9390f9441b6a67421e`.
+The [review](../runtime/qa/settings-executable-review-20261101/review.json)
+matches all eleven source hashes, reruns the exact source-transformation proof,
+checks raw successful logs, four build graphs, eight PE artifacts and fixture
+dependency hashes. Passing suites were reused because their inputs match.
+Historical receipts and raw failure evidence were not rewritten. The fixture
+receipt explicitly records the overwritten initial diagnostic-log gap; the
+earlier 30-run raw baseline and subsequent failed stress logs remain available.
+
+Characterization covers supported/unsupported trim-equal no-op, capability and
+queued/running-session/active-work rejection, no new pending/shutdown guard,
+trimmed/case-changed/empty requests, empty successful resolution, discovery and
+persistence failures, context-error identity and current-provider activation
+before swap. Discovery remains before persistence; `UseExecutable` stays after
+persistence and before `swap.apply`. The new helper neither owns persistence
+nor starts a new lifecycle or service.
+
+The Node failure was reproduced without the executable extraction. Synthetic
+events and reply delivery could finish within a cross-process clock boundary,
+causing `wire_decode/time_invalid` or `timestamp_future`. Fixture scheduling now
+crosses a complete observed wall interval before identity and after observation,
+inside the original capture budget. Deterministic regressions retain rejection
+on stalled/regressing clocks, stale samples and expired deadlines. No timestamp
+offset, tolerance, guard relaxation or production clock change was introduced.
+
 No push, activation or live trial was performed for these increments. Next
-proposal: read-only analysis of reasoning-executable change validation in
-`SaveSettings`, covering capability checks, busy-session/work rejection and
-discovery before persistence, with activation still after persistence. No
-executable helper, wider service or additional refactor is approved here.
+proposal: read-only analysis of the provider-selection validation block before
+executable discovery in `SaveSettings`. Assess one small helper reusing
+`ensureReasoningProviderReady`; preserve empty/same-provider and empty-catalog
+bypasses, lock/probe/Store-read/error order. Determine characterization for
+rejection before discovery/persistence and successful ordering. Do not move
+swap planning, persistence or post-save effects. This is a proposal, not
+implementation approval.

@@ -1,7 +1,7 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-01 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `edb246d` (reader cancellation correction, after pure profile merge `aea3867`),
+Reviewed local source: AkuSidecar `8dc3f5e` (offline Node timing correction, after executable preparation extraction `c303ed4`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
 The Browser worktree contains pre-existing build/cache changes; those changes
@@ -68,6 +68,12 @@ preserves the original non-green receipt and records the latest combined green
 suite without treating a source cleanup as runtime acceptance.
 External-consumer and offline Browser dependency gaps remain explicit.
 
+Executable-change preparation is now extracted in `c303ed4`; the independently
+approved offline Node timing correction is committed as `8dc3f5e`. Their
+[review and result](cl1-cleanup-candidates.md#e01-executable-preparation-and-node-fixture-validation-detour-2026-11-01)
+maps the earlier failing receipt to the latest combined passing payload. CL-3
+remains partial; neither commit establishes runtime activation or acceptance.
+
 | Increment | Implemented commit | Tested evidence | Activated | Acceptance |
 | --- | --- | --- | --- | --- |
 | Remove unused Personal Memory wrappers | `f348b9b` | Accepted cleanup review and regression history | Not recorded | Bounded removal only; not a repository-wide legacy audit |
@@ -84,6 +90,8 @@ External-consumer and offline Browser dependency gaps remain explicit.
 | E01 Settings execution file boundary | `02e063e` | [Receipt](../runtime/qa/settings-execution-20261101/validation.json): unchanged 120-line method and file remainder; default 526 pass/38 skip, dev 1,199 pass/48 skip, zero failures; four build-tag graphs and eight Windows artifacts | Not performed | Scoped review complete and committed; Settings getter/helpers/callers, lock/effect order, config/protocol/guards unchanged; further phase decomposition remains proposed |
 | E01 pure profile-map merge | `aea3867` | [Initial receipt](../runtime/qa/settings-profile-merge-20261101/validation.json): characterization before extraction, precedence/independence/normalization and validation coverage; its default cancellation failure is historical, not a green result. Latest combined evidence is in the following row | Not performed | Scoped helper/test review complete and committed; raw/partial entries, both normalization positions and guard behavior preserved |
 | Reader cancellation validation detour | `edb246d` | [Combined receipt](../runtime/qa/split-reader-cancellation-20261101/validation.json): deterministic red-to-green regression; 300 stress passes; default 547 pass/38 skip, dev 1,220 pass/48 skip, zero failures; three profile contracts, four build-tag graphs and eight Windows artifacts | Not performed | Scoped correction/test review complete and committed; cancelled waiters retain context errors, new requests after close remain rejected; tombstone/replay/activation guards retained |
+| E01 executable-change preparation | `c303ed4` | [Initial extraction receipt](../runtime/qa/settings-executable-20261101/validation.json): 20 characterization results pass before/after extraction; exact helper/caller equivalence. Its native-pilot failures remain historical. [Review](../runtime/qa/settings-executable-review-20261101/review.json) verifies the unchanged payload against the latest combined passing evidence below | Not performed | Scoped review complete and committed; receiver, locks, trim-equal no-op, errors, active-provider ownership, pre-save discovery and post-save activation retained |
+| Offline Node startup timing validation detour | `8dc3f5e` | [Combined receipt](../runtime/qa/native-pilot-node-integration-20261101/validation.json): default 568 pass/38 skip, dev 1,241 pass/48 skip, zero failures; 98 Node tests; two independent 100-iteration integration batches; four build-tag graphs and eight Windows artifacts. Review verifies hashes, raw logs and staging pins | Not performed | Scoped fixture/test correction reviewed and committed; real bounded scheduling intervals, original monotonic clock, protocol, timestamps, document/freshness/deadline guards retained. This is fixture stabilization, not universal clock synchronization or live-provider acceptance |
 
 Counts include subtests and repeated build-tag selections; do not add them as
 unique test cases. Receipts captured before commit may retain `committed:false`
@@ -100,11 +108,14 @@ legacy/compatibility inventory. These are proposals,
 not authorization to implement or delete. Scheduler drain and further execution
 refactors have not been added to this completed slice.
 
-Next source-cleanup proposal: read-only analysis of reasoning-executable change
-validation inside `SaveSettings`, including capability/busy guards, discovery
-before persistence, activation afterward and failure-path coverage. No
-executable helper implementation is approved. This does not change the separate
-operational/IG diagnostic boundary below.
+Next source-cleanup proposal: read-only analysis of provider-selection validation
+at the start of `SaveSettings`, before executable discovery. Assess one small
+helper around the existing selection/configuration/readiness block, reusing
+`ensureReasoningProviderReady`. Preserve empty/same-provider and empty-catalog
+bypasses, `operation`, probe/error ordering and Store reads. Define characterization
+coverage before requesting implementation approval; do not move persistence,
+post-save effects or provider-swap planning in this step. This does not change
+the separate operational/IG diagnostic boundary below.
 
 ## Product and installation roadmaps
 
