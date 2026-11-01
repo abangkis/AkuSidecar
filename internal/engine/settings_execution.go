@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
-	"github.com/abangkis/AkuSidecar/internal/reasoning"
 )
 
 func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domain.Settings, error) {
@@ -40,28 +39,11 @@ func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domai
 			return domain.Settings{}, err
 		}
 	}
-	var executableRuntime reasoning.ExecutableRuntime
-	var resolvedExecutable string
-	if strings.TrimSpace(value.ReasoningExecutablePath) != strings.TrimSpace(current.ReasoningExecutablePath) {
-		var ok bool
-		executableRuntime, ok = e.provider.(reasoning.ExecutableRuntime)
-		if !ok {
-			return domain.Settings{}, fmt.Errorf("%s does not expose an editable executable", e.ProviderName())
-		}
-		active, activeErr := e.store.ActiveSession(ctx)
-		if activeErr != nil {
-			return domain.Settings{}, activeErr
-		}
-		e.mu.RLock()
-		activeWork := len(e.work.active) > 0
-		e.mu.RUnlock()
-		if active != nil || activeWork {
-			return domain.Settings{}, errors.New("finish the active update or AI Deep Detection before changing the reasoning executable")
-		}
-		resolvedExecutable, err = executableRuntime.DiscoverExecutable(ctx, strings.TrimSpace(value.ReasoningExecutablePath))
-		if err != nil {
-			return domain.Settings{}, fmt.Errorf("validate reasoning executable: %w", err)
-		}
+	executableRuntime, resolvedExecutable, err := e.prepareReasoningExecutableChange(ctx, current.ReasoningExecutablePath, value.ReasoningExecutablePath)
+	if err != nil {
+		return domain.Settings{}, err
+	}
+	if executableRuntime != nil {
 		value.ReasoningExecutablePath = resolvedExecutable
 	}
 	value.ReasoningProfilesByProvider = mergeReasoningProfilesByProvider(current, value)
