@@ -14,7 +14,7 @@ Push-Location -LiteralPath $projectRoot
 try {
     $env:TEMP = $taskRoot
     $env:TMP = $taskRoot
-    & node --check scripts/auth-session-fixture/x-evidence-ingress.mjs
+    & node --check internal/collection/headless/worker/native-pilot/shared/x-evidence-ingress.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Offline ingress syntax check failed.' }
     & node --check scripts/auth-session-fixture/x-evidence-ingress.test.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Offline ingress test syntax check failed.' }

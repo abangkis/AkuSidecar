@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {registerFreshStartupSession,startupRootControls,allowsStartupControl,mustRetireStartupOwner} from './x-manual-root-controls.mjs';
-import {ROOT_SOURCE_POLICY,rootSourceVerdict} from './x-manual-root-source-policy.mjs';
-import {RootDocumentValidator} from './x-manual-root-document.mjs';
-import {ManualStartupObservation} from './x-manual-startup-cookie-guard.mjs';
-import {startupDiagnostic} from './x-manual-startup-diagnostic.mjs';
+import {registerFreshStartupSession,startupRootControls,allowsStartupControl,mustRetireStartupOwner} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-root-controls.mjs';
+import {ROOT_SOURCE_POLICY,rootSourceVerdict} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-root-source-policy.mjs';
+import {RootDocumentValidator} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-root-document.mjs';
+import {ManualStartupObservation} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-cookie-guard.mjs';
+import {startupDiagnostic} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
 
 test('single policy excludes source classes without making them cookie attempts',()=>{
  for(const value of [undefined,false,true,0,'false']){

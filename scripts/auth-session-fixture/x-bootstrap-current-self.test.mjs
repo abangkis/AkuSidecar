@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
 import { Session } from 'node:inspector';
-import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
+import {MANUAL_TIMING} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-timing-policy.mjs';
 
 import {
   BOOTSTRAP_CURRENT_SELF_EXPRESSION,
   inspectBootstrapCurrentSelf,
   validateBootstrapCurrentSelf,
-} from './x-bootstrap-current-self.mjs';
+} from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
 
 const TARGET_LOCATION = { origin: 'https://x.com', pathname: '/home' };
 

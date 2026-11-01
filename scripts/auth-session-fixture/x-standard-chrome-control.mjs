@@ -1,15 +1,11 @@
+import {standardChromeArgs} from '../../internal/collection/headless/worker/native-pilot/shared/x-standard-chrome-args.mjs';
 // Launch-only control. No browser connection, page reads or credential access.
 import { spawn } from 'node:child_process';
 import { lstat, mkdir, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { parseStrictJSON } from './x-evidence-ingress.mjs';
+import { parseStrictJSON } from '../../internal/collection/headless/worker/native-pilot/shared/x-evidence-ingress.mjs';
 
-export function standardChromeArgs(profile) {
-  if (typeof profile !== 'string' || !isAbsolute(profile)) throw new Error('invalid_profile');
-  return [`--user-data-dir=${profile}`, '--profile-directory=Default', '--no-first-run',
-    '--no-default-browser-check', '--new-window', 'https://x.com/home'];
-}
 
 export function decodeControl(bytes) {
   if (!(bytes instanceof Uint8Array) || bytes.length < 1 || bytes.length > 4096) throw new Error('invalid_control');

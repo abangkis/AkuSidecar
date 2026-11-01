@@ -1,7 +1,7 @@
 // Pure offline contract exercise. Trusted synthetic assertions are not native
 // evidence. This module has no browser, network, filesystem, Store or transfer API.
-import { inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
-import { parseStrictJSON } from './x-evidence-ingress.mjs';
+import { inspectBootstrapCurrentSelf } from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
+import { parseStrictJSON } from '../../internal/collection/headless/worker/native-pilot/shared/x-evidence-ingress.mjs';
 
 export const OFFLINE_X_PLAN_SCHEMA = 'aku.x.native-plan.offline.v1';
 export const OFFLINE_X_INPUT_SCHEMA = 'aku.x.native-evidence.offline.v1';

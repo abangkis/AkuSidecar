@@ -15,11 +15,11 @@ import {
   executeManualReply,
 } from './x-native-metadata-probe-driver.mjs';
 import {manualSeedRPCCode} from '../../internal/collection/headless/worker/native-pilot/x-application-owner-factories.mjs';
-import { BOOTSTRAP_CURRENT_SELF_EXPRESSION } from './x-bootstrap-current-self.mjs';
-import { EarlyBootstrapCapture } from './x-early-bootstrap-capture.mjs';
-import { inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
-import {manualSeedFailure} from './x-manual-retained-setup.mjs';
-import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
+import { BOOTSTRAP_CURRENT_SELF_EXPRESSION } from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
+import { EarlyBootstrapCapture } from '../../internal/collection/headless/worker/native-pilot/shared/x-early-bootstrap-capture.mjs';
+import { inspectBootstrapCurrentSelf } from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
+import {manualSeedFailure} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-retained-setup.mjs';
+import {MANUAL_TIMING} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-timing-policy.mjs';
 
 test('actual asynchronous seed reply preserves its command after ingress release and suppresses spoofed codes',async()=>{
   for(const branded of [true,false]){

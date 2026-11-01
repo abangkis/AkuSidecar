@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { projectQACookieHeaders, QACookieWriteCapture, finishQACookieWriteScope } from './x-qa-cookie-writes.mjs';
-import { QABoundObservation } from './x-qa-bound-observation.mjs';
-import { inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
+import { projectQACookieHeaders, QACookieWriteCapture, finishQACookieWriteScope } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-cookie-writes.mjs';
+import { QABoundObservation } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-bound-observation.mjs';
+import { inspectBootstrapCurrentSelf } from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
 
 const setter = { host: 'api.x.com', path: '/1.1/account', role: 'settings' };
 const project = (value, scope = setter) => projectQACookieHeaders({ 'Set-Cookie': value }, scope, 'after_identity', 'extra_info');

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {createBatchBootstrap} from './x-batch-bootstrap.mjs';
+import {createBatchBootstrap} from '../../internal/collection/headless/worker/native-pilot/shared/x-batch-bootstrap.mjs';
 import {createApplicationDailyOwner} from '../../internal/collection/headless/worker/native-pilot/x-application-owner-factories.mjs';
 
 test('borrowed owner initialization and idle close create no Home target',async()=>{

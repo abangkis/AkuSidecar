@@ -1,11 +1,11 @@
 // Accountless diagnostics fixture. No process/profile/cookie/network capability.
 import {performance} from 'node:perf_hooks';
-import {createManualV2BoundObservation} from './x-qa-bound-observation.mjs';
-import {inspectBootstrapCurrentSelf} from './x-bootstrap-current-self.mjs';
-import {createManualStartupOwner} from './x-manual-startup-owner.mjs';
-import {createXManualOwnerPort} from './x-native-manual-owner-port.mjs';
+import {createManualV2BoundObservation} from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-bound-observation.mjs';
+import {inspectBootstrapCurrentSelf} from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
+import {createManualStartupOwner} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-owner.mjs';
+import {createXManualOwnerPort} from '../../internal/collection/headless/worker/native-pilot/shared/x-native-manual-owner-port.mjs';
 import {offlineStartupOwner} from './x-manual-startup-offline-fixture.mjs';
-import {startupFailureLatch,startupFailure,requireBoundStartup} from './x-manual-startup-diagnostic.mjs';
+import {startupFailureLatch,startupFailure,requireBoundStartup} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
 const settingsURL='https://api.x.com/1.1/account/settings.json';
 const projection=inspectBootstrapCurrentSelf({location:{origin:'https://x.com',pathname:'/home'},__INITIAL_STATE__:{session:{user_id:'1908123456789012345'},entities:{users:{entities:{'1908123456789012345':{id_str:'1908123456789012345'}}}}}});
 

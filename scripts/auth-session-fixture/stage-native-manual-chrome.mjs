@@ -34,20 +34,19 @@ manifest.moduleDependencies=['go.mod','go.sum',...['internal/ownedprocess','inte
   fs.readdirSync(path.join(project,directory)).filter(file=>file.endsWith('.go')&&!file.endsWith('_test.go')).sort().map(file=>`${directory}/${file}`)
 ),'ui-reader-broker/assets.go','ui-reader-broker/manifest.json','ui-reader-broker/content.js','ui-reader-broker/service-worker.js'].map(source=>({source,sha256:hash(fs.readFileSync(path.join(project,source)))}));
 if(mode!==undefined){
-  manifest.nodeSources=['x-native-manual-owner-port.mjs','x-native-manual-owner-port.test.mjs','x-native-manual-owner-offline.mjs','x-native-metadata-probe-driver.mjs',
-    'x-native-manual-capture.mjs','x-native-manual-capture.test.mjs','x-capture-worker-diagnostic.mjs','x-capture-traffic-diagnostics.mjs','x-capture-traffic-diagnostics.test.mjs',
-    'x-qa-feasibility-collector.mjs','x-manual-startup-owner.mjs','x-manual-startup-owner.test.mjs',
-    'x-manual-startup-source.mjs','x-manual-timing-policy.mjs','x-manual-startup-limits.mjs','x-manual-startup-offline-fixture.mjs',
-    'x-manual-header-safety.mjs','x-manual-root-document.mjs','x-manual-root-source-policy.mjs','x-manual-root-controls.mjs','x-manual-root-controls.test.mjs',
-    'x-identity-freshness-ledger.mjs','x-identity-freshness-ledger.test.mjs',
-    'x-manual-enrollment-capture.mjs','x-manual-enrollment-capture.test.mjs',
-    'x-bootstrap-breakpoint-handoff.mjs','x-early-bootstrap-capture.mjs',
-    'x-manual-startup-diagnostic.mjs','x-manual-startup-diagnostic.test.mjs',
-    'x-manual-startup-timing.mjs','x-manual-startup-timing.test.mjs',
-    'x-manual-startup-wait-budget.mjs','x-manual-startup-wait-budget.test.mjs',
-    'x-settings-wait-state.mjs','x-settings-wait.test.mjs',
-    'x-qa-bound-observation.mjs','x-qa-bound-observation.test.mjs','x-qa-cookie-writes.mjs',
-    'x-manual-startup-cookie-guard.mjs','x-manual-startup-cookie-guard.test.mjs',
+  manifest.nodeSources=['x-native-manual-owner-port.test.mjs','x-native-manual-owner-offline.mjs','x-native-metadata-probe-driver.mjs',
+    'x-native-manual-capture.test.mjs','x-capture-traffic-diagnostics.test.mjs',
+    'x-manual-startup-owner.test.mjs',
+    'x-manual-startup-offline-fixture.mjs',
+    'x-manual-root-controls.test.mjs',
+    'x-identity-freshness-ledger.test.mjs',
+    'x-manual-enrollment-capture.test.mjs',
+    'x-manual-startup-diagnostic.test.mjs',
+    'x-manual-startup-timing.test.mjs',
+    'x-manual-startup-wait-budget.test.mjs',
+    'x-settings-wait.test.mjs',
+    'x-qa-bound-observation.test.mjs',
+    'x-manual-startup-cookie-guard.test.mjs',
     'x-manual-diagnostic-capacity.test.mjs',
     'x-manual-unframed-traffic.test.mjs',
     'x-manual-startup-redirect.test.mjs',
@@ -58,6 +57,11 @@ if(mode!==undefined){
   });
   for(const source of ['internal/collection/headless/worker/native-pilot/x-native-owner-runtime.mjs',
     'internal/collection/headless/worker/native-pilot/x-application-owner-factories.mjs']){
+    manifest.nodeSources.push({source,sha256:hash(fs.readFileSync(path.join(project,source)))});
+  }
+  const shared='internal/collection/headless/worker/native-pilot/shared';
+  for(const file of fs.readdirSync(path.join(project,shared)).filter(file=>file.endsWith('.mjs')).sort()){
+    const source=shared+'/'+file;
     manifest.nodeSources.push({source,sha256:hash(fs.readFileSync(path.join(project,source)))});
   }
   // These are code assets only. No browser, profile or native driver executes.

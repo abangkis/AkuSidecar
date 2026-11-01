@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {collectorShortCheckpoint, executeManualReply} from './x-native-metadata-probe-driver.mjs';
-import {createManualStartupOwner} from './x-manual-startup-owner.mjs';
-import {ManualStartupCookieGuard} from './x-manual-startup-cookie-guard.mjs';
-import {createManualV2BoundObservation} from './x-qa-bound-observation.mjs';
-import {startupFailure, startupFailureLatch, startupDiagnostic, requireBoundStartup} from './x-manual-startup-diagnostic.mjs';
-import {registerFreshStartupSession} from './x-manual-root-controls.mjs';
-import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
+import {createManualStartupOwner} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-owner.mjs';
+import {ManualStartupCookieGuard} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-cookie-guard.mjs';
+import {createManualV2BoundObservation} from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-bound-observation.mjs';
+import {startupFailure, startupFailureLatch, startupDiagnostic, requireBoundStartup} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
+import {registerFreshStartupSession} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-root-controls.mjs';
+import {MANUAL_TIMING} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-timing-policy.mjs';
 
 // Exercise the actual collector path with an accountless transport. It cannot
 // spawn a browser, access a profile, transfer cookies or publish real evidence.

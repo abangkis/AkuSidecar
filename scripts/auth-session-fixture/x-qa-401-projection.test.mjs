@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { projectQA401Body, validateQARejection, finishQAWeb401 } from './x-qa-401-projection.mjs';
+import { projectQA401Body, validateQARejection, finishQAWeb401 } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-401-projection.mjs';
 
 const AUTH_MESSAGE = 'Could not authenticate you.';
 const project = (body, encoded = false) => projectQA401Body({ body: encoded ? Buffer.from(JSON.stringify(body)).toString('base64') : JSON.stringify(body), base64Encoded: encoded });

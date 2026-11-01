@@ -86,7 +86,7 @@ production verifier are unchanged. No native qualification revision is minted.
 ### Reviewable one-way transfer ceiling
 
 The fixed implementation manifest is `QA_SHORT_MANIFEST` in
-`scripts/auth-session-fixture/x-qa-short-feasibility.mjs`:
+`internal/collection/headless/worker/native-pilot/shared/x-qa-short-feasibility.mjs`:
 
 | Name | Domain | Path | Secure | HttpOnly | SameSite |
 | --- | --- | --- | --- | --- | --- |

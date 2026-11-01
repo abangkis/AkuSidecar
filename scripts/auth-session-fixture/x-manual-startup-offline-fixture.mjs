@@ -3,12 +3,12 @@
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
-import { projectQADirectBody, QA_AB_URL } from './x-qa-direct-ab.mjs';
-import { QABoundObservation, projectBoundBootstrap } from './x-qa-bound-observation.mjs';
-import { createManualStartupCapture } from './x-manual-startup-source.mjs';
-import { createManualStartupOwner } from './x-manual-startup-owner.mjs';
-import { parseStrictJSON } from './x-evidence-ingress.mjs';
+import { inspectBootstrapCurrentSelf } from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
+import { projectQADirectBody, QA_AB_URL } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-direct-ab.mjs';
+import { QABoundObservation, projectBoundBootstrap } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-bound-observation.mjs';
+import { createManualStartupCapture } from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-source.mjs';
+import { createManualStartupOwner } from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-owner.mjs';
+import { parseStrictJSON } from '../../internal/collection/headless/worker/native-pilot/shared/x-evidence-ingress.mjs';
 
 export function offlineStartupOwner(role) {
   if (!['reader', 'collector'].includes(role)) throw new Error('offline_startup_invalid');

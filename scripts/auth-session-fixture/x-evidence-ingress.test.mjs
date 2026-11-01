@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createFixtureXEvidenceIngress, parseStrictJSON } from './x-evidence-ingress.mjs';
+import { createFixtureXEvidenceIngress, parseStrictJSON } from '../../internal/collection/headless/worker/native-pilot/shared/x-evidence-ingress.mjs';
 
 test('optional parser diagnostics preserve fixed errors and existing parse behavior', () => {
   const limits = { maxJSONDepth: 24, maxJSONTokens: 16_384 };

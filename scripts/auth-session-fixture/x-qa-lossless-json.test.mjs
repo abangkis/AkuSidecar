@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
-import { createQALosslessJSON, QA_LOSSLESS_JSON_SOURCE } from './x-qa-lossless-json.mjs';
-import { parseStrictJSON } from './x-evidence-ingress.mjs';
-import { inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
+import { createQALosslessJSON, QA_LOSSLESS_JSON_SOURCE } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-lossless-json.mjs';
+import { parseStrictJSON } from '../../internal/collection/headless/worker/native-pilot/shared/x-evidence-ingress.mjs';
+import { inspectBootstrapCurrentSelf } from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
 
 const CAP = 256 * 1024;
 const ID = '12345678901234567890';

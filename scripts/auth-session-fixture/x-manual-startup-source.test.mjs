@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createManualStartupCapture, MANUAL_STARTUP_SCHEMA } from './x-manual-startup-source.mjs';
+import { createManualStartupCapture, MANUAL_STARTUP_SCHEMA } from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-source.mjs';
 import { offlineStartupCapture, offlineStartupOwner, runOfflineStartupRecipe } from './x-manual-startup-offline-fixture.mjs';
-import { startupDiagnostic } from './x-manual-startup-diagnostic.mjs';
-import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
+import { startupDiagnostic } from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
+import {MANUAL_TIMING} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-timing-policy.mjs';
 
 const request = (role = 'reader') => ({ challenge: '0123456789abcdef'.repeat(3), role, ...offlineStartupOwner(role) });
 const decode = wire => { try { return JSON.parse(wire.toString('utf8')); } finally { wire.fill(0); } };

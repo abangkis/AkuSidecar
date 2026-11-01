@@ -5,7 +5,7 @@ import {serveMainBrowserTransport,mainOwnerFailure,mainStartupProgressForOwnerOp
 import {serveDailyOwnerPipe,DAILY_OWNER_SCHEMA} from './daily-owner-protocol.mjs';
 import {loadPackagedAssets} from './packaged-assets.mjs';
 import {createApplicationDailyOwner} from './x-application-owner-factories.mjs';
-import {parseStrictJSON} from '../../../../../scripts/auth-session-fixture/x-evidence-ingress.mjs';
+import {parseStrictJSON} from './shared/x-evidence-ingress.mjs';
 import {createInstagramDailyOwner} from './instagram-native-provider.mjs';
 import {INSTAGRAM_NATIVE_RECIPE} from './instagram-native-session.mjs';
 import {nativeSourceFailure} from './native-source-kernel.mjs';

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { qaABCommand, QA_AB_URL, QADirectCapture, projectQADirectBody, finishQADirectAB } from './x-qa-direct-ab.mjs';
+import { qaABCommand, QA_AB_URL, QADirectCapture, projectQADirectBody, finishQADirectAB } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-direct-ab.mjs';
 const settings = { language: 'en', time_zone: { PRIVATE: 'PRIVATE' }, protected: false, always_use_https: true,
   discoverable_by_email: false, discoverable_by_mobile_phone: false };
 const project = body => projectQADirectBody({ body: JSON.stringify(body), base64Encoded: false });

@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
-import { ManualStartupCookieGuard } from './x-manual-startup-cookie-guard.mjs';
-import { QABoundObservation, createManualV2BoundObservation } from './x-qa-bound-observation.mjs';
-import { inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
-import { QA_AB_URL } from './x-qa-direct-ab.mjs';
-import { createManualStartupOwner } from './x-manual-startup-owner.mjs';
-import { requireBoundStartup, startupDiagnostic, startupFailureLatch } from './x-manual-startup-diagnostic.mjs';
+import {MANUAL_TIMING} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-timing-policy.mjs';
+import { ManualStartupCookieGuard } from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-cookie-guard.mjs';
+import { QABoundObservation, createManualV2BoundObservation } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-bound-observation.mjs';
+import { inspectBootstrapCurrentSelf } from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
+import { QA_AB_URL } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-direct-ab.mjs';
+import { createManualStartupOwner } from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-owner.mjs';
+import { requireBoundStartup, startupDiagnostic, startupFailureLatch } from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
 
 const projection = inspectBootstrapCurrentSelf({ location: { origin: 'https://x.com', pathname: '/home' },
   __INITIAL_STATE__: { session: { user_id: '12345' }, entities: { users: { entities: { '12345': { id_str: '12345' } } } } } });

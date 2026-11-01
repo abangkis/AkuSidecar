@@ -3,7 +3,7 @@
 import {performance} from 'node:perf_hooks';
 import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 import {manualSeedFailure} from './x-manual-retained-setup.mjs';
-import {createNativeOperationScope} from '../../internal/collection/headless/worker/native-pilot/native-source-kernel.mjs';
+import {createNativeOperationScope} from '../native-source-kernel.mjs';
 
 export function createApplicationSeedGrant({runSeed,now=()=>performance.now(),wallNow=()=>Date.now(),budgetMS=MANUAL_TIMING.attemptAuthorizationMaxMS}={}){
   if(typeof runSeed!=='function'||typeof now!=='function'||typeof wallNow!=='function'||!Number.isSafeInteger(budgetMS)||budgetMS<1||budgetMS>MANUAL_TIMING.attemptAuthorizationMaxMS)throw manualSeedFailure('preconditions','disabled');

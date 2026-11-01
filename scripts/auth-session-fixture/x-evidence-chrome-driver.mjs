@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, lstat, realpath } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createFixtureXEvidenceIngress, parseStrictJSON } from './x-evidence-ingress.mjs';
+import { createFixtureXEvidenceIngress, parseStrictJSON } from '../../internal/collection/headless/worker/native-pilot/shared/x-evidence-ingress.mjs';
 import { readQualifiedFixtureXBody, canonicalizeFixtureXBody } from './x-evidence-body.mjs';
 import { awaitIssuedAtCatchUp } from './x-evidence-request-clock.mjs';
 

@@ -18,6 +18,13 @@ for(const mode of [undefined,'x-owner-port','x-retained-manual']){
       if(mode)args.push(mode);
       const staged=JSON.parse(execFileSync(process.execPath,args,{cwd:project,encoding:'utf8',timeout:15000,windowsHide:true}));
       const manifest=JSON.parse(await readFile(join(task,'staging-provenance.json'),'utf8'));
+      if(mode){
+        for(const file of ['x-evidence-ingress.mjs','x-manual-timing-policy.mjs','x-standard-chrome-args.mjs','x-qa-feasibility-collector.mjs']){
+          const source='internal/collection/headless/worker/native-pilot/shared/'+file;
+          assert.deepEqual(manifest.nodeSources.filter(row=>row.source===source),[{source,sha256:hash(await readFile(join(project,source)))}]);
+          assert(!manifest.nodeSources.some(row=>row.source==='scripts/auth-session-fixture/'+file));
+        }
+      }
       const source='internal/engine/source_daily_retry.go',original=await readFile(join(project,source),'utf8');
       const start=original.indexOf('type dailyTransientFailure struct'),end=original.indexOf('\ntype dailyRetryCleanup interface',start);
       assert(start>=0&&end>start);

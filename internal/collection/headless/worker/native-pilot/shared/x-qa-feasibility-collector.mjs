@@ -6,7 +6,7 @@ import {captureNativeXTarget} from './x-native-manual-capture.mjs';
 import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = resolve(MODULE_DIR, '..', '..');
+const PROJECT_ROOT = resolve(MODULE_DIR, '../../../../../..');
 const QA_ROOT = join(PROJECT_ROOT, 'runtime', 'qa', 'auth-session-sidecar');
 const PROFILE_NAME = 'derived-headless';
 const ROOT_NAME = /^run-x-qa-source-[0-9a-f]{32}$/;

@@ -3311,7 +3311,7 @@ as `b495c9a0bb8f9b4e5da8ceb985a3394308d0ccb4`; the remote main SHA was verified.
 The subsequent adapter integration is a separate working-tree delta.
 
 The verified correlator now lives in
-`scripts/auth-session-fixture/x-bootstrap-breakpoint-handoff.mjs`, shared by the
+`internal/collection/headless/worker/native-pilot/shared/x-bootstrap-breakpoint-handoff.mjs`, shared by the
 local adapter and retained X QA adapter. The retained early RPC uses
 `BootstrapHandoffCapture`: instrumentation can install only at the eligible
 current script position; only the matched normal breakpoint can evaluate the

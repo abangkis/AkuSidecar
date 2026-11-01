@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createManualStartupOwner } from './x-manual-startup-owner.mjs';
+import { createManualStartupOwner } from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-owner.mjs';
 import { offlineStartupOwnerActor, offlineStartupOwner, runOfflineStartupRecipe } from './x-manual-startup-offline-fixture.mjs';
-import { startupDiagnostic } from './x-manual-startup-diagnostic.mjs';
+import { startupDiagnostic } from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
 
 const request = (role, pins) => ({ challenge: 'b'.repeat(48), role, ...pins });
 const decode = buffer => { try { return JSON.parse(buffer.toString('utf8')); } finally { buffer.fill(0); } };
@@ -89,7 +89,7 @@ test('cancelled prepare, early completion and private errors produce only closed
 });
 
 for(const role of ['reader','collector'])test(`prepare ${role} distinguishes missing ready, runner failure and invalid pins`,async()=>{
-  const {startupDiagnostic,startupFailure,startupFailureLatch}=await import('./x-manual-startup-diagnostic.mjs');
+  const {startupDiagnostic,startupFailure,startupFailureLatch}=await import('../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs');
   for(const [stage,condition,run]of [
     ['actor_runner','ready_missing',async()=>{}],
     ['actor_runner','command_failed',async()=>{throw new Error('PRIVATE_TOKEN');}],

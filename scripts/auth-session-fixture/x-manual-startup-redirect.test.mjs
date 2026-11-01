@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ManualStartupCookieGuard} from './x-manual-startup-cookie-guard.mjs';
-import {createManualV2BoundObservation} from './x-qa-bound-observation.mjs';
-import {inspectBootstrapCurrentSelf} from './x-bootstrap-current-self.mjs';
-import {startupFailureLatch,startupFailure,requireBoundStartup,startupDiagnostic} from './x-manual-startup-diagnostic.mjs';
+import {ManualStartupCookieGuard} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-cookie-guard.mjs';
+import {createManualV2BoundObservation} from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-bound-observation.mjs';
+import {inspectBootstrapCurrentSelf} from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
+import {startupFailureLatch,startupFailure,requireBoundStartup,startupDiagnostic} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
 
 const urls=['https://x.com/asset','https://api.x.com/asset2','https://x.com/asset3'];
 const other={'Set-Cookie':'lang=PRIVATE_VALUE; Path=/'};

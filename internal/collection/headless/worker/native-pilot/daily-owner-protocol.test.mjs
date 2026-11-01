@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {PassThrough} from 'node:stream';
 import {serveDailyOwnerPipe,DAILY_OWNER_SCHEMA} from './daily-owner-protocol.mjs';
-import {applicationPostOperation} from '../../../../../scripts/auth-session-fixture/x-application-reader-post.mjs';
-import {manualCaptureFailure} from '../../../../../scripts/auth-session-fixture/x-native-manual-capture.mjs';
+import {applicationPostOperation} from './shared/x-application-reader-post.mjs';
+import {manualCaptureFailure} from './shared/x-native-manual-capture.mjs';
 
 async function fixture(t,overrides={}){
   const input=new PassThrough(),output=new PassThrough(),events=[],waiting=[];let buffer='',id=0;

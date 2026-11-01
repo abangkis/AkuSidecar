@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { QALiveSelfTransport, finishQALiveSelf, qaLiveSelfCommand } from './x-qa-live-self-transport.mjs';
+import { QALiveSelfTransport, finishQALiveSelf, qaLiveSelfCommand } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-live-self-transport.mjs';
 const frames = () => [
   { method: 'Network.requestWillBeSent', sessionId: 's', params: { requestId: 'r', frameId: 'f', loaderId: 'l', type: 'Fetch', request: { method: 'GET', url: 'https://x.com/home' } } },
   { method: 'Network.responseReceived', sessionId: 's', params: { requestId: 'r', frameId: 'f', loaderId: 'l', type: 'Fetch', response: { url: 'https://x.com/home', status: 200, mimeType: 'text/html', fromDiskCache: false, fromServiceWorker: false, fromPrefetchCache: false } } },

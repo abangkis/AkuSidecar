@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { QA_SHORT_MANIFEST, selectQAShortCookies, shortQACheckpoint, runQAShortFeasibility } from './x-qa-short-feasibility.mjs';
+import { QA_SHORT_MANIFEST, selectQAShortCookies, shortQACheckpoint, runQAShortFeasibility } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-short-feasibility.mjs';
 
 const cookies = () => QA_SHORT_MANIFEST.tuples.map(t => ({ ...t, value: 'SYNTHETIC_PRIVATE', session: false,
   expires: 4102444800.125, priority: 'Medium', sourceScheme: 'Secure', sourcePort: 443, size: 17 }));

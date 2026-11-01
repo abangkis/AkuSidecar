@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AccountSettingsCapture, accountSettingsBodyMode } from './x-account-settings-capture.mjs';
+import { AccountSettingsCapture, accountSettingsBodyMode } from '../../internal/collection/headless/worker/native-pilot/shared/x-account-settings-capture.mjs';
 
 const request = (id = 'private-request', extra = {}) => ({ requestId: id, request: { method: 'GET', url: 'https://x.com/i/api/1.1/account/settings.json?private=SECRET' }, ...extra });
 const response = (extra = {}) => ({ requestId: 'private-request', response: { url: 'https://x.com/i/api/1.1/account/settings.json', status: 200, mimeType: 'application/json', fromDiskCache: false, fromServiceWorker: false, fromPrefetchCache: false, ...extra } });

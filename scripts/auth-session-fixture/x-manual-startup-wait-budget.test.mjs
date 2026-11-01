@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createStartupWaitBudget } from './x-manual-startup-wait-budget.mjs';
-import { startupDiagnostic, startupFailure } from './x-manual-startup-diagnostic.mjs';
-import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
+import { createStartupWaitBudget } from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-wait-budget.mjs';
+import { startupDiagnostic, startupFailure } from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
+import {MANUAL_TIMING} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-timing-policy.mjs';
 
 function fixture(milliseconds = 100) {
   let clock = 0, timer, cleared = 0;

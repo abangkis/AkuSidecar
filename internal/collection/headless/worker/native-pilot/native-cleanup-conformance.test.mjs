@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createNativeSourceAttempt, nativeSourceDiagnostic, settleNativeCleanup} from './native-source-kernel.mjs';
-import {cleanupDailyBatch} from '../../../../../scripts/auth-session-fixture/x-daily-batch-cleanup.mjs';
+import {cleanupDailyBatch} from './shared/x-daily-batch-cleanup.mjs';
 
 test('cleanup executor preserves order and continues after release and diagnostic failures', async () => {
   const calls = [];

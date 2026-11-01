@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { QAGuestCapture, qaGuestCommand, QA_GUEST_HOME, finishQAAuthControl } from './x-qa-auth-control.mjs';
+import { QAGuestCapture, qaGuestCommand, QA_GUEST_HOME, finishQAAuthControl } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-auth-control.mjs';
 const URL = 'https://api.x.com/1.1/account/settings.json';
 const request = (id = 'r1', method = 'GET', frameId = 'guest') => ({ requestId: id, frameId, request: { method, url: URL } });
 const response = (status = 401) => ({ requestId: 'r1', response: { url: URL, status,

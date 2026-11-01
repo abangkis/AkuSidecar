@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import {ManualStartupCookieGuard} from './x-manual-startup-cookie-guard.mjs';
-import {createManualV2BoundObservation,QA_BOUND_BOOTSTRAP_EXPRESSION,projectBoundBootstrap} from './x-qa-bound-observation.mjs';
-import {BootstrapHandoffCapture} from './x-bootstrap-breakpoint-handoff.mjs';
+import {ManualStartupCookieGuard} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-cookie-guard.mjs';
+import {createManualV2BoundObservation,QA_BOUND_BOOTSTRAP_EXPRESSION,projectBoundBootstrap} from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-bound-observation.mjs';
+import {BootstrapHandoffCapture} from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-breakpoint-handoff.mjs';
 import {manualReloadFrameProjection} from './x-native-metadata-probe-driver.mjs';
-import {startupFailureLatch,startupFailure,requireBoundStartup,startupDiagnostic} from './x-manual-startup-diagnostic.mjs';
+import {startupFailureLatch,startupFailure,requireBoundStartup,startupDiagnostic} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
 
 const frame='private-root',session='private-session',oldLoader='old-loader',next='new-loader',home='https://x.com/home';
 const rootRequest=(patch={})=>({requestId:'root',frameId:frame,loaderId:next,type:'Document',request:{method:'GET',url:home},...patch});

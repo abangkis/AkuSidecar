@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {STARTUP_TRACE,closedStartupTrace,startupFailure,startupFailureLatch,startupDiagnostic,startupRPCCode,requireBoundStartup} from './x-manual-startup-diagnostic.mjs';
+import {STARTUP_TRACE,closedStartupTrace,startupFailure,startupFailureLatch,startupDiagnostic,startupRPCCode,requireBoundStartup} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
 import {offlineFirstCausePair,awaitOfflineWallTick} from './x-manual-startup-first-cause-offline.mjs';
 import {offlineStartupOwner} from './x-manual-startup-offline-fixture.mjs';
-import {createManualV2BoundObservation} from './x-qa-bound-observation.mjs';
-import {inspectBootstrapCurrentSelf} from './x-bootstrap-current-self.mjs';
-import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
+import {createManualV2BoundObservation} from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-bound-observation.mjs';
+import {inspectBootstrapCurrentSelf} from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
+import {MANUAL_TIMING} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-timing-policy.mjs';
 const q=(op,role,extra={})=>({id:1,owner:1,op,role,...(op==='manual_prepare'?{observationDeadlineMS:Date.now()+18000}:{}),...extra});
 test('offline diagnostic clock waits past a same-ms challenge and accepts an already advanced real tick',async()=>{
   for(const ticks of [[1000,1000,1000,1001],[1000,1001]]){

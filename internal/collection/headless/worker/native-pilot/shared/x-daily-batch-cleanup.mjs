@@ -1,5 +1,5 @@
 import {batchBootstrapDiagnostic} from './x-batch-bootstrap.mjs';
-import {settleNativeCleanup} from '../../internal/collection/headless/worker/native-pilot/native-source-kernel.mjs';
+import {settleNativeCleanup} from '../native-source-kernel.mjs';
 
 // Closed, value-free outcomes. Independent resources are always attempted.
 export async function cleanupDailyBatch({readerControls='not_needed',collectorControls='not_needed',collector,enrollment,attachments,bootstrap}) {

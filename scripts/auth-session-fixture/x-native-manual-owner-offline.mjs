@@ -2,11 +2,11 @@
 // It has no browser, profile, network, cookie or native-authorization capability.
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {createXManualOwnerPort} from './x-native-manual-owner-port.mjs';
+import {createXManualOwnerPort} from '../../internal/collection/headless/worker/native-pilot/shared/x-native-manual-owner-port.mjs';
 import {offlineStartupOwner,runOfflineStartupRecipe} from './x-manual-startup-offline-fixture.mjs';
-import {createManualStartupOwner} from './x-manual-startup-owner.mjs';
-import {parseStrictJSON} from './x-evidence-ingress.mjs';
-import {startupFailureLatch,startupRPCCode} from './x-manual-startup-diagnostic.mjs';
+import {createManualStartupOwner} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-owner.mjs';
+import {parseStrictJSON} from '../../internal/collection/headless/worker/native-pilot/shared/x-evidence-ingress.mjs';
+import {startupFailureLatch,startupRPCCode} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
 
 export function offlineXManualOwnerPort({afterRelease,changeSnapshot=()=>{},onRetire=()=>{}}={}){
   const alive={reader:true,collector:true};

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { QASourceCapture, qaSourceRoute, qaCookieRequest, projectQASourceBody, projectQACookieMetadata, finishQASourceQualification } from './x-qa-source-qualification.mjs';
+import { QASourceCapture, qaSourceRoute, qaCookieRequest, projectQASourceBody, projectQACookieMetadata, finishQASourceQualification } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-source-qualification.mjs';
 import { LoginObservationGate } from './x-native-metadata-probe-driver.mjs';
 
 const URL = 'https://api.x.com/1.1/account/settings.json';

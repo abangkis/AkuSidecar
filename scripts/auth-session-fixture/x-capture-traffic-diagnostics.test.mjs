@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {CaptureTrafficDiagnostics} from './x-capture-traffic-diagnostics.mjs';
+import {CaptureTrafficDiagnostics} from '../../internal/collection/headless/worker/native-pilot/shared/x-capture-traffic-diagnostics.mjs';
 const event=(method,params={})=>({method:'Network.'+method,params:{requestId:'PRIVATE_REQUEST',...params}});
 test('ordinary correlation variations remain closed diagnostic categories',()=>{
   const cases=[

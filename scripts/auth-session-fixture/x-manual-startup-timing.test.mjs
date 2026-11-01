@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createStartupTiming} from './x-manual-startup-timing.mjs';
-import {startupFailure} from './x-manual-startup-diagnostic.mjs';
-import {SETTINGS_WAIT_STATES} from './x-settings-wait-state.mjs';
+import {createStartupTiming} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-timing.mjs';
+import {startupFailure} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
+import {SETTINGS_WAIT_STATES} from '../../internal/collection/headless/worker/native-pilot/shared/x-settings-wait-state.mjs';
 
 test('settings prerequisites use closed categories without resetting phase age',()=>{
   let now=100;const output=[],t=createStartupTiming(value=>output.push(value),()=>now);

@@ -77,6 +77,9 @@ test('every sealed production graph contains native factories and excludes the Q
       assert(paths.includes('internal/collection/headless/worker/native-pilot/x-application-owner-factories.mjs'));
       assert(paths.includes('internal/collection/headless/worker/native-pilot/x-native-owner-runtime.mjs'));
       assert(!paths.some(path=>path.endsWith('x-native-metadata-probe-driver.mjs')));
+      assert(!paths.some(path=>path.startsWith('scripts/auth-session-fixture/')),`${name}: production imports a fixture module`);
+      assert(paths.includes('internal/collection/headless/worker/native-pilot/shared/x-standard-chrome-args.mjs'));
+      assert(paths.includes('internal/collection/headless/worker/native-pilot/shared/x-evidence-ingress.mjs'));
       const bytes=await readFile(result.driver,'utf8');
       for(const marker of ['runNativeMetadataProbe','handleControlLine','qualify_synchronized_short_concurrency'])assert(!bytes.includes(marker),`${name}: QA dispatcher marker ${marker}`);
     }

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createBatchBootstrap,batchBootstrapDiagnostic} from './x-batch-bootstrap.mjs';
-import {cleanupDailyBatch} from './x-daily-batch-cleanup.mjs';
+import {createBatchBootstrap,batchBootstrapDiagnostic} from '../../internal/collection/headless/worker/native-pilot/shared/x-batch-bootstrap.mjs';
+import {cleanupDailyBatch} from '../../internal/collection/headless/worker/native-pilot/shared/x-daily-batch-cleanup.mjs';
 
 function fixture(overrides={}){
   const state={time:0,created:false,present:true,closeCount:0,releaseCount:0,disappearAt:100,sleeps:[],budgets:[]};

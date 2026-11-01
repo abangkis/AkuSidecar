@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ManualObservationDeadline} from './x-manual-observation-deadline.mjs';
-import {createManualStartupOwner} from './x-manual-startup-owner.mjs';
+import {ManualObservationDeadline} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-observation-deadline.mjs';
+import {createManualStartupOwner} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-owner.mjs';
 import {runOfflineStartupRecipe} from './x-manual-startup-offline-fixture.mjs';
-import {startupDiagnostic,startupRPCCode,closedStartupTrace,startupFailure,startupFailureLatch} from './x-manual-startup-diagnostic.mjs';
-import {IdentityFreshnessLedger} from './x-identity-freshness-ledger.mjs';
-import {ManualStartupObservation} from './x-manual-startup-cookie-guard.mjs';
-import {createManualV2BoundObservation} from './x-qa-bound-observation.mjs';
+import {startupDiagnostic,startupRPCCode,closedStartupTrace,startupFailure,startupFailureLatch} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
+import {IdentityFreshnessLedger} from '../../internal/collection/headless/worker/native-pilot/shared/x-identity-freshness-ledger.mjs';
+import {ManualStartupObservation} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-cookie-guard.mjs';
+import {createManualV2BoundObservation} from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-bound-observation.mjs';
 
 test('actual prepared actor and binder survive an 11s held pause under shared deadline without resetting age',async()=>{
   let time=0,reads=0,authority;

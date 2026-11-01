@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createRetainedManualSetup,manualSeedFailure,manualSeedDiagnostic,manualSeedDiagnosticCode,MANUAL_SEED_CODE_MAX_BYTES} from './x-manual-retained-setup.mjs';
-import {startupFailure,STARTUP_TRACE,STARTUP_AGES} from './x-manual-startup-diagnostic.mjs';
+import {createRetainedManualSetup,manualSeedFailure,manualSeedDiagnostic,manualSeedDiagnosticCode,MANUAL_SEED_CODE_MAX_BYTES} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-retained-setup.mjs';
+import {startupFailure,STARTUP_TRACE,STARTUP_AGES} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
 function fixture(fault){
   let reads=0,writes=0,clock=0,ownReads=0;
   const state={readerPID:1,readerProfile:'qa-reader',collectorPID:2,collectorProfile:'qa-collector'};

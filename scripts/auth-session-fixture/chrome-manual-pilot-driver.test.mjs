@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { manualChromeCommand,runManualChromeDriver,boundedFixtureAcquire } from './chrome-manual-pilot-driver.mjs';
-import { parseStrictJSON } from './x-evidence-ingress.mjs';
+import { parseStrictJSON } from '../../internal/collection/headless/worker/native-pilot/shared/x-evidence-ingress.mjs';
 test('manual Chrome fixture rejects extra fields, arbitrary sites and unowned roles',()=>{
   for(const value of [{op:'fixture_bootstrap',withholdReady:true},{id:1,op:'prepare',owner:2},
     {id:1,op:'prepare',owner:1,url:'https://x.com'}, {id:1,op:'launch',role:'owner',nativeReaderStartup:false},

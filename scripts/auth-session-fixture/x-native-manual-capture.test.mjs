@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
-import {captureNativeXTarget,validateManualCaptureRequest,manualCaptureRPCCode,manualCaptureRPCDiagnostic,manualCaptureDiagnostic,manualCaptureFailure,MANUAL_CAPTURE_COMMAND_TIMEOUT_MS} from './x-native-manual-capture.mjs';
+import {captureNativeXTarget,validateManualCaptureRequest,manualCaptureRPCCode,manualCaptureRPCDiagnostic,manualCaptureDiagnostic,manualCaptureFailure,MANUAL_CAPTURE_COMMAND_TIMEOUT_MS} from '../../internal/collection/headless/worker/native-pilot/shared/x-native-manual-capture.mjs';
 import {executeManualReply} from './x-native-metadata-probe-driver.mjs';
 import {syntheticCaptureTransport,syntheticCapturePort} from './x-native-manual-capture-fixture.mjs';
-import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
-import {CaptureTrafficDiagnostics} from './x-capture-traffic-diagnostics.mjs';
-import {HeaderSafetyGuard} from './x-manual-header-safety.mjs';
-import {projectCaptureWorkerDiagnostic} from './x-capture-worker-diagnostic.mjs';
+import {MANUAL_TIMING} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-timing-policy.mjs';
+import {CaptureTrafficDiagnostics} from '../../internal/collection/headless/worker/native-pilot/shared/x-capture-traffic-diagnostics.mjs';
+import {HeaderSafetyGuard} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-header-safety.mjs';
+import {projectCaptureWorkerDiagnostic} from '../../internal/collection/headless/worker/native-pilot/shared/x-capture-worker-diagnostic.mjs';
 import {performance} from 'node:perf_hooks';
 const bridgePath=fileURLToPath(new URL('../../../AkuBridge',import.meta.url));
 const pins={ownerId:'4102',profileId:'synthetic-collector',contextId:'proof-context',targetId:'proof-target',frameId:'proof-frame',documentId:'proof-document'};

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { QACheckpointRendezvous, synchronizedQAReport } from './x-qa-checkpoint-rendezvous.mjs';
-import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
+import { QACheckpointRendezvous, synchronizedQAReport } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-checkpoint-rendezvous.mjs';
+import {MANUAL_TIMING} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-timing-policy.mjs';
 
 test('both distinct roles must arrive before either private paused checkpoint continues', async () => {
   const r = new QACheckpointRendezvous(); let resumed = false;

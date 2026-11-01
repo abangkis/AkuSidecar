@@ -1,6 +1,6 @@
 import {createIGTrace,igAllowed} from './instagram-diagnostic-trace.mjs';
 import {INSTAGRAM_BOOTSTRAP_BUDGET,validateInstagramBootstrapBudget} from './instagram-bootstrap-budget.mjs';
-import {STRICT_JSON_PARSER_SOURCE} from '../../../../../scripts/auth-session-fixture/x-evidence-ingress.mjs';
+import {STRICT_JSON_PARSER_SOURCE} from './shared/x-evidence-ingress.mjs';
 // Candidate discovery only. This module never issues identity proof or Store
 // authority. Native source qualification must establish the exact self schema.
 import {bootstrapFailure,bootstrapFailureDetail,BOOTSTRAP_STAGES,BOOTSTRAP_CONDITIONS,BOOTSTRAP_CLEANUP_STAGES,BOOTSTRAP_CLEANUP_CONDITIONS} from './instagram-bootstrap-failure.mjs';

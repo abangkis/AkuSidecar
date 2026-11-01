@@ -7,9 +7,9 @@ import { performance } from 'node:perf_hooks';
 import { launchFixtureChrome } from './chrome.mjs';
 import { inventoryFixtureWindows, closeFixtureWindow } from './chrome-window-lifecycle.mjs';
 import { concurrentFixtureCookie } from './concurrent-engine-commands.mjs';
-import { createManualStartupOwner } from './x-manual-startup-owner.mjs';
-import { projectQADirectBody } from './x-qa-direct-ab.mjs';
-import { parseStrictJSON } from './x-evidence-ingress.mjs';
+import { createManualStartupOwner } from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-owner.mjs';
+import { projectQADirectBody } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-direct-ab.mjs';
+import { parseStrictJSON } from '../../internal/collection/headless/worker/native-pilot/shared/x-evidence-ingress.mjs';
 import { captureManualFixtureDOM } from './chrome-manual-pilot-capture.mjs';
 
 const fail = () => new Error('fixture_manual_rejected');

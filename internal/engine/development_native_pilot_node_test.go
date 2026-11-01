@@ -30,7 +30,7 @@ func TestNativePilotNodePreflightDiagnostics(t *testing.T) {
 	if !ok {
 		t.Fatal("offline fixture location unavailable")
 	}
-	module := filepath.Join(filepath.Dir(file), "..", "..", "scripts", "auth-session-fixture", "x-manual-startup-diagnostic.mjs")
+	module := filepath.Join(filepath.Dir(file), "..", "..", "internal", "collection", "headless", "worker", "native-pilot", "shared", "x-manual-startup-diagnostic.mjs")
 	const script = `import{pathToFileURL}from'node:url';const m=await import(pathToFileURL(process.argv[1]));const codes=[];for(const phase of ['navigation','page_ready','guard_bind'])for(const reason of ['unavailable','rejected','deadline'])for(const trace of [undefined,{firstCause:'unknown'}])codes.push(m.startupRPCCode(m.startupFailure('collector',phase,reason,false,undefined,trace)));console.log(JSON.stringify({phases:m.STARTUP_PHASES,codes}));`
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

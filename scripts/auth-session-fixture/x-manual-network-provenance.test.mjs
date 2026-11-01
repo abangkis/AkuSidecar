@@ -1,15 +1,15 @@
 import fs from 'node:fs/promises';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ManualStartupCookieGuard} from './x-manual-startup-cookie-guard.mjs';
-import {createRetainedManualSetup,manualSeedFailure,manualSeedDiagnostic,manualSeedDiagnosticCode,MANUAL_SEED_CODE_MAX_BYTES} from './x-manual-retained-setup.mjs';
+import {ManualStartupCookieGuard} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-cookie-guard.mjs';
+import {createRetainedManualSetup,manualSeedFailure,manualSeedDiagnostic,manualSeedDiagnosticCode,MANUAL_SEED_CODE_MAX_BYTES} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-retained-setup.mjs';
 import vm from 'node:vm';
-import {createXManualOwnerPort} from './x-native-manual-owner-port.mjs';
-import {startupRootControls} from './x-manual-root-controls.mjs';
+import {createXManualOwnerPort} from '../../internal/collection/headless/worker/native-pilot/shared/x-native-manual-owner-port.mjs';
+import {startupRootControls} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-root-controls.mjs';
 import {pathToFileURL} from 'node:url';
 import {resolve} from 'node:path';
-import {createManualV2BoundObservation,projectBoundBootstrap} from './x-qa-bound-observation.mjs';
-import {requireBoundStartup,startupDiagnostic,startupFailureLatch,startupFailure} from './x-manual-startup-diagnostic.mjs';
+import {createManualV2BoundObservation,projectBoundBootstrap} from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-bound-observation.mjs';
+import {requireBoundStartup,startupDiagnostic,startupFailureLatch,startupFailure} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
 const path=resolve('internal/collection/headless/worker/native-pilot/x-native-owner-runtime.mjs');
 let code=(await fs.readFile(path,'utf8')).replaceAll('\r\n','\n');
 // Flatten the private closure only in this in-memory offline harness. Production
@@ -26,14 +26,14 @@ const seedSource=permissions+code.slice(code.indexOf('async function seedRetaine
 const provenanceSource=code.slice(code.indexOf('const manualProvenance='),code.indexOf('const manualEnrollment=')).replace('const manualProvenance=','return ');
 const allowProvenance=new Function('active','method','params','sessionId','purpose','qualificationMode','driverMode','MAX_TOTAL_NETWORK_BUFFER_BYTES','MAX_RESOURCE_NETWORK_BUFFER_BYTES',permissions+provenanceSource);
 code=code.replace(/from '(\.{1,2}\/[^']+)'/g,(_,p)=>`from '${new URL(p,pathToFileURL(path)).href}'`);
-code+=`\nimport {createStartupWaitBudget} from '${new URL('./x-manual-startup-wait-budget.mjs',import.meta.url).href}';
+code+=`\nimport {createStartupWaitBudget} from '${new URL('../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-wait-budget.mjs',import.meta.url).href}';
 const realSend=send;export async function offlineControlGate(enabled=true,malformed=false){const current={owner:1,sessionId:'s',targetId:'t',manualStartupSelected:true,bound:{running:true}};active=current;driverMode='retained_source_qualification';registerFreshStartupSession(current,'s','reader');const writes=[];cdpWrite=message=>{writes.push(message);dispatchCDP({id:message.id,sessionId:message.sessionId,result:malformed?{unexpected:true}:{}});};const previous=process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED;process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED=enabled?'1':'0';try{const controls=startupRootControls(current,realSend,'reader');await controls.apply();await controls.restore();return writes.map(v=>[v.method,v.params]);}finally{if(previous===undefined)delete process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED;else process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED=previous;}}
 export const offlineUnsettled=mustRetireStartupOwner;export const offlineRetire=retireManualReader;
 export function offlineHarness(current,transport){registerFreshStartupSession(current,current.sessionId,'reader');if(current.shortFeasibility?.sessionId)registerFreshStartupSession(current.shortFeasibility,current.shortFeasibility.sessionId,'collector');active=current;send=transport;return {dispatch:dispatchCDP,start:()=>startManualCookieObservation(current),run:(options,factory)=>{const budget=createStartupWaitBudget(2000,{role:'reader'});return boundCheckpoint(current,false,options,undefined,()=>{},undefined,factory,undefined,promise=>budget.wait(promise));},collector:factory=>{const budget=createStartupWaitBudget(2000,{role:'collector'});return collectorShortCheckpoint(current,undefined,()=>{},()=>{},undefined,factory,undefined,promise=>budget.wait(promise));}};}\n`;
 const driver=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
 // Expose only the production transport's event dispatcher in memory. No launch,
 // profile validation, native send or process creation is invoked by these tests.
-const collectorPath=resolve('scripts/auth-session-fixture/x-qa-feasibility-collector.mjs');
+const collectorPath=resolve('internal/collection/headless/worker/native-pilot/shared/x-qa-feasibility-collector.mjs');
 let collectorCode=await fs.readFile(collectorPath,'utf8');
 collectorCode=collectorCode.replace(/from '(\.\/[^']+)'/g,(_,p)=>`from '${new URL(p,pathToFileURL(collectorPath)).href}'`);
 collectorCode=collectorCode.replace('fileURLToPath(import.meta.url)',JSON.stringify(collectorPath))

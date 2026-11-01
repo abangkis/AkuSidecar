@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
-import { BootstrapHandoffCapture, BootstrapBreakpointHandoff } from './x-bootstrap-breakpoint-handoff.mjs';
-import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, validateBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
-import { QA_BOUND_BOOTSTRAP_EXPRESSION, projectBoundBootstrap, createManualV2BoundObservation } from './x-qa-bound-observation.mjs';
-import {QACheckpointRendezvous} from './x-qa-checkpoint-rendezvous.mjs';
-import {QA_AB_URL} from './x-qa-direct-ab.mjs';
-import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
+import { BootstrapHandoffCapture, BootstrapBreakpointHandoff } from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-breakpoint-handoff.mjs';
+import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, validateBootstrapCurrentSelf } from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
+import { QA_BOUND_BOOTSTRAP_EXPRESSION, projectBoundBootstrap, createManualV2BoundObservation } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-bound-observation.mjs';
+import {QACheckpointRendezvous} from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-checkpoint-rendezvous.mjs';
+import {QA_AB_URL} from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-direct-ab.mjs';
+import {MANUAL_TIMING} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-timing-policy.mjs';
 
 function fixture(fault, boundIdentity = false, beforeIdentityRead = async () => {}, hooks = {}) {
   let capture;

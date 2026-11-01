@@ -3,7 +3,8 @@ import { spawn } from 'node:child_process';
 import { lstat, mkdir, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { decodeControl, standardChromeArgs } from './x-standard-chrome-control.mjs';
+import {standardChromeArgs} from '../../internal/collection/headless/worker/native-pilot/shared/x-standard-chrome-args.mjs';
+import {decodeControl} from './x-standard-chrome-control.mjs';
 
 const NONCE_PLACEHOLDER = '__AKU_LOCAL_POPUP_NONCE__';
 

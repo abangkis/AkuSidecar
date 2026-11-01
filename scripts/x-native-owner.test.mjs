@@ -7,7 +7,7 @@ import {resolve,dirname,join,relative,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {serveOwnerPipe,ownerBootstrap,ownerOperation,ownerErrorReply,OWNER_SCHEMA} from '../internal/collection/headless/worker/native-pilot/owner-protocol.mjs';
-import {manualCaptureFailure} from './auth-session-fixture/x-native-manual-capture.mjs';
+import {manualCaptureFailure} from '../internal/collection/headless/worker/native-pilot/shared/x-native-manual-capture.mjs';
 import {buildNativeOwnerPackage} from './build-x-native-owner.mjs';
 
 const project=resolve(dirname(fileURLToPath(import.meta.url)),'..');

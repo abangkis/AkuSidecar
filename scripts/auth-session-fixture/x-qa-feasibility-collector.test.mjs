@@ -6,9 +6,9 @@ import { mkdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { join, dirname, resolve } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { createQAFeasibilityCollector } from './x-qa-feasibility-collector.mjs';
+import { createQAFeasibilityCollector } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-feasibility-collector.mjs';
 import { CDPFrameDecoder } from './x-native-metadata-probe-driver.mjs';
-import { QA_BOUND_BOOTSTRAP_EXPRESSION } from './x-qa-bound-observation.mjs';
+import { QA_BOUND_BOOTSTRAP_EXPRESSION } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-bound-observation.mjs';
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const QA_ROOT = join(PROJECT_ROOT, 'runtime', 'qa', 'auth-session-sidecar');

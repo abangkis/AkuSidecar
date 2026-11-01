@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
-import { BOOTSTRAP_CURRENT_SELF_EXPRESSION } from './x-bootstrap-current-self.mjs';
+import { BOOTSTRAP_CURRENT_SELF_EXPRESSION } from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
 import { LocalBootstrapTransport, localBootstrapChromeArgs, localBootstrapDocuments,
   localBootstrapExpression, localBootstrapOrigin, localBootstrapCase, runLocalBootstrapCapture } from './x-local-bootstrap-driver.mjs';
 

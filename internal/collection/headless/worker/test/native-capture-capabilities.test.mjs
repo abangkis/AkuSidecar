@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {captureIsolated,captureCapabilities,NATIVE_CAPTURE_CAPABILITIES,emptyCaptureDiagnostics} from '../capture.mjs';
 import {toObservation} from '../observation.mjs';
-import {projectCaptureWorkerDiagnostic} from '../../../../../scripts/auth-session-fixture/x-capture-worker-diagnostic.mjs';
-import {validateManualCaptureRequest} from '../../../../../scripts/auth-session-fixture/x-native-manual-capture.mjs';
+import {projectCaptureWorkerDiagnostic} from '../native-pilot/shared/x-capture-worker-diagnostic.mjs';
+import {validateManualCaptureRequest} from '../native-pilot/shared/x-native-manual-capture.mjs';
 
 test('native capability declarations require both owner support and an actual temporary page primitive',()=>{
   const createTemporaryPage=()=>{};

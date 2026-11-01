@@ -1,6 +1,6 @@
 import {INSTAGRAM_PRIVATE_BOOTSTRAP_SCANNER_SOURCE} from './instagram-self-bootstrap-probe.mjs';
 import {INSTAGRAM_BOOTSTRAP_BUDGET} from './instagram-bootstrap-budget.mjs';
-import {STRICT_JSON_PARSER_SOURCE} from '../../../../../scripts/auth-session-fixture/x-evidence-ingress.mjs';
+import {STRICT_JSON_PARSER_SOURCE} from './shared/x-evidence-ingress.mjs';
 import {INSTAGRAM_CORROBORATION_POLICY as policy} from './instagram-bootstrap-corroboration-policy.mjs';
 
 // Body/ID/cookie values stay on the private CDP channel. The diagnostic returns

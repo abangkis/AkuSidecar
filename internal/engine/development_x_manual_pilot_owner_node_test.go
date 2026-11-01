@@ -126,8 +126,8 @@ func TestXManualPilotOwnerPrepareNodeDiagnostic(t *testing.T) {
 		}
 		project = filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
 	}
-	const source = `import {STARTUP_TRACE,startupPrepareFailure,startupRPCCode} from './scripts/auth-session-fixture/x-manual-startup-diagnostic.mjs';
-import {MANUAL_TIMING} from './scripts/auth-session-fixture/x-manual-timing-policy.mjs';
+	const source = `import {STARTUP_TRACE,startupPrepareFailure,startupRPCCode} from './internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
+import {MANUAL_TIMING} from './internal/collection/headless/worker/native-pilot/shared/x-manual-timing-policy.mjs';
 const rows=[];
 for(const stage of STARTUP_TRACE.prepareStage)for(const condition of STARTUP_TRACE.prepareCondition)
  rows.push({stage,condition,code:startupRPCCode(startupPrepareFailure(null,'reader',stage,condition))});
@@ -179,7 +179,7 @@ func TestXManualPilotOwnerCDPNodeDiagnostic(t *testing.T) {
 	project := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
 	const source = `import {startupCDPFailureCategory} from './scripts/auth-session-fixture/x-native-metadata-probe-driver.mjs';
 import {offlineXManualOwnerPort} from './scripts/auth-session-fixture/x-native-manual-owner-offline.mjs';
-import {startupRPCCode} from './scripts/auth-session-fixture/x-manual-startup-diagnostic.mjs';
+import {startupRPCCode} from './internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
 import {cdpCommandFailure} from './internal/collection/headless/worker/native-pilot/cdp-command-failure.mjs';
 const rows=[];
 for(const kind of ['command_rejected','request_rejected','reply_invalid','transport_closed','timeout']){

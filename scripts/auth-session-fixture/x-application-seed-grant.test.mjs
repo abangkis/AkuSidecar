@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createApplicationSeedGrant} from './x-application-seed-grant.mjs';
-import {createRetainedManualSetup,manualSeedDiagnostic,manualSeedFailure} from './x-manual-retained-setup.mjs';
+import {createApplicationSeedGrant} from '../../internal/collection/headless/worker/native-pilot/shared/x-application-seed-grant.mjs';
+import {createRetainedManualSetup,manualSeedDiagnostic,manualSeedFailure} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-retained-setup.mjs';
 import {manualSeedRPCCode} from '../../internal/collection/headless/worker/native-pilot/x-application-owner-factories.mjs';
 
 const ownership={readerPID:101,readerProfile:'synthetic-reader',collectorPID:102,collectorProfile:'synthetic-collector'};

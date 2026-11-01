@@ -1,11 +1,11 @@
 // Private application pipe. This module owns framing, never browser authority.
-import {parseStrictJSON} from '../../../../../scripts/auth-session-fixture/x-evidence-ingress.mjs';
-import {manualOwnerOperation} from '../../../../../scripts/auth-session-fixture/x-native-manual-owner-port.mjs';
-import {startupRPCCode} from '../../../../../scripts/auth-session-fixture/x-manual-startup-diagnostic.mjs';
+import {parseStrictJSON} from './shared/x-evidence-ingress.mjs';
+import {manualOwnerOperation} from './shared/x-native-manual-owner-port.mjs';
+import {startupRPCCode} from './shared/x-manual-startup-diagnostic.mjs';
 import {manualSeedRPCCode} from './x-application-owner-factories.mjs';
-import {manualCaptureRPCCode,manualCaptureRPCDiagnostic} from '../../../../../scripts/auth-session-fixture/x-native-manual-capture.mjs';
-import {MANUAL_TIMING} from '../../../../../scripts/auth-session-fixture/x-manual-timing-policy.mjs';
-import {applicationPostOperation} from '../../../../../scripts/auth-session-fixture/x-application-reader-post.mjs';
+import {manualCaptureRPCCode,manualCaptureRPCDiagnostic} from './shared/x-native-manual-capture.mjs';
+import {MANUAL_TIMING} from './shared/x-manual-timing-policy.mjs';
+import {applicationPostOperation} from './shared/x-application-reader-post.mjs';
 
 export const OWNER_SCHEMA='aku.x.application-owner.v1';
 const MAX_LINE=65536,MAX_PENDING=32,MAX_CALLS=512;

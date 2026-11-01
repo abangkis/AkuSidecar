@@ -1,5 +1,5 @@
 import { TextDecoder } from 'node:util';
-import { parseStrictJSON } from './x-evidence-ingress.mjs';
+import { parseStrictJSON } from '../../internal/collection/headless/worker/native-pilot/shared/x-evidence-ingress.mjs';
 
 const MAX_BODY_BYTES = 4_096;
 const BODY_SCHEMA = 'aku.x.browser-self.fixture.v1';

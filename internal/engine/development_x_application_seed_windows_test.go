@@ -144,8 +144,8 @@ func TestXApplicationSeedNodeDiagnosticLength(t *testing.T) {
 		}
 		project = filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
 	}
-	const source = `import {STARTUP_TRACE,STARTUP_AGES,startupFailure} from './scripts/auth-session-fixture/x-manual-startup-diagnostic.mjs';
-import {manualSeedFailure,manualSeedDiagnosticCode,MANUAL_SEED_CODE_MAX_BYTES} from './scripts/auth-session-fixture/x-manual-retained-setup.mjs';
+	const source = `import {STARTUP_TRACE,STARTUP_AGES,startupFailure} from './internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
+import {manualSeedFailure,manualSeedDiagnosticCode,MANUAL_SEED_CODE_MAX_BYTES} from './internal/collection/headless/worker/native-pilot/shared/x-manual-retained-setup.mjs';
 const traces=STARTUP_TRACE.firstCause.map(firstCause=>({firstCause}));
 traces.push({...Object.fromEntries(Object.entries(STARTUP_TRACE).map(([key,values])=>[key,values.at(-1)])),...Object.fromEntries(STARTUP_AGES.map(key=>[key,60000]))});
 const codes=traces.map(trace=>manualSeedDiagnosticCode(manualSeedFailure('owner_after','clock_regressed','acknowledged',startupFailure('unknown','guard_bind','time_invalid',true,undefined,trace))));

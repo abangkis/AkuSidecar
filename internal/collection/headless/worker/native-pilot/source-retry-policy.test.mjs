@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {sourceTransientClass} from './source-retry-policy.mjs';
 import {instagramIdentityFailure} from './instagram-native-session.mjs';
 import {nativeSourceFailure} from './native-source-kernel.mjs';
-import {manualCaptureFailure,manualCaptureRPCCode} from '../../../../../scripts/auth-session-fixture/x-native-manual-capture.mjs';
+import {manualCaptureFailure,manualCaptureRPCCode} from './shared/x-native-manual-capture.mjs';
 
 test('operational transient brands cannot be supplied by error text or diagnostic objects',()=>{
   for(const fake of [Error('network_failed'),{stage:'navigation',reason:'deadline'},{retryable:true,code:'manual_capture_transient_network'}])assert.equal(sourceTransientClass(fake),'');

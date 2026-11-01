@@ -48,7 +48,7 @@ async function buildOwnerPackage(outputDirectory,daily,main=false){
     const info=await lstat(path);
     if(!info.isFile()||info.isSymbolicLink()||await realpath(path)!==path)throw new Error('package_import_not_ordinary');
     let source=key===generatedAssets?assetSource:await readFile(path,'utf8');
-    if(key==='scripts/auth-session-fixture/x-manual-timing-policy.mjs'){
+    if(key==='internal/collection/headless/worker/native-pilot/shared/x-manual-timing-policy.mjs'){
       const expected="readFileSync(POLICY_PATH, 'utf8')";
       if(source.split(expected).length!==2)throw new Error('package_timing_recipe_changed');
       source=source.replace(expected,JSON.stringify(timingSource));

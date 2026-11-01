@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {IdentityFreshnessLedger,IDENTITY_FRESHNESS_POLICY,consumeFreshnessPublication} from './x-identity-freshness-ledger.mjs';
-import {ManualStartupCookieGuard} from './x-manual-startup-cookie-guard.mjs';
-import {createManualV2BoundObservation} from './x-qa-bound-observation.mjs';
-import {inspectBootstrapCurrentSelf} from './x-bootstrap-current-self.mjs';
-import {createManualStartupOwner} from './x-manual-startup-owner.mjs';
-import {QA_AB_URL} from './x-qa-direct-ab.mjs';
+import {IdentityFreshnessLedger,IDENTITY_FRESHNESS_POLICY,consumeFreshnessPublication} from '../../internal/collection/headless/worker/native-pilot/shared/x-identity-freshness-ledger.mjs';
+import {ManualStartupCookieGuard} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-cookie-guard.mjs';
+import {createManualV2BoundObservation} from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-bound-observation.mjs';
+import {inspectBootstrapCurrentSelf} from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
+import {createManualStartupOwner} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-owner.mjs';
+import {QA_AB_URL} from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-direct-ab.mjs';
 const binding={owner:1,profileId:'private-profile',sessionId:'private-session',targetId:'private-target',frameId:'frame',role:'reader'};
 const pins={ownerId:'1',profileId:binding.profileId,targetId:binding.targetId,frameId:'frame',documentId:'new',contextId:'7'};
 function fixture(role='reader'){

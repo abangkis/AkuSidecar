@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createManualV2BoundObservation} from './x-qa-bound-observation.mjs';
-import {inspectBootstrapCurrentSelf} from './x-bootstrap-current-self.mjs';
-import {QA_AB_URL} from './x-qa-direct-ab.mjs';
-import {SETTINGS_WAIT_STATES} from './x-settings-wait-state.mjs';
-import {createStartupWaitBudget} from './x-manual-startup-wait-budget.mjs';
-import {startupDiagnostic} from './x-manual-startup-diagnostic.mjs';
-import {startupFailure} from './x-manual-startup-diagnostic.mjs';
-import {createStartupTiming} from './x-manual-startup-timing.mjs';
+import {createManualV2BoundObservation} from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-bound-observation.mjs';
+import {inspectBootstrapCurrentSelf} from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
+import {QA_AB_URL} from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-direct-ab.mjs';
+import {SETTINGS_WAIT_STATES} from '../../internal/collection/headless/worker/native-pilot/shared/x-settings-wait-state.mjs';
+import {createStartupWaitBudget} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-wait-budget.mjs';
+import {startupDiagnostic} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
+import {startupFailure} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
+import {createStartupTiming} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-timing.mjs';
 
 function fixture({bodyGate, bodyFailure=false, onFailure}={}) {
   const scope={owner:1,profileId:'synthetic-profile',sessionId:'synthetic-session',targetId:'synthetic-target'};

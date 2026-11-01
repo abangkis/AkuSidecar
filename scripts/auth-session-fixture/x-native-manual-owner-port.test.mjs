@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createXManualOwnerPort,manualOwnerOperation} from './x-native-manual-owner-port.mjs';
+import {createXManualOwnerPort,manualOwnerOperation} from '../../internal/collection/headless/worker/native-pilot/shared/x-native-manual-owner-port.mjs';
 import {offlineXManualOwnerPort} from './x-native-manual-owner-offline.mjs';
 import {offlineStartupOwner} from './x-manual-startup-offline-fixture.mjs';
-import {createManualStartupOwner} from './x-manual-startup-owner.mjs';
-import {startupDiagnostic,startupRPCCode,startupFailure} from './x-manual-startup-diagnostic.mjs';
+import {createManualStartupOwner} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-owner.mjs';
+import {startupDiagnostic,startupRPCCode,startupFailure} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
 import {manualOwnerSnapshot,startupCDPFailureCategory} from './x-native-metadata-probe-driver.mjs';
 import {cdpCommandFailure} from '../../internal/collection/headless/worker/native-pilot/cdp-command-failure.mjs';
 import {mainStartupProgress} from '../../internal/collection/headless/worker/native-pilot/main-browser-transport-protocol.mjs';
-import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
+import {MANUAL_TIMING} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-timing-policy.mjs';
 
 let id=0;
 const command=(op,role='reader',extra={})=>({id:++id,op,owner:1,role,...(op==='manual_prepare'?{observationDeadlineMS:Date.now()+18000}:{}),...extra});

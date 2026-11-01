@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
-import {MANUAL_TIMING,parseManualTimingPolicy} from './x-manual-timing-policy.mjs';
+import {MANUAL_TIMING,parseManualTimingPolicy} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-timing-policy.mjs';
 
 const policyURL = new URL('../../internal/engine/x-manual-timing-policy.json', import.meta.url);
 const source = readFileSync(fileURLToPath(policyURL), 'utf8');

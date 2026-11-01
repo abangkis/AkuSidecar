@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import {ManualEnrollmentCapture} from './x-manual-enrollment-capture.mjs';
+import {ManualEnrollmentCapture} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-enrollment-capture.mjs';
 import {projectCDPEvent,manualStartupStateReady} from './x-native-metadata-probe-driver.mjs';
-import {createRetainedManualSetup,manualSeedDiagnostic} from './x-manual-retained-setup.mjs';
-import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
+import {createRetainedManualSetup,manualSeedDiagnostic} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-retained-setup.mjs';
+import {MANUAL_TIMING} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-timing-policy.mjs';
 const ID='1908123456789012345';
 function fixture(fault){
   const scope={pid:1,profileId:'offline-profile',targetId:'offline-target',sessionId:'offline-main'};

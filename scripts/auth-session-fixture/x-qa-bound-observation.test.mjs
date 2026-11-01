@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import { inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
-import { QABoundObservation, QA_BOUND_BOOTSTRAP_EXPRESSION, createManualV2BoundObservation, projectBoundBootstrap } from './x-qa-bound-observation.mjs';
-import { QA_AB_URL } from './x-qa-direct-ab.mjs';
+import { inspectBootstrapCurrentSelf } from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
+import { QABoundObservation, QA_BOUND_BOOTSTRAP_EXPRESSION, createManualV2BoundObservation, projectBoundBootstrap } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-bound-observation.mjs';
+import { QA_AB_URL } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-direct-ab.mjs';
 
 const scope = { owner: 1, profileId: 'PRIVATE_PROFILE', sessionId: 'private-session', targetId: 'private-target' };
 function page(id = '12345') {

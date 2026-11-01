@@ -2,7 +2,7 @@ import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {parseStrictJSON} from './x-evidence-ingress.mjs';
 
-const POLICY_PATH = fileURLToPath(new URL('../../internal/engine/x-manual-timing-policy.json', import.meta.url));
+const POLICY_PATH = fileURLToPath(new URL('../../../../../engine/x-manual-timing-policy.json', import.meta.url));
 const POLICY_KEYS = Object.freeze([
   'schema', 'startupTotalMS', 'evidenceMaxAgeMS', 'cdpCommandMS', 'earlyCommandMS',
   'bootstrapObservationMS', 'bootstrapEvaluationMS', 'rendezvousMS', 'settingsFallbackMS',

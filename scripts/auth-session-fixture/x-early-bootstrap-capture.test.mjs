@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { EarlyBootstrapCapture } from './x-early-bootstrap-capture.mjs';
-import { inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
-import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
+import { EarlyBootstrapCapture } from '../../internal/collection/headless/worker/native-pilot/shared/x-early-bootstrap-capture.mjs';
+import { inspectBootstrapCurrentSelf } from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
+import {MANUAL_TIMING} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-timing-policy.mjs';
 
 const ROOT_FRAME = 'root-frame';
 const CHILD_FRAME = 'child-frame';

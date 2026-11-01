@@ -8,7 +8,7 @@ import {createApplicationDailyOwner} from './x-application-owner-factories.mjs';
 import {createMainCDP,createMainPublicFacade,serveMainBrowserTransport,MAIN_TRANSPORT_SCHEMA,mainOwnerFailure,mainStartupProgress,mainStartupProgressForOwnerOperation} from './main-browser-transport-protocol.mjs';
 import {createBorrowedDailyControl,createBorrowedInstagramControl} from './main-browser-transport.mjs';
 import {ownerErrorReply} from './owner-protocol.mjs';
-import {manualCaptureFailure} from '../../../../../scripts/auth-session-fixture/x-native-manual-capture.mjs';
+import {manualCaptureFailure} from './shared/x-native-manual-capture.mjs';
 import {nativeSourceFailure,annotateNativeSourceCleanup} from './native-source-kernel.mjs';
 import {INSTAGRAM_HTTP_REJECTIONS} from './instagram-native-session.mjs';
 

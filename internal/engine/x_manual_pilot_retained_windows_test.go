@@ -443,7 +443,7 @@ writeAllowedCookies:async()=>{throw new Error('PRIVATE_UNSAFE_CALLBACK');}});
 console.log(JSON.stringify({ready:true}));
 for await(const line of createInterface({input:process.stdin})){const q=JSON.parse(line);await executeManualReply(q,()=>{if(q.op==='manual_acquire')throw startupFailure('collector','inspect_before','observed_cookie_write');return run();},(id,result,code)=>console.log(JSON.stringify({id,ok:!code,...(code?{code}:{result})})));}
 `
-	cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(project, "scripts", "auth-session-fixture", "x-manual-retained-setup.mjs"), filepath.Join(project, "scripts", "auth-session-fixture", "x-native-metadata-probe-driver.mjs"), filepath.Join(project, "scripts", "auth-session-fixture", "x-manual-startup-diagnostic.mjs"))
+	cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(project, "internal", "collection", "headless", "worker", "native-pilot", "shared", "x-manual-retained-setup.mjs"), filepath.Join(project, "scripts", "auth-session-fixture", "x-native-metadata-probe-driver.mjs"), filepath.Join(project, "internal", "collection", "headless", "worker", "native-pilot", "shared", "x-manual-startup-diagnostic.mjs"))
 	cmd.Stderr = io.Discard
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -527,7 +527,7 @@ for await(const line of createInterface({input:process.stdin})){
   timing.failure(startupFailure(q.role,'settings','source_unavailable',false,undefined,{firstCause:'settings_capture'}));
  }else console.log(JSON.stringify({id:q.id,ok:true,result:{closed:true}}));
 }`
-	cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(project, "scripts/auth-session-fixture/x-manual-startup-timing.mjs"), filepath.Join(project, "scripts/auth-session-fixture/x-manual-startup-diagnostic.mjs"))
+	cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(project, "internal/collection/headless/worker/native-pilot/shared/x-manual-startup-timing.mjs"), filepath.Join(project, "internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs"))
 	cmd.Stderr = io.Discard
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -602,10 +602,14 @@ let fired=false,releasePeer;const peerDone=new Promise(resolve=>{releasePeer=res
 console.log(JSON.stringify({ready:true}));
 const tasks=new Set();for await(const line of createInterface({input:process.stdin})){const q=JSON.parse(line),task=executeManualReply(q,async()=>{
 if(peerFirst&&q.op==='manual_acquire'&&!fired){fired=true;if(trace){trace.fail('reader',fault==='trace-guard-peer-first'?'guard-priority':fault==='trace-redirect-peer-first'?'guard-redirect':'cookie');port.invalidate('collector');}else port.observe('reader',{sessionId:'offline-session-reader',method:'Runtime.executionContextDestroyed',params:{executionContextId:7}});}
+// Cleanup starts only after Go observes the collector failure. Writing its
+// reply first does not order Go's concurrent readers; retain the reader barrier
+// until the existing abort operation confirms that observation.
+if(peerFirst&&fired&&q.op==='manual_abort')releasePeer();
 if(peerFirst&&fired&&q.role==='reader'&&['manual_inspect','manual_acquire'].includes(q.op))await peerDone;
-return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!code,...(code?{code}:{result})}));if(code&&q.role==='collector')releasePeer();});tasks.add(task);void task.finally(()=>tasks.delete(task));}await Promise.allSettled(tasks);`
+return port.execute(q);},(id,result,code)=>{console.log(JSON.stringify({id,ok:!code,...(code?{code}:{result})}));});tasks.add(task);void task.finally(()=>tasks.delete(task));}await Promise.allSettled(tasks);`
 			dir := filepath.Join(project, "scripts", "auth-session-fixture")
-			cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(dir, "x-native-manual-owner-offline.mjs"), filepath.Join(dir, "x-native-metadata-probe-driver.mjs"), filepath.Join(dir, "x-manual-startup-diagnostic.mjs"), role, filepath.Join(dir, "x-manual-startup-first-cause-offline.mjs"))
+			cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(dir, "x-native-manual-owner-offline.mjs"), filepath.Join(dir, "x-native-metadata-probe-driver.mjs"), filepath.Join(project, "internal", "collection", "headless", "worker", "native-pilot", "shared", "x-manual-startup-diagnostic.mjs"), role, filepath.Join(dir, "x-manual-startup-first-cause-offline.mjs"))
 			cmd.Stderr = io.Discard
 			stdout, err := cmd.StdoutPipe()
 			if err != nil {
@@ -742,7 +746,7 @@ func TestXManualPilotRetainedTraceCodes(t *testing.T) {
 		t.Skip("accountless trace parity requires helper")
 	}
 	const script = `import{pathToFileURL}from'node:url';const m=await import(pathToFileURL(process.argv[1]));const catalogs=[m.STARTUP_ROLES,m.STARTUP_PHASES,m.STARTUP_REASONS,['primary','peer'],...Object.values(m.STARTUP_TRACE)],codes=[];for(const[key,values]of Object.entries(m.STARTUP_TRACE))for(const value of values)codes.push(m.startupRPCCode(m.startupFailure('collector','inspect_before','observed_cookie_write',true,undefined,{[key]:value})));const combined=Object.fromEntries(Object.entries(m.STARTUP_TRACE).map(([key,values])=>[key,values[0]]));combined.firstCause='guard_request_unbound';combined.guardTrigger='redirect';combined.guardProvenance='redirect';combined.guardCondition='response_cache';combined.guardEpoch='before_seed';combined.guardDiskCache='true';combined.guardServiceWorker='false';combined.guardPrefetchCache='absent';combined.guardRequestFrame='matching';const combinedCode=m.startupRPCCode(m.startupFailure('reader','bound_finish','observed_cookie_write',false,undefined,combined));const headerReasonCode=m.startupRPCCode(m.startupFailure('reader','bound_finish','observed_cookie_write',false,undefined,{firstCause:'guard_header_classification',guardHeaderReason:'attribute_unsupported'}));const maximum=Object.fromEntries(Object.entries(m.STARTUP_TRACE).map(([key,values])=>[key,values.at(-1)]));const maximumCode=m.startupRPCCode(m.startupFailure('reader','bound_finish','observed_cookie_write',false,undefined,maximum));const {ManualStartupCookieGuard:G}=await import(new URL('./x-manual-startup-cookie-guard.mjs',pathToFileURL(process.argv[1])));const rootCodes=['reader','collector'].map(role=>{const g=new G('private-frame','private-session'),l=m.startupFailureLatch();g.armReload('old');g.observe({sessionId:'private-session',method:'Network.requestWillBeSent',params:{requestId:'private-request',frameId:'private-frame',loaderId:'new',type:'Document',request:{method:'GET',url:'https://x.com/home'}}});g.observe({sessionId:'private-session',method:'Network.responseReceived',params:{requestId:'private-request',frameId:'private-frame',loaderId:'new',hasExtraInfo:false,response:{url:'https://x.com/home',status:200,headers:{},fromDiskCache:true,fromServiceWorker:false}}});const error=m.startupFailure(role,'bound_finish',g.failureReason(),false,undefined,{firstCause:g.rejection(),...g.trace()});l.record(error,role,'bound_finish');return m.startupRPCCode(error);});const domainCodes=[['root_control','root_control_restore'],['guard_request_budget','unknown'],['cookie_candidate','unknown'],['context_lost','unknown']].map(([firstCause,guardCondition])=>m.startupRPCCode(m.startupFailure('reader','bound_finish','scope_lost',false,undefined,{firstCause,guardCondition})));console.log(JSON.stringify({catalogs,codes,combinedCode,headerReasonCode,maximumCode,rootCodes,domainCodes}));`
-	cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(project, "scripts", "auth-session-fixture", "x-manual-startup-diagnostic.mjs"))
+	cmd := exec.Command(node, "--input-type=module", "--eval", script, filepath.Join(project, "internal", "collection", "headless", "worker", "native-pilot", "shared", "x-manual-startup-diagnostic.mjs"))
 	cmd.Stderr = io.Discard
 	raw, err := cmd.Output()
 	// Aggregate catalog fixture only; each private RPC still has its strict 80-byte bound.

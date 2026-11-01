@@ -1,11 +1,11 @@
 import {createHash} from 'node:crypto';
-import {captureIsolated,validateCapture,NATIVE_CAPTURE_CAPABILITIES} from '../../internal/collection/headless/worker/capture.mjs';
-import {sourceAssets} from '../../internal/collection/headless/worker/worker.mjs';
+import {captureIsolated,validateCapture,NATIVE_CAPTURE_CAPABILITIES} from '../../capture.mjs';
+import {sourceAssets} from '../../worker.mjs';
 import {HeaderSafetyGuard} from './x-manual-header-safety.mjs';
 import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 import {CaptureTrafficDiagnostics} from './x-capture-traffic-diagnostics.mjs';
 import {projectCaptureWorkerDiagnostic} from './x-capture-worker-diagnostic.mjs';
-import {markSourceTransient,sourceTransientClass} from '../../internal/collection/headless/worker/native-pilot/source-retry-policy.mjs';
+import {markSourceTransient,sourceTransientClass} from '../source-retry-policy.mjs';
 
 const fail=()=>new Error('xnp_manual_capture_rejected');
 export const CAPTURE_STAGES=Object.freeze(['unknown','admission','behavior','coordinator','owner_before','payload','transport','assets','target_create','target_attach','observer','navigation','evaluation','worker','coverage','serialization','wire','observation','owner_after','cleanup']);

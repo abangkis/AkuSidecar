@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {applicationPostOperation,createApplicationReaderPost} from './x-application-reader-post.mjs';
+import {applicationPostOperation,createApplicationReaderPost} from '../../internal/collection/headless/worker/native-pilot/shared/x-application-reader-post.mjs';
 const request={requestId:'broker_'+'a'.repeat(32),source:'x',url:'https://x.com/example/status/123'};
 const marker='http://127.0.0.1:12345/split-reader-intent?id=split_'+'b'.repeat(32);
 const prepare={id:1,op:'manual_prepare_post',owner:1,request,marker};

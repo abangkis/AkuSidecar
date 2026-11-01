@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ManualStartupCookieGuard } from './x-manual-startup-cookie-guard.mjs';
-import { QABoundObservation, createManualV2BoundObservation } from './x-qa-bound-observation.mjs';
-import { inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
+import { ManualStartupCookieGuard } from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-cookie-guard.mjs';
+import { QABoundObservation, createManualV2BoundObservation } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-bound-observation.mjs';
+import { inspectBootstrapCurrentSelf } from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
 
 // Invented offline metadata only. No transport, profile, browser or Store APIs.
 const scope={owner:1,profileId:'PRIVATE_PROFILE',sessionId:'PRIVATE_SESSION',targetId:'PRIVATE_TARGET'};

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import { QA_WEB_INSTALL, QA_WEB_START, QA_WEB_SNAPSHOT, QA_WEB_DISPOSE, validateQAWebHook, qaWebCommand, finishQAWebABA } from './x-qa-web-aba.mjs';
+import { QA_WEB_INSTALL, QA_WEB_START, QA_WEB_SNAPSHOT, QA_WEB_DISPOSE, validateQAWebHook, qaWebCommand, finishQAWebABA } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-web-aba.mjs';
 
 function fixture(body = '{"errors":[]}', origin = 'https://x.com') {
   const traffic = [], xhrTraffic = [];

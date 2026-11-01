@@ -3,9 +3,9 @@ import vm from 'node:vm';
 import readline from 'node:readline';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {captureNativeXTarget,manualCaptureRPCCode,manualCaptureRPCDiagnostic} from './x-native-manual-capture.mjs';
-import {createXManualOwnerPort} from './x-native-manual-owner-port.mjs';
-import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
+import {captureNativeXTarget,manualCaptureRPCCode,manualCaptureRPCDiagnostic} from '../../internal/collection/headless/worker/native-pilot/shared/x-native-manual-capture.mjs';
+import {createXManualOwnerPort} from '../../internal/collection/headless/worker/native-pilot/shared/x-native-manual-owner-port.mjs';
+import {MANUAL_TIMING} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-timing-policy.mjs';
 
 export function syntheticXDOM() {
   const permalink='https://x.com/synthetic/status/1908123456789012346';

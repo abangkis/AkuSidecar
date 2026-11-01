@@ -53,7 +53,7 @@ func TestNativePilotXCaptureDiagnosticCatalogMatchesNode(t *testing.T) {
 	if project == "" || node == "" {
 		t.Skip("offline canonical helper required")
 	}
-	cmd := exec.Command(node, "--input-type=module", "-e", `import {CAPTURE_STAGES,CAPTURE_REASONS,CAPTURE_CLEANUP} from './scripts/auth-session-fixture/x-native-manual-capture.mjs'; process.stdout.write(JSON.stringify([CAPTURE_STAGES,CAPTURE_REASONS,CAPTURE_CLEANUP]));`)
+	cmd := exec.Command(node, "--input-type=module", "-e", `import {CAPTURE_STAGES,CAPTURE_REASONS,CAPTURE_CLEANUP} from './internal/collection/headless/worker/native-pilot/shared/x-native-manual-capture.mjs'; process.stdout.write(JSON.stringify([CAPTURE_STAGES,CAPTURE_REASONS,CAPTURE_CLEANUP]));`)
 	cmd.Dir = project
 	raw, err := cmd.Output()
 	if err != nil {

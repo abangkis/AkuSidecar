@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
-import { QA_LOSSLESS_JSON_SOURCE } from './x-qa-lossless-json.mjs';
-import { BOOTSTRAP_CURRENT_SELF_PROJECTION_SOURCE } from './x-bootstrap-current-self.mjs';
+import { QA_LOSSLESS_JSON_SOURCE } from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-lossless-json.mjs';
+import { BOOTSTRAP_CURRENT_SELF_PROJECTION_SOURCE } from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
 
 import {
   QA_LIVE_SELF_EXPRESSION,
   projectQALiveSelf,
   validateQALiveSelfDiagnostic,
   validateQALiveSelfReport,
-} from './x-qa-live-self.mjs';
+} from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-live-self.mjs';
 
 const TARGET_URL = 'https://x.com/home';
 const BODY_LIMIT = 512 * 1024;

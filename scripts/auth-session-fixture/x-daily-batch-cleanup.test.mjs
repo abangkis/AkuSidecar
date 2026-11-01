@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {cleanupDailyBatch} from './x-daily-batch-cleanup.mjs';
-import {registerFreshStartupSession,startupRootControls,mustRetireStartupOwner} from './x-manual-root-controls.mjs';
+import {cleanupDailyBatch} from '../../internal/collection/headless/worker/native-pilot/shared/x-daily-batch-cleanup.mjs';
+import {registerFreshStartupSession,startupRootControls,mustRetireStartupOwner} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-root-controls.mjs';
 
 test('failed control restoration attempts both commands and every independent batch cleanup stage',async()=>{
  const owner={owner:1,targetId:'target',sessionId:'session'},calls=[];

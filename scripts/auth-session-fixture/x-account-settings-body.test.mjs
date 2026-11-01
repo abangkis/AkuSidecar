@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   projectAccountSettingsBody,
   ACCOUNT_SETTINGS_BODY_MAX_BYTES,
-} from './x-account-settings-body.mjs';
+} from '../../internal/collection/headless/worker/native-pilot/shared/x-account-settings-body.mjs';
 
 const FIELD_NAMES = [
   'id_str', 'id', 'user_id', 'user_id_str', 'screen_name', 'authenticated',

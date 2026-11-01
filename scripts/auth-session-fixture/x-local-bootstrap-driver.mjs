@@ -1,13 +1,13 @@
-import { BootstrapBreakpointHandoff as LocalBreakpointHandoff } from './x-bootstrap-breakpoint-handoff.mjs';
-export { BootstrapBreakpointHandoff as LocalBreakpointHandoff } from './x-bootstrap-breakpoint-handoff.mjs';
+import { BootstrapBreakpointHandoff as LocalBreakpointHandoff } from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-breakpoint-handoff.mjs';
+export { BootstrapBreakpointHandoff as LocalBreakpointHandoff } from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-breakpoint-handoff.mjs';
 // Accountless loopback-only timeout reproduction. The enclosing Go Job owns
 // Node and its fresh Chrome child. No retained profile or production mode exists.
 import { spawn } from 'node:child_process';
 import { lstat, mkdir, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { EarlyBootstrapCapture } from './x-early-bootstrap-capture.mjs';
-import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, inspectBootstrapCurrentSelf, validateBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';
+import { EarlyBootstrapCapture } from '../../internal/collection/headless/worker/native-pilot/shared/x-early-bootstrap-capture.mjs';
+import { BOOTSTRAP_CURRENT_SELF_EXPRESSION, inspectBootstrapCurrentSelf, validateBootstrapCurrentSelf } from '../../internal/collection/headless/worker/native-pilot/shared/x-bootstrap-current-self.mjs';
 import { CDPFrameDecoder, projectCDPEvent } from './x-native-metadata-probe-driver.mjs';
 import { decodeControl } from './x-standard-chrome-control.mjs';
 

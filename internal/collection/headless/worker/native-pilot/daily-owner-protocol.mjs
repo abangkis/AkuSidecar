@@ -1,6 +1,6 @@
-import {parseStrictJSON} from '../../../../../scripts/auth-session-fixture/x-evidence-ingress.mjs';
+import {parseStrictJSON} from './shared/x-evidence-ingress.mjs';
 import {ownerOperation,ownerErrorReply} from './owner-protocol.mjs';
-import {applicationPostOperation} from '../../../../../scripts/auth-session-fixture/x-application-reader-post.mjs';
+import {applicationPostOperation} from './shared/x-application-reader-post.mjs';
 import {sourceTransientClass,SOURCE_RETRY_LIMIT} from './source-retry-policy.mjs';
 
 export const DAILY_OWNER_SCHEMA='aku.x.daily-owner.v1';

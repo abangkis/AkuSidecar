@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
-import { decodeControl, standardChromeArgs } from './x-standard-chrome-control.mjs';
+import {standardChromeArgs} from '../../internal/collection/headless/worker/native-pilot/shared/x-standard-chrome-args.mjs';
+import {decodeControl} from './x-standard-chrome-control.mjs';
 
 test('standard control launches only the new profile and normal Home window', () => {
   const profile = resolve('runtime/qa/auth-session-sidecar/control-profile');
