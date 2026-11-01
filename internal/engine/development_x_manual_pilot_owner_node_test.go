@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -160,6 +161,53 @@ console.log(JSON.stringify({rows,policy:MANUAL_TIMING}));`
 		d, ok := nativePilotInitialCode(row.Code)
 		if !ok || d.trace == nil || d.role != "reader" || d.phase != "prepare" || d.trace.firstCause != "preparation" || d.trace.prepareStage != row.Stage || d.trace.prepareCondition != row.Condition {
 			t.Fatal("Node-Go V9 preparation diagnostic disagrees")
+		}
+	}
+}
+
+// The real Node classifier and owner port emit the V10 code that Go decodes.
+// The peer is accountless and cannot start a browser or access a profile.
+func TestXManualPilotOwnerCDPNodeDiagnostic(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal("offline Node unavailable")
+	}
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("offline source path unavailable")
+	}
+	project := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	const source = `import {startupCDPFailureCategory} from './scripts/auth-session-fixture/x-native-metadata-probe-driver.mjs';
+import {offlineXManualOwnerPort} from './scripts/auth-session-fixture/x-native-manual-owner-offline.mjs';
+import {startupRPCCode} from './scripts/auth-session-fixture/x-manual-startup-diagnostic.mjs';
+import {cdpCommandFailure} from './internal/collection/headless/worker/native-pilot/cdp-command-failure.mjs';
+const rows=[];
+for(const kind of ['command_rejected','request_rejected','reply_invalid','transport_closed','timeout']){
+ const cause=startupCDPFailureCategory('borrowed_reader_command_failed',cdpCommandFailure(kind));
+ const port=offlineXManualOwnerPort();port.invalidate(cause);
+ try{await port.execute({id:1,op:'manual_prepare',owner:1,role:'reader',observationDeadlineMS:Date.now()+18000});throw Error('admitted');}
+ catch(error){rows.push({cause,code:startupRPCCode(error)});}
+}
+console.log(JSON.stringify(rows));`
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, node, "--input-type=module", "--eval", source)
+	cmd.Dir = project
+	raw, err := cmd.Output()
+	if err != nil {
+		t.Fatal("offline Node CDP diagnostic emission failed")
+	}
+	defer clear(raw)
+	var rows []struct{ Cause, Code string }
+	if len(raw) > 8192 || json.Unmarshal(raw, &rows) != nil || len(rows) != 5 {
+		t.Fatal("Node CDP diagnostic shape disagrees")
+	}
+	for _, row := range rows {
+		detail, ok := nativePilotInitialCode(row.Code)
+		if !ok || detail.trace == nil || detail.role != "pair" || detail.phase != "joint" ||
+			detail.reason != "unavailable" || !detail.peer || detail.trace.firstCause != row.Cause ||
+			!strings.Contains(detail.trace.String(), "domain=transport") {
+			t.Fatalf("Node-Go CDP diagnostic disagrees: %s", row.Cause)
 		}
 	}
 }

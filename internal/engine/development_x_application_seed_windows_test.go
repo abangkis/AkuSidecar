@@ -6,6 +6,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -118,6 +122,73 @@ func TestXApplicationSeedClosedDiagnosticVocabulary(t *testing.T) {
 	} {
 		if _, ok := nativePilotSeedCode(sample.code); ok != sample.valid {
 			t.Fatal("closed diagnostic vocabulary mismatch")
+		}
+	}
+}
+
+// Exercise the production validator with real Node output, including all closed
+// first causes and the longest V10 trace. No browser or profile is accessed.
+func TestXApplicationSeedNodeDiagnosticLength(t *testing.T) {
+	node, project := os.Getenv("AKU_CHROME_FIXTURE_NODE"), os.Getenv("AKU_NATIVE_MANUAL_PROJECT_ROOT")
+	if node == "" {
+		var err error
+		node, err = exec.LookPath("node")
+		if err != nil {
+			t.Fatal("offline Node unavailable")
+		}
+	}
+	if project == "" {
+		_, file, _, ok := runtime.Caller(0)
+		if !ok {
+			t.Fatal("offline source path unavailable")
+		}
+		project = filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	}
+	const source = `import {STARTUP_TRACE,STARTUP_AGES,startupFailure} from './scripts/auth-session-fixture/x-manual-startup-diagnostic.mjs';
+import {manualSeedFailure,manualSeedDiagnosticCode,MANUAL_SEED_CODE_MAX_BYTES} from './scripts/auth-session-fixture/x-manual-retained-setup.mjs';
+const traces=STARTUP_TRACE.firstCause.map(firstCause=>({firstCause}));
+traces.push({...Object.fromEntries(Object.entries(STARTUP_TRACE).map(([key,values])=>[key,values.at(-1)])),...Object.fromEntries(STARTUP_AGES.map(key=>[key,60000]))});
+const codes=traces.map(trace=>manualSeedDiagnosticCode(manualSeedFailure('owner_after','clock_regressed','acknowledged',startupFailure('unknown','guard_bind','time_invalid',true,undefined,trace))));
+console.log(JSON.stringify({maxBytes:MANUAL_SEED_CODE_MAX_BYTES,codes}));`
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, node, "--input-type=module", "--eval", source)
+	cmd.Dir = project
+	raw, err := cmd.Output()
+	if err != nil {
+		t.Fatal("offline Node seed diagnostic emission failed")
+	}
+	defer clear(raw)
+	var payload struct {
+		MaxBytes int
+		Codes    []string
+	}
+	if len(raw) > 32768 || json.Unmarshal(raw, &payload) != nil || payload.MaxBytes != nativePilotSeedCodeMax || len(payload.Codes) != len(nativePilotTraceCatalogs[0])+1 {
+		t.Fatal("Node-Go seed length contract disagrees")
+	}
+	for _, code := range payload.Codes {
+		if len(code) <= 80 || len(code) > nativePilotSeedCodeMax {
+			t.Fatal("V10 seed did not exercise the expanded byte bound")
+		}
+		if got, ok := nativePilotSeedCode(code); !ok || got != code {
+			t.Fatal("valid Node seed diagnostic rejected")
+		}
+		failure := xDailyNativeStartupFail(&xApplicationRPCError{code: code}, "seed_rpc", "rpc", nil, nativePilotDiagnostic{})
+		projected := xDailyStartupDetail(failure)
+		if projected == nil || !strings.HasPrefix(projected.Origin, "seed_phase=owner_after seed_reason=clock_regressed seed_write=acknowledged initial=(role=unknown phase=guard_bind reason=time_invalid kind=peer ") ||
+			projected.Stage != "seed_rpc" || projected.Condition != "rpc" || projected.Cause != "unavailable" {
+			t.Fatal("Node seed diagnostic lost its closed metadata in daily status")
+		}
+	}
+	code := payload.Codes[len(payload.Codes)-1]
+	for _, invalid := range []string{
+		strings.Replace(code, "_10_12_2_", "_010_12_2_", 1),
+		strings.Replace(code, "_10_12_2_", "_11_12_2_", 1),
+		strings.Replace(code, "_60001", "_60002", 1),
+		code + "_0", code + strings.Repeat("0", nativePilotSeedCodeMax),
+	} {
+		if _, ok := nativePilotSeedCode(invalid); ok {
+			t.Fatal("expanded seed byte bound admitted an invalid diagnostic")
 		}
 	}
 }

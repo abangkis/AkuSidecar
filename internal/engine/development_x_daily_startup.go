@@ -20,12 +20,16 @@ func xDailyNativeStartupFail(cause error, stage, condition string, broker *nativ
 	} else {
 		var carrier interface{ dailyFailureCode() string }
 		if errors.As(cause, &carrier) {
-			detail, hasDetail = nativePilotInitialCode(carrier.dailyFailureCode())
+			code := carrier.dailyFailureCode()
+			detail, hasDetail = nativePilotInitialCode(code)
+			if !hasDetail {
+				result.origin, _ = nativePilotSeedOrigin(code)
+			}
 		}
 	}
 	reason := diagnostic.Reason
 	if broker != nil {
-		if !hasDetail {
+		if !hasDetail && result.origin == "" {
 			detail, hasDetail = broker.initialDiagnostic(), true
 		}
 		broker.mu.Lock()

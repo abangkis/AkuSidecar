@@ -6,6 +6,8 @@ import {startupDiagnostic,startupRPCCode} from './x-manual-startup-diagnostic.mj
 export const MANUAL_SEED_PHASES=Object.freeze(['preconditions','owner_before','frame_before','enrollment_evaluate','enrollment_project','enrollment_cleanup','frame_after','cookie_read','cookie_select','seed_write','owner_after']);
 export const MANUAL_SEED_REASONS=Object.freeze(['disabled','replay','unavailable','rejected','candidate_absent','bootstrap_missing','bootstrap_invalid','wrong_page','inspection_failed','document_changed','ownership_changed','deadline','clock_regressed']);
 export const MANUAL_SEED_WRITES=Object.freeze(['not_attempted','unknown','acknowledged']);
+// A bounded startup trace (up to 128 bytes) plus the closed seed envelope.
+export const MANUAL_SEED_CODE_MAX_BYTES=160;
 const diagnostics=new WeakMap();
 const initialFailures=new WeakMap();
 export function manualSeedFailure(phase,reason,write='not_attempted',cause){

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createRetainedManualSetup,manualSeedDiagnostic,manualSeedDiagnosticCode} from './x-manual-retained-setup.mjs';
-import {startupFailure} from './x-manual-startup-diagnostic.mjs';
+import {createRetainedManualSetup,manualSeedFailure,manualSeedDiagnostic,manualSeedDiagnosticCode,MANUAL_SEED_CODE_MAX_BYTES} from './x-manual-retained-setup.mjs';
+import {startupFailure,STARTUP_TRACE,STARTUP_AGES} from './x-manual-startup-diagnostic.mjs';
 function fixture(fault){
   let reads=0,writes=0,clock=0,ownReads=0;
   const state={readerPID:1,readerProfile:'qa-reader',collectorPID:2,collectorProfile:'qa-collector'};
@@ -111,10 +111,20 @@ test('synchronous final assertion prevents dispatch while acknowledgment survive
     else await assert.rejects(run(),error=>{
       const write=['assert','async-assert'].includes(stage)?'not_attempted':stage==='pending'?'unknown':'acknowledged';
       assert.equal(manualSeedDiagnostic(error).write,write);
-      const code=manualSeedDiagnosticCode(error);assert.ok(code.length<=80);assert.equal(code.includes('PRIVATE'),false);
+      const code=manualSeedDiagnosticCode(error);assert.ok(Buffer.byteLength(code)<=MANUAL_SEED_CODE_MAX_BYTES);assert.equal(code.includes('PRIVATE'),false);
       if(stage!=='async-assert')assert.match(code,/^manual_seed_v2_/);return true;
     });
     assert.equal(writes,['assert','async-assert'].includes(stage)?0:1);assert.equal(cleaned,1);
     if(lateAck)assert.throws(lateAck,error=>manualSeedDiagnostic(error)?.reason==='replay');
   }
+});
+
+test('seed envelope carries maximum V10 trace and ages within its own byte bound',()=>{
+  const trace={...Object.fromEntries(Object.entries(STARTUP_TRACE).map(([key,values])=>[key,values.at(-1)])),
+    ...Object.fromEntries(STARTUP_AGES.map(key=>[key,60000]))};
+  const initial=startupFailure('unknown','guard_bind','time_invalid',true,undefined,trace);
+  const code=manualSeedDiagnosticCode(manualSeedFailure('owner_after','clock_regressed','acknowledged',initial));
+  assert.match(code,/^manual_seed_v2_10_12_2_v10_/);
+  assert.ok(Buffer.byteLength(code)>80);
+  assert.ok(Buffer.byteLength(code)<=MANUAL_SEED_CODE_MAX_BYTES);
 });

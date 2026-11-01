@@ -2,6 +2,7 @@ import {registerFreshStartupSession,startupRootControls,allowsStartupControl,mus
 import {createStartupTiming} from './x-manual-startup-timing.mjs';
 import {createBatchBootstrap} from './x-batch-bootstrap.mjs';
 import {sourceTransientClass,SOURCE_RETRY_LIMIT} from '../../internal/collection/headless/worker/native-pilot/source-retry-policy.mjs';
+import {cdpCommandFailureDetail} from '../../internal/collection/headless/worker/native-pilot/cdp-command-failure.mjs';
 import {cleanupDailyBatch} from './x-daily-batch-cleanup.mjs';
 // Opt-in, headful X QA. Default modes export metadata only. The fixed
 // account-settings mode may read one completed response body and immediately
@@ -108,6 +109,26 @@ const CDP_METHODS = Object.freeze({
   'Debugger.removeBreakpoint': 'early_remove_breakpoint',
   'Debugger.resume': 'early_resume',
 });
+// Closed, value-free startup diagnostics. Only the shared transport's private
+// brand can distinguish its command failures; arbitrary exception text cannot.
+export function startupCDPFailureCategory(code,error){
+  if(code==='borrowed_reader_command_failed'){
+    switch(cdpCommandFailureDetail(error)?.kind){
+      case 'command_rejected':return 'cdp_command_rejected';
+      case 'request_rejected':return 'cdp_request_rejected';
+      case 'reply_invalid':return 'cdp_reply_invalid';
+      case 'transport_closed':return 'cdp_transport_closed';
+      case 'timeout':return 'cdp_timeout';
+      default:return 'cdp_borrowed_unclassified';
+    }
+  }
+  if(code==='borrowed_reader_event_failed')return 'cdp_event_failure';
+  if(['cdp_pipe_error','cdp_pipe_closed','cdp_write_failed'].includes(code))return 'cdp_pipe_failure';
+  if(['chrome_process_error','chrome_exited'].includes(code))return 'cdp_process_failure';
+  if(['cdp_frame_count_exceeded','cdp_frame_too_large','cdp_input_invalid','cdp_json_invalid','cdp_utf8_invalid'].includes(code))return 'cdp_frame_failure';
+  if(code==='application_post_timeout'||Object.values(CDP_METHODS).some(name=>code===`${name}_timeout`))return 'cdp_timeout';
+  return 'cdp_other';
+}
 const EARLY_CDP_METHODS = new Set(['Page.getFrameTree', 'Runtime.enable', 'Runtime.disable', 'Debugger.enable',
   'Debugger.disable', 'Debugger.setInstrumentationBreakpoint', 'Debugger.setBreakpoint', 'Debugger.removeBreakpoint', 'Debugger.resume']);
 const EARLY_COMMAND_LABELS = Object.freeze({ 'Page.getFrameTree': 'frameTree', 'Runtime.enable': 'runtimeEnable',
@@ -773,6 +794,7 @@ let retainedQAScope = null;
 let child = null;
 let childExited = false;
 let cdpFailure = null;
+let cdpFirstCause = null;
 let protocolOwner = 0;
 let nextOwner = 0;
 let nextCommandId = 0;
@@ -842,7 +864,7 @@ function cdpWrite(message) {
         if(message.method==='Target.detachFromTarget')borrowedMainTransport.releaseSession?.(message.params.sessionId);
         dispatchCDP({id:message.id,result,...(message.sessionId?{sessionId:message.sessionId}:{})});
       })
-      .catch(()=>failCDP('borrowed_reader_command_failed'));
+      .catch(error=>failCDP('borrowed_reader_command_failed',error));
     return;
   }
   if (!child || childExited || !child.stdio?.[3] || pending.size >= MAX_PENDING_COMMANDS) throw probeError('cdp_unavailable');
@@ -1017,9 +1039,10 @@ function rejectPending(code) {
   }
 }
 
-function failCDP(code) {
+function failCDP(code,error) {
+  if(!cdpFailure)cdpFirstCause=startupCDPFailureCategory(code,error);
   active?.manualEnrollment?.invalidate();
-  active?.manualStartupPort?.invalidate();
+  active?.manualStartupPort?.invalidate(cdpFirstCause);
   active?.bound?.binder?.invalidate();
   if (!cdpFailure) cdpFailure = /^[a-z0-9_]{1,80}$/u.test(code) ? code : 'cdp_protocol_failed';
   cdpFrames.reset();

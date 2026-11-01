@@ -1,6 +1,6 @@
 // Private, default-off QA transport. OS provenance belongs to the compiled Go
 // owner backend; this module cannot grant it through a request or JSON flag.
-import {startupFailureLatch,startupInspectionFailure,startupPrepareFailure,startupDiagnostic} from './x-manual-startup-diagnostic.mjs';
+import {STARTUP_CDP_CAUSES,startupFailure,startupFailureLatch,startupInspectionFailure,startupPrepareFailure,startupDiagnostic} from './x-manual-startup-diagnostic.mjs';
 import {validateManualCaptureRequest,manualCaptureFailure} from './x-native-manual-capture.mjs';
 import {MANUAL_STARTUP_MAX_MS} from './x-manual-startup-limits.mjs';
 const roles=['reader','collector'];
@@ -79,7 +79,11 @@ export function createXManualOwnerPort({enabled=false,owner,createOwners,snapsho
         event.method==='Page.frameDetached'&&p.frameId===s.pins.frameId||
         event.method==='Page.frameNavigated'&&!p.frame?.parentId)invalidate(role);
     },
-    invalidate(){diagnostics.record(null,'pair','joint','unavailable','xnp_manual_owner_unavailable');for(const role of roles)invalidate(role);},
+    invalidate(category){
+      const firstCause=STARTUP_CDP_CAUSES.includes(category)?category:'cdp_other';
+      diagnostics.record(startupFailure('pair','joint','unavailable',false,'xnp_manual_owner_unavailable',{firstCause}),'pair','joint','unavailable','xnp_manual_owner_unavailable');
+      for(const role of roles)invalidate(role);
+    },
     async execute(raw){
       const message=manualOwnerOperation(raw), role=message.role,s=state[role];
       if(message.owner!==owner)throw failure();

@@ -6,8 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strconv"
-	"strings"
 	"time"
 )
 
@@ -101,43 +99,6 @@ func (b *xApplicationOwner) seedNative(ctx context.Context) (xApplicationSeedRec
 	b.seedReady = true
 	b.initializationMu.Unlock()
 	return receipt, started, nil
-}
-
-// The existing closed seed code vocabulary is shared with the retained recipe.
-// Do not forward arbitrary peer strings into diagnostics.
-func nativePilotSeedCode(code string) (string, bool) {
-	catalogs := [][]string{
-		{"preconditions", "owner_before", "frame_before", "enrollment_evaluate", "enrollment_project", "enrollment_cleanup", "frame_after", "cookie_read", "cookie_select", "seed_write", "owner_after"},
-		{"disabled", "replay", "unavailable", "rejected", "candidate_absent", "bootstrap_missing", "bootstrap_invalid", "wrong_page", "inspection_failed", "document_changed", "ownership_changed", "deadline", "clock_regressed"},
-		{"not_attempted", "unknown", "acknowledged"},
-	}
-	if strings.HasPrefix(code, "manual_seed_v2_") && len(code) <= 80 {
-		parts := strings.SplitN(strings.TrimPrefix(code, "manual_seed_v2_"), "_", 4)
-		if len(parts) != 4 {
-			return "", false
-		}
-		for i, part := range parts[:3] {
-			n, err := strconv.Atoi(part)
-			if err != nil || n < 0 || n >= len(catalogs[i]) || strconv.Itoa(n) != part {
-				return "", false
-			}
-		}
-		initial, ok := nativePilotInitialCode("manual_initial_" + parts[3])
-		if !ok || initial.trace == nil {
-			return "", false
-		}
-		return code, true
-	}
-	for _, phase := range catalogs[0] {
-		for _, reason := range catalogs[1] {
-			for _, write := range catalogs[2] {
-				if code == "manual_seed_"+phase+"_"+reason+"_"+write {
-					return code, true
-				}
-			}
-		}
-	}
-	return "", false
 }
 
 var _ json.Marshaler = xApplicationSeedReceipt{}

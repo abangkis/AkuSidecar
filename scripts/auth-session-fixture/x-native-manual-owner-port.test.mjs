@@ -5,13 +5,55 @@ import {offlineXManualOwnerPort} from './x-native-manual-owner-offline.mjs';
 import {offlineStartupOwner} from './x-manual-startup-offline-fixture.mjs';
 import {createManualStartupOwner} from './x-manual-startup-owner.mjs';
 import {startupDiagnostic,startupRPCCode,startupFailure} from './x-manual-startup-diagnostic.mjs';
-import {manualOwnerSnapshot} from './x-native-metadata-probe-driver.mjs';
+import {manualOwnerSnapshot,startupCDPFailureCategory} from './x-native-metadata-probe-driver.mjs';
+import {cdpCommandFailure} from '../../internal/collection/headless/worker/native-pilot/cdp-command-failure.mjs';
+import {mainStartupProgress} from '../../internal/collection/headless/worker/native-pilot/main-browser-transport-protocol.mjs';
 import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 
 let id=0;
 const command=(op,role='reader',extra={})=>({id:++id,op,owner:1,role,...(op==='manual_prepare'?{observationDeadlineMS:Date.now()+18000}:{}),...extra});
 async function prepared(port){return Promise.all(['reader','collector'].map(role=>port.execute(command('manual_prepare',role))));}
 const acquire=(port,role,ready)=>port.execute(command('manual_acquire',role,{handle:ready.handle,startupBudgetMS:MANUAL_TIMING.evidenceMaxAgeMS,request:{challenge:'c'.repeat(48),role,...ready.pins}}));
+
+test('CDP startup failures preserve only closed causes through both roles and cleanup',async()=>{
+  const cases=[
+    ['borrowed_reader_command_failed',cdpCommandFailure('command_rejected'),'cdp_command_rejected'],
+    ['borrowed_reader_command_failed',cdpCommandFailure('request_rejected'),'cdp_request_rejected'],
+    ['borrowed_reader_command_failed',cdpCommandFailure('reply_invalid'),'cdp_reply_invalid'],
+    ['borrowed_reader_command_failed',cdpCommandFailure('transport_closed'),'cdp_transport_closed'],
+    ['borrowed_reader_command_failed',cdpCommandFailure('timeout'),'cdp_timeout'],
+    ['borrowed_reader_command_failed',new Error('PRIVATE_TOKEN'),'cdp_borrowed_unclassified'],
+    ['borrowed_reader_event_failed',null,'cdp_event_failure'],
+    ['target_get_targets_timeout',null,'cdp_timeout'],
+    ['cdp_pipe_closed',null,'cdp_pipe_failure'],
+    ['chrome_exited',null,'cdp_process_failure'],
+    ['cdp_json_invalid',null,'cdp_frame_failure'],
+    ['PRIVATE_TOKEN',null,'cdp_other'],
+  ];
+  for(const [code,error,want]of cases){
+    const category=startupCDPFailureCategory(code,error);assert.equal(category,want);
+    const port=offlineXManualOwnerPort();port.invalidate(category);
+    for(const role of ['reader','collector'])await assert.rejects(port.execute(command('manual_prepare',role)),failure=>{
+      const d=startupDiagnostic(failure),wire=startupRPCCode(failure);
+      assert.equal(d.role,'pair');assert.equal(d.phase,'joint');assert.equal(d.reason,'unavailable');assert.equal(d.peer,true);
+      assert.equal(d.trace.firstCause,want);assert.equal(JSON.stringify(d).includes('PRIVATE_TOKEN'),false);
+      assert.deepEqual(mainStartupProgress({operation:'inspect_rpc',elapsedMS:1,cause:wire}),{operation:'inspect_rpc',elapsedMS:1,cause:wire});
+      return true;
+    });
+    for(const role of ['reader','collector'])assert.deepEqual(await port.execute(command('manual_abort',role,{handle:null,preserveReader:role==='reader'})),{closed:true});
+  }
+});
+
+test('CDP diagnostics cannot replace an earlier X cause or admit untrusted categories',async()=>{
+  const port=offlineXManualOwnerPort({changeSnapshot:()=>{throw startupFailure('reader','prepare','scope_lost',false,undefined,{firstCause:'cookie_candidate'});}});
+  await assert.rejects(port.execute(command('manual_prepare')),error=>startupDiagnostic(error).trace.firstCause==='cookie_candidate');
+  port.invalidate('cdp_timeout');
+  await assert.rejects(port.execute(command('manual_prepare','collector')),error=>startupDiagnostic(error).trace.firstCause==='cookie_candidate');
+  const another=offlineXManualOwnerPort();another.invalidate('cookie_candidate');
+  await assert.rejects(another.execute(command('manual_prepare')),error=>startupDiagnostic(error).trace.firstCause==='cdp_other');
+  const spoof={get message(){assert.fail('untrusted getter read');},kind:'command_rejected'};
+  assert.equal(startupCDPFailureCategory('borrowed_reader_command_failed',spoof),'cdp_borrowed_unclassified');
+});
 
 for(const role of ['reader','collector'])for(const [fault,stage,condition]of [
   ['actor','node_actor','command_failed'],['shape','node_reply','reply_invalid'],
