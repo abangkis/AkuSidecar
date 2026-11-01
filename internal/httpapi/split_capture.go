@@ -378,6 +378,10 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 			attachedAuditReady = false
 		}
 		if closed {
+			if err := ctx.Err(); err != nil {
+				terminalOutcome = "cancelled"
+				return err
+			}
 			terminalOutcome = "stopped"
 			return errors.New("reader broker stopped")
 		}
