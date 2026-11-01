@@ -1,7 +1,7 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-01 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `d82f53b` (G06 decoder move and smoke-test context correction),
+Reviewed local source: AkuSidecar `02e063e` (Settings execution file boundary, after candidate cleanup `7d00d9c`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
 The Browser worktree contains pre-existing build/cache changes; those changes
@@ -57,6 +57,10 @@ separately approved smoke-test context correction resolves the confirmed baselin
 failure without changing repository config or guards. Both changes were reviewed
 and committed as `d82f53b`; latest default/dev regressions and Windows compilation pass. See the
 [G06 result](cl1-cleanup-candidates.md#g06-result-2026-11-01).
+E01 then added candidate cleanup and the unchanged Settings execution file
+boundary, reviewed and committed as `7d00d9c` and `02e063e`. The
+[E01 result](cl1-cleanup-candidates.md#e01-candidate-cleanup-and-settings-execution-2026-11-01)
+records their distinct source parents, passing evidence and remaining scope.
 External-consumer and offline Browser dependency gaps remain explicit.
 
 | Increment | Implemented commit | Tested evidence | Activated | Acceptance |
@@ -71,6 +75,8 @@ External-consumer and offline Browser dependency gaps remain explicit.
 | Session finalization helper | `ae1a535` | [Finalization receipt](../runtime/qa/session-finalization-20261101/validation.json): structural equivalence; 1,445 full-suite passes, additional default/fixture/combined selections of 65/65/132, seven Store passes, zero failures; eight Windows amd64 artifacts | Not recorded | Bounded helper extraction reviewed and committed; no operational acceptance claimed |
 | CL-2 G10 unused deletion alias | `21ac9ad`, with cleanup roadmap | [G10 receipt](../runtime/qa/cl2-delete-memory-alias-20261101/validation.json), captured pre-commit: exact remainder equivalence, Store/HTTP 382/258 passes with 5/23 skips and zero failures, eight Windows artifacts, zero remaining code references | Not performed by this increment | Reviewed and committed for this removal only; not pushed in that follow-up |
 | G06 config decoder relocation and repository smoke-test context | `d82f53b` | [Initial receipt](../runtime/qa/g06-reasoning-config-decode-20261101/validation.json) retains the historical baseline failure. [Correction receipt](../runtime/qa/repository-config-test-context-20261101/validation.json): default/dev each 46 pass, zero failures, two skips; eight Windows artifacts pass. [Review](../runtime/qa/g06-review-roadmap-20261101/review.json) confirms unchanged decoder and tested payload | Not performed | Scoped code review complete and committed; config/guards unchanged; non-Windows rejection branch reviewed but not executed on this host; no operational acceptance claim |
+| E01 provider candidate failure cleanup | `7d00d9c` | [Receipt](../runtime/qa/provider-swap-candidate-cleanup-20261101/validation.json): six red-to-green failure scenarios; default 526 pass/38 skip, dev 1,199 pass/48 skip, zero failures; eight Windows artifacts | Not performed | Scoped fix/test reviewed and committed; original error/cause and successful ownership transfer preserved |
+| E01 Settings execution file boundary | `02e063e` | [Receipt](../runtime/qa/settings-execution-20261101/validation.json): unchanged 120-line method and file remainder; default 526 pass/38 skip, dev 1,199 pass/48 skip, zero failures; four build-tag graphs and eight Windows artifacts | Not performed | Scoped review complete and committed; Settings getter/helpers/callers, lock/effect order, config/protocol/guards unchanged; further phase decomposition remains proposed |
 
 Counts include subtests and repeated build-tag selections; do not add them as
 unique test cases. Receipts captured before commit may retain `committed:false`
@@ -81,10 +87,16 @@ raw receipts to make their historical fields look current.
 Remaining structural candidates are organized in the
 [cleanup roadmap](code-cleanup-roadmap.md#execution-stages-and-current-status)
 and grounded in [the structure audit](code-structure-audit.md):
-feature-level Timeline/Settings extraction, probe dispatch, HTTP capture-service
-boundaries and a broader legacy/compatibility inventory. These are proposals,
+feature-level Timeline/frontend Settings extraction, deeper backend Settings
+decomposition, probe dispatch, HTTP capture-service boundaries and a broader
+legacy/compatibility inventory. These are proposals,
 not authorization to implement or delete. Scheduler drain and further execution
 refactors have not been added to this completed slice.
+
+Next source-cleanup proposal: read-only analysis of the profile-map projection
+inside `SaveSettings`, including merge precedence and existing regression
+coverage. A pure helper is a candidate, not an approved implementation. This
+does not change the separate operational/IG diagnostic boundary below.
 
 ## Product and installation roadmaps
 

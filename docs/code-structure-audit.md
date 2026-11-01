@@ -3,7 +3,7 @@
 ## Status synchronization (2026-11-01)
 
 The original audit and its validation below are historical. Current source is
-reviewed through `ae1a535`; see the [roadmap status index](roadmap-status.md)
+reviewed through `02e063e`; see the [roadmap status index](roadmap-status.md)
 for commit-to-receipt mappings. Cleanup is not provider qualification.
 
 | Increment | Implemented | Tested | Activated | Acceptance |
@@ -13,6 +13,10 @@ for commit-to-receipt mappings. Cleanup is not provider qualification.
 | Standalone owner harness | `cd8fd60` | Staging regression and Windows compile | Not recorded | Production transient-error dependency included; guards unchanged |
 | Production shared helpers | `2ba01bb` | Source equivalence, production dependency graphs and Windows checks | Not recorded | Callers moved out of fixture-folder helpers |
 | Engine work, scheduler, execution and finalization | `202ecbb`, `056b53b`, `d897130`, `ae1a535` | Respective equivalence/regression receipts; finalization adds seven Store checks and eight Windows artifacts | Not recorded | Scoped refactors reviewed; `e.mu`, schedule lock, start-once/wake, side effects and error contracts retained |
+| Unused deletion alias | `21ac9ad` | G10 remainder equivalence, full Store/HTTP regressions and eight Windows artifacts | Not performed | Bounded internal alias removal; tombstone/recapture guards retained |
+| Reasoning config decoder | `d82f53b` | Exact decoder relocation; corrected repository smoke-test context; default/dev config/application suites each 46 pass, two skips, zero failures; eight Windows artifacts | Not performed | Both supported config shapes and strict validation retained; original baseline failure kept as historical evidence |
+| Provider candidate failure cleanup | `7d00d9c` | Six failure scenarios reproduced before the fix; default 526 pass/38 skip, dev 1,199 pass/48 skip, zero failures; eight Windows artifacts | Not performed | Candidate disposed on planning failure; original errors and success ownership preserved |
+| Settings execution file boundary | `02e063e` | Unchanged 120-line method and remaining source; same default/dev pass/skip counts; four build-tag graphs and eight Windows artifacts | Not performed | First E01 file boundary reviewed/committed; deeper Settings decomposition remains proposed |
 
 No code change, activation or trial is performed by this status update. Existing
 test receipts are reused at their verified source/artifact scope, not rerun.
@@ -84,7 +88,10 @@ generic helper merely to reduce line count.
 
 The earlier fixture-factory coupling has been addressed by `29ec2b4` and
 `2ba01bb`; it is no longer the outstanding blocker stated by this audit.
-Remaining candidates include feature-level Timeline/Settings orchestration,
+The backend Settings orchestration file boundary is now established in
+`settings_execution.go`; validation, persistence and runtime effects still
+remain in the same method. Remaining candidates include feature-level
+Timeline/frontend Settings orchestration, deeper backend Settings decomposition,
 probe mode dispatch, HTTP capture-service boundaries and a broader inventory of
 legacy/compatibility consumers. They are proposals requiring separate bounded
 analysis/approval, not a deletion list or authorization to continue refactoring.

@@ -105,7 +105,7 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-0: inherited bounded cleanup | Eight increments above complete | Scoped receipts retained | Cleanup activation not recorded | Bounded code reviews complete; no whole-repository completion claim |
 | CL-1: consumer and compatibility inventory | [Entry/consumer map](cl1-consumer-inventory.md) and [32-boundary candidate ledger](cl1-cleanup-candidates.md) delivered | Read-only four-tag metadata, native/package/reference and source-preservation checks; no product test/build | Not applicable to an audit | Ready for review; external-consumer and offline Browser dependency limits explicit; no implementation approved |
 | CL-2: proven obsolete-code retirement | Earlier wrappers plus G10 `DeleteMemoryItem` removal committed with roadmap as `21ac9ad` | G10 exact remainder check, full Store/HTTP regressions and four-mode Windows compilation passed | Not performed for G10 | G10 reviewed/committed; comprehensive retirement remains scoped by the remaining ledger entries |
-| CL-3: backend responsibility boundaries | Earlier lifecycle/session seams complete; G06 decoder relocation and smoke-test context correction committed as `d82f53b`; larger seams proposed | G06 source equivalence passes; latest default/dev config/application suites each 46 pass, zero failures, two skips; eight Windows artifacts pass | Not performed for G06 | G06 scoped review complete; original baseline failure is historical and corrected; Settings/HTTP/remaining Engine scope pending |
+| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate failure cleanup `7d00d9c`; unchanged `SaveSettings` file move `02e063e`; earlier lifecycle/session seams retained | Latest Engine/HTTP/config/application suites: default 526 pass/38 skip, dev 1,199 pass/48 skip, zero failures; extraction equivalence, four build-tag graphs and eight Windows artifacts pass | Not performed for these increments | Scoped changes reviewed/committed; E01 file boundary established, further Settings decomposition and HTTP/remaining Engine scope pending |
 | CL-4: frontend feature ownership | Existing navigation module retained; broader extraction proposed | Existing baseline only | Not recorded | Timeline/Settings/app orchestration pending |
 | CL-5: native runtime and QA boundaries | Factory/shared-helper separation complete; deeper runtime split proposed | Existing baseline only for remaining seams | Not recorded | Remaining operation/transport/QA separation pending |
 | CL-6: Bridge responsibility boundaries | Existing source/lifecycle modules retained; further split proposed | Existing baseline only for remaining seams | No new rollout | Background dispatch/surface integration pending |
@@ -153,10 +153,13 @@ Do not delete a consumer merely to make the dependency scan appear clean.
 
 ### CL-3: backend responsibility boundaries
 
-- **CL-3.1 Settings:** analyze `SaveSettings` validation/planning, persistence
-  and runtime effects. Reuse `providerSwapPlan`; preserve candidate cleanup,
-  `operation` locking, profile projection and post-save error behavior. Extract
-  one coherent seam before considering a broader service interface.
+- **CL-3.1 Settings:** candidate failure cleanup is committed as `7d00d9c`;
+  the first file boundary moves `SaveSettings` unchanged to
+  `settings_execution.go` in `02e063e`. Further validation/planning, persistence
+  and runtime-effect decomposition remains proposed. Reuse `providerSwapPlan`;
+  preserve candidate cleanup, `operation` locking, profile projection and
+  post-save error behavior. Analyze one coherent seam before considering a
+  broader service interface.
 - **CL-3.2 Engine:** inventory remaining Bridge command adaptation, observation
   acceptance, source admission, enrichment and read-model methods. Keep the
   Engine facade and existing Store authority; do not repeat completed lifecycle
@@ -315,13 +318,22 @@ reviewed and committed as `d82f53b`. See the
 [result and historical baseline failure](cl1-cleanup-candidates.md#g06-result-2026-11-01)
 and [latest passing evidence](../runtime/qa/repository-config-test-context-20261101/validation.json).
 
-The next proposal is read-only analysis of `Engine.SaveSettings` (E01 / CL-3.1).
-Map validation/provider planning, Store persistence and subsequent runtime
-effects; identify one coherent extraction and its failure-path tests. Preserve
-`operation` locking, existing `providerSwapPlan`, candidate disposal, profile
-projection, side-effect order and post-save errors. The decision to proceed
-requires a concrete bounded proposal; no Settings implementation, compatibility
-removal or further refactor is approved by this status update.
+E01 / CL-3.1 then received two separately approved increments: candidate cleanup
+on failed provider planning (`7d00d9c`) and the unchanged `SaveSettings` move to
+`settings_execution.go` (`02e063e`). Both were reviewed and committed. See the
+[scoped result](cl1-cleanup-candidates.md#e01-candidate-cleanup-and-settings-execution-2026-11-01)
+and [latest extraction evidence](../runtime/qa/settings-execution-20261101/validation.json).
+No Settings phase helper or broader service was introduced.
+
+The next proposal is read-only analysis of the `ReasoningProfilesByProvider`
+projection inside `SaveSettings`. Determine whether its map merge and active
+profile projection form one useful pure helper. Map precedence for submitted
+versus stored entries, current-provider preservation, same-provider updates and
+normalization, then identify the existing coverage and any required regression
+before proposing implementation. Preserve `operation`, `providerSwapPlan`,
+candidate disposal, side-effect order and post-save errors. No helper
+implementation, compatibility removal or further refactor is approved by this
+status update.
 
 No calendar estimate or cleanup percentage is assigned: this bounded inventory
 does not establish a complete repository-wide denominator or close every

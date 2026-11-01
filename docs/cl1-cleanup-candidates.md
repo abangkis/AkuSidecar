@@ -1,21 +1,23 @@
 # CL-1: cleanup candidate ledger
 
 Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory.md).
-Scope: CL-1 candidate classification, followed by separately approved G10 and
-G06 implementation records below. Other candidates remain proposals or retained contracts.
+Scope: CL-1 candidate classification, followed by separately approved G10, G06,
+provider-candidate cleanup and the first E01 file-boundary extraction below.
+Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
 
 | Disposition | Count | Meaning |
 | --- | ---: | --- |
-| `remove` | 1 | G10 removal separately approved and tested in the worktree; see its CL-2 record |
+| `remove` | 1 | G10 removal separately approved, tested and committed; see its CL-2 record |
 | `extract` | 5 | Responsibility seam worth a separately approved move/split |
 | `retain-required` | 19 | Supported caller, data, build or packaging obligation demonstrated |
 | `defer-until-replacement` | 3 | Consumer/authority migration must precede retirement |
 | `unverified` | 4 | Evidence or contract decision still needed |
 
-**Approval at the CL-1 checkpoint was inventory only.** G10 and G06 were subsequently
-approved and applied; implementation of the other rows remains unapproved. Retained
+**Approval at the CL-1 checkpoint was inventory only.** G10, G06, candidate cleanup
+and the narrow E01 file move were subsequently approved and applied. Further E01
+phase decomposition and implementation of the other rows remain unapproved. Retained
 rows are not deletion candidates. No global absence of out-of-tree consumers
 is claimed. The 32 rows are reviewed contract clusters, not a count of unique
 files or a verdict on every keyword hit. The 246-file mechanical keyword queue
@@ -50,7 +52,7 @@ Paths in this section are relative to AkuSidecar.
 
 | ID | Disposition | Target and role | Supported consumers / evidence | Checks and rollback constraint before any change |
 | --- | --- | --- | --- | --- |
-| E01 | `extract` | `internal/engine/engine.go:SaveSettings` validation/planning/persistence/effects | HTTP settings/onboarding/provider paths; existing `providerSwapPlan` | Map `operation`, candidate disposal, post-save errors, retention and notify order; no new transactional promise |
+| E01 | `extract` | `internal/engine/settings_execution.go:SaveSettings`, relocated from `engine.go`; phase boundaries remain in one method | HTTP settings/onboarding/provider paths; existing `providerSwapPlan` | Candidate failure cleanup committed as `7d00d9c`; unchanged 120-line method move reviewed/committed as `02e063e`; lock, disposal, post-save errors, retention and notify order preserved. Further decomposition requires a separate proposal |
 | E02 | `extract` | `internal/httpapi/server.go` capture/application adaptation | HTTP routes, Bridge contract/token checks, split-capture ownership and Engine calls | Preserve route/DTO/status/error shapes, request context and owner gates; identify one complete use case before a service layer |
 | E03 | `retain-required` | Work/scheduler/Engine/session lifecycle files completed in CL-0 | Cross-source admission, cancellation, restart and deferred-cleanup consumers; existing equivalence and build receipts | Retain `e.mu`, `schedule`, worker count through cleanup, sticky scheduler start and wake semantics; do not redo completed moves or add drain |
 
@@ -194,5 +196,39 @@ and combined tags passed compilation; all eight hashes match the preceding
 G06 production builds. Review reused this evidence after matching current
 source/artifact hashes, without repeating unchanged tests or builds.
 
-No push, activation or live trial was performed. E01 Settings and larger seams
-remain proposals outside this increment.
+No push, activation or live trial was performed by the G06 follow-up. The later
+bounded E01 changes are recorded below; larger seams remain proposals.
+
+## E01 candidate cleanup and Settings execution (2026-11-01)
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Provider candidate cleanup on planning failure | `7d00d9c`: deferred disposal begins immediately after successful candidate construction; a ready plan transfers ownership to the caller | [Cleanup receipt](../runtime/qa/provider-swap-candidate-cleanup-20261101/validation.json): six failure scenarios reproduced before the fix and passed after it; default 526 pass/38 skip, dev 1,199 pass/48 skip, zero failures; eight Windows artifacts | Not performed | Scoped fix and regression reviewed/committed; primary error/cause, success ownership, active runtime and durable settings preserved |
+| Settings execution file boundary | `02e063e`: only `Engine.SaveSettings` moved to `settings_execution.go` | [Extraction receipt](../runtime/qa/settings-execution-20261101/validation.json): 120-line method and original file remainder equivalent; same default/dev counts with zero failures; new file included in all four build-tag graphs; eight Windows artifacts | Not performed | Scoped review found no issue; committed. This is a file boundary, not completion of Settings phase decomposition or CL-3 |
+
+The cleanup receipt was captured with source parent `4c8c06e`; its source/test
+hashes identify the payload committed as `7d00d9c`. The extraction receipt was
+captured with parent `7d00d9c`; its source hashes identify the method move
+committed as `02e063ed6a57c6c32f06914927dfd3d666cf40bd`. The original receipts
+remain unchanged, including their pre-commit fields. Review matched current
+source and artifact hashes before reusing the passing checks.
+
+The production factory remains `reasoning.NewProvider`; an explicit local
+factory parameter permits deterministic lifecycle tests without a global hook.
+Failure disposal calls `Close` once when supported, ignoring its error so the
+planning error and wrapped cause remain primary. A successfully returned plan
+is not closed by the builder. Existing `SaveSettings` ownership and lock scope
+remain unchanged.
+
+The getter, helpers, callers, config, protocol and guards were not moved or
+changed by the extraction. Candidate cleanup still precedes operation unlock;
+the Store save, runtime requests/cancellation/activation, retention and both
+existing scheduler notification sites keep their order. An error after
+persistence does not imply rollback. No further push, activation or live trial
+was performed for these two increments.
+
+Next proposal: read-only analysis of the `ReasoningProfilesByProvider` projection
+inside `SaveSettings`. Map merge precedence, current-provider preservation,
+same-provider updates and normalization to decide whether one pure helper is
+worth extracting. No helper implementation or broader Settings service is
+approved by this status update.
