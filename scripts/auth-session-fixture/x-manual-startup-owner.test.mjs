@@ -3,9 +3,63 @@ import assert from 'node:assert/strict';
 import { createManualStartupOwner } from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-owner.mjs';
 import { offlineStartupOwnerActor, offlineStartupOwner, runOfflineStartupRecipe } from './x-manual-startup-offline-fixture.mjs';
 import { startupDiagnostic } from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
+import { awaitOfflineWallInterval } from './x-offline-wall-clock.mjs';
 
 const request = (role, pins) => ({ challenge: 'b'.repeat(48), role, ...pins });
 const decode = buffer => { try { return JSON.parse(buffer.toString('utf8')); } finally { buffer.fill(0); } };
+
+test('offline wall interval requires two transitions and rejects regression or a stalled clock', async () => {
+  const ticks = [1000, 1000, 1001, 1001, 1002];
+  let reads = 0, waits = 0;
+  await awaitOfflineWallInterval(() => ticks[reads++], async () => { waits++; });
+  assert.equal(reads, ticks.length);
+  assert.equal(waits, ticks.length - 1);
+  const regressed = [1000, 1001, 1000];
+  await assert.rejects(awaitOfflineWallInterval(() => regressed.shift(), async () => {}), /offline_clock_invalid/);
+  let stalledWaits = 0;
+  await assert.rejects(awaitOfflineWallInterval(() => 1000, async () => { stalledWaits++; }), /offline_clock_stalled/);
+  assert.equal(stalledWaits, 32);
+});
+
+test('offline prepared actor brackets observations with real intervals inside the capture budget', async () => {
+  for (const role of ['reader', 'collector']) {
+    let wall = 1000, monotonic = 0, waits = 0, identityReads = 0;
+    const order = [];
+    const owner = offlineStartupOwnerActor(role, {
+      now: () => monotonic,
+      wallNow: () => wall,
+      waitWallTick: async () => { order.push(identityReads ? 'after-observation' : 'before-identity'); waits++; wall++; monotonic++; },
+      afterRelease: () => { identityReads++; order.push('identity'); },
+    });
+    const ready = await owner.prepare();
+    assert.equal(waits, 0);
+    assert.equal(identityReads, 0);
+    try {
+      const receipt = decode(await owner.acquire(ready.handle, request(role, ready.pins)));
+      assert.deepEqual(order, ['before-identity', 'before-identity', 'identity', 'after-observation', 'after-observation']);
+      assert.equal(receipt.identityObservedAtMS, 1002);
+      assert.equal(receipt.settingsObservedAtMS, 1002);
+      assert.equal(receipt.elapsedMS, 4);
+      assert.equal(receipt.documentId, ready.pins.documentId);
+      assert.equal(Object.keys(receipt).length, 16);
+    } finally { await owner.abort(ready.handle); }
+  }
+});
+
+test('offline reply barrier cannot extend the original sample age or capture deadline', async () => {
+  for (const [elapsed, reason] of [[6000, 'stale_observation'], [18000, 'deadline']]) {
+    let wall = 1000, monotonic = 0, waits = 0;
+    const owner = offlineStartupOwnerActor('reader', {
+      now: () => monotonic,
+      wallNow: () => wall,
+      waitWallTick: async () => { wall++; monotonic += ++waits === 3 ? elapsed : 1; },
+    });
+    const ready = await owner.prepare();
+    try {
+      await assert.rejects(owner.acquire(ready.handle, request('reader', ready.pins)), error => startupDiagnostic(error).reason === reason);
+    } finally { await owner.abort(ready.handle); }
+  }
+});
 
 test('a prepared owner bounds its settings wait to the supplied acquisition remainder', async () => {
   for (const role of ['reader','collector']) {

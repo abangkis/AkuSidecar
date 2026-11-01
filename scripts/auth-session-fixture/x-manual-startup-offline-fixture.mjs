@@ -9,6 +9,7 @@ import { QABoundObservation, projectBoundBootstrap } from '../../internal/collec
 import { createManualStartupCapture } from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-source.mjs';
 import { createManualStartupOwner } from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-owner.mjs';
 import { parseStrictJSON } from '../../internal/collection/headless/worker/native-pilot/shared/x-evidence-ingress.mjs';
+import { awaitOfflineWallInterval } from './x-offline-wall-clock.mjs';
 
 export function offlineStartupOwner(role) {
   if (!['reader', 'collector'].includes(role)) throw new Error('offline_startup_invalid');
@@ -54,11 +55,19 @@ export function offlineStartupCapture(options = {}) {
 
 export function offlineStartupOwnerActor(role, options = {}) {
   offlineStartupOwner(role);
-  return createManualStartupOwner({ ...options, run: sink => runOfflineStartupRecipe({ role }, sink,
+  return createManualStartupOwner({ ...options, run: async sink => {
+    const result = await runOfflineStartupRecipe({ role }, sink,
     { ...options, beforeIdentityRead: async (pins, testPorts) => {
       await sink.beforeIdentityRead(pins);
+      await awaitOfflineWallInterval(options.wallNow, options.waitWallTick);
       options.afterRelease?.(testPorts);
-    } }) });
+    } });
+    // Keep immediate synthetic observations away from both cross-process clock
+    // boundaries. The capture still checks its original monotonic budget and
+    // sample age after this wait; no clock or receipt is rewritten.
+    await awaitOfflineWallInterval(options.wallNow, options.waitWallTick);
+    return result;
+  } });
 }
 
 async function runOfflineOwner(role) {

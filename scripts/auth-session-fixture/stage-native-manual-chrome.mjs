@@ -50,7 +50,7 @@ if(mode!==undefined){
     'x-manual-diagnostic-capacity.test.mjs',
     'x-manual-unframed-traffic.test.mjs',
     'x-manual-startup-redirect.test.mjs',
-    'x-manual-startup-first-cause-offline.mjs','x-manual-startup-first-cause.test.mjs',
+    'x-manual-startup-first-cause-offline.mjs','x-manual-startup-first-cause.test.mjs','x-offline-wall-clock.mjs',
     'x-manual-startup-root-navigation.test.mjs','x-manual-network-provenance.test.mjs'].map(file=>{
     const source='scripts/auth-session-fixture/'+file;
     return {source,sha256:hash(fs.readFileSync(path.join(project,source)))};

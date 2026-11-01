@@ -5,23 +5,10 @@ import {inspectBootstrapCurrentSelf} from '../../internal/collection/headless/wo
 import {createManualStartupOwner} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-owner.mjs';
 import {createXManualOwnerPort} from '../../internal/collection/headless/worker/native-pilot/shared/x-native-manual-owner-port.mjs';
 import {offlineStartupOwner} from './x-manual-startup-offline-fixture.mjs';
+import {awaitOfflineWallTick} from './x-offline-wall-clock.mjs';
 import {startupFailureLatch,startupFailure,requireBoundStartup} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
 const settingsURL='https://api.x.com/1.1/account/settings.json';
 const projection=inspectBootstrapCurrentSelf({location:{origin:'https://x.com',pathname:'/home'},__INITIAL_STATE__:{session:{user_id:'1908123456789012345'},entities:{users:{entities:{'1908123456789012345':{id_str:'1908123456789012345'}}}}}});
-
-// Real CDP observation is asynchronous. This diagnostic-only synthetic runner
-// must cross a real wall-clock tick after acquisition so Date.now() truncation
-// cannot make its healthy peer appear earlier than Go's sub-ms challenge.
-export async function awaitOfflineWallTick(wallNow=()=>Date.now(),wait=()=>new Promise(resolve=>setTimeout(resolve,1))){
-  const start=wallNow();
-  for(let i=0;i<32;i++){
-    await wait();
-    const current=wallNow();
-    if(current>start)return;
-    if(current<start)throw new Error('offline_clock_invalid');
-  }
-  throw new Error('offline_clock_stalled');
-}
 
 export function offlineFirstCausePair({faultRole='reader',fault='cookie'}={}){
   if(!['reader','collector'].includes(faultRole)||!['cookie','ambiguous','context-first','cookie-context','settings-order','extra-missing','extra-status','early-deadline','early-rejected','cleanup','guard-priority','guard-budget','guard-unbound','guard-response','guard-metadata','guard-completion','context-priority','generic-priority','budget-candidate','candidate-budget','guard-redirect','guard-reused'].includes(fault))throw new Error('offline_diagnostic_invalid');

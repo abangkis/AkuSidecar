@@ -190,7 +190,18 @@ func TestNativePilotBrokerNodePreparedDocumentIntegration(t *testing.T) {
 					}
 					defer clear(request)
 					acquiredCount.Add(1)
-					return n.rpc(ctx, map[string]any{"op": "acquire", "handle": p.handle, "request": json.RawMessage(request)})
+					raw, err := n.rpc(ctx, map[string]any{"op": "acquire", "handle": p.handle, "request": json.RawMessage(request)})
+					var timing struct {
+						IdentityObservedAtMS float64 `json:"identityObservedAtMS"`
+						SettingsObservedAtMS float64 `json:"settingsObservedAtMS"`
+					}
+					if err == nil && json.Unmarshal(raw, &timing) == nil {
+						startedMS := float64(ch.challenge.started.UnixNano()) / float64(time.Millisecond)
+						if timing.IdentityObservedAtMS < startedMS {
+							t.Logf("offline capture clock role=%s identity_delta_ms=%.3f settings_delta_ms=%.3f", ch.challenge.role, timing.IdentityObservedAtMS-startedMS, timing.SettingsObservedAtMS-startedMS)
+						}
+					}
+					return raw, err
 				},
 				state: func(context.Context) (nativePilotBrokerState, error) {
 					m := cfg.binding
@@ -224,6 +235,15 @@ func TestNativePilotBrokerNodePreparedDocumentIntegration(t *testing.T) {
 					t.Fatal("new document substituted for frozen one")
 				}
 				return
+			}
+			if d.Reason != "manual-attempt-valid" {
+				initial := b.initialDiagnostic()
+				t.Logf("offline broker first cause role=%s phase=%s reason=%s", initial.role, initial.phase, initial.reason)
+				if initial.timing != nil {
+					for _, flow := range initial.timing.flow[:initial.timing.flowCount] {
+						t.Logf("offline broker flow role=%s stage=%s condition=%s", flow.role, flow.stage, flow.condition)
+					}
+				}
 			}
 			assertNativePilotClosed(t, d, "manual-attempt-valid")
 			if !d.OfflineValidated || preparedCount.Load() != 2 || acquiredCount.Load() != 2 {
