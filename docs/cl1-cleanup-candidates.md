@@ -1,8 +1,8 @@
 # CL-1: cleanup candidate ledger
 
 Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory.md).
-Scope: CL-1 candidate classification, followed by the separately approved G10
-implementation record below. The other candidates remain proposals or retained contracts.
+Scope: CL-1 candidate classification, followed by separately approved G10 and
+G06 implementation records below. Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
 
@@ -14,7 +14,7 @@ implementation record below. The other candidates remain proposals or retained c
 | `defer-until-replacement` | 3 | Consumer/authority migration must precede retirement |
 | `unverified` | 4 | Evidence or contract decision still needed |
 
-**Approval at the CL-1 checkpoint was inventory only.** G10 was subsequently
+**Approval at the CL-1 checkpoint was inventory only.** G10 and G06 were subsequently
 approved and applied; implementation of the other rows remains unapproved. Retained
 rows are not deletion candidates. No global absence of out-of-tree consumers
 is claimed. The 32 rows are reviewed contract clusters, not a count of unique
@@ -39,11 +39,11 @@ Paths in this section are relative to AkuSidecar.
 | G03 | `retain-required` | `native_capture_migration.go`, 25-to-26 table rebuild/absent-table case | Existing rows, indexes/triggers and canonical schema creation after migration; `native_capture_migration_test.go` | Retain absent-table behavior and rollback on rebuild failure; no unconditional drop/create |
 | G04 | `retain-required` | `runtime_version.go`, `.runtime-version` marker | Store Open and compatibility inspection reject newer-runtime data even at equal schema; runtime-version tests | Preserve version/prerelease comparison and marker checks; equal schema alone does not establish downgrade safety |
 | G05 | `retain-required` | `account_session_policy.go`, `account_checkpoint_guard.go`, historical durable keys | `synthetic_account_checkpoint_policy` and related records deliberately fence older guard-aware binaries; staged compatibility tests | Never rename/remove keys during opt-out; ordinary skipped harnesses are not cross-version passing evidence |
-| G06 | `extract` | `config.go:ReasoningConfig.UnmarshalJSON` | Config Load and all main variants accept modern provider-map and flat single-provider shapes; `config_test.go:65,108` exercise both | Move the existing decoder unchanged if approved; keep strict field rejection, branch selection and errors; removal of the flat shape is unsupported |
+| G06 | `extract` | `reasoning_config_decode.go:ReasoningConfig.UnmarshalJSON`, relocated from `config.go` | Config Load and all main variants retain modern/flat shapes; both shape tests pass | Reviewed and committed with the smoke-test context correction as `d82f53b`; default/dev regressions and four-mode Windows compilation pass; original baseline failure preserved as historical evidence below |
 | G07 | `defer-until-replacement` | `ModelConfig` model/effort aliases and display projections | Config validation, reasoning calibration/profiles and Codex binding still consume them | Inventory installed config/telemetry consumers and migrate precedence/normalization explicitly; no alias deletion inside a file move |
 | G08 | `retain-required` | Disabled Windows/development stubs; candidate-probe schemas 1/2 | Shared main symbols need `!windows || !auth_session_dev` implementations; main tests protect exact schema-1 probe shape | Preserve build constraints and unavailable-mode behavior; schema-2 DB metadata cannot be added to schema-1 replies |
 | G09 | `retain-required` | `engine.go:bridgeProtocol`, legacy v2 heartbeat inference | `RecordHeartbeat`/`BridgeStatus`; `TestBridgeProtocolNegotiationPreservesLegacyV2Heartbeat` | Preserve valid-v2-contract inference to 2.0, degraded warning and bounded negotiation; distinct from Native Messaging v1 |
-| G10 | `remove` | `personal_memory.go:DeleteMemoryItem`, forwarding alias | CL-1 found only its definition; the approved removal now leaves zero tracked code references | Three-line declaration removed; Store/HTTP behavior and four-mode Windows compilation passed; commit/activation not performed |
+| G10 | `remove` | `personal_memory.go:DeleteMemoryItem`, forwarding alias | CL-1 found only its definition; removal leaves zero tracked code references | Committed with roadmap as `21ac9ad`; Store/HTTP behavior and four-mode Windows compilation passed; no push/activation in that follow-up |
 | G11 | `retain-required` | `personal_memory.go:DeleteMemory` and `ForgetMemory` | HTTP permanent-Forget -> Engine `ForgetLibraryItem` -> `ForgetMemory` -> `DeleteMemory`; direct Store privacy/search tests | Preserve transaction, opaque tombstones, content/provenance/action scrubbing and recapture suppression; never replace with physical deletion or remove ignored-reason privacy behavior |
 
 ## Engine orchestration
@@ -140,20 +140,59 @@ tests/builds/trials and applied no removal; subsequent G10 results follow below.
 
 | Implemented | Tested | Activated | Acceptance |
 | --- | --- | --- | --- |
-| Removed the forwarding declaration only in `internal/store/personal_memory.go`; no replacement shim | Exact file-remainder equivalence; Store 382 pass/5 skip and HTTP API 258 pass/23 skip, zero failures; eight Windows amd64 artifacts across four tag modes | Not performed by this increment | Scoped source change validated and ready for review/commit; not comprehensive CL-2 completion or operational acceptance |
+| Removed the forwarding declaration only in `internal/store/personal_memory.go`; committed with roadmap as `21ac9ad` | Exact file-remainder equivalence; Store 382 pass/5 skip and HTTP API 258 pass/23 skip, zero failures; eight Windows amd64 artifacts across four tag modes | Not performed by this increment | Scoped change reviewed and committed; not comprehensive CL-2 completion or operational acceptance |
 
 Evidence: [validation receipt](../runtime/qa/cl2-delete-memory-alias-20261101/validation.json).
-Source parent is `24e5a08`; the receipt hashes identify the uncommitted tested
-payload. The only code delta is the three-line alias declaration plus its blank
+The receipt was captured before commit with source parent `24e5a08`; its hashes
+identify the payload later committed as `21ac9ad`. The only code delta is the
+three-line alias declaration plus its blank
 separator. `DeleteMemory`, `ForgetMemory`, all other file contents, schema,
 protocol and guards remain unchanged. Privacy/tombstone, recapture-suppression
 and physical-remove HTTP behaviors passed existing tests. Skips are recorded,
 not counted as passes; no new test was added merely to assert symbol absence.
 
 The post-removal code-only census has zero references. Historical staged
-definitions and saved evidence are preserved. No runtime, data, configuration,
-trial, commit or push action is part of this increment.
+definitions and saved evidence are preserved. The later local commit was
+explicitly requested. No runtime, data, configuration, trial or push action was
+performed by this follow-up.
 
-G06 decoder extraction remains a separate alternative with its own approval;
-it must retain both accepted configuration shapes. E01 Settings and the other
-larger seams remain later proposals, not additional scope bundled with G10.
+## G06 result (2026-11-01)
+
+| Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- |
+| `ReasoningConfig.UnmarshalJSON` and comment moved unchanged to `internal/config/reasoning_config_decode.go`; smoke test now supplies the development app-shell/split context; committed as `d82f53b` | Source equivalence passes. Latest default/dev each: 46 pass, zero failures, two skips; eight Windows amd64 artifacts across four tag modes pass | Not performed | Scoped review found no actionable issue; decoder and test correction committed. No repository-wide cleanup or operational acceptance claim |
+
+Evidence: [initial G06 validation](../runtime/qa/g06-reasoning-config-decode-20261101/validation.json),
+[test-context correction and passing regressions](../runtime/qa/repository-config-test-context-20261101/validation.json),
+and [review of the tested payload](../runtime/qa/g06-review-roadmap-20261101/review.json).
+All were captured with source parent `21ac9ad`. The initial receipt identifies
+the decoder payload; the correction and review identify the final tested payload
+committed as `d82f53b068c99c2f5b60d512702d7ad23ce5be35`. Both strict decoder
+calls, modern/flat branch selection, receiver, error returns and every other
+byte-normalized part of `config.go` remain identical. Existing flat/modern
+provider configuration tests pass.
+
+Initially, `TestRepositorySidecarConfigLoads` failed with
+`Instagram trial requires development split capture and concurrent Instagram mode`.
+The repository config enables development Instagram trial, while the original
+smoke test called `Load` without development/split options. A Go overlay restored the old
+decoder at compile time and removed the new file without touching the worktree;
+the baseline config suite produced the same failure and message (27 pass, one
+fail). The initial new-source default/dev runs each recorded 45 pass, one fail
+and two skips. Those raw receipts remain historical non-green results.
+
+The separately approved correction sets `Dev`, `AppShell` and
+`WindowsCaptureSplit` in the test's `Load` options. Existing provider resolution,
+C2PA path and workload-budget assertions remain. On non-Windows platforms the
+test expects the Windows trial config to be rejected; that branch was reviewed
+but not executed on this Windows host. Repository config, production sources
+and guards are unchanged by the test correction. Latest default/dev runs of
+`./internal/config ./cmd/akusidecar` each record 46 pass, zero failures and two
+skips, including the repository smoke test and existing Instagram/split guard
+tests. Engine and application Windows artifacts across default, dev, fixture
+and combined tags passed compilation; all eight hashes match the preceding
+G06 production builds. Review reused this evidence after matching current
+source/artifact hashes, without repeating unchanged tests or builds.
+
+No push, activation or live trial was performed. E01 Settings and larger seams
+remain proposals outside this increment.

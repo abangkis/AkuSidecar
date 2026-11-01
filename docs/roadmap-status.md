@@ -1,7 +1,8 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-01 (Asia/Jakarta).
-Reviewed source: AkuSidecar `ae1a535`, AkuBrowser `523ef89`, AkuBridge `3676f5c`.
+Reviewed local source: AkuSidecar `d82f53b` (G06 decoder move and smoke-test context correction),
+AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
 The Browser worktree contains pre-existing build/cache changes; those changes
 are outside this synchronization and are not evidence of a released tuple.
@@ -48,9 +49,14 @@ changes or operational work. CL-1 has now delivered a
 [32-boundary candidate ledger](cl1-cleanup-candidates.md). Read-only metadata
 and reference checks are recorded separately from product testing. The first
 CL-2 proposal was the unused `DeleteMemoryItem` alias only; it has since been
-separately approved, removed and validated in the worktree. Its
+separately approved, removed, validated and committed with the roadmap as `21ac9ad`. Its
 [result record](cl1-cleanup-candidates.md#cl-2-g10-result-2026-11-01) separates
 implementation/testing from commit, activation and operational acceptance.
+G06 was subsequently approved and relocated without behavior changes. Its
+separately approved smoke-test context correction resolves the confirmed baseline
+failure without changing repository config or guards. Both changes were reviewed
+and committed as `d82f53b`; latest default/dev regressions and Windows compilation pass. See the
+[G06 result](cl1-cleanup-candidates.md#g06-result-2026-11-01).
 External-consumer and offline Browser dependency gaps remain explicit.
 
 | Increment | Implemented commit | Tested evidence | Activated | Acceptance |
@@ -63,7 +69,8 @@ External-consumer and offline Browser dependency gaps remain explicit.
 | Scheduler lifecycle | `056b53b` | [Scheduler receipt](../runtime/qa/scheduler-lifecycle-20261101/validation.json) | Not recorded | Start-once/wake policy retained; no drain added |
 | Session execution file separation | `d897130` | [Execution receipt](../runtime/qa/session-execution-20261101/validation.json) | Not recorded | Six declarations moved unchanged; Engine remains the owner |
 | Session finalization helper | `ae1a535` | [Finalization receipt](../runtime/qa/session-finalization-20261101/validation.json): structural equivalence; 1,445 full-suite passes, additional default/fixture/combined selections of 65/65/132, seven Store passes, zero failures; eight Windows amd64 artifacts | Not recorded | Bounded helper extraction reviewed and committed; no operational acceptance claimed |
-| CL-2 G10 unused deletion alias | Worktree after `24e5a08`, not committed | [G10 receipt](../runtime/qa/cl2-delete-memory-alias-20261101/validation.json): exact remainder equivalence, Store/HTTP 382/258 passes with 5/23 skips and zero failures, eight Windows artifacts, zero remaining code references | Not performed by this increment | Source validation complete for this removal only; ready for review/commit |
+| CL-2 G10 unused deletion alias | `21ac9ad`, with cleanup roadmap | [G10 receipt](../runtime/qa/cl2-delete-memory-alias-20261101/validation.json), captured pre-commit: exact remainder equivalence, Store/HTTP 382/258 passes with 5/23 skips and zero failures, eight Windows artifacts, zero remaining code references | Not performed by this increment | Reviewed and committed for this removal only; not pushed in that follow-up |
+| G06 config decoder relocation and repository smoke-test context | `d82f53b` | [Initial receipt](../runtime/qa/g06-reasoning-config-decode-20261101/validation.json) retains the historical baseline failure. [Correction receipt](../runtime/qa/repository-config-test-context-20261101/validation.json): default/dev each 46 pass, zero failures, two skips; eight Windows artifacts pass. [Review](../runtime/qa/g06-review-roadmap-20261101/review.json) confirms unchanged decoder and tested payload | Not performed | Scoped code review complete and committed; config/guards unchanged; non-Windows rejection branch reviewed but not executed on this host; no operational acceptance claim |
 
 Counts include subtests and repeated build-tag selections; do not add them as
 unique test cases. Receipts captured before commit may retain `committed:false`
