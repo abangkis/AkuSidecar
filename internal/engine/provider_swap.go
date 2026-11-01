@@ -44,6 +44,10 @@ func (plan *providerSwapPlan) closeCandidate() {
 // construction, remembered-profile activation, and per-slot profile migration.
 // Settings are migrated in place so the caller persists the migrated values.
 func (e *Engine) planProviderSwap(ctx context.Context, target string, settings *domain.Settings) (*providerSwapPlan, error) {
+	return e.planProviderSwapWithFactory(ctx, target, settings, reasoning.NewProvider)
+}
+
+func (e *Engine) planProviderSwapWithFactory(ctx context.Context, target string, settings *domain.Settings, newProvider func(config.Config) (reasoning.Provider, error)) (*providerSwapPlan, error) {
 	target = strings.TrimSpace(target)
 	if target == "" || target == e.ProviderName() {
 		return nil, nil
@@ -57,10 +61,17 @@ func (e *Engine) planProviderSwap(ctx context.Context, target string, settings *
 			cfgCopy.Reasoning.Executable = path
 		}
 	}
-	candidate, err := reasoning.NewProvider(cfgCopy)
+	candidate, err := newProvider(cfgCopy)
 	if err != nil {
 		return nil, fmt.Errorf("construct reasoning provider %q: %w", target, err)
 	}
+	plan := &providerSwapPlan{target: target, candidate: candidate, cfgCopy: cfgCopy}
+	prepared := false
+	defer func() {
+		if !prepared {
+			plan.closeCandidate()
+		}
+	}()
 	if profileProvider, ok := candidate.(reasoning.ProfileProvider); ok {
 		if _, err := reasoning.ActivateProviderProfileSet(settings, target, profileProvider); err != nil {
 			return nil, err
@@ -82,7 +93,6 @@ func (e *Engine) planProviderSwap(ctx context.Context, target string, settings *
 			e.logger.Printf("migrated reasoning profiles for provider %s", candidate.Name())
 		}
 	}
-	plan := &providerSwapPlan{target: target, candidate: candidate, cfgCopy: cfgCopy}
 	if structured, ok := candidate.(reasoning.StructuredInvoker); ok {
 		plan.eventResolver, err = semanticengine.NewStructuredResolver(cfgCopy.Root, structured, cfgCopy.Reasoning.SemanticEvent)
 		if err != nil {
@@ -97,6 +107,7 @@ func (e *Engine) planProviderSwap(ctx context.Context, target string, settings *
 			return nil, fmt.Errorf("construct Living Topics resolver for %q: %w", target, err)
 		}
 	}
+	prepared = true
 	return plan, nil
 }
 
