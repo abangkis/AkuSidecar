@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -297,7 +298,20 @@ func TestRepositorySidecarConfigLoads(t *testing.T) {
 	if _, err := os.Stat(configPath); err != nil {
 		t.Skip("repository config not present")
 	}
-	cfg, err := Load(Options{ConfigPath: configPath, BridgeExtensionOrigin: "chrome-extension://abcdefghijklmnopabcdefghijklmnop/"})
+	// The repository config targets the Windows development app-shell capture split.
+	cfg, err := Load(Options{
+		ConfigPath:            configPath,
+		BridgeExtensionOrigin: "chrome-extension://abcdefghijklmnopabcdefghijklmnop/",
+		Dev:                   true,
+		AppShell:              true,
+		WindowsCaptureSplit:   true,
+	})
+	if runtime.GOOS != "windows" {
+		if err == nil || err.Error() != "Instagram trial requires development split capture and concurrent Instagram mode" {
+			t.Fatalf("repository Windows trial config must be rejected on %s: %v", runtime.GOOS, err)
+		}
+		return
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
