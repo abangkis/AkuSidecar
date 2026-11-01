@@ -1,0 +1,316 @@
+# Comprehensive code cleanup roadmap
+
+Date: 2026-11-01 (Asia/Jakarta).
+Status: proposed execution roadmap; documentation created at the user's request.
+No implementation, deletion, dependency upgrade, activation or trial is approved
+by creating this roadmap. Approve one concrete increment, implement it, verify
+it and review its result before approving another increment.
+
+## Objective and scope
+
+Make the AkuSidecar, AkuBridge and AkuBrowser source easier to change and verify:
+remove proven obsolete code, separate production from QA, give each module a
+clear responsibility, and preserve supported behavior and durable data.
+
+Scope covers tracked product source, build/package entry points, tests, fixtures,
+contracts and developer tooling in these three repositories. Inspect generated
+bundles and manifests as consumers without treating generated output as source.
+The existing dirty Browser build/cache changes are a separate work item; inspect
+their ownership before any proposed inclusion. Untracked experiments, profiles,
+databases, user data and build/cache deletion are outside this roadmap.
+
+This roadmap does not start Bookmark Import, Keep Up, shared reservations,
+scheduler drain, a protocol/schema redesign, dependency upgrades, or further IG
+account/session experiments. The IG History caller-attribution investigation and
+real-provider qualification remain separate workstreams. A cleanup must not
+silently incorporate a functional fix discovered during inspection.
+
+Status vocabulary and product relationships are defined by the
+[roadmap status index](roadmap-status.md). This roadmap expands the cleanup
+workstream; it does not reset the existing product or capture roadmaps.
+
+## Verified starting point
+
+Reviewed source: Sidecar `24e5a08`, Browser `3a3c043`, Bridge `3676f5c`.
+Sidecar and Browser main pushes were verified against those remote SHAs before
+this document was created. The Browser worktree still contains unrelated
+build/cache changes. Git publication is not runtime activation.
+
+The completed increments remain the baseline:
+
+| Increment | Commit | Existing evidence |
+| --- | --- | --- |
+| Remove unused Personal Memory wrappers | `f348b9b` | Scoped removal review and regression history |
+| Production native factory / QA separation | `29ec2b4` | Factory equivalence and package checks; later relevant provenance corrections passed 148 tests |
+| Standalone harness dependency | `cd8fd60` | Staging regression and subsequent Windows compilation |
+| Production shared helpers | `2ba01bb` | 45 helper payloads still match their recorded hashes; manual/daily/main package receipts record zero fixture imports |
+| Engine work state/lifecycle | `202ecbb` | Preserved atomic sections, worker retirement and cleanup accounting |
+| Scheduler lifecycle | `056b53b` | Start-once/wake equivalence; no drain introduced |
+| Session execution | `d897130` | Six existing declarations relocated without body changes |
+| Session finalization | `ae1a535` | Structural equivalence, Go regressions and eight Windows artifacts |
+
+Exact test scopes and pre-commit receipt identities are retained in the
+[cleanup ledger](roadmap-status.md#cleanup-and-modularization). Do not rerun a
+passing suite merely because a commit or roadmap changed. Reuse evidence only
+while its relevant source, dependencies and artifact inputs remain unchanged.
+
+The read-only tracked-source inventory currently identifies these review areas:
+
+| Source | Lines, excluding trailing empty line | Reason to inspect |
+| --- | ---: | --- |
+| `internal/httpapi/web/app.js` | 9,988 | Timeline, Settings and application orchestration remain together |
+| `internal/engine/engine.go` | 2,604 | Settings, Bridge integration and other Engine responsibilities remain |
+| `internal/httpapi/server.go` | 2,007 | HTTP adaptation and capture-related routing need a boundary review |
+| `internal/collection/headless/worker/native-pilot/x-native-owner-runtime.mjs` | 2,020 | Transport, operation routing and owner orchestration remain substantial |
+| `AkuBridge/service-worker.js` | 2,548 | Background dispatch, surface ownership and extension integration |
+
+Size is a navigation aid, not proof of dead code or a required line-count target.
+The inventory found no unreferenced local named functions in its narrow `app.js`
+scan. It found one byte-identical receipt helper pair in separately packaged
+Sidecar/Bridge consumers, covered by a contract-parity test. Neither observation
+is whole-program dead-code proof or automatic permission to remove a file.
+
+## Invariants for every increment
+
+- Engine, Store, Coordinator, capture Manager and source controllers retain
+  their existing authority. Do not introduce another scheduler or owner of the
+  same durable state merely to wrap a large method.
+- Preserve `e.mu`, existing atomic sections, `schedule` ownership, worker/drain
+  accounting, cancellation tombstones, start-once/wake behavior and lock order.
+  Finalization retains `schedule`; session creation releases `operation` before
+  entering scheduling. Deferred cleanup remains part of worker lifetime.
+- Preserve public/private wire schemas, DTOs, routes, status/error categories,
+  null/default semantics, supported versions and build-tag boundaries.
+- Preserve Store migration/downgrade barriers, claim/result fencing, replay
+  rejection and accepted-evidence restart behavior. Existing non-atomic error
+  outcomes must not become an invented transaction or rollback contract.
+- Preserve native account/session evidence, source isolation, cookies, document
+  observers, capabilities, deadlines, owned-target cleanup and reader lifetime.
+  X and IG retain distinct evidence recipes. Unqualified IG is not a replacement
+  authority for X.
+- Preserve first cause separately from cleanup/delivery failure and retain
+  bounded diagnostic projections. Product preferences, consent and retention
+  semantics do not change as an incidental cleanup effect.
+
+## Execution stages and current status
+
+Each stage contains separately reviewable increments; a row is not permission
+to execute every substep in one patch. The recommended order is CL-1 through
+CL-8. Select only evidence-backed removals in CL-2; retain candidates whose
+replacement or supported-consumer decision is still pending. Revisit their
+ledger entries when a later modularization creates a proven obsolete path.
+
+| Stage | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| CL-0: inherited bounded cleanup | Eight increments above complete | Scoped receipts retained | Cleanup activation not recorded | Bounded code reviews complete; no whole-repository completion claim |
+| CL-1: consumer and compatibility inventory | [Entry/consumer map](cl1-consumer-inventory.md) and [32-boundary candidate ledger](cl1-cleanup-candidates.md) delivered | Read-only four-tag metadata, native/package/reference and source-preservation checks; no product test/build | Not applicable to an audit | Ready for review; external-consumer and offline Browser dependency limits explicit; no implementation approved |
+| CL-2: proven obsolete-code retirement | Earlier wrappers plus separately approved G10 `DeleteMemoryItem` removal in the worktree | G10 exact remainder check, full Store/HTTP regressions and four-mode Windows compilation passed | Not performed for G10 | G10 ready for review/commit; comprehensive retirement remains scoped by the remaining ledger entries |
+| CL-3: backend responsibility boundaries | Earlier lifecycle/session seams complete; remaining seams proposed | Existing baseline only for the new seams | Not recorded | Settings/HTTP/remaining Engine scope pending |
+| CL-4: frontend feature ownership | Existing navigation module retained; broader extraction proposed | Existing baseline only | Not recorded | Timeline/Settings/app orchestration pending |
+| CL-5: native runtime and QA boundaries | Factory/shared-helper separation complete; deeper runtime split proposed | Existing baseline only for remaining seams | Not recorded | Remaining operation/transport/QA separation pending |
+| CL-6: Bridge responsibility boundaries | Existing source/lifecycle modules retained; further split proposed | Existing baseline only for remaining seams | No new rollout | Background dispatch/surface integration pending |
+| CL-7: build, packaging and test organization | Existing packaging retained; full consumer reconciliation proposed | Partial prior package evidence | No new rollout | Supported-entry/build-tag closure pending |
+| CL-8: integration and source sign-off | Not started for the comprehensive roadmap | Final matrix pending | Separate operational gate | Comprehensive source acceptance pending; runtime acceptance separate |
+
+### CL-1: inventory before deletion
+
+1. Map production roots for default, development, fixture and combined builds,
+   native Node bundles, extension assets, installer/launcher and QA harnesses.
+   Include dynamic imports, generated catalogs, HTTP/extension messages, event
+   handlers and externally consumed symbols; text-search absence is insufficient.
+2. Inventory legacy paths, wrappers, version branches, migration code and test
+   fixtures. Identify the supported consumer/version or durable-data boundary
+   for each. A filename containing `legacy`, `fixture` or `compat` is not a verdict.
+3. Map locks, resources, effect order and failure propagation for candidate seams.
+   Preserve existing proof and cleanup authority rather than moving it twice.
+4. Produce a candidate ledger with path/symbol, role, callers in every relevant
+   build/package, supported contract/version, proposed disposition, evidence,
+   required checks, approval and rollback constraints.
+
+Dispositions: `remove`, `extract`, `retain-required`, `defer-until-replacement`,
+or `unverified`. Every removal requires consumer evidence and a separately
+approved patch. Unknown external consumers remain unresolved, not presumed dead.
+
+Exit: reviewed candidate ledger, production dependency graphs, retained-contract
+list and the first concrete proposed cleanup. No code deletion in this stage.
+
+### CL-2: retire only proven obsolete paths
+
+- Remove one approved wrapper/path at a time after all relevant entry points
+  have migrated and supported compatibility obligations are accounted for.
+- Reconcile imports, staging lists, sealed-package manifests, fixtures, CLI
+  help and docs in the same bounded increment. Prove the replacement remains
+  reachable in every supported build; do not leave a permanent forwarding shim.
+- Retain migration, provenance, negative guard and supported-version tests.
+  Remove an obsolete test only when its contract is explicitly retired or an
+  equivalent test still checks the required behavior; record that rationale.
+- Treat the two receipt-helper copies as a packaging/contract decision. Keep
+  parity until an approved distribution mechanism can preserve both packages.
+
+Exit per increment: no remaining supported caller of the retired path, unchanged
+supported behavior, relevant negative tests passing and a reviewed commit.
+Do not delete a consumer merely to make the dependency scan appear clean.
+
+### CL-3: backend responsibility boundaries
+
+- **CL-3.1 Settings:** analyze `SaveSettings` validation/planning, persistence
+  and runtime effects. Reuse `providerSwapPlan`; preserve candidate cleanup,
+  `operation` locking, profile projection and post-save error behavior. Extract
+  one coherent seam before considering a broader service interface.
+- **CL-3.2 Engine:** inventory remaining Bridge command adaptation, observation
+  acceptance, source admission, enrichment and read-model methods. Keep the
+  Engine facade and existing Store authority; do not repeat completed lifecycle
+  or session extraction work.
+- **CL-3.3 HTTP capture:** separate request/response adaptation from application
+  orchestration where a complete use case is identifiable. Preserve endpoint
+  shapes, authentication/admission, status codes, error categories and call order.
+
+Exit: a reviewed responsibility map and separately validated extractions, with
+no second source of state, broader admission, new concurrency or wire changes.
+
+### CL-4: frontend feature ownership
+
+- **CL-4.1 Timeline:** separate rendering and item-scoped action ownership from
+  application bootstrap/polling. Preserve revision/epoch checks, lazy media,
+  drawer/context behavior, cleanup barriers and keyboard/focus behavior.
+- **CL-4.2 Settings:** separate draft/read/serialization, rendering, persistence
+  actions and dialogs while retaining dirty-state and save/error semantics.
+- **CL-4.3 App entry:** keep bootstrap, navigation, polling and teardown explicit;
+  attach handlers once and release them at the same lifecycle boundaries.
+
+Use existing modules and contracts first. Introduce a feature controller only
+if it gives a real owner to event/subscription lifetime. Avoid a generic global
+controller or a visual redesign inside this cleanup. Under the active Goblin
+workflow, frontend work uses Sol/Astra profiles.
+
+Exit: focused feature tests plus accountless rendered desktop/mobile interaction
+checks for the moved behavior. No signed-in source or live capture is required
+to establish a source-only frontend extraction.
+
+### CL-5: native runtime and QA boundaries
+
+- Map operation routing, CDP framing/projection, owner lifecycle and source
+  evidence orchestration in `x-native-owner-runtime.mjs` before choosing a split.
+- Keep production factories and the 45 shared helpers in their production roots.
+  Refine QA probe dispatch only around existing sealed operation contracts.
+- Preserve startup/seed ordering, original deadlines, late-result cleanup,
+  first-cause diagnostics and all source-specific authority checks. Reuse the
+  shared kernel and existing narrow ports; do not build another native framework.
+
+Exit: runtime/QA dependency direction remains correct, no fixture imports in
+production package graphs, existing protocol/provenance/negative conformance
+passes, and source-pinned manual/daily/main bundles remain complete.
+
+### CL-6: Bridge responsibility boundaries
+
+- Map background messaging, capture dispatch, tab/window ownership, readiness
+  and lifecycle consumers in `service-worker.js` and related modules.
+- Extract one responsibility with its message/event wiring and tests. Keep
+  source parsers in adapters and durable decisions in Sidecar/Store.
+- Preserve managed-window journals, exact lease/generation checks, reader
+  lifetime, extension identity and separately packaged receipt parity.
+
+Exit: message/manifest/asset compatibility and contract-parity checks pass;
+resource ownership is explicit without additional singleton state or fallback.
+
+### CL-7: build, packaging and test organization
+
+- Reconcile source lists, package seals, generated manifests, asset pins and
+  harness inputs after each move. Test the packaged consumer, not just imports
+  from the source checkout.
+- Classify tests by the behavior/boundary they prove. Retain unique guard,
+  migration, cancellation, restart and failure coverage; consolidate duplicated
+  setup only when it preserves independent assertions and lifetime ownership.
+- Review build/cache tooling separately, including pre-existing Browser changes.
+  Do not absorb unrelated work into a cleanup commit or delete cached resources.
+- Use project-local QA/build output and the existing source-cache policy. Do
+  not install or upgrade tools/dependencies merely to reorganize code.
+
+Exit: supported entry-point/build-tag/package graphs are accounted for; no
+production dependency on QA paths or silently missing asset; test commands and
+evidence locations are reproducible for a clean source checkout.
+
+### CL-8: integration and source sign-off
+
+Close every selected candidate as removed, extracted, retained with a supported
+reason, or deferred with an explicit dependency/owner. Material unresolved
+consumer or guard questions prevent claiming comprehensive source completion.
+Record separately what was intentionally deferred rather than hiding it in a
+lower file count.
+
+Complete the affected cross-repository validation matrix, review the final
+dependency direction and update the status index with source/artifact identities.
+Commit/push only when requested. Source sign-off means implemented/tested and
+reviewed for that scope; it does not mark activated or operationally accepted.
+
+## Design patterns: use only where the boundary earns them
+
+| Existing mechanism / candidate pattern | Appropriate use | Constraint |
+| --- | --- | --- |
+| Engine facade and application use cases | Stable entry points around cohesive orchestration | Do not duplicate Store/controller authority behind another object |
+| Plan/apply separation | Settings/provider candidate construction versus post-persistence effects | Reuse `providerSwapPlan`; no invented atomic rollback |
+| Adapter / narrow port | Source-specific evidence and platform transport integration | Preserve distinct X/IG proofs and existing sealed capabilities |
+| Explicit state transitions | Existing work/scheduler/source lifecycles | Reuse current states/locks; no new protocol state machine during cleanup |
+| Feature controller / explicit disposal | Frontend event, subscription and rendering ownership | Avoid new global mutable state and preserve handler teardown |
+| Pure policy helper | Shared deterministic predicates | Packaging, resource anchors and cross-runtime parity must remain explicit |
+
+No pattern is a completion requirement by name. Prefer fewer responsibilities
+and clearer dependency direction over new layers, factories or interfaces.
+
+## Validation and evidence rules
+
+Choose checks for the actual boundary changed; start with structural equivalence
+and the narrowest meaningful behavioral regressions. Add a test only for a real
+coverage gap. Do not replace meaningful tests with assertions that mirror a move.
+
+| Boundary | Required evidence for the affected increment |
+| --- | --- |
+| Go lifecycle/Settings/HTTP/Store | Changed-package regressions; relevant cancellation, lock/order, accepted-evidence restart and error cases; HTTP/Store contracts as affected |
+| Native runtime/packaging | Node protocol/owner/transport/provenance checks; production graphs and sealed assets; known baseline failures identified before a success claim |
+| Frontend | Existing feature tests, event/teardown/cache/epoch regressions and accountless rendered interaction checks |
+| Bridge | Affected module/message/adapter tests and receipt/policy parity; package verification when wiring/assets change |
+| Windows | Engine test binary and Sidecar application compile for default, `auth_session_dev`, `auth_session_fixture` and combined tags when Go/native composition changes; related Bridge native-host/Browser builder checks when touched |
+| Final source integration | Relevant full application-package suites and cross-package regressions; fresh artifact hashes and packaging evidence for changed inputs |
+
+The established broad Go baseline covers `internal/igdiagnostic`, `internal/appshell`,
+`internal/engine`, `internal/httpapi` and `cmd/akusidecar`, with Store coverage
+selected or broadened for actual persistence changes. Avoid indiscriminate
+`go test ./...` across synthetic build fixtures. The existing read-only
+`scripts/audit-source-structure.mjs` is an inventory aid, not semantic proof.
+Review scripts for opt-in/profile/process behavior before executing them;
+synthetic and authenticated acceptance are distinct.
+
+Each increment's result must name scope, source commit/tested payload, affected
+consumers, equivalence allowance, commands/outcomes, known failures, artifact
+identities, remaining risk and four-dimensional status. Preserve raw receipts;
+record later Git state in the roadmap instead of rewriting old evidence.
+
+## Separate operational gate
+
+Activation or a live trial requires a concrete, separately authorized operational
+step with reviewed artifacts, compatible Store schema, cleanup/drain and rollback
+plan. Git revert is not database rollback. A new binary build is not evidence
+that a running process uses it. Do not recycle old trial permission.
+
+The source cleanup may reach source acceptance while activation remains pending.
+Operational acceptance, if requested later, records its exact scenarios and
+does not silently qualify native IG, longer acquisitions or repeated mixed-source
+reliability. This roadmap schedules no live trial or configuration change.
+
+## Immediate next proposal
+
+CL-1 deliverables are now available in the [consumer inventory](cl1-consumer-inventory.md)
+and [candidate ledger](cl1-cleanup-candidates.md). The first concrete proposed
+CL-2 patch, removal of the unused internal `Store.DeleteMemoryItem` forwarding
+alias, has now been separately approved, applied and validated while preserving
+the active `ForgetMemory`/`DeleteMemory` tombstone path. Review that bounded diff
+and its evidence before committing when requested.
+
+The next suggested code increment is G06: move `ReasoningConfig.UnmarshalJSON`
+unchanged to `internal/config/reasoning_config_decode.go`, retaining both strict
+modern and flat config shapes, receiver, precedence and errors. This is a
+separate extraction proposal, not permission to delete compatibility support or
+start the larger Settings refactor. No further implementation is approved here.
+
+No calendar estimate or cleanup percentage is assigned before that inventory:
+the denominator and supported-consumer obligations are not yet established.

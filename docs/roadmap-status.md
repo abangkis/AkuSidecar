@@ -39,6 +39,20 @@ Detailed scopes: [collection roadmap](collection-modes-roadmap.md),
 
 ## Cleanup and modularization
 
+Execution proposal: [comprehensive code cleanup roadmap](code-cleanup-roadmap.md).
+Its CL-0 preserves the eight completed increments below. CL-1 through CL-8 cover
+consumer inventory, proven obsolete-path retirement, modularization, packaging
+and final source acceptance. Creating the roadmap does not authorize code
+changes or operational work. CL-1 has now delivered a
+[consumer/build/package inventory](cl1-consumer-inventory.md) and
+[32-boundary candidate ledger](cl1-cleanup-candidates.md). Read-only metadata
+and reference checks are recorded separately from product testing. The first
+CL-2 proposal was the unused `DeleteMemoryItem` alias only; it has since been
+separately approved, removed and validated in the worktree. Its
+[result record](cl1-cleanup-candidates.md#cl-2-g10-result-2026-11-01) separates
+implementation/testing from commit, activation and operational acceptance.
+External-consumer and offline Browser dependency gaps remain explicit.
+
 | Increment | Implemented commit | Tested evidence | Activated | Acceptance |
 | --- | --- | --- | --- | --- |
 | Remove unused Personal Memory wrappers | `f348b9b` | Accepted cleanup review and regression history | Not recorded | Bounded removal only; not a repository-wide legacy audit |
@@ -49,6 +63,7 @@ Detailed scopes: [collection roadmap](collection-modes-roadmap.md),
 | Scheduler lifecycle | `056b53b` | [Scheduler receipt](../runtime/qa/scheduler-lifecycle-20261101/validation.json) | Not recorded | Start-once/wake policy retained; no drain added |
 | Session execution file separation | `d897130` | [Execution receipt](../runtime/qa/session-execution-20261101/validation.json) | Not recorded | Six declarations moved unchanged; Engine remains the owner |
 | Session finalization helper | `ae1a535` | [Finalization receipt](../runtime/qa/session-finalization-20261101/validation.json): structural equivalence; 1,445 full-suite passes, additional default/fixture/combined selections of 65/65/132, seven Store passes, zero failures; eight Windows amd64 artifacts | Not recorded | Bounded helper extraction reviewed and committed; no operational acceptance claimed |
+| CL-2 G10 unused deletion alias | Worktree after `24e5a08`, not committed | [G10 receipt](../runtime/qa/cl2-delete-memory-alias-20261101/validation.json): exact remainder equivalence, Store/HTTP 382/258 passes with 5/23 skips and zero failures, eight Windows artifacts, zero remaining code references | Not performed by this increment | Source validation complete for this removal only; ready for review/commit |
 
 Counts include subtests and repeated build-tag selections; do not add them as
 unique test cases. Receipts captured before commit may retain `committed:false`
@@ -56,7 +71,9 @@ and a parent `sourceCommit`; the commit mapping above records the later Git
 state. Source-equivalence hashes identify the tested payload. Do not rewrite
 raw receipts to make their historical fields look current.
 
-Remaining structural candidates are described in [the structure audit](code-structure-audit.md):
+Remaining structural candidates are organized in the
+[cleanup roadmap](code-cleanup-roadmap.md#execution-stages-and-current-status)
+and grounded in [the structure audit](code-structure-audit.md):
 feature-level Timeline/Settings extraction, probe dispatch, HTTP capture-service
 boundaries and a broader legacy/compatibility inventory. These are proposals,
 not authorization to implement or delete. Scheduler drain and further execution

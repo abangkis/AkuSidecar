@@ -1126,10 +1126,6 @@ func (s *Store) ForgetMemory(ctx context.Context, id string) (domain.MemoryItem,
 	return s.DeleteMemory(ctx, id)
 }
 
-func (s *Store) DeleteMemoryItem(ctx context.Context, id string, reason ...string) (domain.MemoryItem, error) {
-	return s.DeleteMemory(ctx, id, reason...)
-}
-
 // MemoryStorageUsage reports logical bytes held by Personal Memory. It does
 // not report SQLite/WAL file size and does not conflate those physical values
 // with the bounded text payload estimate.

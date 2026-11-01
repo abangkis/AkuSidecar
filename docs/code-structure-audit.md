@@ -66,6 +66,12 @@ the narrow `app.js` reference scan; this is not whole-program dead-code proof.
 
 ## Remaining structural debt
 
+The [comprehensive cleanup roadmap](code-cleanup-roadmap.md) now organizes
+consumer/compatibility inventory, bounded retirement, responsibility extraction
+and package/integration acceptance as CL-1 through CL-8. This audit remains the
+historical finding record; the roadmap preserves completed work and requires
+approval of each concrete implementation increment.
+
 The original audit measured `app.js` at approximately 9,900 lines, `engine.go`
 at 3,123, the native probe driver at 2,439, and Bridge `service-worker.js` at
 2,524. These are historical measurements, not current counts: production
