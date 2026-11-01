@@ -26,7 +26,8 @@ try{
  $env:AKU_NATIVE_MANUAL_PROJECT_ROOT=$projectRoot;$env:AKU_CHROME_FIXTURE_NODE=$node
  $env:AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED='0';$env:AKU_X_NATIVE_MANUAL_OWNER_OFFLINE='0'
  Write-Output ('Offline X manual owner run: '+$runId) | Tee-Object -FilePath $log
- $nodeTests=@('scripts/auth-session-fixture/x-native-manual-owner-port.test.mjs','scripts/auth-session-fixture/x-native-metadata-probe-driver.test.mjs',
+ $nodeTests=@('scripts/auth-session-fixture/stage-native-manual-chrome.test.mjs',
+  'scripts/auth-session-fixture/x-native-manual-owner-port.test.mjs','scripts/auth-session-fixture/x-native-metadata-probe-driver.test.mjs',
   'scripts/auth-session-fixture/x-manual-startup-owner.test.mjs','scripts/auth-session-fixture/x-qa-feasibility-collector.test.mjs',
   'scripts/auth-session-fixture/x-manual-startup-first-cause.test.mjs','scripts/auth-session-fixture/x-native-manual-capture.test.mjs',
   'scripts/auth-session-fixture/x-manual-network-provenance.test.mjs','scripts/auth-session-fixture/x-manual-startup-diagnostic.test.mjs','scripts/auth-session-fixture/x-settings-wait.test.mjs')

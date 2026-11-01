@@ -107,7 +107,18 @@ const declaration = 'var processFixtureUser = windows.NewLazySystemDLL("user32.d
 if (!original.includes(declaration)) throw new Error('standalone_window_source_unavailable');
 const templatePath = path.join(project, 'scripts/auth-session-fixture/native-manual-chrome-support.go.txt');
 const template = fs.readFileSync(templatePath, 'utf8');
-const support = `${template}\n${declaration}\n\n${names.map(extract).join('\n')}`;
+let transientSupport='';
+if(!capture){
+  // Copy the operational error brand exactly, without importing the daily
+  // controller or replacing the production classifier with a fixture stub.
+  const source='internal/engine/source_daily_retry.go',original=fs.readFileSync(path.join(project,source),'utf8');
+  const marker='type dailyTransientFailure struct',start=original.indexOf(marker);
+  const end=original.indexOf('\ntype dailyRetryCleanup interface',start);
+  if(start<0||original.indexOf(marker,start+1)>=0||end<start)throw new Error('standalone_transient_source_unavailable');
+  transientSupport=original.slice(start,end).trimEnd()+'\n';
+  manifest.extracted.push({source,name:'dailyTransientFailure',sha256:hash(transientSupport)});
+}
+const support = `${template}\n${declaration}\n\n${names.map(extract).join('\n')}\n${transientSupport}`;
 if(!capture)fs.writeFileSync(path.join(stage, 'native_manual_chrome_support_windows.go'), support, { flag: 'wx' });
 manifest.originalProcessSourceSHA256 = hash(original);
 manifest.supportTemplateSHA256 = hash(template);
