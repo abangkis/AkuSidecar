@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createBatchBootstrap} from './x-batch-bootstrap.mjs';
-import {createApplicationDailyOwner} from './x-native-metadata-probe-driver.mjs';
+import {createApplicationDailyOwner} from '../../internal/collection/headless/worker/native-pilot/x-application-owner-factories.mjs';
 
 test('borrowed owner initialization and idle close create no Home target',async()=>{
   const calls=[];
@@ -53,7 +53,7 @@ test('a reused target reply never grants ownership of a user tab',async()=>{
 });
 
 test('actual borrowed begin failure retires its exact bootstrap on owner close without launching Chrome',async()=>{
-  const {createApplicationDailyOwner:create}=await import('./x-native-metadata-probe-driver.mjs?failed-batch-test');
+  const {createApplicationDailyOwner:create}=await import('../../internal/collection/headless/worker/native-pilot/x-application-owner-factories.mjs?failed-batch-test');
   const calls=[],targets=new Set(['user-reader']);
   const transport={alive:()=>true,subscribe:()=>()=>{},call:async(method,params)=>{
     calls.push({method,params});
@@ -75,7 +75,7 @@ test('actual borrowed begin failure retires its exact bootstrap on owner close w
 });
 
 test('actual daily begin/end composition creates fresh reader and collector sessions and preserves user targets',async()=>{
- const {createApplicationDailyOwner:create}=await import('./x-native-metadata-probe-driver.mjs?composed-batches');
+ const {createApplicationDailyOwner:create}=await import('../../internal/collection/headless/worker/native-pilot/x-application-owner-factories.mjs?composed-batches');
  const calls=[],targets=new Set(['user-reader']);let serial=0,collectorCloses=0,failDispose=false,retiring=null,retirementReads=0;
  const transport={alive:()=>true,subscribe:()=>()=>{},call:async(method,params)=>{
    calls.push(method);

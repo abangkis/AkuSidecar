@@ -12,8 +12,9 @@ import {
   createOwnedManualStartupOwners,
   executeManualOwnerRPC,
   seedRetainedManualPilot,
-  manualSeedRPCCode,executeManualReply,
+  executeManualReply,
 } from './x-native-metadata-probe-driver.mjs';
+import {manualSeedRPCCode} from '../../internal/collection/headless/worker/native-pilot/x-application-owner-factories.mjs';
 import { BOOTSTRAP_CURRENT_SELF_EXPRESSION } from './x-bootstrap-current-self.mjs';
 import { EarlyBootstrapCapture } from './x-early-bootstrap-capture.mjs';
 import { inspectBootstrapCurrentSelf } from './x-bootstrap-current-self.mjs';

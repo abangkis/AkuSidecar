@@ -56,6 +56,10 @@ if(mode!==undefined){
     const source='scripts/auth-session-fixture/'+file;
     return {source,sha256:hash(fs.readFileSync(path.join(project,source)))};
   });
+  for(const source of ['internal/collection/headless/worker/native-pilot/x-native-owner-runtime.mjs',
+    'internal/collection/headless/worker/native-pilot/x-application-owner-factories.mjs']){
+    manifest.nodeSources.push({source,sha256:hash(fs.readFileSync(path.join(project,source)))});
+  }
   // These are code assets only. No browser, profile or native driver executes.
   // Pin both the shared worker and sibling AkuBridge parser files used by X.
   manifest.captureSourceAssets=(await sourceAssets(path.resolve(project,'..','AkuBridge'),'x')).map(asset=>({

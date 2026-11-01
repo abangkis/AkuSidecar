@@ -1,6 +1,6 @@
 import {serveOwnerPipe} from './owner-protocol.mjs';
 import {loadPackagedAssets} from './packaged-assets.mjs';
-import {createApplicationManualOwner} from '../../../../../scripts/auth-session-fixture/x-native-metadata-probe-driver.mjs';
+import {createApplicationManualOwner} from './x-application-owner-factories.mjs';
 
 // This entry is launched only by the owned Go factory with sanitized env and
 // pinned executable bytes. Handshake establishes transport, never qualification.

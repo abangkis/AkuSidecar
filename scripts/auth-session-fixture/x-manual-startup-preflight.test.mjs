@@ -10,7 +10,7 @@ import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 
 // Exercise the actual collector path with an accountless transport. It cannot
 // spawn a browser, access a profile, transfer cookies or publish real evidence.
-function fixture(fault, diagnostics = startupFailureLatch()) {
+function fixture(fault, diagnostics = startupFailureLatch(), onReadiness = () => {}) {
   const calls = [];
   let bindingAttempts = 0, unsubscribed = 0;
   const guard = new ManualStartupCookieGuard('private-root', fault === 'guard-session' ? 'private-other-session' : 'private-session',
@@ -31,6 +31,7 @@ function fixture(fault, diagnostics = startupFailureLatch()) {
           fault === 'navigation-shape' ? {} : {frameId: 'private-root'});
       }
       if (method === 'Runtime.evaluate') {
+        onReadiness();
         assert.equal(params.userGesture, false);
         assert.equal(params.awaitPromise, false);
         if (fault === 'readiness-command') throw new Error('PRIVATE_TOKEN');
@@ -91,9 +92,9 @@ for (const [fault, phase, reason] of [
 }
 
 test('collector readiness expiration is a page deadline before identity or binding', async t => {
-  let clockCalls = 0;
-  t.mock.method(Date, 'now', () => clockCalls++ < 2 ? 0 : MANUAL_TIMING.collectorHomeReadyMS);
-  const f = fixture('readiness-deadline');
+  let clock = 0;
+  t.mock.method(Date, 'now', () => clock);
+  const f = fixture('readiness-deadline',startupFailureLatch(),()=>{clock=MANUAL_TIMING.collectorHomeReadyMS;});
   await assert.rejects(f.owner.prepare(), error => {
     assert.deepEqual(startupDiagnostic(error), {role: 'collector', phase: 'page_ready', reason: 'deadline', peer: false});
     return true;

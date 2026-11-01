@@ -4,7 +4,7 @@ import {PassThrough} from 'node:stream';
 import {mkdir,mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {resolve,join,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {createApplicationDailyOwner} from '../../../../../scripts/auth-session-fixture/x-native-metadata-probe-driver.mjs';
+import {createApplicationDailyOwner} from './x-application-owner-factories.mjs';
 import {createMainCDP,createMainPublicFacade,serveMainBrowserTransport,MAIN_TRANSPORT_SCHEMA,mainOwnerFailure,mainStartupProgress,mainStartupProgressForOwnerOperation} from './main-browser-transport-protocol.mjs';
 import {createBorrowedDailyControl,createBorrowedInstagramControl} from './main-browser-transport.mjs';
 import {ownerErrorReply} from './owner-protocol.mjs';

@@ -12,6 +12,7 @@ import { QA_BOUND_BOOTSTRAP_EXPRESSION } from './x-qa-bound-observation.mjs';
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const QA_ROOT = join(PROJECT_ROOT, 'runtime', 'qa', 'auth-session-sidecar');
+const TEST_EXECUTABLE = await realpath(process.execPath);
 
 async function makeRoot(t) {
   const parent = await realpath(QA_ROOT);
@@ -83,7 +84,7 @@ function cookieAtSize(name, target) {
 
 function createCollector(root, spawnChrome, extras = {}) {
   return createQAFeasibilityCollector({
-    executable: process.execPath,
+    executable: TEST_EXECUTABLE,
     root,
     spawnChrome,
     FrameDecoder: CDPFrameDecoder,
@@ -161,7 +162,7 @@ test('uses an isolated headless profile and BrowserContext with a one-use, bound
     assert.equal(launched.pid, child.pid);
     const profile = join(root, 'derived-headless');
     assert.deepEqual(collector.ownership(),{pid:child.pid,profileId:profile,alive:true});
-    assert.equal(spawnArguments.executable, process.execPath);
+    assert.equal(spawnArguments.executable, TEST_EXECUTABLE);
     assert.deepEqual(spawnArguments.args, [
       `--user-data-dir=${profile}`,
       '--headless=new',
@@ -292,7 +293,7 @@ test('fails closed on mismatched response sessions or reflected envelope fields'
 test('requires the caller to inject the existing CDP frame decoder', async (t) => {
   const root = await makeRoot(t);
   assert.throws(() => createQAFeasibilityCollector({
-    executable: process.execPath,
+    executable: TEST_EXECUTABLE,
     root,
     spawnChrome: () => { throw new Error('must not spawn'); },
   }), /qa_configuration_rejected/u);
@@ -306,13 +307,13 @@ test('accepts the fixed bound bootstrap expression within a bounded whitelist li
   assert.ok(QA_BOUND_BOOTSTRAP_EXPRESSION.length > 8192);
   assert.ok(QA_BOUND_BOOTSTRAP_EXPRESSION.length <= 16 * 1024);
   assert.doesNotThrow(() => createQAFeasibilityCollector({
-    executable: process.execPath,
+    executable: TEST_EXECUTABLE,
     root,
     FrameDecoder: CDPFrameDecoder,
     allowedExpressions: [QA_BOUND_BOOTSTRAP_EXPRESSION],
   }));
   assert.throws(() => createQAFeasibilityCollector({
-    executable: process.execPath,
+    executable: TEST_EXECUTABLE,
     root,
     FrameDecoder: CDPFrameDecoder,
     allowedExpressions: ['x'.repeat(16 * 1024 + 1)],

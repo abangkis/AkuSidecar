@@ -4,7 +4,7 @@ import {randomBytes} from 'node:crypto';
 import {serveMainBrowserTransport,mainOwnerFailure,mainStartupProgressForOwnerOperation} from './main-browser-transport-protocol.mjs';
 import {serveDailyOwnerPipe,DAILY_OWNER_SCHEMA} from './daily-owner-protocol.mjs';
 import {loadPackagedAssets} from './packaged-assets.mjs';
-import {createApplicationDailyOwner} from '../../../../../scripts/auth-session-fixture/x-native-metadata-probe-driver.mjs';
+import {createApplicationDailyOwner} from './x-application-owner-factories.mjs';
 import {parseStrictJSON} from '../../../../../scripts/auth-session-fixture/x-evidence-ingress.mjs';
 import {createInstagramDailyOwner} from './instagram-native-provider.mjs';
 import {INSTAGRAM_NATIVE_RECIPE} from './instagram-native-session.mjs';

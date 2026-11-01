@@ -2,21 +2,31 @@ import fs from 'node:fs/promises';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ManualStartupCookieGuard} from './x-manual-startup-cookie-guard.mjs';
-import {createRetainedManualSetup,manualSeedFailure,manualSeedDiagnostic,manualSeedDiagnosticCode} from './x-manual-retained-setup.mjs';
+import {createRetainedManualSetup,manualSeedFailure,manualSeedDiagnostic,manualSeedDiagnosticCode,MANUAL_SEED_CODE_MAX_BYTES} from './x-manual-retained-setup.mjs';
 import vm from 'node:vm';
 import {createXManualOwnerPort} from './x-native-manual-owner-port.mjs';
+import {startupRootControls} from './x-manual-root-controls.mjs';
 import {pathToFileURL} from 'node:url';
 import {resolve} from 'node:path';
 import {createManualV2BoundObservation,projectBoundBootstrap} from './x-qa-bound-observation.mjs';
 import {requireBoundStartup,startupDiagnostic,startupFailureLatch,startupFailure} from './x-manual-startup-diagnostic.mjs';
-const path=resolve('scripts/auth-session-fixture/x-native-metadata-probe-driver.mjs');
-let code=await fs.readFile(path,'utf8');
+const path=resolve('internal/collection/headless/worker/native-pilot/x-native-owner-runtime.mjs');
+let code=(await fs.readFile(path,'utf8')).replaceAll('\r\n','\n');
+// Flatten the private closure only in this in-memory offline harness. Production
+// composition and its exported surface receive no additional test hooks.
+const boundary=code.indexOf('  // Trusted fixture composition');
+assert(boundary>0);
+code=code.slice(0,boundary).replace('export function createNativeOwnerRuntime(){\n','').replace(/^  /gmu,'');
 // Extract the production seed function before registering any async test.
-const seedSource=code.slice(code.indexOf('export async function seedRetainedManualPilot('),code.indexOf('\nasync function openRetainedManualReader(')).replace('export async','async');
+const permissions='let applicationScope=null;\n'+['manualStartupAllowed','retainedTransferAllowed','shortTransferAllowed'].map(name=>{
+  const declaration=code.match(new RegExp('^const '+name+'=.*;$','mu'));
+  assert(declaration,`missing runtime permission ${name}`);return declaration[0];
+}).join('\n')+'\n';
+const seedSource=permissions+code.slice(code.indexOf('async function seedRetainedManualPilot('),code.indexOf('\nasync function openRetainedManualReader('));
 const provenanceSource=code.slice(code.indexOf('const manualProvenance='),code.indexOf('const manualEnrollment=')).replace('const manualProvenance=','return ');
-const allowProvenance=new Function('active','method','params','sessionId','purpose','qualificationMode','driverMode','MAX_TOTAL_NETWORK_BUFFER_BYTES','MAX_RESOURCE_NETWORK_BUFFER_BYTES',provenanceSource);
-code=code.replace(/from '(\.\/[^']+)'/g,(_,p)=>`from '${new URL(p,pathToFileURL(path)).href}'`);
-code+=`\nimport {createStartupWaitBudget} from '${new URL('./x-manual-startup-wait-budget.mjs',pathToFileURL(path)).href}';
+const allowProvenance=new Function('active','method','params','sessionId','purpose','qualificationMode','driverMode','MAX_TOTAL_NETWORK_BUFFER_BYTES','MAX_RESOURCE_NETWORK_BUFFER_BYTES',permissions+provenanceSource);
+code=code.replace(/from '(\.{1,2}\/[^']+)'/g,(_,p)=>`from '${new URL(p,pathToFileURL(path)).href}'`);
+code+=`\nimport {createStartupWaitBudget} from '${new URL('./x-manual-startup-wait-budget.mjs',import.meta.url).href}';
 const realSend=send;export async function offlineControlGate(enabled=true,malformed=false){const current={owner:1,sessionId:'s',targetId:'t',manualStartupSelected:true,bound:{running:true}};active=current;driverMode='retained_source_qualification';registerFreshStartupSession(current,'s','reader');const writes=[];cdpWrite=message=>{writes.push(message);dispatchCDP({id:message.id,sessionId:message.sessionId,result:malformed?{unexpected:true}:{}});};const previous=process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED;process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED=enabled?'1':'0';try{const controls=startupRootControls(current,realSend,'reader');await controls.apply();await controls.restore();return writes.map(v=>[v.method,v.params]);}finally{if(previous===undefined)delete process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED;else process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED=previous;}}
 export const offlineUnsettled=mustRetireStartupOwner;export const offlineRetire=retireManualReader;
 export function offlineHarness(current,transport){registerFreshStartupSession(current,current.sessionId,'reader');if(current.shortFeasibility?.sessionId)registerFreshStartupSession(current.shortFeasibility,current.shortFeasibility.sessionId,'collector');active=current;send=transport;return {dispatch:dispatchCDP,start:()=>startManualCookieObservation(current),run:(options,factory)=>{const budget=createStartupWaitBudget(2000,{role:'reader'});return boundCheckpoint(current,false,options,undefined,()=>{},undefined,factory,undefined,promise=>budget.wait(promise));},collector:factory=>{const budget=createStartupWaitBudget(2000,{role:'collector'});return collectorShortCheckpoint(current,undefined,()=>{},()=>{},undefined,factory,undefined,promise=>budget.wait(promise));}};}\n`;
@@ -170,7 +180,7 @@ for(const role of ['reader','collector'])for(const fault of ['cache-ack','cache-
     if(!cache){
       assert.equal(r.first.role,role);assert.equal(r.first.trace.firstCause,'guard_metadata_shape');assert.equal(r.first.trace.guardCondition,'unknown');
       assert.equal(r.first.trace.guardEpoch,['ack-batch','cleanup','after-setup'].includes(fault)?'post_seed':'before_seed');
-      assert.match(r.code,/^manual_seed_v2_/);assert.ok(r.code.length<=80);
+      assert.match(r.code,/^manual_seed_v2_/);assert.ok(Buffer.byteLength(r.code)<=MANUAL_SEED_CODE_MAX_BYTES);
     }
     assert.equal(JSON.stringify({code:r.code,first:r.first}).includes('PRIVATE'),false);
   });
@@ -258,7 +268,7 @@ async function driverScenario(scenario, continuous=false, injectedCookie='lang=e
   });
   if(scenario==='before-observer-late-response')request('pending',undefined,'old');
   if(continuous){await harness.start();if(scenario==='observed-before-seed')request('pending',undefined,'old');current.manualCookieGuard.beginPostSeed();current.shortFeasibility.manualCookieGuard.beginPostSeed();}
-  let observation;try{observation=await harness.run({deferCookieMutation:false,onPrivateResult(){},onPrivateStartup(){receipts++;commands.push('receipt');}},(...args)=>createManualV2BoundObservation(...args,(reason,trace)=>{first={reason,...trace};},current.manualCookieGuard));}catch(error){if(scenario.startsWith('control-'))return {error:startupDiagnostic(error),commands,controlCommands,receipts,current,unsettled:driver.offlineUnsettled(current)};throw error;}
+  let observation;try{observation=await harness.run({deferCookieMutation:false,onPrivateResult(){},onPrivateStartup(){receipts++;commands.push('receipt');}},(...args)=>createManualV2BoundObservation(...args,(reason,trace)=>{first={reason,...trace};},current.manualCookieGuard));}catch(error){if(scenario.startsWith('control-'))return {rejected:true,error:startupDiagnostic(error),commands,controlCommands,receipts,current,unsettled:driver.offlineUnsettled(current)};throw error;}
   let trace=null;try{requireBoundStartup(observation,'reader',startupFailureLatch());}catch(e){trace=startupDiagnostic(e)?.trace;}
   return {scenario,evaluations,receipts,diagnostic:observation.diagnostic,first,trace,commands,controlCommands,observation};
 }
@@ -363,7 +373,7 @@ async function collectorRedirectScenario(mode){
     current.manualCookieGuard.beginPostSeed();guard.beginPostSeed();
     const result=await h.collector((...args)=>{args[5]={...args[5],onPrivateStartup:()=>{receipts++;commands.push('receipt');}};binder=createManualV2BoundObservation(...args,()=>{},guard);return binder;});
     return{observation:result.checkpoint.observation,evaluations,receipts,commands,controlCommands,received,observed,maxCalls,first:current.manualCookieDiagnostics.current()};
-  }catch(error){if(mode.startsWith('control-'))return{error:startupDiagnostic(error),receipts,controlCommands,unsettled:driver.offlineUnsettled(current.shortFeasibility)};throw error;}finally{ManualStartupCookieGuard.prototype.observe=original;}
+  }catch(error){if(mode.startsWith('control-'))return{rejected:true,error:startupDiagnostic(error),receipts,controlCommands,current:current.shortFeasibility,unsettled:driver.offlineUnsettled(current.shortFeasibility)};throw error;}finally{ManualStartupCookieGuard.prototype.observe=original;}
 }
 for(const mode of ['early','late','reordered','missing','candidate','nonroot','protected','protected-candidate'])test(`actual collector transport preserves hop provenance through final receipt gate: ${mode}`,async()=>{
   const r=await collectorRedirectScenario(mode);assert.equal(r.received,r.observed);assert.equal(r.maxCalls,1);
@@ -461,18 +471,65 @@ test('actual seed acknowledgment dispatch starts both baselines before same-batc
   }finally{names.forEach((key,i)=>{if(previous[i]===undefined)delete process.env[key];else process.env[key]=previous[i];});}
 });
 
-test('actual reader driver fences success on both control restorations',async()=>{
- const clean=await driverScenario('clean',true);assert.deepEqual(clean.controlCommands.map(v=>v.slice(0,2)),[['Network.setCacheDisabled',{cacheDisabled:true}],['Network.setBypassServiceWorker',{bypass:true}],['Network.setBypassServiceWorker',{bypass:false}],['Network.setCacheDisabled',{cacheDisabled:false}]]);
- for(const fault of ['apply-cache','apply-worker','restore-worker','restore-cache']){const r=await driverScenario('control-'+fault,true);assert.equal(r.error.trace.firstCause,'root_control');assert.equal(r.error.trace.guardCondition,fault.startsWith('apply')?'root_control_apply':'root_control_restore');assert.equal(r.unsettled,true);if(fault.startsWith('apply'))assert.equal(r.receipts,0);}
+function assertFailedControlRun(result,role,fault){
+  const uncertain=fault.startsWith('restore-');
+  // A verified restoration settles browser controls without admitting the
+  // failed startup or renewing its one-use control capability.
+  assert.equal(result.rejected,true);
+  assert.equal(result.unsettled,uncertain);
+  assert.equal(result.current.manualControlsCleanup,uncertain?'uncertain':'verified');
+  assert.deepEqual(result.controlCommands.slice(-2).map(command=>command.slice(0,2)),[
+    ['Network.setBypassServiceWorker',{bypass:false}],
+    ['Network.setCacheDisabled',{cacheDisabled:false}],
+  ]);
+  assert.throws(()=>startupRootControls(result.current,()=>assert.fail('replay dispatched a command'),role),/manual_root_control_failed/u);
+  if(!uncertain)assert.equal(result.receipts,0);
+  if(fault!=='before-apply'){
+    assert.equal(result.error.trace.firstCause,'root_control');
+    assert.equal(result.error.trace.guardCondition,uncertain?'root_control_restore':'root_control_apply');
+  }
+}
+
+test('actual reader driver rejects failed startup while distinguishing verified and uncertain restoration',async()=>{
+  const clean=await driverScenario('clean',true);
+  assert.deepEqual(clean.controlCommands.map(command=>command.slice(0,2)),[
+    ['Network.setCacheDisabled',{cacheDisabled:true}],['Network.setBypassServiceWorker',{bypass:true}],
+    ['Network.setBypassServiceWorker',{bypass:false}],['Network.setCacheDisabled',{cacheDisabled:false}],
+  ]);
+  for(const fault of ['apply-cache','apply-worker','restore-worker','restore-cache']){
+    assertFailedControlRun(await driverScenario('control-'+fault,true),'reader',fault);
+  }
 });
 
-async function abortPreserving(current,exited=true){let closes=0;const actor={prepare(){},acquire(){},abort:async()=>{},cancel:async()=>{}};const port=createXManualOwnerPort({enabled:true,owner:1,createOwners:()=>({reader:actor,collector:actor}),snapshot:async()=>({}),retire:async(role,preserve)=>driver.offlineRetire(current,preserve,async()=>{closes++;return{exited};})});const action=port.execute({id:1,op:'manual_abort',owner:1,role:'reader',handle:null,preserveReader:true});if(exited)assert.deepEqual(await action,{closed:true});else await assert.rejects(action);return closes;}
-test('actual owner port preserveReader cannot keep unsettled preseed, apply or restore controls',async()=>{
- for(const fault of ['before-apply','apply-cache','apply-worker','restore-worker','restore-cache']){const r=await driverScenario('control-'+fault,true);assert.equal(r.unsettled,true);assert.equal(await abortPreserving(r.current),1);assert.equal(await abortPreserving(r.current,false),1);}
+async function abortPreserving(current,{exited=true,expectClose}={}){
+  let closes=0;
+  const actor={prepare(){},acquire(){},abort:async()=>{},cancel:async()=>{}};
+  const port=createXManualOwnerPort({enabled:true,owner:1,createOwners:()=>({reader:actor,collector:actor}),
+    snapshot:async()=>({}),retire:async(role,preserve)=>driver.offlineRetire(current,preserve,async()=>{closes++;return{exited};})});
+  const action=port.execute({id:1,op:'manual_abort',owner:1,role:'reader',handle:null,preserveReader:true});
+  if(expectClose&&!exited)await assert.rejects(action,/xnp_chrome_exit_unverified/u);
+  else assert.deepEqual(await action,{closed:true});
+  return closes;
+}
+
+test('actual owner port preserves a restored reader and forces verified retirement for uncertain controls',async()=>{
+  for(const fault of ['before-apply','apply-cache','apply-worker','restore-worker','restore-cache']){
+    const result=await driverScenario('control-'+fault,true),expectClose=fault.startsWith('restore-');
+    assertFailedControlRun(result,'reader',fault);
+    assert.equal(await abortPreserving(result.current,{expectClose}),expectClose?1:0);
+    assert.equal(await abortPreserving(result.current,{exited:false,expectClose}),expectClose?1:0);
+  }
 });
-test('actual collector driver requires both control restores and rejects apply or restore uncertainty',async()=>{
- const clean=await collectorRedirectScenario('late');assert.deepEqual(clean.controlCommands.map(v=>v.slice(0,2)),[['Network.setCacheDisabled',{cacheDisabled:true}],['Network.setBypassServiceWorker',{bypass:true}],['Network.setBypassServiceWorker',{bypass:false}],['Network.setCacheDisabled',{cacheDisabled:false}]]);
- for(const fault of ['apply-cache','apply-worker','restore-worker','restore-cache']){const r=await collectorRedirectScenario('control-'+fault);assert.equal(r.error.trace.firstCause,'root_control');assert.equal(r.unsettled,true);if(fault.startsWith('apply'))assert.equal(r.receipts,0);}
+
+test('actual collector driver rejects failed startup while distinguishing verified and uncertain restoration',async()=>{
+  const clean=await collectorRedirectScenario('late');
+  assert.deepEqual(clean.controlCommands.map(command=>command.slice(0,2)),[
+    ['Network.setCacheDisabled',{cacheDisabled:true}],['Network.setBypassServiceWorker',{bypass:true}],
+    ['Network.setBypassServiceWorker',{bypass:false}],['Network.setCacheDisabled',{cacheDisabled:false}],
+  ]);
+  for(const fault of ['apply-cache','apply-worker','restore-worker','restore-cache']){
+    assertFailedControlRun(await collectorRedirectScenario('control-'+fault),'collector',fault);
+  }
 });
 
 test('production reader command gate permits the owned recipe only when enabled and validates empty ACKs',async()=>{assert.equal((await driver.offlineControlGate()).length,4);await assert.rejects(driver.offlineControlGate(false));await assert.rejects(driver.offlineControlGate(true,true));});

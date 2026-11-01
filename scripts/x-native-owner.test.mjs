@@ -75,7 +75,7 @@ if(process.argv.includes('--pipe-fixture')){
       if(message.op==='manual_prepare')return new Promise(accept=>{release=accept;});
       wire=Buffer.from('{"closed":true}');return wire;
     }});await ready(h);await h.send({id:1,op:'native_owner_initialize'});await h.send({id:2,op:'native_owner_seed',owner:1});
-    await h.send({id:3,op:'manual_prepare',owner:1,role:'reader'});
+    await h.send({id:3,op:'manual_prepare',owner:1,role:'reader',observationDeadlineMS:Date.now()+10000});
     await h.send({id:4,op:'manual_capture_cancel',owner:1,role:'collector',handle:'handle'});
     assert.equal(h.records.at(-1).id,4);assert(wire.every(value=>value===0));
     release({handle:'handle',pins});await turn();assert.equal(h.records.at(-1).id,3);h.port.close();
