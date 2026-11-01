@@ -2,7 +2,8 @@
 
 Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory.md).
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
-provider-candidate cleanup and the first E01 file-boundary extraction below.
+provider-candidate cleanup, E01 file/profile-merge extractions and the cancellation
+validation detour below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -15,9 +16,10 @@ Other candidates remain proposals or retained contracts.
 | `defer-until-replacement` | 3 | Consumer/authority migration must precede retirement |
 | `unverified` | 4 | Evidence or contract decision still needed |
 
-**Approval at the CL-1 checkpoint was inventory only.** G10, G06, candidate cleanup
-and the narrow E01 file move were subsequently approved and applied. Further E01
-phase decomposition and implementation of the other rows remain unapproved. Retained
+**Approval at the CL-1 checkpoint was inventory only.** G10, G06, candidate cleanup,
+the narrow E01 file move, profile merge and cancellation correction were
+subsequently approved and applied. Further E01 phase decomposition and
+implementation of the other rows remain unapproved. Retained
 rows are not deletion candidates. No global absence of out-of-tree consumers
 is claimed. The 32 rows are reviewed contract clusters, not a count of unique
 files or a verdict on every keyword hit. The 246-file mechanical keyword queue
@@ -52,7 +54,7 @@ Paths in this section are relative to AkuSidecar.
 
 | ID | Disposition | Target and role | Supported consumers / evidence | Checks and rollback constraint before any change |
 | --- | --- | --- | --- | --- |
-| E01 | `extract` | `internal/engine/settings_execution.go:SaveSettings`, relocated from `engine.go`; phase boundaries remain in one method | HTTP settings/onboarding/provider paths; existing `providerSwapPlan` | Candidate failure cleanup committed as `7d00d9c`; unchanged 120-line method move reviewed/committed as `02e063e`; lock, disposal, post-save errors, retention and notify order preserved. Further decomposition requires a separate proposal |
+| E01 | `extract` | `internal/engine/settings_execution.go:SaveSettings` and pure `settings_profiles.go:mergeReasoningProfilesByProvider` | HTTP settings/onboarding/provider paths; existing `providerSwapPlan` | Candidate cleanup `7d00d9c`, file move `02e063e`, profile merge `aea3867` reviewed/committed; cancellation validation detour `edb246d` resolved the observed baseline failure. Lock, disposal, normalization, errors and side-effect order preserved. Further decomposition requires a separate proposal |
 | E02 | `extract` | `internal/httpapi/server.go` capture/application adaptation | HTTP routes, Bridge contract/token checks, split-capture ownership and Engine calls | Preserve route/DTO/status/error shapes, request context and owner gates; identify one complete use case before a service layer |
 | E03 | `retain-required` | Work/scheduler/Engine/session lifecycle files completed in CL-0 | Cross-source admission, cancellation, restart and deferred-cleanup consumers; existing equivalence and build receipts | Retain `e.mu`, `schedule`, worker count through cleanup, sticky scheduler start and wake semantics; do not redo completed moves or add drain |
 
@@ -227,8 +229,42 @@ existing scheduler notification sites keep their order. An error after
 persistence does not imply rollback. No further push, activation or live trial
 was performed for these two increments.
 
-Next proposal: read-only analysis of the `ReasoningProfilesByProvider` projection
-inside `SaveSettings`. Map merge precedence, current-provider preservation,
-same-provider updates and normalization to decide whether one pure helper is
-worth extracting. No helper implementation or broader Settings service is
-approved by this status update.
+The later approved profile-merge extraction and cancellation validation detour
+are recorded below. No broader Settings service was introduced.
+
+## E01 profile merge and cancellation validation detour (2026-11-01)
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Pure provider-profile merge | `aea3867`: `mergeReasoningProfilesByProvider` in `settings_profiles.go`; caller retains both normalization positions | [Initial receipt](../runtime/qa/settings-profile-merge-20261101/validation.json): nine characterization results pass before extraction; helper/merge/validation tests pass afterward. Its default reader-cancellation failure remains historical; latest combined evidence below is green | Not performed | Scoped helper/test review complete and committed; precedence, map independence, partial/raw entries and existing validation retained |
+| Reader cancellation validation detour | `edb246d`: closed transport returns an already-cancelled waiter's context error; a new active-context request still gets `reader broker stopped` | [Combined receipt](../runtime/qa/split-reader-cancellation-20261101/validation.json): deterministic failure before fix, 300 stress passes afterward; default 547 pass/38 skip, dev 1,220 pass/48 skip, zero failures; three profile contracts, four build-tag graphs and eight Windows artifacts pass | Not performed | Scoped fix/test review complete and committed; original strict cancellation test, tombstone/replay and activation guards retained. No operational acceptance claim |
+
+Both receipts record Git parent `5bc8387`. The initial merge receipt pins the
+helper payload committed as `aea3867c2ddb49603d7278a2d3a9961133d46b02`.
+The cancellation receipt captured that helper as uncommitted input and pins
+the combined payload later committed through
+`edb246d91711ce8ed1787c68ee9214b5546729bf`. Its preservation hashes identify the
+unchanged Engine inputs. Original pre-commit fields and raw logs are preserved;
+review reused passing checks after matching source/artifact hashes.
+
+The initial default suite had 544 passes, one failure and 38 skips in
+`TestSplitCaptureCloseCancelsReaderBrokerWaiter`. An old-source overlay also
+recorded 99 passes and one failure in 100 iterations. That result was not
+reported as green. A log barrier then forced close between registration and
+the handler's first closed check, reproducing the same error deterministically.
+The four-line correction preserves cancellation as the first cause and keeps
+the existing stopped rejection for later requests. The same regression now
+passes, including cancellation diagnostics and replay tombstone checks.
+
+The merge allocates a new map, copies stored entries then submitted entries,
+preserves the old provider's active projection, and uses the submitted active
+projection when the provider stays unchanged. It does not normalize, trim,
+validate or activate a provider. Existing guards still reject invalid IDs and
+more than 32 providers; tests retain the valid 32-provider boundary. Remaining
+Store/runtime effects and their error order are unchanged.
+
+No push, activation or live trial was performed for these increments. Next
+proposal: read-only analysis of reasoning-executable change validation in
+`SaveSettings`, covering capability checks, busy-session/work rejection and
+discovery before persistence, with activation still after persistence. No
+executable helper, wider service or additional refactor is approved here.

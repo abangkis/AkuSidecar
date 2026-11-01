@@ -3,7 +3,7 @@
 ## Status synchronization (2026-11-01)
 
 The original audit and its validation below are historical. Current source is
-reviewed through `02e063e`; see the [roadmap status index](roadmap-status.md)
+reviewed through `edb246d`; see the [roadmap status index](roadmap-status.md)
 for commit-to-receipt mappings. Cleanup is not provider qualification.
 
 | Increment | Implemented | Tested | Activated | Acceptance |
@@ -17,6 +17,8 @@ for commit-to-receipt mappings. Cleanup is not provider qualification.
 | Reasoning config decoder | `d82f53b` | Exact decoder relocation; corrected repository smoke-test context; default/dev config/application suites each 46 pass, two skips, zero failures; eight Windows artifacts | Not performed | Both supported config shapes and strict validation retained; original baseline failure kept as historical evidence |
 | Provider candidate failure cleanup | `7d00d9c` | Six failure scenarios reproduced before the fix; default 526 pass/38 skip, dev 1,199 pass/48 skip, zero failures; eight Windows artifacts | Not performed | Candidate disposed on planning failure; original errors and success ownership preserved |
 | Settings execution file boundary | `02e063e` | Unchanged 120-line method and remaining source; same default/dev pass/skip counts; four build-tag graphs and eight Windows artifacts | Not performed | First E01 file boundary reviewed/committed; deeper Settings decomposition remains proposed |
+| Pure profile-map merge | `aea3867` | Characterization and merge/validation tests pass; the initial unrelated cancellation failure remains historical; latest combined result below passes | Not performed | Precedence and independent map allocation preserved; normalization remains in the caller |
+| Reader cancellation validation detour | `edb246d` | Deterministic regression and 300 stress passes; latest default 547 pass/38 skip, dev 1,220 pass/48 skip, zero failures; three profile contracts, four build-tag graphs and eight Windows artifacts | Not performed | Existing waiter cancellation takes precedence over stopped reporting; new closed-transport requests remain rejected; protocol and guards retained |
 
 No code change, activation or trial is performed by this status update. Existing
 test receipts are reused at their verified source/artifact scope, not rerun.
@@ -89,8 +91,9 @@ generic helper merely to reduce line count.
 The earlier fixture-factory coupling has been addressed by `29ec2b4` and
 `2ba01bb`; it is no longer the outstanding blocker stated by this audit.
 The backend Settings orchestration file boundary is now established in
-`settings_execution.go`; validation, persistence and runtime effects still
-remain in the same method. Remaining candidates include feature-level
+`settings_execution.go`, and the profile-map merge now belongs to the pure
+`settings_profiles.go` helper. Remaining validation, persistence and runtime
+effects still remain in the same method. Remaining candidates include feature-level
 Timeline/frontend Settings orchestration, deeper backend Settings decomposition,
 probe mode dispatch, HTTP capture-service boundaries and a broader inventory of
 legacy/compatibility consumers. They are proposals requiring separate bounded
