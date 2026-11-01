@@ -3,7 +3,8 @@
 Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory.md).
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
-extractions and the cancellation/Node-fixture validation detours below.
+extractions, the cancellation/Node-fixture validation detours and the separately
+approved CL-3.2 diagnostics feature below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -305,11 +306,56 @@ inside the original capture budget. Deterministic regressions retain rejection
 on stalled/regressing clocks, stale samples and expired deadlines. No timestamp
 offset, tolerance, guard relaxation or production clock change was introduced.
 
-No push, activation or live trial was performed for these increments. Next
-proposal: read-only analysis of the provider-selection validation block before
-executable discovery in `SaveSettings`. Assess one small helper reusing
-`ensureReasoningProviderReady`; preserve empty/same-provider and empty-catalog
-bypasses, lock/probe/Store-read/error order. Determine characterization for
-rejection before discovery/persistence and successful ordering. Do not move
-swap planning, persistence or post-save effects. This is a proposal, not
-implementation approval.
+No push, activation or live trial was performed for these increments. At that
+checkpoint the next proposal was read-only analysis of provider-selection
+validation before executable discovery in `SaveSettings`, covering existing
+bypasses, lock/probe/Store-read/error order and characterization. Analysis was
+completed and the micro-extraction was then declined for insufficient benefit,
+as recorded below. No provider-selection helper was implemented.
+
+## CL-3.2 diagnostics export feature result (2026-11-01)
+
+This is a separately approved feature boundary, not a reclassification or
+completion of the original 32-boundary CL-1 inventory.
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Diagnostics export feature | `1068e35`: `Engine.DiagnosticsExport` and nine related helpers moved to `internal/engine/diagnostics_export.go`; caller and receiver unchanged | [Receipt](../runtime/qa/diagnostics-export-20261101/validation.json): 17 characterization results pass before and after the move; default 585 pass/38 skip, dev 1,258 pass/48 skip, zero failures; four build-tag graphs and eight Windows amd64 artifacts | Not performed | Scoped source/test review found no blocking issue; committed. Exact declaration/Engine-remainder equivalence preserves output, read/error order, protocol, guard and Store authority; CL-3 remains partial |
+
+The receipt identifies parent `5f41e58` and the pre-commit worktree. Its three
+source hashes identify the payload now committed as
+`1068e359ea71c8543266509079c4d04ffb4011a6`.
+The [review](../runtime/qa/diagnostics-export-review-20261101/review.json)
+matches source hashes, checks all ten declarations and the Engine remainder,
+verifies identical characterization before/after, reads the original passing
+logs and checks four source graphs plus eight PE artifact hashes. The other
+1,357 tracked-file hashes and unrelated Browser work remain unchanged at review.
+Passing checks were reused after matching inputs; original receipts were not
+rewritten to claim post-commit execution or activation.
+
+Characterization covers top-level JSON keys, omitted fields and null/empty-array
+distinctions; explicit/active/latest-ten-inbox selection; default and explicit
+time ranges; grouped run telemetry with first-invocation identity and last detail;
+usage/config/Bridge projections; parse/Settings/session/inbox error precedence;
+and best-effort telemetry/usage failure. SQL failure injection touches disposable
+fixture databases only. Not every dependency failure is separately injected;
+exact unchanged bodies preserve all original reads and ignored-error branches.
+
+The default 24-hour export still requests an unsupported aggregate usage window;
+the existing ignored error produces a successful report with zero usage. The
+test characterizes that behavior; this source move neither repairs it nor adds
+any new redaction or time-filtering promise. A functional correction would need
+a separate proposal and approval.
+
+The provider-selection micro-extraction was declined after analysis: the
+98-line `SaveSettings` already expresses a coherent operation, and another
+single-caller helper offers insufficient value. No such helper was implemented.
+Prefer complete responsibility boundaries over further small Settings splits.
+
+No push, activation or live trial was performed. Next proposal: read-only
+analysis of Bridge status/compatibility and its protocol/capability/source
+readiness predicates. Assess one cohesive feature module while retaining
+heartbeat mutation, revocation, command recovery, reload and scheduler effects
+with Engine. Preserve `e.mu`, legacy negotiation, output categories and all
+origin/source/capability guards; map tests and missing characterization before
+requesting implementation approval. No further code change is approved here.

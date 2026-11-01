@@ -105,7 +105,7 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-0: inherited bounded cleanup | Eight increments above complete | Scoped receipts retained | Cleanup activation not recorded | Bounded code reviews complete; no whole-repository completion claim |
 | CL-1: consumer and compatibility inventory | [Entry/consumer map](cl1-consumer-inventory.md) and [32-boundary candidate ledger](cl1-cleanup-candidates.md) delivered | Read-only four-tag metadata, native/package/reference and source-preservation checks; no product test/build | Not applicable to an audit | Ready for review; external-consumer and offline Browser dependency limits explicit; no implementation approved |
 | CL-2: proven obsolete-code retirement | Earlier wrappers plus G10 `DeleteMemoryItem` removal committed with roadmap as `21ac9ad` | G10 exact remainder check, full Store/HTTP regressions and four-mode Windows compilation passed | Not performed for G10 | G10 reviewed/committed; comprehensive retirement remains scoped by the remaining ledger entries |
-| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Engine/HTTP/config/application suites: default 568 pass/38 skip, dev 1,241 pass/48 skip, zero failures; 98 Node tests, 200 Node integration iterations, four build-tag graphs and eight Windows artifacts pass. Prior cancellation stress/profile contracts retain their own receipt scope | Not performed for these increments | Scoped changes reviewed/committed; E01 file, profile-merge and executable-preparation boundaries established; further Settings decomposition and HTTP/remaining Engine scope pending |
+| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Engine/HTTP/config/application suites: default 585 pass/38 skip, dev 1,258 pass/48 skip, zero failures; 17 characterization results before/after diagnostics move, four build-tag graphs and eight Windows artifacts pass. Earlier Node/cancellation stress and profile contracts retain their own receipt scope | Not performed for these increments | Scoped changes reviewed/committed; diagnostics feature and E01 boundaries established; further Engine/HTTP boundaries pending. Provider-selection micro-extraction declined; keep Settings cohesive; CL-3 remains partial |
 | CL-4: frontend feature ownership | Existing navigation module retained; broader extraction proposed | Existing baseline only | Not recorded | Timeline/Settings/app orchestration pending |
 | CL-5: native runtime and QA boundaries | Factory/shared-helper separation complete; fixture-only timing correction `8dc3f5e` committed; deeper runtime split proposed | 98 Node tests, 200 offline integration iterations and dependency-pinned staging verified for this fixture correction; existing baseline only for remaining seams | Not performed for this correction | Bounded fixture acceptance only; remaining operation/transport/QA separation pending; no universal cross-runtime clock or real-provider qualification claim |
 | CL-6: Bridge responsibility boundaries | Existing source/lifecycle modules retained; further split proposed | Existing baseline only for remaining seams | No new rollout | Background dispatch/surface integration pending |
@@ -159,15 +159,19 @@ Do not delete a consumer merely to make the dependency scan appear clean.
   `aea3867`; executable preparation follows in `settings_executable.go` as
   `c303ed4`. Validation detours `edb246d` and `8dc3f5e` resolve observed reader
   cancellation and offline Node clock-boundary failures while preserving guards.
-  Further validation/planning,
-  persistence and runtime-effect decomposition remains proposed. Reuse `providerSwapPlan`;
+  The later provider-selection micro-extraction was declined: the 98-line
+  `SaveSettings` remains cohesive and that extra wrapper has insufficient value.
+  Further Settings phase splitting is deferred. Reuse `providerSwapPlan`;
   preserve candidate cleanup, `operation` locking, profile projection and
   post-save error behavior. Analyze one coherent seam before considering a
   broader service interface.
-- **CL-3.2 Engine:** inventory remaining Bridge command adaptation, observation
-  acceptance, source admission, enrichment and read-model methods. Keep the
-  Engine facade and existing Store authority; do not repeat completed lifecycle
-  or session extraction work.
+- **CL-3.2 Engine:** diagnostics export and its nine helpers are separated unchanged
+  in `diagnostics_export.go` as `1068e35`, with characterization and passing
+  combined regressions/Windows compilation. Next analyze the coherent Bridge
+  status/compatibility feature read-only. Remaining command adaptation, observation
+  acceptance, source admission, enrichment and read-model boundaries still need
+  evidence. Keep the Engine facade and existing Store authority; do not repeat
+  completed lifecycle/session moves or split small blocks merely to reduce size.
 - **CL-3.3 HTTP capture:** separate request/response adaptation from application
   orchestration where a complete use case is identifiable. Preserve endpoint
   shapes, authentication/admission, status codes, error categories and call order.
@@ -341,14 +345,30 @@ and [review](../runtime/qa/settings-executable-review-20261101/review.json)
 retain the initial failing receipt and verify the latest combined passing
 source, logs, dependency pins and Windows artifacts. No runtime was activated.
 
-The next proposal is read-only analysis of the provider-selection validation
-block at the start of `SaveSettings`, before executable discovery. Assess a
-small extraction reusing `ensureReasoningProviderReady`; retain empty/same-provider
-and empty-catalog bypasses, lock scope, probe/Store-read count and error order.
-Define characterization for rejection without discovery/persistence, successful
-ordering and the existing bypasses. Persistence, post-save effects and swap
-planning stay outside this proposed increment. No implementation, compatibility
-removal or further refactor is approved by this status update.
+The proposed provider-selection micro-extraction was analyzed and then declined:
+`SaveSettings` is already cohesive at 98 lines, and another single-caller wrapper
+would add navigation without a sufficient responsibility or testability benefit.
+No such helper was implemented. This decision does not undo the completed
+executable/profile boundaries or prohibit revisiting Settings if a concrete need
+appears later.
+
+The user instead approved moving the complete diagnostics export feature.
+`DiagnosticsExport` and nine helpers now belong to `diagnostics_export.go`,
+committed as `1068e35`. See the [result](cl1-cleanup-candidates.md#cl-32-diagnostics-export-feature-result-2026-11-01),
+[validation](../runtime/qa/diagnostics-export-20261101/validation.json) and
+[review](../runtime/qa/diagnostics-export-review-20261101/review.json).
+All ten declarations and the original Engine remainder are equivalent; the
+17 characterization results pass before and after the move. The default-range
+unsupported usage window remains deliberately unchanged, not repaired here.
+
+The next proposal is read-only analysis of Bridge status/compatibility in
+`engine.go`: assess one module for status projection and existing protocol,
+capability and source-readiness predicates. Leave heartbeat mutation, authority
+revocation, command recovery, reload/scheduler effects and ownership with Engine.
+Map callers and existing tests, preserve `e.mu`, legacy negotiation and every
+origin/source/capability guard, and identify missing characterization before
+implementation approval. No further refactor, protocol change or compatibility
+removal is approved by this status update.
 
 No calendar estimate or cleanup percentage is assigned: this bounded inventory
 does not establish a complete repository-wide denominator or close every

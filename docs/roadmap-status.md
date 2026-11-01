@@ -1,7 +1,7 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-01 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `8dc3f5e` (offline Node timing correction, after executable preparation extraction `c303ed4`),
+Reviewed local source: AkuSidecar `1068e35` (diagnostics export feature separation, after `c303ed4`/`8dc3f5e`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
 The Browser worktree contains pre-existing build/cache changes; those changes
@@ -74,6 +74,13 @@ approved offline Node timing correction is committed as `8dc3f5e`. Their
 maps the earlier failing receipt to the latest combined passing payload. CL-3
 remains partial; neither commit establishes runtime activation or acceptance.
 
+CL-3.2 now separates the complete diagnostics export feature as `1068e35`.
+Its [result](cl1-cleanup-candidates.md#cl-32-diagnostics-export-feature-result-2026-11-01)
+records characterization before the move, unchanged declarations and the latest
+combined passing suites. The provider-selection micro-extraction proposal was
+subsequently declined: keep the existing 98-line `SaveSettings` cohesive rather
+than adding another single-caller wrapper. No provider-selection helper was added.
+
 | Increment | Implemented commit | Tested evidence | Activated | Acceptance |
 | --- | --- | --- | --- | --- |
 | Remove unused Personal Memory wrappers | `f348b9b` | Accepted cleanup review and regression history | Not recorded | Bounded removal only; not a repository-wide legacy audit |
@@ -92,6 +99,7 @@ remains partial; neither commit establishes runtime activation or acceptance.
 | Reader cancellation validation detour | `edb246d` | [Combined receipt](../runtime/qa/split-reader-cancellation-20261101/validation.json): deterministic red-to-green regression; 300 stress passes; default 547 pass/38 skip, dev 1,220 pass/48 skip, zero failures; three profile contracts, four build-tag graphs and eight Windows artifacts | Not performed | Scoped correction/test review complete and committed; cancelled waiters retain context errors, new requests after close remain rejected; tombstone/replay/activation guards retained |
 | E01 executable-change preparation | `c303ed4` | [Initial extraction receipt](../runtime/qa/settings-executable-20261101/validation.json): 20 characterization results pass before/after extraction; exact helper/caller equivalence. Its native-pilot failures remain historical. [Review](../runtime/qa/settings-executable-review-20261101/review.json) verifies the unchanged payload against the latest combined passing evidence below | Not performed | Scoped review complete and committed; receiver, locks, trim-equal no-op, errors, active-provider ownership, pre-save discovery and post-save activation retained |
 | Offline Node startup timing validation detour | `8dc3f5e` | [Combined receipt](../runtime/qa/native-pilot-node-integration-20261101/validation.json): default 568 pass/38 skip, dev 1,241 pass/48 skip, zero failures; 98 Node tests; two independent 100-iteration integration batches; four build-tag graphs and eight Windows artifacts. Review verifies hashes, raw logs and staging pins | Not performed | Scoped fixture/test correction reviewed and committed; real bounded scheduling intervals, original monotonic clock, protocol, timestamps, document/freshness/deadline guards retained. This is fixture stabilization, not universal clock synchronization or live-provider acceptance |
+| CL-3.2 diagnostics export feature | `1068e35` | [Receipt](../runtime/qa/diagnostics-export-20261101/validation.json): identical characterization tests pass 17 results before and after the move; latest default 585 pass/38 skip, dev 1,258 pass/48 skip, zero failures; four build-tag graphs and eight Windows artifacts. [Review](../runtime/qa/diagnostics-export-review-20261101/review.json) verifies source equivalence, raw logs and artifact hashes | Not performed | Scoped source/test review complete and committed; `DiagnosticsExport` and nine helpers relocated unchanged, Engine receiver and Store/read/error/output/protocol/guard contracts preserved. Default-range zero usage remains existing behavior; no operational acceptance claim |
 
 Counts include subtests and repeated build-tag selections; do not add them as
 unique test cases. Receipts captured before commit may retain `committed:false`
@@ -108,14 +116,15 @@ legacy/compatibility inventory. These are proposals,
 not authorization to implement or delete. Scheduler drain and further execution
 refactors have not been added to this completed slice.
 
-Next source-cleanup proposal: read-only analysis of provider-selection validation
-at the start of `SaveSettings`, before executable discovery. Assess one small
-helper around the existing selection/configuration/readiness block, reusing
-`ensureReasoningProviderReady`. Preserve empty/same-provider and empty-catalog
-bypasses, `operation`, probe/error ordering and Store reads. Define characterization
-coverage before requesting implementation approval; do not move persistence,
-post-save effects or provider-swap planning in this step. This does not change
-the separate operational/IG diagnostic boundary below.
+Next source-cleanup proposal: read-only analysis of Bridge status/compatibility
+in `engine.go`. Map `BridgeStatus`, expected-heartbeat/protocol/capability/source
+readiness predicates and their callers; assess one cohesive feature module.
+Keep `RecordHeartbeat` state mutation, authority revocation, command recovery,
+reload and scheduler side effects with Engine. Preserve `e.mu` scopes, legacy
+negotiation, bounded capabilities, origin/source gates and output/error order.
+Identify missing characterization before requesting implementation approval.
+No further implementation is approved by this status update; the separate
+operational/IG diagnostic boundary below remains unchanged.
 
 ## Product and installation roadmaps
 
