@@ -224,12 +224,6 @@ func (s *Store) CreateMemoryRecallStub(ctx context.Context, input domain.MemoryR
 	return s.UpsertMemoryRecallStub(ctx, input)
 }
 
-// CreateMemoryItem is a compatibility-friendly alias for the canonical
-// recall-stub operation.
-func (s *Store) CreateMemoryItem(ctx context.Context, input domain.MemoryItemInput) (domain.MemoryItem, error) {
-	return s.UpsertMemoryRecallStub(ctx, input)
-}
-
 // UpdateMemoryRecallStub updates the item identified by id. Missing identity
 // fields are filled from the stored row, so a caller may update only metadata.
 func (s *Store) UpdateMemoryRecallStub(ctx context.Context, id string, input domain.MemoryItemInput) (domain.MemoryItem, error) {
@@ -575,11 +569,6 @@ func (s *Store) ReadLaterTimeline(ctx context.Context, timelineID string) (domai
 	}
 	item, err := s.MemoryItem(ctx, memoryID)
 	return item, false, err
-}
-
-// SaveTimelineForLater is a compatibility-friendly alias for ReadLaterTimeline.
-func (s *Store) SaveTimelineForLater(ctx context.Context, timelineID string) (domain.MemoryItem, bool, error) {
-	return s.ReadLaterTimeline(ctx, timelineID)
 }
 
 // KeepMemoryInLibrary converts the current Saved attention claim into
