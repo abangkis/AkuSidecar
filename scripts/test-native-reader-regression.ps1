@@ -1,5 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'source-cache.ps1')
+$sourceBuildCaches = Get-SourceBuildCachePaths -Repository (Split-Path -Parent $PSScriptRoot)
 $cursor = Get-Item -LiteralPath $repoRoot
 $sharedTempRoot = $null
 while ($null -ne $cursor) {
@@ -17,17 +19,19 @@ $savedEnvironment = @{}
 $liveTestVariables = @(Get-ChildItem Env: | Where-Object {
     $_.Name -match '^AKU_(?:.*SMOKE_|AUTH_JOURNEY_|READER_TAB_BINDING_|NATIVE_READER_TABS_)|^AKUBROWSER_TEST_'
 } | ForEach-Object { $_.Name })
-foreach ($name in (@('GOCACHE', 'GOMODCACHE', 'GOTMPDIR', 'TEMP', 'TMP') + $liveTestVariables)) {
+foreach ($name in (@('GOCACHE', 'GOMODCACHE', 'GOTMPDIR', 'TEMP', 'TMP', 'GIT_TERMINAL_PROMPT', 'GCM_INTERACTIVE') + $liveTestVariables)) {
     $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
 }
 Push-Location $repoRoot
 try {
+    $env:GIT_TERMINAL_PROMPT = '0'
+    $env:GCM_INTERACTIVE = '0'
     # Build validation never inherits approval flags from a previous live trial.
     foreach ($name in $liveTestVariables) {
         [Environment]::SetEnvironmentVariable($name, $null, 'Process')
     }
-    $env:GOCACHE = Join-Path $repoRoot '.go-build\build'
-    $env:GOMODCACHE = Join-Path $repoRoot '.go-build\mod'
+    $env:GOCACHE = $sourceBuildCaches.GoBuild
+    $env:GOMODCACHE = $sourceBuildCaches.GoModules
     $env:GOTMPDIR = $testTemp
     $env:TEMP = $testTemp
     $env:TMP = $testTemp

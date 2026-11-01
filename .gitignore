@@ -32,3 +32,6 @@ coverage/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local shared source-cache location (machine-specific)
+/.cache/source-build-cache.json

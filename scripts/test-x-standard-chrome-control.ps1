@@ -12,6 +12,8 @@ param(
     [ValidateSet('not_observed','no_visible_change','blocked_icon_visible','popup_hidden_or_blank')][string]$PopupObservation
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'source-cache.ps1')
+$sourceBuildCaches = Get-SourceBuildCachePaths -Repository (Split-Path -Parent $PSScriptRoot)
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 $qaParent = Join-Path $projectRoot 'runtime\qa\auth-session-sidecar'
 New-Item -ItemType Directory -Path $qaParent -Force | Out-Null
@@ -48,7 +50,7 @@ $progressPath = Join-Path $qaParent ($artifactPrefix + '-' + $runId + '.progress
 $resultPath = Join-Path $qaParent ($artifactPrefix + '-' + $runId + '.result.json')
 $reportPath = Join-Path $qaParent ($artifactPrefix + '-' + $runId + '.report.json')
 $logPath = Join-Path $qaParent ($artifactPrefix + '-' + $runId + '.log.txt')
-$cacheRoot = Join-Path $projectRoot '.go-build\x-session-verifier'
+$cacheRoot = $sourceBuildCaches.GoBuild
 $moduleCache = Join-Path $projectRoot '.go-build\mod'
 foreach ($cachePath in @($cacheRoot, $moduleCache)) {
     New-Item -ItemType Directory -Path $cachePath -Force | Out-Null
@@ -71,7 +73,7 @@ try {
     $env:TEMP = $taskRoot
     $env:TMP = $taskRoot
     $env:GOTMPDIR = $taskRoot
-    $env:GOCACHE = $cacheRoot
+    $env:GOCACHE = $sourceBuildCaches.GoBuild
     $env:GOMODCACHE = $moduleCache
     $env:GOPROXY = 'off'
     $env:GOSUMDB = 'off'

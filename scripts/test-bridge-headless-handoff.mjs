@@ -5,6 +5,7 @@ import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { resolveSourceBuildCachePaths } from './source-cache.mjs';
 
 const exec = promisify(execFile);
 const sidecar = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -90,7 +91,8 @@ if (!allowStop) {
       await pause();
     }
     if (!stopped) throw new Error('Original owner was not released; candidate not launched.');
-    const testEnv = {...process.env, GOCACHE: join(sidecar, '.go-build'), GOTMPDIR: join(sidecar, 'build'), TEMP: receiptRoot, TMP: receiptRoot,
+    const sourceCaches = resolveSourceBuildCachePaths(sidecar);
+    const testEnv = {...process.env, GOCACHE: sourceCaches.GoBuild, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: '0', GOTMPDIR: join(sidecar, 'build'), TEMP: receiptRoot, TMP: receiptRoot,
       AKU_BRIDGE_HANDOFF_SMOKE_RUNTIME: join(versionRoot, 'headless-worker'), AKU_BRIDGE_HANDOFF_SMOKE_CHROME: join(versionRoot, 'chromium', 'bin', 'chrome.exe'), AKU_BRIDGE_HANDOFF_SMOKE_BRIDGE: join(versionRoot, 'AkuBridge')};
     try {
       const result = await exec('go.exe', ['test', './internal/httpapi', '-run', '^TestBridgeHeadlessHandoffWindowsSmoke$', '-count=1', '-timeout=75s', '-v'], {cwd: sidecar, env: testEnv, windowsHide: true, timeout: 90000, maxBuffer: 1024 * 1024});

@@ -1,5 +1,7 @@
 param()
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'source-cache.ps1')
+$sourceBuildCaches = Get-SourceBuildCachePaths -Repository (Split-Path -Parent $PSScriptRoot)
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 $runId = [guid]::NewGuid().ToString('N')
 $gateRoot = Join-Path $projectRoot '.go-build\inference-sdk-v024'
@@ -31,7 +33,7 @@ function Invoke-OfflineGo {
 Push-Location -LiteralPath $projectRoot
 try {
     $env:TEMP = $tempRoot; $env:TMP = $tempRoot; $env:GOTMPDIR = $tempRoot
-    $env:GOCACHE = Join-Path $projectRoot '.go-build\sdk-v024-cache'
+    $env:GOCACHE = $sourceBuildCaches.GoBuild
     $env:GOMODCACHE = Join-Path $projectRoot '.go-build\mod'
     $env:GOWORK = 'off'; $env:GOPROXY = 'off'; $env:GOSUMDB = 'off'
     # An inherited GOPRIVATE/GONOPROXY must not bypass GOPROXY=off.

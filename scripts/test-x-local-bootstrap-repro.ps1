@@ -1,5 +1,7 @@
 param([switch]$NoChrome, [switch]$Variants, [switch]$Handoff, [switch]$ProjectionOnly)
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'source-cache.ps1')
+$sourceBuildCaches = Get-SourceBuildCachePaths -Repository (Split-Path -Parent $PSScriptRoot)
 if ($Variants -and $Handoff) { throw 'Choose one fixed local case set: Variants or Handoff.' }
 if ($ProjectionOnly -and !$Handoff) { throw 'ProjectionOnly requires the fixed Handoff mode.' }
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
@@ -14,7 +16,7 @@ $logPath = Join-Path $qaParent ('x-local-bootstrap-' + $runId + '.log.txt')
 $nodePath = 'C:\nvm4w\nodejs\node.exe'
 $chromePath = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
 if (!(Test-Path -LiteralPath $nodePath -PathType Leaf) -or (!$NoChrome -and !(Test-Path -LiteralPath $chromePath -PathType Leaf))) { throw 'Reproduction executable unavailable.' }
-$cacheRoot = Join-Path $projectRoot '.go-build\x-session-verifier'
+$cacheRoot = $sourceBuildCaches.GoBuild
 $moduleCache = Join-Path $projectRoot '.go-build\mod'
 foreach ($cachePath in @($cacheRoot, $moduleCache)) {
     New-Item -ItemType Directory -Path $cachePath -Force | Out-Null
@@ -31,7 +33,7 @@ try {
     $env:TEMP = $taskRoot
     $env:TMP = $taskRoot
     $env:GOTMPDIR = $taskRoot
-    $env:GOCACHE = $cacheRoot
+    $env:GOCACHE = $sourceBuildCaches.GoBuild
     $env:GOMODCACHE = $moduleCache
     $env:GOPROXY = 'off'
     $env:GOSUMDB = 'off'

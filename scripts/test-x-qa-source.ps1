@@ -1,5 +1,7 @@
 param([switch]$RunNativeQA, [switch]$AllowCookieMetadataRead, [switch]$SettingsTypesOnly, [switch]$AuthenticationControl, [switch]$DirectAuthenticationAB, [switch]$WebAuthenticationABA, [switch]$Web401Projection, [switch]$BoundIdentityLogin, [switch]$CookieWriteScope, [switch]$PrepareShortConcurrency, [switch]$ShortConcurrency, [switch]$AllowQASessionTransfer, [switch]$SynchronizeCheckpoints, [switch]$LiveCurrentSelf)
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'source-cache.ps1')
+$sourceBuildCaches = Get-SourceBuildCachePaths -Repository (Split-Path -Parent $PSScriptRoot)
 if ($LiveCurrentSelf -and ($AllowCookieMetadataRead -or $SettingsTypesOnly -or $AuthenticationControl -or $DirectAuthenticationAB -or $WebAuthenticationABA -or $Web401Projection -or $BoundIdentityLogin -or $CookieWriteScope -or $PrepareShortConcurrency -or $ShortConcurrency -or $AllowQASessionTransfer -or $SynchronizeCheckpoints)) { throw 'Live current-self requires a separate no-transfer, no-cookie mode.' }
 if ($SynchronizeCheckpoints -and (!$RunNativeQA -or !$ShortConcurrency -or !$AllowQASessionTransfer)) { throw 'Synchronization requires explicitly authorized native short concurrency.' }
 if (($PrepareShortConcurrency -or $ShortConcurrency) -and (!$RunNativeQA -or $AllowCookieMetadataRead -or $SettingsTypesOnly -or $AuthenticationControl -or $DirectAuthenticationAB -or $WebAuthenticationABA -or $Web401Projection -or $BoundIdentityLogin -or $CookieWriteScope)) { throw 'Short QA requires native QA without other modes.' }
@@ -19,7 +21,7 @@ if ((Get-Item -LiteralPath $qaParent).Attributes -band [IO.FileAttributes]::Repa
 $runId = [guid]::NewGuid().ToString('N')
 $taskRoot = Join-Path $qaParent ('run-x-qa-source-' + $runId)
 New-Item -ItemType Directory -Path $taskRoot | Out-Null
-$cache = Join-Path $projectRoot '.go-build\x-session-verifier'
+$cache = $sourceBuildCaches.GoBuild
 $modules = Join-Path $projectRoot '.go-build\mod'
 foreach ($path in @($cache, $modules)) {
     New-Item -ItemType Directory -Path $path -Force | Out-Null
@@ -40,7 +42,7 @@ $safeCleanup = $true
 Push-Location -LiteralPath $projectRoot
 try {
     $env:TEMP = $taskRoot; $env:TMP = $taskRoot; $env:GOTMPDIR = $taskRoot
-    $env:GOCACHE = $cache; $env:GOMODCACHE = $modules
+    $env:GOCACHE = $sourceBuildCaches.GoBuild; $env:GOMODCACHE = $modules
     $env:GOPROXY = 'off'; $env:GOSUMDB = 'off'; $env:GOTOOLCHAIN = 'local'; $env:CGO_ENABLED = '0'; $env:GOFLAGS = ''
     $env:AKU_CHROME_FIXTURE_ROOT = $taskRoot; $env:AKU_CHROME_FIXTURE_CLEANUP_MARKER = $marker
     $env:AKU_TEST_NODE_PATH = $node; $env:AKU_TEST_CHROME_PATH = $chrome

@@ -1,5 +1,7 @@
 param([switch]$VerifyChrome, [string]$ChromePath = 'C:\Program Files\Google\Chrome\Application\chrome.exe')
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'source-cache.ps1')
+$sourceBuildCaches = Get-SourceBuildCachePaths -Repository (Split-Path -Parent $PSScriptRoot)
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 $qaParent = Join-Path $projectRoot 'runtime\qa\post-screenshot'
 New-Item -ItemType Directory -Path $qaParent -Force | Out-Null
@@ -14,7 +16,7 @@ Push-Location -LiteralPath $projectRoot
 $passed = $false
 try {
     $env:TEMP=$temporary; $env:TMP=$temporary; $env:GOTMPDIR=$temporary
-    $env:GOCACHE=Join-Path $projectRoot '.go-build\screenshot-cache'
+    $env:GOCACHE=$sourceBuildCaches.GoBuild
     $env:GOMODCACHE=Join-Path $projectRoot '.go-build\mod'
     $env:GOPROXY='off'; $env:GOSUMDB='off'; $env:CGO_ENABLED='0'; $env:GOTOOLCHAIN='local'
     $env:AKU_POST_SCREENSHOT_SMOKE = if ($VerifyChrome) { '1' } else { '' }

@@ -6,6 +6,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'source-cache.ps1')
+$sourceBuildCaches = Get-SourceBuildCachePaths -Repository (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $PSScriptRoot 'worker-backup-retention.ps1')
 . (Join-Path $PSScriptRoot 'dev-runtime-contract.ps1')
 if ($Verify) {
@@ -13,7 +15,6 @@ if ($Verify) {
     if ($LASTEXITCODE -ne 0) { throw 'Native reader regression gate failed.' }
 }
 $runtimeDir = Join-Path $repoRoot 'runtime\dev'
-$cacheRoot = Join-Path $repoRoot '.go-build'
 $workerStager = Join-Path (Split-Path -Parent $repoRoot) 'AkuBrowser\scripts\stage-headless-worker.ps1'
 if (-not (Test-Path -LiteralPath $workerStager -PathType Leaf)) {
     throw "Required pin-checked worker staging helper is missing: $workerStager"
@@ -41,8 +42,10 @@ if (-not $goTempRoot.StartsWith($sharedTempBoundary, [StringComparison]::Ordinal
 $previousGoCache = $env:GOCACHE
 $previousGoModCache = $env:GOMODCACHE
 $previousGoTmpDir = $env:GOTMPDIR
-$env:GOCACHE = Join-Path $cacheRoot 'build'
-$env:GOMODCACHE = Join-Path $cacheRoot 'mod'
+$previousGitTerminalPrompt = $env:GIT_TERMINAL_PROMPT
+$previousGcmInteractive = $env:GCM_INTERACTIVE
+$env:GOCACHE = $sourceBuildCaches.GoBuild
+$env:GOMODCACHE = $sourceBuildCaches.GoModules
 $env:GOTMPDIR = $goTempRoot
 
 @($runtimeDir, $env:GOCACHE, $env:GOMODCACHE, $env:GOTMPDIR) | ForEach-Object {
@@ -61,6 +64,8 @@ $workerBackupPrefix = ".build-dev-$workerDirectoryName-rollback-"
 Assert-WorkerBackupCopyReady -RuntimeRoot $runtimeDir -WorkerRoot $workerDestination -BackupPrefix $workerBackupPrefix
 Push-Location $repoRoot
 try {
+    $env:GIT_TERMINAL_PROMPT = '0'
+    $env:GCM_INTERACTIVE = '0'
     # Compile development capabilities once; config and process consent still
     # select whether any X concurrency is used. Release builds are unchanged.
     & go build -trimpath -tags auth_session_dev -o $output .\cmd\akusidecar
@@ -151,6 +156,8 @@ finally {
     $env:GOCACHE = $previousGoCache
     $env:GOMODCACHE = $previousGoModCache
     $env:GOTMPDIR = $previousGoTmpDir
+    $env:GIT_TERMINAL_PROMPT = $previousGitTerminalPrompt
+    $env:GCM_INTERACTIVE = $previousGcmInteractive
     Pop-Location
     if (Test-Path -LiteralPath $goTempRoot -PathType Container) {
         $resolvedCleanup = [IO.Path]::GetFullPath($goTempRoot)

@@ -1,5 +1,7 @@
 param([switch]$NoChrome)
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'source-cache.ps1')
+$sourceBuildCaches = Get-SourceBuildCachePaths -Repository (Split-Path -Parent $PSScriptRoot)
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 $qaParent = Join-Path $projectRoot 'runtime\qa\auth-session-sidecar'
 New-Item -ItemType Directory -Path $qaParent -Force | Out-Null
@@ -10,7 +12,7 @@ New-Item -ItemType Directory -Path $taskRoot | Out-Null
 $progressPath = Join-Path $qaParent ('x-native-metadata-' + $runId + '.progress.jsonl')
 $reportPath = Join-Path $qaParent ('x-native-metadata-' + $runId + '.report.json')
 $logPath = Join-Path $qaParent ('x-native-metadata-' + $runId + '.log.txt')
-$cacheRoot = Join-Path $projectRoot '.go-build\x-session-verifier'
+$cacheRoot = $sourceBuildCaches.GoBuild
 $moduleCache = Join-Path $projectRoot '.go-build\mod'
 foreach ($cachePath in @($cacheRoot, $moduleCache)) {
     New-Item -ItemType Directory -Path $cachePath -Force | Out-Null
@@ -31,7 +33,7 @@ try {
     $env:TEMP = $taskRoot
     $env:TMP = $taskRoot
     $env:GOTMPDIR = $taskRoot
-    $env:GOCACHE = $cacheRoot
+    $env:GOCACHE = $sourceBuildCaches.GoBuild
     $env:GOMODCACHE = $moduleCache
     $env:GOPROXY = 'off'
     $env:GOSUMDB = 'off'

@@ -1,5 +1,7 @@
 param()
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'source-cache.ps1')
+$sourceBuildCaches = Get-SourceBuildCachePaths -Repository (Split-Path -Parent $PSScriptRoot)
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 $qaParent = Join-Path $projectRoot 'runtime\qa\auth-session-sidecar'
 foreach ($relative in @('runtime', 'runtime\qa', 'runtime\qa\auth-session-sidecar', '.go-build', '.go-build\x-session-verifier', '.go-build\mod')) {
@@ -24,7 +26,7 @@ foreach ($name in $variables) { $previous[$name] = [Environment]::GetEnvironment
 Push-Location -LiteralPath $projectRoot
 try {
     $env:TEMP = $taskRoot; $env:TMP = $taskRoot; $env:GOTMPDIR = $taskRoot
-    $env:GOCACHE = Join-Path $projectRoot '.go-build\x-session-verifier'
+    $env:GOCACHE = $sourceBuildCaches.GoBuild
     $env:GOMODCACHE = Join-Path $projectRoot '.go-build\mod'
     $env:GOWORK = 'off'; $env:GOPROXY = 'off'; $env:GOSUMDB = 'off'
     $env:GOTOOLCHAIN = 'local'; $env:CGO_ENABLED = '0'; $env:GOFLAGS = ''

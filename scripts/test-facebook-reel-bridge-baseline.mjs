@@ -6,10 +6,12 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveSourceBuildCachePaths } from './source-cache.mjs';
 import { nativeBridgeRecaptureBaseline } from './native-bridge-recapture-baseline.mjs';
 
 const exec = promisify(execFile);
 const sidecar = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const sourceCaches = resolveSourceBuildCachePaths(sidecar);
 const workspace = dirname(sidecar);
 const targetUrl = 'https://www.facebook.com/reel/1639349817600268/';
 const testName = 'TestFacebookReelBridgeForegroundMediaRecaptureBaselineWindows';
@@ -144,7 +146,9 @@ try {
   if (!stopped) throw new Error('Original runtime/profile ownership did not drain; baseline browser was not launched.');
   const env = {
     ...process.env,
-    GOCACHE: join(sidecar, '.go-build'),
+    GOCACHE: sourceCaches.GoBuild,
+    GIT_TERMINAL_PROMPT: '0',
+    GCM_INTERACTIVE: '0',
     GOTMPDIR: join(sidecar, 'build'),
     TEMP: receiptRoot,
     TMP: receiptRoot,

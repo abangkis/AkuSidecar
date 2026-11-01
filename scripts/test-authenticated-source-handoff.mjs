@@ -3,6 +3,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {mkdir,readFile,realpath,writeFile} from 'node:fs/promises';
 import {createHash,randomUUID} from 'node:crypto';
+import {resolveSourceBuildCachePaths} from './source-cache.mjs';
 import {dirname,isAbsolute,join,relative,resolve} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {loadCandidate,loadRegistration,preflight,supervisor,verifyTuple,
@@ -121,7 +122,8 @@ async function main() {
     await supervisor(['stop','akusidecar','--actor','codex','--reason','authorized real-source window headless journey QA','--request-id',randomUUID()]);
     if(!(await waitForStopped(registration.profile)).stopped) fail('original_owner_not_released');
     stage='fixture';
-    const env={...process.env,GOCACHE:join(sidecar,'.go-build'),GOTMPDIR:join(sidecar,'build'),TEMP:receiptRoot,TMP:receiptRoot,
+    const sourceCaches = resolveSourceBuildCachePaths(sidecar);
+    const env={...process.env,GOCACHE: sourceCaches.GoBuild, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: '0', GOTMPDIR:join(sidecar,'build'),TEMP:receiptRoot,TMP:receiptRoot,
       AKU_AUTH_JOURNEY_RUNTIME:dirname(candidate.worker),AKU_AUTH_JOURNEY_CHROME:registration.captureExe,
       AKU_AUTH_JOURNEY_BRIDGE:journeyBridge.path,AKU_AUTH_JOURNEY_PROFILE:registration.profile,
       AKU_AUTH_JOURNEY_PROFILE_DIRECTORY:registration.profileDirectory,AKU_AUTH_JOURNEY_SOURCE:args.source,

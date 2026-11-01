@@ -1,5 +1,7 @@
 param()
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'source-cache.ps1')
+$sourceBuildCaches = Get-SourceBuildCachePaths -Repository (Split-Path -Parent $PSScriptRoot)
 $project=(Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 $parent=Join-Path $project 'runtime\qa\auth-session-sidecar'
 $id=[guid]::NewGuid().ToString('N')
@@ -14,7 +16,7 @@ $previous=@{};foreach($name in $names){$previous[$name]=[Environment]::GetEnviro
 Push-Location -LiteralPath $project
 try{
  $env:TEMP=$root;$env:TMP=$root;$env:GOTMPDIR=$root
- $env:GOCACHE=Join-Path $project '.go-build\x-session-verifier';$env:GOMODCACHE=Join-Path $project '.go-build\mod'
+ $env:GOCACHE=$sourceBuildCaches.GoBuild;$env:GOMODCACHE=Join-Path $project '.go-build\mod'
  $env:GOWORK='off';$env:GOPROXY='off';$env:GOSUMDB='off';$env:GOTOOLCHAIN='local';$env:CGO_ENABLED='0';$env:GOFLAGS=''
  Write-Output ('Offline X application routing: '+$id) | Tee-Object -FilePath $log
  $production=@(& go list -tags 'auth_session_dev auth_session_fixture' -f '{{range .GoFiles}}{{println .}}{{end}}' ./internal/engine)

@@ -1,5 +1,7 @@
 param([switch]$VerifyChrome,[Alias('Scenario')][ValidateSet('overlap-last-close','opt-out','collector-loss','last-close-denied','mismatch','expiry','parent-cancel','parent-process-death','authorized-renewal','authorized-renewal-delay','authorized-renewal-failure','authorized-account-drift','authorized-policy-drift','authorized-coverage-gap','authorized-opt-out','authorized-last-close-denied','authorized-parent-process-death')][string[]]$SelectedScenarios = @('overlap-last-close','opt-out','collector-loss','last-close-denied','mismatch','expiry','parent-cancel','parent-process-death'))
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'source-cache.ps1')
+$sourceBuildCaches = Get-SourceBuildCachePaths -Repository (Split-Path -Parent $PSScriptRoot)
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 $qaParent = Join-Path $projectRoot 'runtime\qa\auth-session-sidecar'
 foreach ($relative in @('runtime', 'runtime\qa', 'runtime\qa\auth-session-sidecar', '.go-build', '.go-build\x-session-verifier', '.go-build\mod')) {
@@ -71,7 +73,7 @@ function Invoke-ConcurrentChrome([string]$Executable,[string[]]$Arguments,[strin
 Push-Location -LiteralPath $projectRoot
 try {
     $env:TEMP=$taskRoot; $env:TMP=$taskRoot; $env:GOTMPDIR=$taskRoot
-    $env:GOCACHE=Join-Path $projectRoot '.go-build\x-session-verifier'; $env:GOMODCACHE=Join-Path $projectRoot '.go-build\mod'
+    $env:GOCACHE=$sourceBuildCaches.GoBuild; $env:GOMODCACHE=Join-Path $projectRoot '.go-build\mod'
     $env:GOWORK='off'; $env:GOPROXY='off'; $env:GOSUMDB='off'; $env:GOTOOLCHAIN='local'; $env:CGO_ENABLED='0'; $env:GOFLAGS=''
     Write-Output ('Synthetic concurrent Chrome integration run: ' + $runId) | Tee-Object -FilePath $log
     $receipt = @{provider='synthetic-concurrent-chrome-fixture';scenario='overlap-last-close';passed=$true;cleanupVerified=$true;overlapVerified=$true;loginCount=1;seedCount=1;canAuthorize=$false;nativeQualified=$false}

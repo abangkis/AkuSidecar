@@ -1,12 +1,14 @@
 param()
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'source-cache.ps1')
+$sourceBuildCaches = Get-SourceBuildCachePaths -Repository (Split-Path -Parent $PSScriptRoot)
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 $qaParent = Join-Path $projectRoot 'runtime\qa\auth-session-sidecar'
 New-Item -ItemType Directory -Path $qaParent -Force | Out-Null
 if ((Get-Item -LiteralPath $qaParent).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'QA parent must not be a reparse point.' }
 $taskRoot = Join-Path $qaParent ('run-x-session-verifier-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $taskRoot | Out-Null
-$cacheRoot = Join-Path $projectRoot '.go-build\x-session-verifier'
+$cacheRoot = $sourceBuildCaches.GoBuild
 New-Item -ItemType Directory -Path $cacheRoot -Force | Out-Null
 if ((Get-Item -LiteralPath $cacheRoot).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Go cache must not be a reparse point.' }
 $moduleCache = Join-Path $projectRoot '.go-build\mod'
@@ -21,7 +23,7 @@ try {
     $env:TEMP = $taskRoot
     $env:TMP = $taskRoot
     $env:GOTMPDIR = $taskRoot
-    $env:GOCACHE = $cacheRoot
+    $env:GOCACHE = $sourceBuildCaches.GoBuild
     $env:GOMODCACHE = $moduleCache
     $env:GOPROXY = 'off'
     $env:GOSUMDB = 'off'

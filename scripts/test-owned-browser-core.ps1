@@ -1,5 +1,7 @@
 param()
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'source-cache.ps1')
+$sourceBuildCaches = Get-SourceBuildCachePaths -Repository (Split-Path -Parent $PSScriptRoot)
 $project=(Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 $parent=Join-Path $project 'runtime\qa\auth-session-sidecar'
 $id=[guid]::NewGuid().ToString('N')
@@ -18,7 +20,7 @@ $previous=@{};foreach($name in $names){$previous[$name]=[Environment]::GetEnviro
 Push-Location -LiteralPath $project
 try{
  $env:TEMP=$root;$env:TMP=$root;$env:GOTMPDIR=$root
- $env:GOCACHE=Join-Path $project '.go-build\x-session-verifier';$env:GOMODCACHE=Join-Path $project '.go-build\mod'
+ $env:GOCACHE=$sourceBuildCaches.GoBuild;$env:GOMODCACHE=Join-Path $project '.go-build\mod'
  $env:GOWORK='off';$env:GOPROXY='off';$env:GOSUMDB='off';$env:GOTOOLCHAIN='local';$env:CGO_ENABLED='0';$env:GOFLAGS=''
  $node=Join-Path $project 'runtime\dev\headless-worker\node.exe'
  $env:AKU_NATIVE_MANUAL_PROJECT_ROOT=$project;$env:AKU_CHROME_FIXTURE_NODE=$node;$env:AKU_X_NATIVE_MANUAL_CAPTURE_OFFLINE='1'

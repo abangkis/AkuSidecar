@@ -1,5 +1,7 @@
 param([switch]$NoChrome, [ValidateSet('overlap','mutation','coverage_loss')][string]$Scenario)
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'source-cache.ps1')
+$sourceBuildCaches = Get-SourceBuildCachePaths -Repository (Split-Path -Parent $PSScriptRoot)
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 $qaParent = Join-Path $projectRoot 'runtime\qa\auth-session-sidecar'
 New-Item -ItemType Directory -Path $qaParent -Force | Out-Null
@@ -9,7 +11,7 @@ $taskRoot = Join-Path $qaParent ('run-x-concurrency-suite-' + $runId)
 New-Item -ItemType Directory -Path $taskRoot | Out-Null
 $temporaryRoot = Join-Path $taskRoot 'go-tmp'
 New-Item -ItemType Directory -Path $temporaryRoot | Out-Null
-$cacheRoot = Join-Path $projectRoot '.go-build\x-session-verifier'
+$cacheRoot = $sourceBuildCaches.GoBuild
 $moduleCache = Join-Path $projectRoot '.go-build\mod'
 foreach ($path in @($cacheRoot, $moduleCache)) {
     New-Item -ItemType Directory -Path $path -Force | Out-Null
@@ -30,7 +32,7 @@ try {
     $env:TEMP = $temporaryRoot
     $env:TMP = $temporaryRoot
     $env:GOTMPDIR = $temporaryRoot
-    $env:GOCACHE = $cacheRoot
+    $env:GOCACHE = $sourceBuildCaches.GoBuild
     $env:GOMODCACHE = $moduleCache
     $env:GOPROXY = 'off'
     $env:GOSUMDB = 'off'
