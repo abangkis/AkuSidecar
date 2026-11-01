@@ -64,23 +64,7 @@ func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domai
 		}
 		value.ReasoningExecutablePath = resolvedExecutable
 	}
-	// Keep the currently running provider's projection before accepting a
-	// provider switch. The next runtime can restore the target provider's
-	// projection without reusing (or overwriting) this one.
-	profilesByProvider := make(map[string]domain.ReasoningProfileSet, len(current.ReasoningProfilesByProvider)+len(value.ReasoningProfilesByProvider)+1)
-	for provider, profiles := range current.ReasoningProfilesByProvider {
-		profilesByProvider[provider] = profiles
-	}
-	for provider, profiles := range value.ReasoningProfilesByProvider {
-		profilesByProvider[provider] = profiles
-	}
-	if current.ReasoningProvider != "" {
-		profilesByProvider[current.ReasoningProvider] = current.ActiveReasoningProfileSet()
-	}
-	if value.ReasoningProvider == current.ReasoningProvider && value.ReasoningProvider != "" {
-		profilesByProvider[value.ReasoningProvider] = value.ActiveReasoningProfileSet()
-	}
-	value.ReasoningProfilesByProvider = profilesByProvider
+	value.ReasoningProfilesByProvider = mergeReasoningProfilesByProvider(current, value)
 	value.Normalize()
 	var swap *providerSwapPlan
 	if strings.TrimSpace(value.ReasoningProvider) != current.ReasoningProvider {
