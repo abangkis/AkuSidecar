@@ -291,7 +291,7 @@ func TestXApplicationRouteShutdownClosesEngineBeforeOwnerCleanup(t *testing.T) {
 			orderFailure.Store(true)
 			return errors.New("Engine lock held during external disposal")
 		}
-		closed := x.e.shuttingDown
+		closed := x.e.work.shuttingDown
 		x.e.mu.RUnlock()
 		if !closed || !schedulerCanceled.Load() {
 			orderFailure.Store(true)

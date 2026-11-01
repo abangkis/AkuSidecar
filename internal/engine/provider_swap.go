@@ -145,13 +145,13 @@ func (e *Engine) ensureIdleForProviderSwap(ctx context.Context) error {
 		return fmt.Errorf("finish the active update before switching the reasoning provider")
 	}
 	e.mu.RLock()
-	activeWork := len(e.active) > 0
-	pendingDeep := len(e.pending) > 0
+	activeWork := len(e.work.active) > 0
+	pendingDeep := len(e.work.pending) > 0
 	e.mu.RUnlock()
 	if activeWork || pendingDeep {
 		return fmt.Errorf("finish active reasoning work before switching the reasoning provider")
 	}
-	if e.shuttingDown {
+	if e.work.shuttingDown {
 		return fmt.Errorf("reasoning provider cannot switch while shutting down")
 	}
 	return nil

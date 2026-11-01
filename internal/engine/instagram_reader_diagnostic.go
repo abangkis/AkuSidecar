@@ -128,14 +128,14 @@ func (e *Engine) runInstagramDiagnostic(ctx context.Context, operation string, a
 	}
 	e.mu.RLock()
 	condition := ""
-	if e.shuttingDown {
+	if e.work.shuttingDown {
 		condition = "shutting_down"
-	} else if e.processWorkers != 0 {
+	} else if e.work.processWorkers != 0 {
 		condition = "workers_active"
-	} else if len(e.active) != 0 {
+	} else if len(e.work.active) != 0 {
 		condition = "active_work"
 	}
-	for _, pending := range e.pending {
+	for _, pending := range e.work.pending {
 		if pending && condition == "" {
 			condition = "pending_work"
 		}
@@ -176,11 +176,11 @@ func (e *Engine) runInstagramDiagnostic(ctx context.Context, operation string, a
 	probeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	e.mu.Lock()
-	if e.shuttingDown || e.processWorkers != 0 || len(e.active) != 0 {
+	if e.work.shuttingDown || e.work.processWorkers != 0 || len(e.work.active) != 0 {
 		condition = "active_work"
-		if e.shuttingDown {
+		if e.work.shuttingDown {
 			condition = "shutting_down"
-		} else if e.processWorkers != 0 {
+		} else if e.work.processWorkers != 0 {
 			condition = "workers_active"
 		}
 		e.mu.Unlock()
@@ -189,11 +189,11 @@ func (e *Engine) runInstagramDiagnostic(ctx context.Context, operation string, a
 	done := make(chan struct{})
 	e.instagramReaderDiagnosticDone = done
 	e.instagramDiagnosticAttempt = attempt
-	e.processWorkers++
+	e.work.workerStarted()
 	e.mu.Unlock()
 	defer func() {
 		e.mu.Lock()
-		e.processWorkers--
+		e.work.workerFinished()
 		close(done)
 		e.mu.Unlock()
 	}()

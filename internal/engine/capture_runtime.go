@@ -911,8 +911,8 @@ func (e *Engine) hybridPredecessorsDrained(ctx context.Context, session domain.S
 			return false, nil
 		}
 		e.mu.RLock()
-		_, active := e.active[previous.ID]
-		_, pending := e.pending[previous.ID]
+		_, active := e.work.active[previous.ID]
+		_, pending := e.work.pending[previous.ID]
 		e.mu.RUnlock()
 		if active || pending {
 			return false, nil
@@ -994,10 +994,10 @@ func (e *Engine) releaseTerminalCaptureSessions(ctx context.Context) {
 		e.mu.RLock()
 		busy := false
 		for _, run := range session.Runs {
-			if _, active := e.active[run.ID]; active {
+			if _, active := e.work.active[run.ID]; active {
 				busy = true
 			}
-			if _, pending := e.pending[run.ID]; pending {
+			if _, pending := e.work.pending[run.ID]; pending {
 				busy = true
 			}
 		}

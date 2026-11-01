@@ -141,11 +141,11 @@ func TestSaveSettingsSwapsProviderWhenIdle(t *testing.T) {
 func TestSaveSettingsRejectsSwapWhileBusy(t *testing.T) {
 	runtime, state := swapTestEngine(t)
 	runtime.mu.Lock()
-	runtime.active["busy-run"] = func() {}
+	runtime.work.active["busy-run"] = func() {}
 	runtime.mu.Unlock()
 	t.Cleanup(func() {
 		runtime.mu.Lock()
-		delete(runtime.active, "busy-run")
+		delete(runtime.work.active, "busy-run")
 		runtime.mu.Unlock()
 	})
 	current, err := state.GetSettings(context.Background())

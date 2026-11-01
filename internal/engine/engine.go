@@ -87,11 +87,7 @@ type Engine struct {
 	heartbeat                                *domain.BridgeHeartbeat
 	headlessAccess                           []domain.Source
 	bridgeOrigins                            map[string]time.Time
-	active                                   map[string]context.CancelFunc
-	processWorkers                           int
-	pending                                  map[string]bool
-	cancelled                                map[string]bool
-	shuttingDown                             bool
+	work                                     engineWorkState
 	logger                                   Logger
 	reloads                                  *ReloadActions
 	events                                   *semanticengine.Engine
@@ -115,7 +111,7 @@ func New(state *store.Store, provider reasoning.Provider, cfg config.Config, log
 	if len(eventEngines) > 0 {
 		events = eventEngines[0]
 	}
-	return &Engine{store: state, provider: provider, config: cfg, epoch: domain.NewID("epoch"), active: map[string]context.CancelFunc{}, pending: map[string]bool{}, cancelled: map[string]bool{}, bridgeOrigins: map[string]time.Time{}, logger: logger, reloads: NewReloadActions(15 * time.Second), events: events, autoWake: make(chan struct{}, 1)}
+	return &Engine{store: state, provider: provider, config: cfg, epoch: domain.NewID("epoch"), work: newEngineWorkState(), bridgeOrigins: map[string]time.Time{}, logger: logger, reloads: NewReloadActions(15 * time.Second), events: events, autoWake: make(chan struct{}, 1)}
 }
 func (e *Engine) SetAIDeepResolver(value aidetector.Resolver)         { e.aiDeep = value }
 func (e *Engine) SetLivingTopicsResolver(value livingtopics.Resolver) { e.topics = value }
@@ -188,7 +184,7 @@ func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domai
 			return domain.Settings{}, activeErr
 		}
 		e.mu.RLock()
-		activeWork := len(e.active) > 0
+		activeWork := len(e.work.active) > 0
 		e.mu.RUnlock()
 		if active != nil || activeWork {
 			return domain.Settings{}, errors.New("finish the active update or AI Deep Detection before changing the reasoning executable")
@@ -968,17 +964,17 @@ func (e *Engine) launchMediaProvenanceItems(items []domain.TimelineItem) {
 	}
 	const key = "media-provenance"
 	e.mu.Lock()
-	if _, active := e.active[key]; active {
+	if _, active := e.work.active[key]; active {
 		e.mu.Unlock()
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	e.active[key] = cancel
+	e.work.registerActive(key, cancel)
 	e.mu.Unlock()
 	go func() {
 		defer func() {
 			e.mu.Lock()
-			delete(e.active, key)
+			e.work.retireActive(key)
 			e.mu.Unlock()
 		}()
 		for {
@@ -1020,7 +1016,7 @@ func (e *Engine) launchDeepDetectionItems(sessionID string, items []domain.Timel
 		return
 	}
 	e.mu.Lock()
-	for id, cancel := range e.active {
+	for id, cancel := range e.work.active {
 		if strings.HasPrefix(id, "ai:"+sessionID+":") {
 			cancel()
 		}
@@ -1049,12 +1045,12 @@ func (e *Engine) launchDeepDetectionItems(sessionID string, items []domain.Timel
 	key := "ai:" + sessionID + ":" + job.ID
 	ctx, cancel := context.WithCancel(context.Background())
 	e.mu.Lock()
-	e.active[key] = cancel
+	e.work.registerActive(key, cancel)
 	e.mu.Unlock()
 	go func() {
 		defer func() {
 			e.mu.Lock()
-			delete(e.active, key)
+			e.work.retireActive(key)
 			e.mu.Unlock()
 		}()
 		if err := e.store.StartAIDetectionJob(ctx, job.ID); err != nil {
@@ -1116,7 +1112,7 @@ func (e *Engine) launchDeepDetectionItems(sessionID string, items []domain.Timel
 func (e *Engine) cancelDeepDetections() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	for id, cancel := range e.active {
+	for id, cancel := range e.work.active {
 		if strings.HasPrefix(id, "ai:") || id == "media-provenance" {
 			cancel()
 		}
@@ -1542,75 +1538,6 @@ func (e *Engine) launch(runID string) {
 	e.launchProcess(runID, true)
 }
 
-func (e *Engine) launchProcess(runID string, allowPlanning bool) {
-	e.launchProcessWithPolicy(runID, allowPlanning, false)
-}
-
-func (e *Engine) launchProcessAfterObservation(runID string, allowPlanning bool) {
-	e.launchProcessWithPolicy(runID, allowPlanning, true)
-}
-
-func (e *Engine) launchProcessWithPolicy(runID string, allowPlanning, queueIfActive bool) {
-	e.mu.Lock()
-	if e.shuttingDown {
-		e.mu.Unlock()
-		return
-	}
-	if e.cancelled[runID] {
-		e.mu.Unlock()
-		return
-	}
-	if _, exists := e.active[runID]; exists {
-		if queueIfActive {
-			queuedAllowPlanning, queued := e.pending[runID]
-			e.pending[runID] = allowPlanning || (queued && queuedAllowPlanning)
-		}
-		e.mu.Unlock()
-		return
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	e.active[runID] = cancel
-	e.processWorkers++
-	e.mu.Unlock()
-	go func() {
-		succeeded := false
-		defer func() {
-			// Retiring active admission is not the end of the worker: deferred
-			// session/capture cleanup below still uses SQLite. Keep shutdown's
-			// drain count until those operations have actually returned.
-			defer func() { e.mu.Lock(); e.processWorkers--; e.mu.Unlock() }()
-			e.mu.Lock()
-			delete(e.active, runID)
-			pendingAllowPlanning, pending := e.pending[runID]
-			delete(e.pending, runID)
-			relaunch := succeeded && pending && !e.cancelled[runID] && !e.shuttingDown
-			e.mu.Unlock()
-			if relaunch {
-				e.launchProcess(runID, pendingAllowPlanning)
-			} else if run, runErr := e.store.GetRun(context.Background(), runID); runErr == nil {
-				if session, sessionErr := e.store.GetSession(context.Background(), run.SessionID); sessionErr == nil && hybridCollectionSession(session) {
-					if _, advanceErr := e.startNext(context.Background(), session.ID); advanceErr != nil {
-						e.logger.Printf("retry hybrid collection admission for session %s after worker drain: %v", session.ID, advanceErr)
-					}
-				}
-			}
-			e.releaseTerminalCaptureSessions(context.Background())
-		}()
-		if err := e.process(ctx, runID, allowPlanning); err != nil {
-			if e.shouldPauseForShutdown(ctx, err) {
-				e.logger.Printf("run %s paused during shutdown and will resume from accepted capture", runID)
-				return
-			}
-			e.logger.Printf("run %s failed: %v", runID, err)
-			if failErr := e.failRunAfterProcessError(context.Background(), runID, err); failErr != nil {
-				e.logger.Printf("record failed run %s: %v", runID, failErr)
-			}
-			return
-		}
-		succeeded = true
-	}()
-}
-
 func boundedFailureMessage(err error) string {
 	return boundedText(err.Error(), 500)
 }
@@ -1769,13 +1696,6 @@ func modelUsageProvesCodexRestored(report domain.ModelUsageReport) bool {
 		}
 	}
 	return completedModelInvocation
-}
-
-func (e *Engine) shouldPauseForShutdown(ctx context.Context, err error) bool {
-	e.mu.RLock()
-	shuttingDown := e.shuttingDown
-	e.mu.RUnlock()
-	return shuttingDown && (errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled))
 }
 
 // ResumePendingReasoning continues only from already accepted observations.
@@ -2473,29 +2393,7 @@ func (e *Engine) FailCommand(ctx context.Context, commandID, runID string, failu
 	}
 	return run, err
 }
-func (e *Engine) CancelSession(ctx context.Context, id string) error {
-	session, err := e.store.GetSession(ctx, id)
-	if err != nil {
-		return err
-	}
-	e.mu.Lock()
-	if e.cancelled == nil {
-		e.cancelled = map[string]bool{}
-	}
-	for _, run := range session.Runs {
-		e.cancelled[run.ID] = true
-		delete(e.pending, run.ID)
-		if cancel, active := e.active[run.ID]; active {
-			cancel()
-		}
-	}
-	e.mu.Unlock()
-	if err := e.store.CancelSession(ctx, id); err != nil {
-		return err
-	}
-	e.releaseTerminalCaptureSessions(ctx)
-	return nil
-}
+
 func (e *Engine) AddFeedback(ctx context.Context, timelineID string, value domain.Feedback) (domain.Feedback, error) {
 	return e.store.AddFeedback(ctx, timelineID, value)
 }
@@ -2574,7 +2472,7 @@ func (e *Engine) UndoSelectionCorrection(ctx context.Context, id string) (domain
 		return domain.SelectionCorrection{}, err
 	}
 	e.mu.Lock()
-	for key, cancel := range e.active {
+	for key, cancel := range e.work.active {
 		if strings.HasPrefix(key, "ai:"+value.SessionID+":") {
 			cancel()
 		}
@@ -2942,38 +2840,6 @@ func (e *Engine) CleanDatabase(ctx context.Context, request store.DatabaseCleanu
 	return e.store.CleanDatabase(ctx, request)
 }
 
-func (e *Engine) Shutdown() {
-	e.mu.Lock()
-	e.shuttingDown = true
-	if e.autoCancel != nil {
-		e.autoCancel()
-	}
-	for _, cancel := range e.active {
-		cancel()
-	}
-	e.mu.Unlock()
-	e.shutdownXManual()
-}
-func (e *Engine) CloseProvider() error {
-	if closer, ok := e.provider.(interface{ Close() error }); ok {
-		return closer.Close()
-	}
-	return nil
-}
-func (e *Engine) WaitForIdle(timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		e.mu.RLock()
-		count := len(e.active) + e.processWorkers
-		e.mu.RUnlock()
-		if count == 0 && !e.xManualStartupPending() {
-			return true
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-	return false
-}
-
 func (e *Engine) DiagnosticsExport(ctx context.Context, since, until string, sessionID string) (domain.DiagnosticsExport, error) {
 	var sinceTime, untilTime time.Time
 	var err error
@@ -3247,39 +3113,4 @@ func getPipelineStage(s domain.Session) string {
 		return stage
 	}
 	return ""
-}
-
-func (e *Engine) RuntimeUpdateReadiness(ctx context.Context) (bool, string, error) {
-	active, err := e.store.ActiveSession(ctx)
-	if err != nil {
-		return false, "state_unavailable", err
-	}
-	if active != nil {
-		return false, "active_session", nil
-	}
-	calibration, err := e.store.ActiveCalibration(ctx)
-	if err != nil {
-		return false, "state_unavailable", err
-	}
-	if calibration != nil {
-		return false, "active_calibration", nil
-	}
-	recapturing, err := e.store.ActiveMediaRecapture(ctx)
-	if err != nil {
-		return false, "state_unavailable", err
-	}
-	if recapturing {
-		return false, "active_media_recapture", nil
-	}
-	e.mu.RLock()
-	activeWorkers := len(e.active) + e.processWorkers
-	shuttingDown := e.shuttingDown
-	e.mu.RUnlock()
-	if shuttingDown {
-		return false, "shutdown_in_progress", nil
-	}
-	if activeWorkers > 0 {
-		return false, "background_work", nil
-	}
-	return true, "idle", nil
 }

@@ -241,12 +241,12 @@ func (d dailyController) queue(run domain.Run, payload map[string]any) error {
 	d.state.retryWaiting = retryAt.After(e.store.Now())
 	d.state.mu.Unlock()
 	e.mu.Lock()
-	e.processWorkers++
+	e.work.workerStarted()
 	e.mu.Unlock()
 	go func() {
 		defer func() {
 			e.mu.Lock()
-			e.processWorkers--
+			e.work.workerFinished()
 			e.mu.Unlock()
 			d.state.mu.Lock()
 			d.state.workers--

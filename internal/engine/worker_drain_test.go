@@ -39,7 +39,7 @@ func TestEngineIdleIncludesDeferredWorkerCleanup(t *testing.T) {
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		e.mu.RLock()
-		retired := len(e.active) == 0 && e.processWorkers == 1
+		retired := len(e.work.active) == 0 && e.work.processWorkers == 1
 		e.mu.RUnlock()
 		if retired {
 			break

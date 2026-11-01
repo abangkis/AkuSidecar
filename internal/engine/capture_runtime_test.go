@@ -186,14 +186,14 @@ func TestSessionLeasePinsQueuedCaptureAndCancelledWorkerDrain(t *testing.T) {
 	}
 	_, cancel := context.WithCancel(ctx)
 	engine.mu.Lock()
-	engine.active[session.Runs[0].ID] = cancel
+	engine.work.active[session.Runs[0].ID] = cancel
 	engine.mu.Unlock()
 	if err := engine.CancelSession(ctx, session.ID); err != nil {
 		t.Fatal(err)
 	}
 	waitCaptureLeases(t, manager, 1)
 	engine.mu.Lock()
-	delete(engine.active, session.Runs[0].ID)
+	delete(engine.work.active, session.Runs[0].ID)
 	engine.mu.Unlock()
 	engine.releaseTerminalCaptureSessions(ctx)
 	waitCaptureLeases(t, manager, 0)

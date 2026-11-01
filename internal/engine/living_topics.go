@@ -521,18 +521,18 @@ func (e *Engine) launchLivingTopicUnderstanding(topicID, trigger string) {
 	}
 	const key = "living-topics-understanding"
 	e.mu.Lock()
-	if _, active := e.active[key]; active {
+	if _, active := e.work.active[key]; active {
 		e.mu.Unlock()
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	e.active[key] = cancel
+	e.work.registerActive(key, cancel)
 	e.mu.Unlock()
 	go func() {
 		defer func() {
 			e.mu.Lock()
-			delete(e.active, key)
-			shuttingDown := e.shuttingDown
+			e.work.retireActive(key)
+			shuttingDown := e.work.shuttingDown
 			e.mu.Unlock()
 			if !shuttingDown {
 				if pending, err := e.store.HasPendingLivingTopicUnderstanding(context.Background()); err == nil && pending {
@@ -594,18 +594,18 @@ func (e *Engine) launchLivingTopicActivation(topicID, trigger string) {
 	}
 	const key = "living-topics-activation"
 	e.mu.Lock()
-	if _, active := e.active[key]; active {
+	if _, active := e.work.active[key]; active {
 		e.mu.Unlock()
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	e.active[key] = cancel
+	e.work.registerActive(key, cancel)
 	e.mu.Unlock()
 	go func() {
 		defer func() {
 			e.mu.Lock()
-			delete(e.active, key)
-			shuttingDown := e.shuttingDown
+			e.work.retireActive(key)
+			shuttingDown := e.work.shuttingDown
 			e.mu.Unlock()
 			if !shuttingDown {
 				if pending, err := e.store.HasPendingLivingTopicActivation(context.Background()); err == nil && pending {
@@ -727,12 +727,12 @@ func (e *Engine) launchLivingTopicRouting(sessionID string) {
 	}
 	const key = "living-topics-routing"
 	e.mu.Lock()
-	if _, active := e.active[key]; active {
+	if _, active := e.work.active[key]; active {
 		e.mu.Unlock()
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	e.active[key] = cancel
+	e.work.registerActive(key, cancel)
 	e.mu.Unlock()
 	go func() {
 		dirtyTopics := map[string]bool{}
@@ -743,8 +743,8 @@ func (e *Engine) launchLivingTopicRouting(sessionID string) {
 				}
 			}
 			e.mu.Lock()
-			delete(e.active, key)
-			shuttingDown := e.shuttingDown
+			e.work.retireActive(key)
+			shuttingDown := e.work.shuttingDown
 			e.mu.Unlock()
 			if !shuttingDown {
 				if len(dirtyTopics) > 0 {

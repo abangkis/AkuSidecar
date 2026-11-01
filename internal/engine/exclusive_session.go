@@ -124,7 +124,7 @@ func (b *exclusiveSessionBinding) busy() bool {
 	running := e.fixtureAdmission.running
 	e.fixtureAdmission.mu.Unlock()
 	e.mu.RLock()
-	active := len(e.active) + len(e.pending)
+	active := len(e.work.active) + len(e.work.pending)
 	e.mu.RUnlock()
 	return running > 0 || active > 0
 }

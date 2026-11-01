@@ -55,7 +55,7 @@ func (r *DevelopmentFixtureRuntime) PauseEvidence(ctx context.Context, sessionID
 	v.AdmissionPaused, v.CaptureSteps = r.Engine.fixtureAdmission.paused, r.Engine.fixtureAdmission.running
 	r.Engine.fixtureAdmission.mu.Unlock()
 	r.Engine.mu.RLock()
-	v.ActiveWork = len(r.Engine.active) + len(r.Engine.pending)
+	v.ActiveWork = len(r.Engine.work.active) + len(r.Engine.work.pending)
 	r.Engine.mu.RUnlock()
 	var err error
 	v.SQLitePaused, err = r.State.FixtureCaptureSessionPaused(ctx, sessionID)

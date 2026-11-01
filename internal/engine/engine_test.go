@@ -64,7 +64,7 @@ func testEngineWithClock(t *testing.T, clock store.Clock) (*Engine, *store.Store
 
 func TestShutdownCancelsButRetainsActiveWorkUntilWorkerExits(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	runtime := &Engine{active: map[string]context.CancelFunc{"work": cancel}}
+	runtime := &Engine{work: engineWorkState{active: map[string]context.CancelFunc{"work": cancel}}}
 	runtime.Shutdown()
 	select {
 	case <-ctx.Done():
@@ -75,7 +75,7 @@ func TestShutdownCancelsButRetainsActiveWorkUntilWorkerExits(t *testing.T) {
 		t.Fatal("work must remain registered until its worker exits")
 	}
 	runtime.mu.Lock()
-	delete(runtime.active, "work")
+	delete(runtime.work.active, "work")
 	runtime.mu.Unlock()
 	if !runtime.WaitForIdle(50 * time.Millisecond) {
 		t.Fatal("runtime did not become idle after worker exit")
@@ -90,7 +90,7 @@ func TestRuntimeUpdateReadinessFailsClosedWhileWorkIsActive(t *testing.T) {
 	}
 	_, cancel := context.WithCancel(context.Background())
 	runtime.mu.Lock()
-	runtime.active["candidate_evaluation"] = cancel
+	runtime.work.active["candidate_evaluation"] = cancel
 	runtime.mu.Unlock()
 	ready, reason, err = runtime.RuntimeUpdateReadiness(context.Background())
 	if err != nil || ready || reason != "background_work" {
@@ -98,15 +98,15 @@ func TestRuntimeUpdateReadinessFailsClosedWhileWorkIsActive(t *testing.T) {
 	}
 	cancel()
 	runtime.mu.Lock()
-	delete(runtime.active, "candidate_evaluation")
-	runtime.processWorkers = 1
+	delete(runtime.work.active, "candidate_evaluation")
+	runtime.work.processWorkers = 1
 	runtime.mu.Unlock()
 	ready, reason, err = runtime.RuntimeUpdateReadiness(context.Background())
 	if err != nil || ready || reason != "background_work" {
 		t.Fatalf("draining worker readiness ready=%v reason=%q err=%v", ready, reason, err)
 	}
 	runtime.mu.Lock()
-	runtime.processWorkers = 0
+	runtime.work.processWorkers = 0
 	runtime.mu.Unlock()
 	ready, reason, err = runtime.RuntimeUpdateReadiness(context.Background())
 	if err != nil || !ready || reason != "idle" {
@@ -198,16 +198,15 @@ func TestMultipleLiveBridgeOriginsStopDispatch(t *testing.T) {
 
 func TestAcceptedObservationQueuesRelaunchWhilePriorPassIsActive(t *testing.T) {
 	_, cancel := context.WithCancel(context.Background())
-	runtime := &Engine{
-		active:  map[string]context.CancelFunc{"run": cancel},
-		pending: map[string]bool{},
+	runtime := &Engine{work: engineWorkState{active: map[string]context.CancelFunc{"run": cancel},
+		pending: map[string]bool{}},
 	}
 	runtime.launchProcessWithPolicy("run", true, true)
-	if allowPlanning, queued := runtime.pending["run"]; !queued || !allowPlanning {
+	if allowPlanning, queued := runtime.work.pending["run"]; !queued || !allowPlanning {
 		t.Fatalf("pending relaunch=%v allowPlanning=%v", queued, allowPlanning)
 	}
 	runtime.launchProcessWithPolicy("run", false, false)
-	if allowPlanning := runtime.pending["run"]; !allowPlanning {
+	if allowPlanning := runtime.work.pending["run"]; !allowPlanning {
 		t.Fatal("a non-observation launch must not erase the accepted-observation relaunch")
 	}
 	cancel()
@@ -223,8 +222,8 @@ func TestCancelSessionSuppressesQueuedRelaunchUntilWorkerExits(t *testing.T) {
 	runID := session.Runs[0].ID
 	workerContext, cancel := context.WithCancel(context.Background())
 	runtime.mu.Lock()
-	runtime.active[runID] = cancel
-	runtime.pending[runID] = true
+	runtime.work.active[runID] = cancel
+	runtime.work.pending[runID] = true
 	runtime.mu.Unlock()
 
 	if err := runtime.CancelSession(ctx, session.ID); err != nil {
@@ -236,9 +235,9 @@ func TestCancelSessionSuppressesQueuedRelaunchUntilWorkerExits(t *testing.T) {
 		t.Fatal("active worker was not cancelled")
 	}
 	runtime.mu.RLock()
-	_, active := runtime.active[runID]
-	_, pending := runtime.pending[runID]
-	cancelled := runtime.cancelled[runID]
+	_, active := runtime.work.active[runID]
+	_, pending := runtime.work.pending[runID]
+	cancelled := runtime.work.cancelled[runID]
 	runtime.mu.RUnlock()
 	if !active {
 		t.Fatal("cancel removed active ownership before the worker exited")
@@ -249,18 +248,18 @@ func TestCancelSessionSuppressesQueuedRelaunchUntilWorkerExits(t *testing.T) {
 
 	runtime.launchProcessWithPolicy(runID, true, true)
 	runtime.mu.RLock()
-	_, pending = runtime.pending[runID]
+	_, pending = runtime.work.pending[runID]
 	runtime.mu.RUnlock()
 	if pending {
 		t.Fatal("cancelled work accepted another queued relaunch")
 	}
 
 	runtime.mu.Lock()
-	delete(runtime.active, runID)
+	delete(runtime.work.active, runID)
 	runtime.mu.Unlock()
 	runtime.launchProcess(runID, true)
 	runtime.mu.RLock()
-	_, active = runtime.active[runID]
+	_, active = runtime.work.active[runID]
 	runtime.mu.RUnlock()
 	if active {
 		t.Fatal("cancelled work relaunched after its worker exited")
@@ -276,7 +275,7 @@ func TestCancelSessionSuppressesRelaunchAfterActiveOwnershipGap(t *testing.T) {
 	}
 	runID := session.Runs[0].ID
 	runtime.mu.Lock()
-	runtime.pending[runID] = true
+	runtime.work.pending[runID] = true
 	runtime.mu.Unlock()
 
 	if err := runtime.CancelSession(ctx, session.ID); err != nil {
@@ -284,9 +283,9 @@ func TestCancelSessionSuppressesRelaunchAfterActiveOwnershipGap(t *testing.T) {
 	}
 	runtime.launchProcess(runID, true)
 	runtime.mu.RLock()
-	_, active := runtime.active[runID]
-	_, pending := runtime.pending[runID]
-	cancelled := runtime.cancelled[runID]
+	_, active := runtime.work.active[runID]
+	_, pending := runtime.work.pending[runID]
+	cancelled := runtime.work.cancelled[runID]
 	runtime.mu.RUnlock()
 	if active || pending || !cancelled {
 		t.Fatalf("cancel gap state active=%v pending=%v cancelled=%v", active, pending, cancelled)

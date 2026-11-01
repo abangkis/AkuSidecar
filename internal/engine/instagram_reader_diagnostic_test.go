@@ -126,14 +126,14 @@ func TestInstagramReaderDiagnosticAdmissionRejectsWithoutDispatch(t *testing.T) 
 				e.operation.Lock()
 				restore = e.operation.Unlock
 			case "workers":
-				e.processWorkers = 1
-				restore = func() { e.processWorkers = 0 }
+				e.work.processWorkers = 1
+				restore = func() { e.work.processWorkers = 0 }
 			case "pending":
-				e.pending["synthetic"] = true
-				restore = func() { delete(e.pending, "synthetic") }
+				e.work.pending["synthetic"] = true
+				restore = func() { delete(e.work.pending, "synthetic") }
 			case "active":
-				e.active["synthetic"] = func() {}
-				restore = func() { delete(e.active, "synthetic") }
+				e.work.active["synthetic"] = func() {}
+				restore = func() { delete(e.work.active, "synthetic") }
 			case "daily_cleanup":
 				e.instagramDaily.done = make(chan struct{})
 				restore = func() { e.instagramDaily.done = nil }

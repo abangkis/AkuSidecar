@@ -149,15 +149,15 @@ func TestXDailyQueuedRunWaitsForPredecessorWorkerRetirement(t *testing.T) {
 			e.mu.Lock()
 			switch fence {
 			case "active":
-				e.active[predecessor.ID] = func() {}
+				e.work.active[predecessor.ID] = func() {}
 			case "pending":
-				e.pending[predecessor.ID] = false
+				e.work.pending[predecessor.ID] = false
 			}
 			e.mu.Unlock()
 			t.Cleanup(func() {
 				e.mu.Lock()
-				delete(e.active, predecessor.ID)
-				delete(e.pending, predecessor.ID)
+				delete(e.work.active, predecessor.ID)
+				delete(e.work.pending, predecessor.ID)
 				e.mu.Unlock()
 			})
 
@@ -169,8 +169,8 @@ func TestXDailyQueuedRunWaitsForPredecessorWorkerRetirement(t *testing.T) {
 			}
 
 			e.mu.Lock()
-			delete(e.active, predecessor.ID)
-			delete(e.pending, predecessor.ID)
+			delete(e.work.active, predecessor.ID)
+			delete(e.work.pending, predecessor.ID)
 			e.mu.Unlock()
 			if _, err := e.startNext(ctx, session.ID); err != nil {
 				t.Fatalf("scheduler after %s predecessor retirement: %v", fence, err)
@@ -210,7 +210,7 @@ func TestXDailyCompletionAndWorkerRetirementWakeQueuedRun(t *testing.T) {
 	}()
 	completeDailyBrowserRun(t, e, manager, session.ID, domain.SourceLinkedIn)
 	e.mu.RLock()
-	_, workerActive := e.active[session.Runs[0].ID]
+	_, workerActive := e.work.active[session.Runs[0].ID]
 	e.mu.RUnlock()
 	if !workerActive {
 		t.Fatal("reasoning worker retired before the scheduler barrier observed it")
