@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result and CL-3.3 HTTP Bridge command/media-recapture features below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture features below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -952,12 +952,69 @@ browser capture, runtime/configuration change, activation or live trial is
 performed. Scoped source review is accepted; CL-3 and operational source
 acceptance remain open. Publication is verified by the post-push readback.
 
-The next proposal is read-only analysis of merging observations across rounds
-and deriving capture continuation: `mergeObservations`, `continuationFrom`,
-`snapshotContinuationAnchors`, `continuationAnchors` and their shared helper
-consumers. Map accumulated evidence versus latest-round navigation/coverage,
-source-specific overlap, continuation readiness, anchor precedence/bounds and
-follow-up payload consumers before choosing one cohesive boundary and missing
-characterization. Keep completion policy, vision routing, Store ownership,
-protocol, guards, contexts and effect/error order unchanged. No further
-implementation is approved.
+The capture-round proposal and Store assertion correction were subsequently
+approved and implemented; the result and next proposal are recorded below.
+
+## CL-3.2 Engine capture rounds result (2026-11-02)
+
+The separately approved helper move and Store assertion correction are
+committed/published as `683b1e86e2b06722d865f7b5998d42e05e715eb7`.
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Engine capture rounds and privacy-test validation detour | `683b1e8` | Capture-round characterization passes 59 default/dev results before/after relocation; privacy test passes 20 repetitions per build after deterministic legacy failure; fresh 13-package selection (12 tested, Bridge builder compile-only) passes default 1,705/48 skip and dev 2,549/60 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [final validation](../runtime/qa/store-tombstone-assertion-20261102/validation.json), [review](../runtime/qa/engine-capture-rounds-review-20261102/review.json) and [commit readback](../runtime/qa/engine-capture-rounds-review-20261102/final-readback.json) verify combined source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed/published. Eight free helpers and Engine remainder byte-identical; callers, telemetry/coverage/alias/reconciliation/continuation semantics, locks, contexts, protocol and guards retained. Exact independent HMAC test vectors replace the probabilistic assertion; production privacy behavior unchanged. CL-3 remains partial; operational acceptance remains open |
+
+Declarations in `capture_rounds.go`: `mergeObservations`,
+`mergeDurableRunCoverage`, `cloneCoverageMap`, `followUpNewCandidateCount`,
+`observationEvidenceKeys`, `continuationFrom`,
+`snapshotContinuationAnchors` and `continuationAnchors`. All eight remain
+free functions with byte-identical signatures/bodies. Engine remainder and
+existing imports are byte-identical; session execution, reconciliation,
+source descriptors, payload builder, Store guards, locks and contexts are
+unchanged. No interface, state owner, fallback policy or capture authority is added.
+
+The [initial capture receipt](../runtime/qa/engine-capture-rounds-20261102/validation.json)
+records 59 identical default/dev characterization results before/after the move,
+the initial Store failure and a passing development composite after Store recheck.
+It remains historical. Coverage includes latest-round metadata/navigation,
+accumulated evidence, durable capture-field exclusion, shallow-copy aliases,
+reconciliation/yield, readiness and source overlap, exact anchor/scroll/bounds,
+queue rollback, receipt failure after committed queue, yield failure before
+reasoning, no-observation rejection and bounded two-round payload behavior.
+
+The initial Store failure came from checking opaque HMAC hex digests for the
+substring 1001. A valid keyed digest can contain those digits. The separately
+approved fix changes only TestMemoryDeleteClearsPrivacyAndLeavesOpaqueTombstone:
+a synthetic per-database key and three independently computed exact HMAC
+vectors replace the substring heuristic, while every earlier privacy/recapture
+assertion remains unchanged. Deterministic legacy reproductions fail for the
+correct reason in both builds; the fixed test passes 20 repetitions per build.
+Production privacy behavior, random key generation and all guards are unchanged.
+
+The [final validation](../runtime/qa/store-tombstone-assertion-20261102/validation.json), [review](../runtime/qa/engine-capture-rounds-review-20261102/review.json) and [commit readback](../runtime/qa/engine-capture-rounds-review-20261102/final-readback.json) map the combined final payload at parent
+`2effa0b9f8932b16408ae98ad7fc1a00bc893c23` to the exact four committed blobs.
+Fresh full default/dev runs pass 1,705/2,549 results with 48/60 skips and zero
+failures. They supersede the old composite evidence for this new payload;
+the failed log and old receipts are not rewritten. Thirteen packages are selected:
+Capture, Collection and Bridge builder are added to the preceding ten-package
+scope; 12 execute tests and Bridge builder compiles without test files. Counts
+include parents/subtests; the 20 target repetitions are not unique test cases
+or added to the full-suite totals. Four Windows amd64 build-tag graphs and 16
+artifacts pass: Store tests, Engine tests, HTTP tests and application per mode.
+
+Review verifies helper/remainder equivalence, original privacy assertions,
+source/log/vector/artifact hashes and committed blobs. This documentation sync
+reuses matching evidence without rerunning product tests/builds. Existing
+`.tmp/` and `experiments/` are preserved. Scoped source review is accepted;
+activation, live-source qualification and operational acceptance remain open.
+CL-3 remains partial. The [code publication receipt](../runtime/qa/engine-capture-rounds-review-20261102/push-readback.json)
+establishes the code push; the subsequent documentation push is verified separately.
+
+The next proposal is read-only analysis of local acquisition decisions:
+`localStructuredFallbackCompletionReason`, `localAcquisitionCompletionReason`,
+`localXFollowUpReason` and the `localFrontierFinishesAcquisition` wrapper.
+Map source descriptors, candidate/quality/deadline/frontier predicates,
+model-planning fallback and receipt/error order before choosing one cohesive
+boundary and missing characterization. Keep shared coverage readers,
+continuation derivation, payload dispatch, protocol and guards unchanged.
+No further implementation, runtime change or trial is approved.
