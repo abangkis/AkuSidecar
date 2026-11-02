@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback/FullReset/Library removal/passive media evidence, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture/update-session/media-entry/bootstrap/reload-action features, router map and bounded capture-owner path/telemetry rotation guard corrections below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback/FullReset/Library removal/passive media evidence, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture/update-session/media-entry/bootstrap/reload-action/development-X features, router map and bounded capture-owner path/telemetry rotation guard corrections below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -1732,6 +1732,70 @@ emitter or global drain. Operational acceptance remains open.
 This is a correctness increment, not a seventh HTTP extraction. The router-map
 counts remain 106 arms: 54 retained, 52 deferred; 30 retained server.go
 function/method declarations and 52 central Engine declarations. CL-3.3 and CL-3
-remain partial. The next proposed read-only boundary is the four development X
-start/stop HTTP adapters; see the [cleanup roadmap](code-cleanup-roadmap.md#proposed-next-cleanup-analysis).
+remain partial. The then-proposed development X start/stop adapter review and
+separately approved extraction are now complete; see the
+[development X result](#cl-33-http-development-x-controls-result-2026-11-03).
 No further extraction, activation or trial is approved by this result.
+
+## CL-3.3 HTTP development X controls result (2026-11-03)
+
+The separately approved extraction is committed as `1814c9b` in
+`internal/httpapi/x_development.go`. Four Server methods own request/response
+adaptation: startXDaily, stopXDaily, startXManual and stopXManual. The 56 original
+body lines move unchanged except indentation, with the same caller context bound
+locally by `ctx := r.Context()`. Router predicates/order/normalization remain
+exact and the remainder differs only in four delegations. No Engine, Store,
+shared security, decoder, telemetry, schema/protocol or guard implementation changes.
+
+The boundary preserves security, development mode, epoch, decoding, Engine call,
+status projection and response order. Daily start accepts process derivation
+consent; manual start accepts one-session consent. Daily stop calls
+RevokeXDailyPermission, persisting opt-out before cleanup; manual stop continues
+through StopXManual, including its distinct daily-configured behavior. No generic
+action handler, permission rewrite, new lock, concurrency or cancellation owner
+was introduced. Shared readConsentFields remains in its current file for IG callers.
+
+Characterization was added first and frozen byte-identically across the move.
+It covers all four admission paths before body reads, loopback/origin and extension
+rejection, development/epoch precedence, method/path/preflight, distinct consent
+scope and duplicate/unknown/missing fields, the 1 KiB boundary, false/null consent,
+stop decoder null/trailing-input behavior, canonical/trailing/encoded stop paths,
+status/error envelopes and headers, repeated stop and cleanup partial effects,
+settings preservation, ended caller contexts and response-write failures.
+
+- Before/after default/dev characterization: 123 passing parent/subtest results
+  in each selection; zero skips/failures, unchanged test SHA256.
+- Matching 14-package selection (13 tested, Bridge builder compile-only): default
+  2,542 pass/50 skip and dev 3,386 pass/62 skip, zero failures.
+- Four Windows amd64 build-tag graphs include the characterization; Store, Engine,
+  HTTP and application produce 16 compiled artifacts. Combined fixture builds
+  are compile evidence, not an executed native/browser journey.
+- Review rechecked raw log result summaries, exact original bodies/router remainder,
+  source/test/configuration and helper identities, plus all 16 binary hashes.
+  No product tests/builds were rerun for commit/documentation/publication alone.
+
+Counts include parents/subtests and repeated tag selections, not unique independent
+cases. The HTTP fixture uses isolated SQLite/Engine without an installed owner.
+Successful native-start response branches and manual cleanup-uncertain mapping
+retain exact body equivalence; existing Engine synthetic tests retain lifecycle
+coverage. Cancelled/deadline HTTP cases cover safely reachable outcomes; exact
+request-context forwarding is also verified structurally. No production injection
+seam, new race-detector run, native/browser startup, activation or live trial is claimed.
+
+Implemented/tested and scoped Coordinator review accepted; committed as `1814c9b`.
+Activation and operational acceptance remain open. Evidence:
+[validation](../runtime/qa/http-x-development-20261103/validation.json),
+[extraction proof](../runtime/qa/http-x-development-20261103/extraction-proof.json),
+[review](../runtime/qa/http-x-development-review-20261103/review.json) and
+[later commit/publication readback](../runtime/qa/http-x-development-review-20261103/final-readback.json).
+The validation's sourceDirty=true, committed=false and related fields describe
+its original capture time and remain unchanged.
+
+This establishes the seventh scoped HTTP extraction, not completion of CL-3.3
+or CL-3. The router remains 106 top-level arms: 58 retained (32 feature delegations,
+26 thin/control/heartbeat) and 48 deferred (five native/dev/telemetry, 43 product).
+All 30 server.go declarations and 52 central Engine declarations remain retained.
+The next proposed read-only boundary is the three semantic-event correction HTTP
+adapters; see the [cleanup roadmap](code-cleanup-roadmap.md#proposed-next-cleanup-analysis).
+Deferred groups are not an automatic extraction queue, and this record approves
+no further implementation, activation or trial.

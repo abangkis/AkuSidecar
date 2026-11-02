@@ -1,15 +1,15 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-03 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `237dbd1` (capture telemetry rotation/shutdown compatibility, after HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
+Reviewed local source: AkuSidecar `1814c9b` (development X HTTP controls, after capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
-The previous code/roadmap checkpoint was published as `2b03fee`, including
-HTTP reload actions `6ea303c`. The owner has authorized publication of the
-telemetry rotation/shutdown repair and this roadmap synchronization to
+The previous code/roadmap checkpoint was published as `ebbfc09`, including
+telemetry rotation/shutdown repair `237dbd1`. The owner has authorized publication
+of the development X HTTP extraction and this roadmap synchronization to
 origin/main at https://github.com/abangkis/AkuSidecar.git. Validation and the
-later review/commit/publication readback are identified in the telemetry result
-below; publication must be verified against the remote SHA.
+later review/commit/publication readback are identified in the development X
+result below; publication must be verified against the remote SHA.
 Publication does not establish runtime activation or operational acceptance.
 The Browser worktree contains pre-existing build/cache changes; those changes
 are outside this synchronization and are not evidence of a released tuple.
@@ -524,17 +524,53 @@ Router-map counts remain 106 arms: 54 retained and 52 deferred; six bounded
 HTTP extractions. The 30 server.go declarations and 52 central Engine
 declarations remain retained. CL-3.3 and CL-3 remain partial.
 
+### Development X follow-up
+
+The then-proposed read-only review and separately approved extraction are now
+complete; see the development X result below.
+
+## HTTP development X controls result (2026-11-03)
+
+Four Server adapters are committed as `1814c9b` in
+`internal/httpapi/x_development.go`: startXDaily, stopXDaily, startXManual and
+stopXManual. Their 56 original body lines retain exact behavior; only indentation
+and a local `ctx := r.Context()` binding differ. The router replaces those bodies
+with four delegations; predicates/order/normalization and its remainder are exact.
+Development/epoch admission, daily/manual consent, opt-out versus stop semantics,
+error mappings, status envelopes and effect order remain distinct. Engine, Store,
+shared security, consent decoding and telemetry are unchanged.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | `1814c9b`, four development X HTTP adapters; seventh bounded HTTP extraction |
+| Tested | Frozen characterization: 123 passing default/dev parent/subtest results before and after. Matching 14-package selection: default 2,542 pass/50 skip; dev 3,386 pass/62 skip; zero failures. Four Windows amd64 tag combinations include the test and produce 16 artifacts |
+| Activated | Not performed for this increment |
+| Acceptance | Scoped source/test review accepted; successful native-start HTTP journeys, broader source and whole-package operational acceptance remain separate |
+
+Review rechecked raw log summaries, original method bodies/router remainder,
+source/test/configuration, helper and all 16 binary hashes. Matching validation
+is reused without product test/build reruns. Context forwarding and branches
+unproduced by the isolated HTTP fixture retain structural proof; no new public
+factory seam or real native/browser startup was introduced. See the
+[detailed result](cl1-cleanup-candidates.md#cl-33-http-development-x-controls-result-2026-11-03),
+[validation](../runtime/qa/http-x-development-20261103/validation.json),
+[review](../runtime/qa/http-x-development-review-20261103/review.json) and
+[publication readback](../runtime/qa/http-x-development-review-20261103/final-readback.json).
+
+Current router snapshot: 106 top-level arms, not endpoint count; 58 retained
+(32 delegations and 26 thin/control/heartbeat arms) and 48 deferred (five
+native/dev/telemetry and 43 product-domain arms). All 30 server.go declarations
+and 52 central Engine declarations remain retained. CL-3.3 and CL-3 remain partial.
+
 ### Proposed next cleanup analysis
 
-Read-only review of the four development X HTTP adapters: daily start/stop and
-manual start/stop. Determine whether their shared development/epoch admission,
-request decoding, error mapping and response projection justify one cohesive
-feature boundary, or should remain in the router. Trace supported callers and
-existing tests; specify characterization for development gating, stale epoch,
-body/errors, context/cancellation and side-effect ordering before any move.
-Retain Engine/runtime ownership and keep daily/manual behavior distinct. This
-proposal authorizes no implementation, runtime/configuration change, activation
-or live trial.
+Read-only review of the three semantic-event correction HTTP adapters:
+Timeline event suggestions, correction submission and correction undo. Trace
+caller contracts, validation/error mapping, privacy projection, durable writes
+and cancellation before selecting one cohesive extraction or retaining the
+current boundary. Specify characterization first; preserve Engine/Store
+ownership, protocol, guards and effect order. This proposal authorizes no
+implementation, activation, runtime/configuration change or live trial.
 
 ## Product and installation roadmaps
 

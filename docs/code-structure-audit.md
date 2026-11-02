@@ -3,7 +3,7 @@
 ## Status synchronization (2026-11-03)
 
 The original audit and its validation below are historical. Current source is
-reviewed through `237dbd1`, including capture telemetry rotation/shutdown compatibility, HTTP reload-action separation, capture-owner path normalization, HTTP bootstrap and the router responsibility map, HTTP media-recapture entry points, HTTP update/session lifecycle, Engine passive media evidence, Library removal/Forget, FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
+reviewed through `1814c9b`, including development X HTTP controls, capture telemetry rotation/shutdown compatibility, HTTP reload-action separation, capture-owner path normalization, HTTP bootstrap and the router responsibility map, HTTP media-recapture entry points, HTTP update/session lifecycle, Engine passive media evidence, Library removal/Forget, FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
 for commit-to-receipt mappings. Cleanup is not provider qualification.
 
 | Increment | Implemented | Tested | Activated | Acceptance |
@@ -556,14 +556,50 @@ Router-map counts remain 106 arms: 54 retained and 52 deferred; six bounded
 HTTP extractions. The 30 server.go declarations and 52 central Engine
 declarations remain retained. CL-3.3 and CL-3 remain partial.
 
+### Development X follow-up
+
+The then-proposed read-only review and separately approved extraction are now
+complete; see the development X result below.
+
+## HTTP development X controls result (2026-11-03)
+
+Four Server adapters are committed as `1814c9b` in
+`internal/httpapi/x_development.go`: startXDaily, stopXDaily, startXManual and
+stopXManual. Their 56 original body lines retain exact behavior; only indentation
+and a local `ctx := r.Context()` binding differ. The router replaces those bodies
+with four delegations; predicates/order/normalization and its remainder are exact.
+Development/epoch admission, daily/manual consent, opt-out versus stop semantics,
+error mappings, status envelopes and effect order remain distinct. Engine, Store,
+shared security, consent decoding and telemetry are unchanged.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | `1814c9b`, four development X HTTP adapters; seventh bounded HTTP extraction |
+| Tested | Frozen characterization: 123 passing default/dev parent/subtest results before and after. Matching 14-package selection: default 2,542 pass/50 skip; dev 3,386 pass/62 skip; zero failures. Four Windows amd64 tag combinations include the test and produce 16 artifacts |
+| Activated | Not performed for this increment |
+| Acceptance | Scoped source/test review accepted; successful native-start HTTP journeys, broader source and whole-package operational acceptance remain separate |
+
+Review rechecked raw log summaries, original method bodies/router remainder,
+source/test/configuration, helper and all 16 binary hashes. Matching validation
+is reused without product test/build reruns. Context forwarding and branches
+unproduced by the isolated HTTP fixture retain structural proof; no new public
+factory seam or real native/browser startup was introduced. See the
+[detailed result](cl1-cleanup-candidates.md#cl-33-http-development-x-controls-result-2026-11-03),
+[validation](../runtime/qa/http-x-development-20261103/validation.json),
+[review](../runtime/qa/http-x-development-review-20261103/review.json) and
+[publication readback](../runtime/qa/http-x-development-review-20261103/final-readback.json).
+
+Current router snapshot: 106 top-level arms, not endpoint count; 58 retained
+(32 delegations and 26 thin/control/heartbeat arms) and 48 deferred (five
+native/dev/telemetry and 43 product-domain arms). All 30 server.go declarations
+and 52 central Engine declarations remain retained. CL-3.3 and CL-3 remain partial.
+
 ### Proposed next cleanup analysis
 
-Read-only review of the four development X HTTP adapters: daily start/stop and
-manual start/stop. Determine whether their shared development/epoch admission,
-request decoding, error mapping and response projection justify one cohesive
-feature boundary, or should remain in the router. Trace supported callers and
-existing tests; specify characterization for development gating, stale epoch,
-body/errors, context/cancellation and side-effect ordering before any move.
-Retain Engine/runtime ownership and keep daily/manual behavior distinct. This
-proposal authorizes no implementation, runtime/configuration change, activation
-or live trial.
+Read-only review of the three semantic-event correction HTTP adapters:
+Timeline event suggestions, correction submission and correction undo. Trace
+caller contracts, validation/error mapping, privacy projection, durable writes
+and cancellation before selecting one cohesive extraction or retaining the
+current boundary. Specify characterization first; preserve Engine/Store
+ownership, protocol, guards and effect order. This proposal authorizes no
+implementation, activation, runtime/configuration change or live trial.
