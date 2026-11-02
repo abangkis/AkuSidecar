@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture features below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture features below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -1112,15 +1112,70 @@ This documentation sync reuses matching source/log/artifact evidence without new
 product tests/builds. Existing evidence, the pre-existing config edit, .tmp/ and
 experiments/ are preserved. Implemented, tested and scoped review accepted;
 activation, live-source qualification and operational acceptance remain open.
-CL-3 remains partial. The new documentation working-copy sync is verified
-separately and is not itself a documentation commit or push.
+CL-3 remains partial. At that checkpoint the documentation was a verified
+working-copy sync. It was subsequently committed as `89783a5`; publication is
+recorded separately in the later synchronization readbacks.
 
-The next proposal is read-only analysis of the selection-correction workflow
-in Engine: `CorrectSelection` and `UndoSelectionCorrection`. Map active-session
-admission, durable correction/undo, semantic/knowledge/AI/provenance/topic effects,
-partial-error returns, best-effort logging and existing cancellation targets before
-choosing one cohesive boundary and missing characterization. Preserve the Engine
-receiver, `e.operation`/`e.mu` scopes, contexts, exact side-effect/error order,
-Store authority, protocol and guards. Retry of failed runs, passive media evidence,
+At that checkpoint, the next proposal was read-only selection-correction analysis.
+It was separately approved and implemented; the result and next proposal are
+recorded below.
+
+## CL-3.2 Engine selection corrections result (2026-11-02)
+
+The separately approved move is committed as `f3d46b886172bccf0bd8e3e84502b5878cec38a4`.
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Engine selection-correction workflow | `f3d46b8` | Identical characterization passes 32 default/dev parent/subtest results before/after relocation; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,048/50 skip and dev 2,892/62 skip, zero failures; EventEngine added to prior scope; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-selection-corrections-20261102/validation.json), [review](../runtime/qa/engine-selection-corrections-review-20261102/review.json) and [commit readback](../runtime/qa/engine-selection-corrections-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Two Engine methods retain exact signatures/bodies; Engine remainder, caller/Store/background ownership, operation/mu scopes, partial errors, durable/enrichment/cancellation order, protocol and guards unchanged. Undo retains same-session AI cancellation only and post-commit cleanup error behavior. CL-3 remains partial; operational acceptance remains open |
+
+`CorrectSelection` and `UndoSelectionCorrection` now belong to
+`internal/engine/selection_corrections.go`. Both retain Engine receivers, exact
+signatures and bodies. Engine loses only their two blocks totaling 68 lines;
+its remainder and imports are unchanged. ReevaluateFailedRun, HTTP callers,
+Store transactions and semantic/AI/provenance/topic helpers remain in place.
+No interface, state owner, error wrapper, lock, protocol or guard is changed.
+
+Characterization was added before relocation; the same final test bytes pass
+32 default/dev parent/subtest results before and after. SQL audit locks durable
+correction, semantic resolution, knowledge, AI Fast, AI Deep, media provenance
+and Living Topics queue order without asserting goroutine completion order.
+Disposable Store fixtures and controlled resolver/inspector boundaries cover
+semantic nil/disabled/enabled and AI enabled/disabled behavior, active-session/
+cancelled-context admission and operation/mu lock scopes.
+
+Fault injection preserves atomic creation, duplicate/original-selection/Timeline
+guards, correction/item partial returns after settings failure, zero-item returns
+after either Timeline reload fails, and logged best-effort semantic/knowledge/
+Fast/topic errors. Undo retains durable deletion before cancellation, matching
+session AI keys only, worker retirement by the worker, and counts refresh after
+callbacks. An undo cleanup failure after transaction commit still returns an
+error before Engine cancellation; refresh failure remains ignored. These are
+characterized existing contracts, not new fixes or expanded cancellation.
+
+Matching full regressions pass default 2,048/50 skip and dev 2,892/62 skip, zero
+failures. EventEngine is added to the previous selection: 14 packages are
+selected, 13 execute tests and collection/bridge compiles without test files.
+Counts include parents/subtests and the added package's skips; they are not a
+unique-case count or comparable to earlier scopes without that qualification.
+All four Windows amd64 build-tag graphs include selection_corrections.go;
+16 artifacts pass compile/hash/PE checks: Store, Engine and HTTP tests plus
+the application per mode. Review rechecks matching source/log/artifact hashes
+and method/remainder equivalence, then maps the exact committed blobs.
+
+This sync reuses verified evidence without new product tests/builds. Existing
+evidence, the pre-existing config edit, .tmp/ and experiments/ are preserved.
+Implemented, tested and scoped review accepted; activation, live-source
+qualification and operational acceptance remain open. CL-3 remains partial.
+Code/documentation publication, including earlier roadmap commit 89783a5, is
+recorded separately under
+`runtime/qa/engine-selection-corrections-roadmap-sync-20261102/`.
+
+The next proposal is read-only analysis of AI-feedback orchestration in Engine:
+`AddAIFeedback`, `UndoAIFeedback` and `AIFeedbackHistory`. Map durable feedback,
+the unsure verdict and AI-enabled gates, settings/item read failures, best-effort
+logging, Deep Detection handoff, undo/history output and existing cancellation
+behavior before choosing one cohesive boundary and missing characterization.
+Preserve per-method Engine receiver/lock scopes, contexts, side-effect/error order,
+Store authority, protocol and guards. Selection corrections, semantic corrections,
 privacy/reset workflows and scalar-reader relocation remain outside that proposal.
 No further implementation, runtime change or trial is approved.

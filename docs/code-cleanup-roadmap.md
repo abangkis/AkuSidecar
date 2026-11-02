@@ -1,7 +1,7 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-02 (Asia/Jakarta), through Sidecar `25c3339`.
+Status synchronized: 2026-11-02 (Asia/Jakarta), through Sidecar `f3d46b8`.
 Status: execution in progress; each bounded increment requires separate approval.
 No implementation, deletion, dependency upgrade, activation or trial is approved
 by creating this roadmap. Approve one concrete increment, implement it, verify
@@ -106,7 +106,7 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-0: inherited bounded cleanup | Eight increments above complete | Scoped receipts retained | Cleanup activation not recorded | Bounded code reviews complete; no whole-repository completion claim |
 | CL-1: consumer and compatibility inventory | [Entry/consumer map](cl1-consumer-inventory.md) and [32-boundary candidate ledger](cl1-cleanup-candidates.md) delivered | Read-only four-tag metadata, native/package/reference and source-preservation checks; no product test/build | Not applicable to an audit | Ready for review; external-consumer and offline Browser dependency limits explicit; no implementation approved |
 | CL-2: proven obsolete-code retirement | Earlier wrappers plus G10 `DeleteMemoryItem` removal committed with roadmap as `21ac9ad` | G10 exact remainder check, full Store/HTTP regressions and four-mode Windows compilation passed | Not performed for G10 | G10 reviewed/committed; comprehensive retirement remains scoped by the remaining ledger entries |
-| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b` and media recapture `be9fcd2`; Engine media recapture `c614512`; Engine Bridge commands `3e13434`; Engine media provenance `8d7f7b6`; Engine AI detection `b84a62d`; Engine session admission `4bf0731`; observation contracts `d9c3025`; process recovery `5b39fa4`; reasoning result `eb05ac8`; capture rounds and deterministic Store test `683b1e8`; local acquisition policy `f16f11a`; vision-lane routing/coverage `25c3339`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Capture/Collection/Bridge builder/Selection/Reasoning/Domain/Detector/Inspector/Store/Engine/HTTP/config/application scope selects 13 packages (12 with tests, Bridge builder compile-only): default 1,994 pass/48 skip and dev 2,838 pass/60 skip, zero failures; vision-lane characterization 83 default/dev before/after, four build-tag graphs and 16 Windows artifacts pass. Earlier acquisition-policy/capture-round/privacy/HTTP/Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Scoped changes reviewed/committed; Engine/HTTP media-recapture, Engine/HTTP command, media-provenance/AI-detection, session admission, observation contracts, process recovery, reasoning-result acceptance/Timeline mapping, capture rounds, local acquisition policy, vision-lane routing/coverage, diagnostics/Bridge status and E01 boundaries established; further Engine/HTTP boundaries pending. Provider-selection micro-extraction declined; keep Settings cohesive; CL-3 remains partial |
+| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b` and media recapture `be9fcd2`; Engine media recapture `c614512`; Engine Bridge commands `3e13434`; Engine media provenance `8d7f7b6`; Engine AI detection `b84a62d`; Engine session admission `4bf0731`; observation contracts `d9c3025`; process recovery `5b39fa4`; reasoning result `eb05ac8`; capture rounds and deterministic Store test `683b1e8`; local acquisition policy `f16f11a`; vision-lane routing/coverage `25c3339`; selection corrections `f3d46b8`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Capture/Collection/Bridge builder/Selection/EventEngine/Reasoning/Domain/Detector/Inspector/Store/Engine/HTTP/config/application scope selects 14 packages (13 with tests, Bridge builder compile-only): default 2,048 pass/50 skip and dev 2,892 pass/62 skip, zero failures; selection-correction characterization 32 default/dev before/after, four build-tag graphs and 16 Windows artifacts pass. Earlier acquisition-policy/capture-round/privacy/HTTP/Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Scoped changes reviewed/committed; Engine/HTTP media-recapture, Engine/HTTP command, media-provenance/AI-detection, session admission, observation contracts, process recovery, reasoning-result acceptance/Timeline mapping, capture rounds, local acquisition policy, vision-lane routing/coverage, selection corrections, diagnostics/Bridge status and E01 boundaries established; further Engine/HTTP boundaries pending. Provider-selection micro-extraction declined; keep Settings cohesive; CL-3 remains partial |
 | CL-4: frontend feature ownership | Existing navigation module retained; broader extraction proposed | Existing baseline only | Not recorded | Timeline/Settings/app orchestration pending |
 | CL-5: native runtime and QA boundaries | Factory/shared-helper separation complete; fixture-only timing correction `8dc3f5e` committed; deeper runtime split proposed | 98 Node tests, 200 offline integration iterations and dependency-pinned staging verified for this fixture correction; existing baseline only for remaining seams | Not performed for this correction | Bounded fixture acceptance only; remaining operation/transport/QA separation pending; no universal cross-runtime clock or real-provider qualification claim |
 | CL-6: Bridge responsibility boundaries | Existing source/lifecycle modules retained; further split proposed | Existing baseline only for remaining seams | No new rollout | Background dispatch/surface integration pending |
@@ -196,7 +196,10 @@ Do not delete a consumer merely to make the dependency scan appear clean.
   reasons, caller order, scalar readers, continuation and guards. Two vision-lane
   helpers now belong to `vision_lane.go` as `25c3339`, preserving media-only/text
   isolation, shared Coverage/nested aliases, queue/receipt order and manual_review
-  availability. Next propose read-only analysis of selection correction and undo.
+  availability. Selection correction/undo now belongs to `selection_corrections.go`
+  as `f3d46b8`, with Engine receivers, operation/mu scopes, durable/enrichment/error
+  order and exact cancellation behavior retained. Next propose read-only analysis
+  of AI feedback, undo and history.
   Remaining reasoning/acquisition, enrichment and read-model boundaries still need
   evidence. Keep the Engine facade and existing Store authority; do not repeat
   completed lifecycle/session moves or split small blocks merely to reduce size.
@@ -567,13 +570,25 @@ reuses matching source/log/artifact evidence without new product tests/builds.
 Implemented, tested and scoped review accepted; activation and operational
 acceptance remain open. CL-3 remains partial.
 
-The next proposal is read-only analysis of the selection-correction workflow
-in Engine: `CorrectSelection` and `UndoSelectionCorrection`. Map active-session
-admission, durable correction/undo, semantic/knowledge/AI/provenance/topic effects,
-partial-error returns, best-effort logging and existing cancellation targets before
-choosing one cohesive boundary and missing characterization. Preserve the Engine
-receiver, `e.operation`/`e.mu` scopes, contexts, exact side-effect/error order,
-Store authority, protocol and guards. Retry of failed runs, passive media evidence,
+The selection-correction workflow is now committed as `f3d46b8` in
+`selection_corrections.go`. See the [result](cl1-cleanup-candidates.md#cl-32-engine-selection-corrections-result-2026-11-02), [validation](../runtime/qa/engine-selection-corrections-20261102/validation.json), [review](../runtime/qa/engine-selection-corrections-review-20261102/review.json) and [commit readback](../runtime/qa/engine-selection-corrections-review-20261102/final-readback.json).
+Two Engine methods retain exact signatures and bodies; the 68 removed lines are
+the only Engine change, with imports, retry method, callers and Store unchanged.
+Identical characterization passes 32 default/dev parent/subtest results before
+and after relocation. Matching 14-package regressions (13 tested; Bridge builder
+compile-only) pass default 2,048/50 skip and dev 2,892/62 skip, zero failures.
+EventEngine is added to the previous regression selection. Four build-tag graphs
+and 16 Windows amd64 artifacts pass. This sync reuses matching source/log/artifact
+evidence without new product tests/builds. Implemented, tested and scoped review
+accepted; activation and operational acceptance remain open. CL-3 remains partial.
+
+The next proposal is read-only analysis of AI-feedback orchestration in Engine:
+`AddAIFeedback`, `UndoAIFeedback` and `AIFeedbackHistory`. Map durable feedback,
+the unsure verdict and AI-enabled gates, settings/item read failures, best-effort
+logging, Deep Detection handoff, undo/history output and existing cancellation
+behavior before choosing one cohesive boundary and missing characterization.
+Preserve per-method Engine receiver/lock scopes, contexts, side-effect/error order,
+Store authority, protocol and guards. Selection corrections, semantic corrections,
 privacy/reset workflows and scalar-reader relocation remain outside that proposal.
 No further implementation, runtime change or trial is approved.
 
