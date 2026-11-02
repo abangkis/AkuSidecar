@@ -290,65 +290,13 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	case r.Method == http.MethodPost && p == "/api/development/instagram-trial/stop":
 		return s.instagramTrialAction(w, r, ctx, "stop")
 	case r.Method == http.MethodPost && p == "/api/development/x-daily/start":
-		if !s.config.Dev {
-			return notFound("development route")
-		}
-		if r.Header.Get("X-Aku-Split-Epoch") != s.engine.Epoch() {
-			return apiError{Status: 409, Code: "capture_epoch_mismatch", Message: "AkuBrowser restarted; refresh the page."}
-		}
-		request, err := readXDailyStart(r)
-		if err != nil {
-			return err
-		}
-		if err = s.engine.StartXDaily(ctx, request); err != nil {
-			return apiError{Status: 409, Code: "daily_start_unavailable", Message: "Daily X startup failed or consent was consumed; inspect runtime status."}
-		}
-		return writeJSON(w, 200, map[string]any{"xCapture": s.engine.XCaptureStatus()})
+		return s.startXDaily(w, r)
 	case r.Method == http.MethodPost && p == "/api/development/x-daily/stop":
-		if !s.config.Dev {
-			return notFound("development route")
-		}
-		if r.Header.Get("X-Aku-Split-Epoch") != s.engine.Epoch() {
-			return apiError{Status: 409, Code: "capture_epoch_mismatch", Message: "AkuBrowser restarted; refresh the page."}
-		}
-		var request struct{}
-		if err := readJSON(r, &request); err != nil {
-			return err
-		}
-		if err := s.engine.RevokeXDailyPermission(ctx); err != nil {
-			return apiError{Status: 409, Code: "daily_cleanup_uncertain", Message: "Daily X cleanup has not been verified."}
-		}
-		return writeJSON(w, 200, map[string]any{"xCapture": s.engine.XCaptureStatus()})
+		return s.stopXDaily(w, r)
 	case r.Method == http.MethodPost && p == "/api/development/x-manual/start":
-		if !s.config.Dev {
-			return notFound("development route")
-		}
-		if r.Header.Get("X-Aku-Split-Epoch") != s.engine.Epoch() {
-			return apiError{Status: 409, Code: "capture_epoch_mismatch", Message: "AkuBrowser restarted; refresh the page."}
-		}
-		request, err := readXManualStart(r)
-		if err != nil {
-			return err
-		}
-		if err := s.engine.StartXManual(ctx, request); err != nil {
-			return apiError{Status: 409, Code: "manual_start_unavailable", Message: "Manual X start was rejected or failed; inspect runtime status and cleanup."}
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"xManual": s.engine.XManualStatus()})
+		return s.startXManual(w, r)
 	case r.Method == http.MethodPost && p == "/api/development/x-manual/stop":
-		if !s.config.Dev {
-			return notFound("development route")
-		}
-		if r.Header.Get("X-Aku-Split-Epoch") != s.engine.Epoch() {
-			return apiError{Status: 409, Code: "capture_epoch_mismatch", Message: "AkuBrowser restarted; refresh the page."}
-		}
-		var request struct{}
-		if err := readJSON(r, &request); err != nil {
-			return err
-		}
-		if err := s.engine.StopXManual(ctx); err != nil {
-			return apiError{Status: 409, Code: "manual_cleanup_uncertain", Message: "Manual X cleanup has not been verified."}
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"xManual": s.engine.XManualStatus()})
+		return s.stopXManual(w, r)
 	case r.Method == http.MethodPost && p == "/api/collection/interactive":
 		if err := s.engine.PrepareInteractiveCapture(ctx); err != nil {
 			return apiError{Status: 409, Code: "interactive_handoff_unavailable", Message: err.Error()}
