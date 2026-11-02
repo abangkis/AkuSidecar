@@ -3,7 +3,7 @@
 ## Status synchronization (2026-11-02)
 
 The original audit and its validation below are historical. Current source is
-reviewed through `97bbe51`, including HTTP bootstrap and the router responsibility map, HTTP media-recapture entry points, HTTP update/session lifecycle, Engine passive media evidence, Library removal/Forget, FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
+reviewed through `b482ba2`, including capture-owner path normalization, HTTP bootstrap and the router responsibility map, HTTP media-recapture entry points, HTTP update/session lifecycle, Engine passive media evidence, Library removal/Forget, FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
 for commit-to-receipt mappings. Cleanup is not provider qualification.
 
 | Increment | Implemented | Tested | Activated | Acceptance |
@@ -44,6 +44,7 @@ for commit-to-receipt mappings. Cleanup is not provider qualification.
 | HTTP update/session lifecycle | `d32c065` | Identical characterization passes 53 default/dev parent/subtest results before/after extraction; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,230/50 skip and dev 3,074/62 skip, zero failures; four HTTP build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/http-session-updates-20261102/validation.json), [review](../runtime/qa/http-session-updates-review-20261102/review.json) and [commit readback](../runtime/qa/http-session-updates-review-20261102/commit-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Four Server handlers preserve router predicates/order/normalization, request contexts, shared loopback/origin security and progress projection, raw start output, asymmetric errors and durable cancel/read/write order. Engine, Store, protocol, guards and cancellation unchanged. CL-3 remains partial; operational acceptance open |
 | HTTP media-recapture status/enqueue/passive evidence | `90e3a7f` | Identical characterization passes 42 default/dev parent/subtest results before/after extraction; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,272/50 skip and dev 3,116/62 skip, zero failures; four HTTP build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/http-media-recapture-20261102/validation.json), [review](../runtime/qa/http-media-recapture-review-20261102/review.json) and [commit readback](../runtime/qa/http-media-recapture-review-20261102/commit-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Three Server handlers preserve router predicates/order/normalization, distinct ID parsing, private status projection, UI versus Bridge security, authentication before decode, unfenced passive relay, validation/defaults/errors, caller context and durable effects before response. Legacy Facebook branch, Engine/Store, Bridge claim/result handlers, protocol, guards and cancellation unchanged. CL-3 remains partial; operational acceptance open |
 | HTTP bootstrap composition | `97bbe51` | Identical characterization passes 25 default/dev parent/subtest results before/after extraction; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,297/50 skip and dev 3,141/62 skip, zero failures; four HTTP build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/http-bootstrap-20261102/validation.json), [review](../runtime/qa/http-bootstrap-review-20261102/review.json) and [commit readback](../runtime/qa/http-bootstrap-review-20261102/commit-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. One Server method preserves route predicates/order/normalization, shared loopback/origin security, request context, complete output/progress projection, ten ordered fallible data calls, first-error mapping, token initialization, first-run calibration, prepared-batch expiry and durable effects before response-write failure. No new interface, transaction, cache or concurrency; Engine/Store, protocol and guards unchanged. CL-3.3 and CL-3 remain partial; activation and operational acceptance open |
+| HTTP capture-owner path guard | `b482ba2` | Regression added before the fix reproduced unauthorized action acceptance and telemetry persistence for trailing/encoded slash forms. The unchanged regression payload then passed default/dev; matching 14-package selection (13 tested, Bridge builder compile-only) passed default 2,348/50 skip and dev 3,192/62 skip, zero failures; four Windows amd64 build-tag graphs include the new tests and 16 artifacts pass; source and artifact identities reverified before commit, without new test/build runs | Not performed | Scoped admission-path fix reviewed and committed. One classifier assignment now trims exactly one trailing slash like dispatch; missing/stale keys return 409 before accept/event mutation. Valid workers, contract/token priority, UI relay and non-split behavior remain. No handler move or wire change. Post-admission rotation is separate and untested; CL-3.3/CL-3 partial; operational acceptance open |
 
 No code change, activation or trial is performed by this status update. Existing
 test receipts are reused at their verified source/artifact scope, not rerun.
@@ -430,11 +431,68 @@ the remaining evidence. The map and bootstrap close this selected analysis and
 extraction, not the entire HTTP package, CL-3.3, CL-3 or source/runtime acceptance.
 The central Engine checkpoint remains at 52 retained declarations.
 
-The next proposal is read-only analysis of the five remaining Bridge
-heartbeat/reload-action handlers: heartbeat, reload-self, next, accept and detail.
-Map Engine heartbeat/action ownership against split-capture key/mutex ownership,
-authentication/decode/error order, long-poll request cancellation and existing
-tests. Decide whether one complete feature boundary is justified or retention is
-better, and specify missing characterization before any implementation. This is
-a proposal requiring separate approval; no code, test/build, runtime/configuration
-change, activation or live trial is authorized by this documentation update.
+The read-only heartbeat/reload review identified two responsibilities: retain
+heartbeat in server.go, because it coordinates readiness, source authority,
+recovery, scheduler wake and reload observation; the four request/next/accept/
+detail handlers form one proposed reload-action HTTP boundary. A normalization
+guard gap found during that review was fixed separately as `b482ba2`.
+The next implementation proposal is characterization first, then four private
+Server methods in `internal/httpapi/bridge_actions.go`. It requires separate
+approval. Preserve route order/normalization, shared authentication/security,
+Engine and split-transport state/lock ownership, raw errors/statuses, delivery
+priority, request cancellation and in-memory side effects before write failure.
+Keep heartbeat, shared helpers, protocol and other refactors unchanged.
+The current continuation refines that proposal read-only; it grants no new
+implementation, runtime/configuration change, activation or live trial.
+
+## Capture-owner admission guard result (2026-11-02)
+
+Implemented as `b482ba2`: `splitCaptureOwnedRoute` now applies exactly the
+same single-suffix `strings.TrimSuffix(r.URL.Path, "/")` normalization as
+dispatch. This closes the accept and capture-surface telemetry aliases while
+preserving existing UI relay exclusions, auth order, current-worker and non-split
+behavior. No Engine/Store change, new lock, handler extraction or protocol change.
+
+Regression added before the fix reproduced unauthorized action acceptance and telemetry persistence for trailing/encoded slash forms. The unchanged regression payload then passed default/dev; matching 14-package selection (13 tested, Bridge builder compile-only) passed default 2,348/50 skip and dev 3,192/62 skip, zero failures; four Windows amd64 build-tag graphs include the new tests and 16 artifacts pass. Counts include parent/subtest results and repeated tag selections,
+not unique independent cases. Full security + ServeMux + API recorder fixtures
+proved the mutations before the fix and rejection without mutation afterwards;
+canonical, trailing slash, encoded separator/slash and query forms are covered.
+Two independent read-only boundary/review passes found no blocking candidate
+issue. The source and 16 artifact hashes still match the recorded validation;
+this synchronization reuses evidence rather than rerunning tests/builds.
+
+Managed standalone evidence is outside Git. Retrieve it with
+read_codex_security_artifact using targetPath=<this checkout root>,
+storage=`persistent`, path=`artifacts/guard-path-normalization-20261102/validation.json`.
+Receipt content SHA256: `96f513711e04c529aaa95d575905cd378a486c73249369fcf5b7642848364702`.
+Later commit/documentation/publication readbacks use the same collection and
+the paths `artifacts/guard-path-normalization-20261102/commit-readback.json` and
+`artifacts/guard-path-normalization-20261102/publication.json`. Raw validation
+fields such as committed=false describe the earlier capture time; retain them.
+The regression source is [split_capture_owner_guard_test.go](../internal/httpapi/split_capture_owner_guard_test.go).
+
+Implemented/tested and scoped review accepted; not activated. Operational
+acceptance remains open. A separate statically noted telemetry request admitted
+before owner rotation has not been dynamically tested or changed; do not infer
+closure of all owner-rotation behavior from this admission-path repair.
+
+This is a guard correction, not a sixth HTTP extraction. The router-map counts
+remain 49 retained arms, 57 deferred arms and 30 retained server.go declarations.
+The central Engine checkpoint remains 52 retained declarations. CL-3.3 and CL-3
+remain partial; no comprehensive or live-source acceptance is established.
+
+### Next reload-action boundary
+
+The read-only heartbeat/reload review identified two responsibilities: retain
+heartbeat in server.go, because it coordinates readiness, source authority,
+recovery, scheduler wake and reload observation; the four request/next/accept/
+detail handlers form one proposed reload-action HTTP boundary. A normalization
+guard gap found during that review was fixed separately as `b482ba2`.
+The next implementation proposal is characterization first, then four private
+Server methods in `internal/httpapi/bridge_actions.go`. It requires separate
+approval. Preserve route order/normalization, shared authentication/security,
+Engine and split-transport state/lock ownership, raw errors/statuses, delivery
+priority, request cancellation and in-memory side effects before write failure.
+Keep heartbeat, shared helpers, protocol and other refactors unchanged.
+The current continuation refines that proposal read-only; it grants no new
+implementation, runtime/configuration change, activation or live trial.

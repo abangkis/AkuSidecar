@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback/FullReset/Library removal/passive media evidence, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture/update-session/media-entry/bootstrap features and router map below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback/FullReset/Library removal/passive media evidence, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture/update-session/media-entry/bootstrap features, router map and bounded capture-owner guard correction below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -1569,11 +1569,68 @@ the remaining evidence. The map and bootstrap close this selected analysis and
 extraction, not the entire HTTP package, CL-3.3, CL-3 or source/runtime acceptance.
 The central Engine checkpoint remains at 52 retained declarations.
 
-The next proposal is read-only analysis of the five remaining Bridge
-heartbeat/reload-action handlers: heartbeat, reload-self, next, accept and detail.
-Map Engine heartbeat/action ownership against split-capture key/mutex ownership,
-authentication/decode/error order, long-poll request cancellation and existing
-tests. Decide whether one complete feature boundary is justified or retention is
-better, and specify missing characterization before any implementation. This is
-a proposal requiring separate approval; no code, test/build, runtime/configuration
-change, activation or live trial is authorized by this documentation update.
+The read-only heartbeat/reload review identified two responsibilities: retain
+heartbeat in server.go, because it coordinates readiness, source authority,
+recovery, scheduler wake and reload observation; the four request/next/accept/
+detail handlers form one proposed reload-action HTTP boundary. A normalization
+guard gap found during that review was fixed separately as `b482ba2`.
+The next implementation proposal is characterization first, then four private
+Server methods in `internal/httpapi/bridge_actions.go`. It requires separate
+approval. Preserve route order/normalization, shared authentication/security,
+Engine and split-transport state/lock ownership, raw errors/statuses, delivery
+priority, request cancellation and in-memory side effects before write failure.
+Keep heartbeat, shared helpers, protocol and other refactors unchanged.
+The current continuation refines that proposal read-only; it grants no new
+implementation, runtime/configuration change, activation or live trial.
+
+## Capture-owner admission guard result (2026-11-02)
+
+Implemented as `b482ba2`: `splitCaptureOwnedRoute` now applies exactly the
+same single-suffix `strings.TrimSuffix(r.URL.Path, "/")` normalization as
+dispatch. This closes the accept and capture-surface telemetry aliases while
+preserving existing UI relay exclusions, auth order, current-worker and non-split
+behavior. No Engine/Store change, new lock, handler extraction or protocol change.
+
+Regression added before the fix reproduced unauthorized action acceptance and telemetry persistence for trailing/encoded slash forms. The unchanged regression payload then passed default/dev; matching 14-package selection (13 tested, Bridge builder compile-only) passed default 2,348/50 skip and dev 3,192/62 skip, zero failures; four Windows amd64 build-tag graphs include the new tests and 16 artifacts pass. Counts include parent/subtest results and repeated tag selections,
+not unique independent cases. Full security + ServeMux + API recorder fixtures
+proved the mutations before the fix and rejection without mutation afterwards;
+canonical, trailing slash, encoded separator/slash and query forms are covered.
+Two independent read-only boundary/review passes found no blocking candidate
+issue. The source and 16 artifact hashes still match the recorded validation;
+this synchronization reuses evidence rather than rerunning tests/builds.
+
+Managed standalone evidence is outside Git. Retrieve it with
+read_codex_security_artifact using targetPath=<this checkout root>,
+storage=`persistent`, path=`artifacts/guard-path-normalization-20261102/validation.json`.
+Receipt content SHA256: `96f513711e04c529aaa95d575905cd378a486c73249369fcf5b7642848364702`.
+Later commit/documentation/publication readbacks use the same collection and
+the paths `artifacts/guard-path-normalization-20261102/commit-readback.json` and
+`artifacts/guard-path-normalization-20261102/publication.json`. Raw validation
+fields such as committed=false describe the earlier capture time; retain them.
+The regression source is [split_capture_owner_guard_test.go](../internal/httpapi/split_capture_owner_guard_test.go).
+
+Implemented/tested and scoped review accepted; not activated. Operational
+acceptance remains open. A separate statically noted telemetry request admitted
+before owner rotation has not been dynamically tested or changed; do not infer
+closure of all owner-rotation behavior from this admission-path repair.
+
+This is a guard correction, not a sixth HTTP extraction. The router-map counts
+remain 49 retained arms, 57 deferred arms and 30 retained server.go declarations.
+The central Engine checkpoint remains 52 retained declarations. CL-3.3 and CL-3
+remain partial; no comprehensive or live-source acceptance is established.
+
+### Next reload-action boundary
+
+The read-only heartbeat/reload review identified two responsibilities: retain
+heartbeat in server.go, because it coordinates readiness, source authority,
+recovery, scheduler wake and reload observation; the four request/next/accept/
+detail handlers form one proposed reload-action HTTP boundary. A normalization
+guard gap found during that review was fixed separately as `b482ba2`.
+The next implementation proposal is characterization first, then four private
+Server methods in `internal/httpapi/bridge_actions.go`. It requires separate
+approval. Preserve route order/normalization, shared authentication/security,
+Engine and split-transport state/lock ownership, raw errors/statuses, delivery
+priority, request cancellation and in-memory side effects before write failure.
+Keep heartbeat, shared helpers, protocol and other refactors unchanged.
+The current continuation refines that proposal read-only; it grants no new
+implementation, runtime/configuration change, activation or live trial.
