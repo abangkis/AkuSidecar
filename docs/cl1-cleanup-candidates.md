@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture features below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture features below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -1170,12 +1170,63 @@ Code/documentation publication, including earlier roadmap commit 89783a5, is
 recorded separately under
 `runtime/qa/engine-selection-corrections-roadmap-sync-20261102/`.
 
-The next proposal is read-only analysis of AI-feedback orchestration in Engine:
-`AddAIFeedback`, `UndoAIFeedback` and `AIFeedbackHistory`. Map durable feedback,
-the unsure verdict and AI-enabled gates, settings/item read failures, best-effort
-logging, Deep Detection handoff, undo/history output and existing cancellation
-behavior before choosing one cohesive boundary and missing characterization.
-Preserve per-method Engine receiver/lock scopes, contexts, side-effect/error order,
-Store authority, protocol and guards. Selection corrections, semantic corrections,
-privacy/reset workflows and scalar-reader relocation remain outside that proposal.
-No further implementation, runtime change or trial is approved.
+At that checkpoint, the next proposal was read-only AI-feedback analysis. It was
+separately approved and implemented; the result and next proposal are recorded
+below.
+
+## CL-3.2 Engine AI feedback result (2026-11-02)
+
+The separately approved move is committed as `6a1ce33657f7e78f4547b4cd487d93c6351e37fb`.
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Engine AI-feedback workflow | `6a1ce33` | Identical characterization passes 58 default/dev parent/subtest results before/after relocation; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,106/50 skip and dev 2,950/62 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-ai-feedback-20261102/validation.json), [review](../runtime/qa/engine-ai-feedback-review-20261102/review.json) and [commit readback](../runtime/qa/engine-ai-feedback-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Three Engine methods retain exact signatures/bodies; Add/Undo operation locks, lock-free history, durable-write/read/handoff order, review failures logged after commit while saved feedback is returned, append-only clear, cancellation/context behavior, Store/domain/HTTP ownership, protocol and guards unchanged. CL-3 remains partial; operational acceptance remains open |
+
+`AddAIFeedback`, `UndoAIFeedback` and `AIFeedbackHistory` now belong to
+`internal/engine/ai_feedback.go`. All retain Engine receivers, exact signatures
+and bodies. Engine loses only their contiguous 31-line block; its remainder and
+imports are unchanged. Store append-only/target/history logic, domain validation,
+HTTP routes/statuses and detector lifecycle remain in their existing owners.
+No interface, new lock, worker, protocol, guard or cancellation behavior is added.
+
+Characterization was added before relocation; the same final test bytes pass
+58 default/dev parent/subtest results before and after. Coverage includes all
+four target/scope pairs, ai/not_ai/unsure verdicts, AI-enabled gates, mutation
+lock ownership, lock-free history, nil/wire shape, rowid ordering, account scope,
+supersession and append-only clear. Fault injection preserves Store error
+forwarding, settings/item failures logged after durable feedback, skipped reads
+on early exits, and queue failure returning the saved feedback without error.
+
+Controlled resolver channels verify persistence before cancellation/queue,
+matching-session AI cancellation only, unchanged provenance/other-session work,
+request cancellation separated from background review, and undo leaving the
+in-flight review alive. Existing bounded-review completion and detector lifecycle
+tests remain in the full suites. No sleeps or worker completion-order assumptions
+are added to the new suite.
+
+Matching full regressions pass default 2,106/50 skip and dev 2,950/62 skip, zero
+failures. The established selection remains 14 packages: 13 execute tests and
+collection/bridge compiles without test files. Counts include parents/subtests
+and repeated tag selections, not unique independent cases. Four Windows amd64
+build-tag graphs include ai_feedback.go; 16 artifacts pass compile/hash/PE
+checks: Store, Engine and HTTP tests plus the application per mode. Review
+rechecks exact method/remainder equivalence, source/log/artifact hashes and
+committed blobs without rerunning product tests/builds.
+
+This documentation sync reuses verified evidence. Existing evidence, the
+pre-existing config edit, .tmp/ and experiments/ are preserved. Implemented,
+tested and scoped review accepted; activation, live-source qualification and
+operational acceptance remain open. CL-3 remains partial. Code/documentation
+publication is recorded separately under
+`runtime/qa/engine-ai-feedback-roadmap-sync-20261102/`.
+
+The next proposal is read-only analysis of Engine FullReset orchestration.
+Map operation locking, AI/provenance cancellation, default/provider resolution,
+idle admission, candidate preparation/disposal, Store reset, capture-runtime
+request, headless-authority clearing and provider activation before deciding
+whether one feature boundary is useful and which characterization is missing.
+Preserve Engine ownership, operation/mu scopes, caller/background contexts,
+side-effect/error order, candidate cleanup, Store authority, protocol and guards.
+ResetLearning, CleanDatabase, semantic delegations and scalar-reader relocation
+remain outside that proposal. No further implementation, reset, runtime change
+or trial is approved.

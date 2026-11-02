@@ -1,16 +1,16 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-02 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `f3d46b8` (Engine selection corrections, after vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
+Reviewed local source: AkuSidecar `6a1ce33` (Engine AI feedback, after selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
-The [commit readback](../runtime/qa/engine-selection-corrections-review-20261102/final-readback.json) verifies the exact local selection-correction source commit.
-The earlier vision-lane roadmap sync was committed as `89783a5`. The owner has
-authorized publication of these code/documentation commits and this synchronization
+The [commit readback](../runtime/qa/engine-ai-feedback-review-20261102/final-readback.json) verifies the exact local AI-feedback source commit. The
+[previous publication receipt](../runtime/qa/engine-selection-corrections-roadmap-sync-20261102/push-readback.json) records `e231461` published to `origin/main`. The owner has
+authorized publication of the AI-feedback code and this roadmap synchronization
 to `origin/main` at `https://github.com/abangkis/AkuSidecar.git`. The documentation
 commit and exact remote SHA are established separately by readbacks under
-`runtime/qa/engine-selection-corrections-roadmap-sync-20261102/`; publication
-does not establish runtime activation or operational acceptance.
+`runtime/qa/engine-ai-feedback-roadmap-sync-20261102/`; publication does not
+establish runtime activation or operational acceptance.
 The Browser worktree contains pre-existing build/cache changes; those changes
 are outside this synchronization and are not evidence of a released tuple.
 
@@ -243,15 +243,28 @@ and 16 Windows amd64 artifacts pass. This sync reuses matching source/log/artifa
 evidence without new product tests/builds. Implemented, tested and scoped review
 accepted; activation and operational acceptance remain open. CL-3 remains partial.
 
-The next proposal is read-only analysis of AI-feedback orchestration in Engine:
-`AddAIFeedback`, `UndoAIFeedback` and `AIFeedbackHistory`. Map durable feedback,
-the unsure verdict and AI-enabled gates, settings/item read failures, best-effort
-logging, Deep Detection handoff, undo/history output and existing cancellation
-behavior before choosing one cohesive boundary and missing characterization.
-Preserve per-method Engine receiver/lock scopes, contexts, side-effect/error order,
-Store authority, protocol and guards. Selection corrections, semantic corrections,
-privacy/reset workflows and scalar-reader relocation remain outside that proposal.
-No further implementation, runtime change or trial is approved.
+The AI-feedback workflow is now committed as `6a1ce33` in `ai_feedback.go`.
+See the [result](cl1-cleanup-candidates.md#cl-32-engine-ai-feedback-result-2026-11-02), [validation](../runtime/qa/engine-ai-feedback-20261102/validation.json), [review](../runtime/qa/engine-ai-feedback-review-20261102/review.json) and [commit readback](../runtime/qa/engine-ai-feedback-review-20261102/final-readback.json).
+Three Engine methods retain exact signatures/bodies; the 31-line block removal
+is the only Engine change, with imports, Store, HTTP callers and detector helpers
+unchanged. Identical characterization passes 58 default/dev parent/subtest results
+before and after relocation. Matching 14-package regressions (13 tested; Bridge
+builder compile-only) pass default 2,106/50 skip and dev 2,950/62 skip, zero failures.
+Four build-tag graphs and 16 Windows amd64 artifacts pass. This sync reuses
+matching source/log/artifact evidence without new product tests/builds.
+Implemented, tested and scoped review accepted; activation and operational
+acceptance remain open. CL-3 remains partial.
+
+The next proposal is read-only analysis of Engine FullReset orchestration.
+Map operation locking, AI/provenance cancellation, default/provider resolution,
+idle admission, candidate preparation/disposal, Store reset, capture-runtime
+request, headless-authority clearing and provider activation before deciding
+whether one feature boundary is useful and which characterization is missing.
+Preserve Engine ownership, operation/mu scopes, caller/background contexts,
+side-effect/error order, candidate cleanup, Store authority, protocol and guards.
+ResetLearning, CleanDatabase, semantic delegations and scalar-reader relocation
+remain outside that proposal. No further implementation, reset, runtime change
+or trial is approved.
 The [Engine responsibility map](code-structure-audit.md#current-engine-responsibility-map-2026-11-02)
 records completed and remaining areas. No further implementation is approved.
 
@@ -285,6 +298,7 @@ records completed and remaining areas. No further implementation is approved.
 | CL-3.2 Engine local acquisition policy | `f16f11a` | Identical characterization passes 206 default/dev parent/subtest results before/after relocation; matching 13-package selection (12 tested, Bridge builder compile-only) passes default 1,911/48 skip and dev 2,755/60 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-acquisition-policy-20261102/validation.json), [review](../runtime/qa/engine-acquisition-policy-review-20261102/review.json) and [commit readback](../runtime/qa/engine-acquisition-policy-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Four free functions retain exact signatures/bodies/comments/reasons; Engine remainder, caller priority, scalar readers, continuation, source descriptors, Store authority, queue/receipt/error order, protocol and guards unchanged. CL-3 remains partial; operational acceptance remains open |
 | CL-3.2 Engine vision-lane routing and coverage | `25c3339` | Identical characterization passes 83 default/dev parent/subtest results before/after relocation; matching 13-package selection (12 tested, Bridge builder compile-only) passes default 1,994/48 skip and dev 2,838/60 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-vision-lane-20261102/validation.json), [review](../runtime/qa/engine-vision-lane-review-20261102/review.json) and [commit readback](../runtime/qa/engine-vision-lane-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed/published. Two free functions retain exact signatures/bodies; Engine remainder, caller, source predicates, Coverage/nested aliasing, queue capacity, Store ownership, context/error/side-effect order, protocol and guards unchanged. Current manual_review availability is preserved. CL-3 remains partial; operational acceptance remains open |
 | CL-3.2 Engine selection-correction workflow | `f3d46b8` | Identical characterization passes 32 default/dev parent/subtest results before/after relocation; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,048/50 skip and dev 2,892/62 skip, zero failures; EventEngine added to prior scope; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-selection-corrections-20261102/validation.json), [review](../runtime/qa/engine-selection-corrections-review-20261102/review.json) and [commit readback](../runtime/qa/engine-selection-corrections-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Two Engine methods retain exact signatures/bodies; Engine remainder, caller/Store/background ownership, operation/mu scopes, partial errors, durable/enrichment/cancellation order, protocol and guards unchanged. Undo retains same-session AI cancellation only and post-commit cleanup error behavior. CL-3 remains partial; operational acceptance remains open |
+| CL-3.2 Engine AI-feedback workflow | `6a1ce33` | Identical characterization passes 58 default/dev parent/subtest results before/after relocation; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,106/50 skip and dev 2,950/62 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-ai-feedback-20261102/validation.json), [review](../runtime/qa/engine-ai-feedback-review-20261102/review.json) and [commit readback](../runtime/qa/engine-ai-feedback-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Three Engine methods retain exact signatures/bodies; Add/Undo operation locks, lock-free history, durable-write/read/handoff order, review failures logged after commit while saved feedback is returned, append-only clear, cancellation/context behavior, Store/domain/HTTP ownership, protocol and guards unchanged. CL-3 remains partial; operational acceptance remains open |
 
 Counts include subtests and repeated build-tag selections; do not add them as
 unique test cases. Receipts captured before commit may retain `committed:false`
@@ -302,9 +316,9 @@ not authorization to implement or delete. Scheduler drain and further execution
 refactors have not been added to this completed slice. Further small backend
 Settings splitting remains deferred; keep the existing method cohesive.
 
-The current next source-cleanup proposal is AI-feedback/undo/history analysis above.
+The current next source-cleanup proposal is FullReset orchestration analysis above.
 Bridge command, observation, process-recovery, reasoning-result, capture-round,
-local acquisition-policy, vision-lane and selection-correction boundaries are implemented and reviewed; do not repeat those moves. This roadmap sync reuses
+local acquisition-policy, vision-lane, selection-correction and AI-feedback boundaries are implemented and reviewed; do not repeat those moves. This roadmap sync reuses
 matching test/build evidence and changes no runtime or configuration.
 
 ## Product and installation roadmaps
