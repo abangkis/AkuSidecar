@@ -347,22 +347,6 @@ func (e *Engine) ReevaluateFailedRun(ctx context.Context, runID string) (domain.
 	return run, nil
 }
 
-func (e *Engine) ApplyPassiveXMediaEvidence(ctx context.Context, timelineID, bridgeID string, value domain.PassiveXMediaEvidence) (domain.MediaRecapture, bool, error) {
-	if e.developmentSources != nil {
-		return domain.MediaRecapture{}, false, errors.New("development session passive media recapture unavailable")
-	}
-	defer e.releaseTerminalCaptureSessions(context.Background())
-	e.operation.Lock()
-	defer e.operation.Unlock()
-	recapture, updated, err := e.store.ApplyPassiveXMediaEvidence(ctx, timelineID, bridgeID, value)
-	if err == nil && updated {
-		if item, loadErr := e.store.TimelineItem(ctx, timelineID); loadErr == nil {
-			e.launchMediaProvenanceItems([]domain.TimelineItem{item})
-		}
-	}
-	return recapture, updated, err
-}
-
 func (e *Engine) SemanticEventSuggestions(ctx context.Context, timelineID string, limit int) ([]domain.EventSuggestion, error) {
 	return e.store.SuggestSemanticEvents(ctx, timelineID, limit)
 }
