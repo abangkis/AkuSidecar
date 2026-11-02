@@ -1428,68 +1428,13 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}
 		return writeJSON(w, http.StatusAccepted, map[string]any{"instanceEpoch": s.engine.Epoch(), "bridge": s.engine.RecordHeartbeat(body.Capabilities)})
 	case r.Method == http.MethodPost && p == "/api/operations/bridge/actions/reload-self":
-		if err := s.requireBridge(r); err != nil {
-			return err
-		}
-		var body struct {
-			RequestID string `json:"requestId"`
-			Actor     any    `json:"actor"`
-			Reason    string `json:"reason"`
-		}
-		if err := readJSON(r, &body); err != nil {
-			return err
-		}
-		action, err := s.engine.RequestBridgeReload(body.RequestID, body.Actor, body.Reason)
-		if errors.Is(err, engine.ErrActionConflict) {
-			return conflict(err.Error())
-		}
-		if err != nil {
-			return badRequest(err.Error())
-		}
-		return writeJSON(w, http.StatusAccepted, map[string]any{"action": action})
+		return s.requestBridgeReload(w, r)
 	case r.Method == http.MethodGet && p == "/api/operations/bridge/actions/next":
-		if err := s.requireBridge(r); err != nil {
-			return err
-		}
-		wait := boundedInt(r.URL.Query().Get("waitMs"), 0, 0, 30000)
-		action, err := s.engine.NextBridgeAction(time.Duration(wait)*time.Millisecond, r.Context().Done())
-		if err != nil {
-			return err
-		}
-		if action == nil {
-			w.WriteHeader(http.StatusNoContent)
-			return nil
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"action": action})
+		return s.nextBridgeAction(w, r)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/operations/bridge/actions/") && strings.HasSuffix(p, "/accept"):
-		if err := s.requireBridge(r); err != nil {
-			return err
-		}
-		id := path.Base(strings.TrimSuffix(p, "/accept"))
-		action, err := s.engine.AcceptBridgeAction(id)
-		if errors.Is(err, engine.ErrActionNotFound) {
-			return notFound("bridge action")
-		}
-		if errors.Is(err, engine.ErrActionConflict) {
-			return conflict(err.Error())
-		}
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusAccepted, map[string]any{"action": action})
+		return s.acceptBridgeAction(w, r, p)
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/operations/bridge/actions/"):
-		if err := s.requireBridge(r); err != nil {
-			return err
-		}
-		id := path.Base(p)
-		action, err := s.engine.BridgeAction(id)
-		if errors.Is(err, engine.ErrActionNotFound) {
-			return notFound("bridge action")
-		}
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"action": action})
+		return s.bridgeActionStatus(w, r, p)
 	case r.Method == http.MethodGet && p == "/api/bridge/health":
 		return writeJSON(w, http.StatusOK, map[string]any{"bridge": s.engine.BridgeStatus()})
 	case r.Method == http.MethodGet && p == "/api/bridge/commands/next":
