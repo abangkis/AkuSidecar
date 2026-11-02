@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback/FullReset/Library removal/passive media evidence, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture/update-session/media-entry/bootstrap/reload-action/development-X features, router map and bounded capture-owner path/telemetry rotation guard corrections below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback/FullReset/Library removal/passive media evidence, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture/update-session/media-entry/bootstrap/reload-action/development-X/semantic-correction features, router map and bounded capture-owner path/telemetry rotation guard corrections below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -1795,7 +1795,78 @@ This establishes the seventh scoped HTTP extraction, not completion of CL-3.3
 or CL-3. The router remains 106 top-level arms: 58 retained (32 feature delegations,
 26 thin/control/heartbeat) and 48 deferred (five native/dev/telemetry, 43 product).
 All 30 server.go declarations and 52 central Engine declarations remain retained.
-The next proposed read-only boundary is the three semantic-event correction HTTP
-adapters; see the [cleanup roadmap](code-cleanup-roadmap.md#proposed-next-cleanup-analysis).
+The then-proposed semantic correction HTTP review and separately approved
+extraction are now complete; see the
+[semantic corrections result](#cl-33-http-semantic-corrections-result-2026-11-03).
 Deferred groups are not an automatic extraction queue, and this record approves
+no further implementation, activation or trial.
+
+## CL-3.3 HTTP semantic corrections result (2026-11-03)
+
+The separately approved extraction is committed as `3c5e61a` in
+`internal/httpapi/semantic_corrections.go`. Three Server methods own HTTP
+adaptation: semanticEventSuggestions, correctSemanticEvent and
+undoSemanticCorrection. The 36 original body lines are identical except
+indentation and the local `ctx := r.Context()` binding. Caller context and
+router-normalized path are forwarded unchanged. The three predicates/delegation
+positions and the intervening passive-media-evidence arm are exact; the whole
+router remainder is unchanged. No Engine, Store, domain/schema, shared security,
+decoder, protocol, guard, lock or cancellation implementation was modified.
+
+Suggestions retain bounded limit/ranking/current-event exclusion, six public
+fields, missing-item `suggestions:null` versus empty `suggestions:[]`, and
+general error propagation. Submit retains 201, split/merge/material-update and
+default-relation behavior, existing duplicate/trailing JSON parsing and validation
+precedence. Undo retains 200, no body/content-type decoding, the existing response
+without an undoneAt field and 404 for an absent/already-undone correction. Generic
+Store/caller-context failures still map to 500 for suggestions and 400 for writes.
+Engine retains operation locking; Store owns the transaction, constraints, report,
+delta, commit and best-effort post-commit orphan cleanup. No new cancellation or
+resource-lifecycle policy was introduced.
+
+Characterization was added first and frozen byte-identically across the move:
+
+- Suggestions limits, stable rank/current exclusion, exact public fields and
+  private-evidence/coverage/reason/alias sentinels; null versus empty response.
+- Split/merge/default relation/material update, active-correction rejection,
+  repeat undo, validation/404/415 ordering and existing parsing semantics.
+- Canonical/trailing/encoded slash and nested-ID routing, method/host/origin and
+  preflight behavior; ended caller contexts and closed-Store errors.
+- SQLite late-submit/late-undo trigger failures prove rollback; an orphan-delete
+  trigger exercises ignored post-commit cleanup errors. Response-write failures
+  do not undo committed correction/undo state.
+- Real EnforceRetention removes the Timeline item; HTTP undo and another
+  correction continue through retained semantic evidence. Ordinary settings remain
+  unchanged and no production test seam or native/browser start is required.
+
+Before/after default/dev characterization passes 75 parent/subtest results in
+each selection, zero skips/failures. Matching 14-package regressions (13 tested,
+Bridge builder compile-only) pass default 2,617/50 skip and dev 3,461/62 skip,
+zero failures. Four Windows amd64 tag graphs include the new test and produce
+16 Store/Engine/HTTP/application artifacts. Counts include parents/subtests and
+repeated tag selections, not unique independent cases.
+
+Coordinator review rechecked source/test/configuration and helper identities,
+raw log/package results, tag-graph receipts, exact body/router equivalence and
+all 16 binary hashes. This commit/synchronization reuses matching evidence;
+no product test/build reruns were needed. The suggestions sql.ErrNoRows branch
+not produced by ordinary missing items remains preserved structurally. No new
+race-detector run, runtime/configuration change, activation or live trial is claimed.
+
+Implemented/tested and scoped review accepted; committed as `3c5e61a`.
+Activation and operational acceptance remain open. Evidence:
+[validation](../runtime/qa/http-semantic-corrections-20261103/validation.json),
+[extraction proof](../runtime/qa/http-semantic-corrections-20261103/extraction-proof.json),
+[review](../runtime/qa/http-semantic-corrections-review-20261103/review.json) and
+[later commit/publication readback](../runtime/qa/http-semantic-corrections-review-20261103/final-readback.json).
+The validation's sourceDirty=true, committed=false and related fields describe
+its original capture time and remain unchanged.
+
+This establishes the eighth bounded HTTP extraction, not completion of CL-3.3
+or CL-3. The router remains 106 top-level arms: 61 retained (35 feature delegations,
+26 thin/control/heartbeat) and 45 deferred (five native/dev/telemetry, 40 product).
+All 30 server.go declarations and 52 central Engine declarations remain retained.
+The next proposed read-only boundary is the three AI-feedback HTTP adapters;
+see the [cleanup roadmap](code-cleanup-roadmap.md#proposed-next-cleanup-analysis).
+Deferred groups are not an automatic extraction queue; this record approves
 no further implementation, activation or trial.

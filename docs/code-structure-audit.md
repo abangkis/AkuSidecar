@@ -3,7 +3,7 @@
 ## Status synchronization (2026-11-03)
 
 The original audit and its validation below are historical. Current source is
-reviewed through `1814c9b`, including development X HTTP controls, capture telemetry rotation/shutdown compatibility, HTTP reload-action separation, capture-owner path normalization, HTTP bootstrap and the router responsibility map, HTTP media-recapture entry points, HTTP update/session lifecycle, Engine passive media evidence, Library removal/Forget, FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
+reviewed through `3c5e61a`, including semantic correction HTTP adapters, development X HTTP controls, capture telemetry rotation/shutdown compatibility, HTTP reload-action separation, capture-owner path normalization, HTTP bootstrap and the router responsibility map, HTTP media-recapture entry points, HTTP update/session lifecycle, Engine passive media evidence, Library removal/Forget, FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
 for commit-to-receipt mappings. Cleanup is not provider qualification.
 
 | Increment | Implemented | Tested | Activated | Acceptance |
@@ -594,12 +594,52 @@ Current router snapshot: 106 top-level arms, not endpoint count; 58 retained
 native/dev/telemetry and 43 product-domain arms). All 30 server.go declarations
 and 52 central Engine declarations remain retained. CL-3.3 and CL-3 remain partial.
 
+### Semantic correction follow-up
+
+The then-proposed review and separately approved extraction are now complete;
+see the semantic corrections result below.
+
+## HTTP semantic corrections result (2026-11-03)
+
+Three Server adapters are committed as `3c5e61a` in
+`internal/httpapi/semantic_corrections.go`: semanticEventSuggestions,
+correctSemanticEvent and undoSemanticCorrection. Their 36 original body lines
+move unchanged except indentation and a local `ctx := r.Context()` binding.
+Router-normalized `p` is passed unchanged; predicates, order, the intervening
+Bridge passive-media-evidence arm and the whole router remainder are exact.
+Engine operation locking, Store transactions/constraints/deltas/commit/cleanup,
+shared security, decoder behavior, protocol, guards and cancellation are unchanged.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | `3c5e61a`, three semantic correction HTTP adapters; eighth bounded HTTP extraction |
+| Tested | Frozen characterization: 75 passing default/dev parent/subtest results before and after. Matching 14-package selection: default 2,617 pass/50 skip; dev 3,461 pass/62 skip; zero failures. Four Windows amd64 tag combinations include the test and produce 16 artifacts |
+| Activated | Not performed for this increment |
+| Acceptance | Scoped source/test review accepted; broader source and whole-package operational acceptance remain open |
+
+The isolated SQLite/Engine fixture covers suggestions null/empty shapes and
+public fields, correction/undo output and parsing, caller contexts, transaction
+rollback, ignored post-commit cleanup errors, committed effects after response
+write failure, and real EnforceRetention eviction followed by undo/re-correction.
+Review rechecked raw log summaries, source/helper/tag-graph identities, body and
+router equivalence, and all 16 binary hashes. Matching validation is reused
+without product test/build reruns. No new production test seam, concurrency,
+race-detector run, activation or live trial was introduced. See the
+[detailed result](cl1-cleanup-candidates.md#cl-33-http-semantic-corrections-result-2026-11-03),
+[validation](../runtime/qa/http-semantic-corrections-20261103/validation.json),
+[review](../runtime/qa/http-semantic-corrections-review-20261103/review.json) and
+[publication readback](../runtime/qa/http-semantic-corrections-review-20261103/final-readback.json).
+
+Current router snapshot: 106 top-level arms, not endpoint count; 61 retained
+(35 delegations and 26 thin/control/heartbeat arms) and 45 deferred (five
+native/dev/telemetry and 40 product-domain arms). All 30 server.go declarations
+and 52 central Engine declarations remain retained. CL-3.3 and CL-3 remain partial.
+
 ### Proposed next cleanup analysis
 
-Read-only review of the three semantic-event correction HTTP adapters:
-Timeline event suggestions, correction submission and correction undo. Trace
-caller contracts, validation/error mapping, privacy projection, durable writes
-and cancellation before selecting one cohesive extraction or retaining the
-current boundary. Specify characterization first; preserve Engine/Store
-ownership, protocol, guards and effect order. This proposal authorizes no
-implementation, activation, runtime/configuration change or live trial.
+Read-only review of the three AI-feedback HTTP adapters: submit, history and
+undo. Trace supported UI callers, ID/body parsing, public output and error
+mapping, durable effects and existing cancellation before selecting one cohesive
+extraction or retaining the current boundary. Specify characterization first;
+keep Engine/Store ownership, protocol, guards and effect order. This proposal
+authorizes no implementation, activation, runtime/configuration change or trial.

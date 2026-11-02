@@ -1,14 +1,14 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-03 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `1814c9b` (development X HTTP controls, after capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
+Reviewed local source: AkuSidecar `3c5e61a` (semantic correction HTTP adapters, after development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
-The previous code/roadmap checkpoint was published as `ebbfc09`, including
-telemetry rotation/shutdown repair `237dbd1`. The owner has authorized publication
-of the development X HTTP extraction and this roadmap synchronization to
+The previous code/roadmap checkpoint was published as `a601c52`, including
+development X HTTP controls `1814c9b`. The owner has authorized publication of
+the semantic correction HTTP extraction and this roadmap synchronization to
 origin/main at https://github.com/abangkis/AkuSidecar.git. Validation and the
-later review/commit/publication readback are identified in the development X
+later review/commit/publication readback are identified in the semantic correction
 result below; publication must be verified against the remote SHA.
 Publication does not establish runtime activation or operational acceptance.
 The Browser worktree contains pre-existing build/cache changes; those changes
@@ -562,15 +562,55 @@ Current router snapshot: 106 top-level arms, not endpoint count; 58 retained
 native/dev/telemetry and 43 product-domain arms). All 30 server.go declarations
 and 52 central Engine declarations remain retained. CL-3.3 and CL-3 remain partial.
 
+### Semantic correction follow-up
+
+The then-proposed review and separately approved extraction are now complete;
+see the semantic corrections result below.
+
+## HTTP semantic corrections result (2026-11-03)
+
+Three Server adapters are committed as `3c5e61a` in
+`internal/httpapi/semantic_corrections.go`: semanticEventSuggestions,
+correctSemanticEvent and undoSemanticCorrection. Their 36 original body lines
+move unchanged except indentation and a local `ctx := r.Context()` binding.
+Router-normalized `p` is passed unchanged; predicates, order, the intervening
+Bridge passive-media-evidence arm and the whole router remainder are exact.
+Engine operation locking, Store transactions/constraints/deltas/commit/cleanup,
+shared security, decoder behavior, protocol, guards and cancellation are unchanged.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | `3c5e61a`, three semantic correction HTTP adapters; eighth bounded HTTP extraction |
+| Tested | Frozen characterization: 75 passing default/dev parent/subtest results before and after. Matching 14-package selection: default 2,617 pass/50 skip; dev 3,461 pass/62 skip; zero failures. Four Windows amd64 tag combinations include the test and produce 16 artifacts |
+| Activated | Not performed for this increment |
+| Acceptance | Scoped source/test review accepted; broader source and whole-package operational acceptance remain open |
+
+The isolated SQLite/Engine fixture covers suggestions null/empty shapes and
+public fields, correction/undo output and parsing, caller contexts, transaction
+rollback, ignored post-commit cleanup errors, committed effects after response
+write failure, and real EnforceRetention eviction followed by undo/re-correction.
+Review rechecked raw log summaries, source/helper/tag-graph identities, body and
+router equivalence, and all 16 binary hashes. Matching validation is reused
+without product test/build reruns. No new production test seam, concurrency,
+race-detector run, activation or live trial was introduced. See the
+[detailed result](cl1-cleanup-candidates.md#cl-33-http-semantic-corrections-result-2026-11-03),
+[validation](../runtime/qa/http-semantic-corrections-20261103/validation.json),
+[review](../runtime/qa/http-semantic-corrections-review-20261103/review.json) and
+[publication readback](../runtime/qa/http-semantic-corrections-review-20261103/final-readback.json).
+
+Current router snapshot: 106 top-level arms, not endpoint count; 61 retained
+(35 delegations and 26 thin/control/heartbeat arms) and 45 deferred (five
+native/dev/telemetry and 40 product-domain arms). All 30 server.go declarations
+and 52 central Engine declarations remain retained. CL-3.3 and CL-3 remain partial.
+
 ### Proposed next cleanup analysis
 
-Read-only review of the three semantic-event correction HTTP adapters:
-Timeline event suggestions, correction submission and correction undo. Trace
-caller contracts, validation/error mapping, privacy projection, durable writes
-and cancellation before selecting one cohesive extraction or retaining the
-current boundary. Specify characterization first; preserve Engine/Store
-ownership, protocol, guards and effect order. This proposal authorizes no
-implementation, activation, runtime/configuration change or live trial.
+Read-only review of the three AI-feedback HTTP adapters: submit, history and
+undo. Trace supported UI callers, ID/body parsing, public output and error
+mapping, durable effects and existing cancellation before selecting one cohesive
+extraction or retaining the current boundary. Specify characterization first;
+keep Engine/Store ownership, protocol, guards and effect order. This proposal
+authorizes no implementation, activation, runtime/configuration change or trial.
 
 ## Product and installation roadmaps
 
