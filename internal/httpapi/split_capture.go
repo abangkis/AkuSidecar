@@ -754,7 +754,7 @@ func (s *Server) SplitCaptureLaunchURL(origin string) (string, error) {
 	return strings.TrimSuffix(origin, "/") + "/split-capture-host#" + s.splitCapture.key, nil
 }
 func splitCaptureOwnedRoute(r *http.Request) bool {
-	p := r.URL.Path
+	p := strings.TrimSuffix(r.URL.Path, "/")
 	return strings.HasPrefix(p, "/api/bridge/commands/") || strings.HasPrefix(p, "/api/bridge/media-recaptures/") || p == "/api/bridge/capture-surfaces/events" || strings.HasPrefix(p, "/api/bridge/split-capture/") || (strings.HasPrefix(p, "/api/operations/bridge/actions/") && strings.HasSuffix(p, "/accept"))
 }
 func validateSplitAction(a splitCaptureAction) error {
