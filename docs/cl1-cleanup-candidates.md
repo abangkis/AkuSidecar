@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback/FullReset/Library removal/passive media evidence, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture/update-session/media-entry/bootstrap/reload-action/development-X/semantic-correction features, router map and bounded capture-owner path/telemetry rotation guard corrections below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback/FullReset/Library removal/passive media evidence, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture/update-session/media-entry/bootstrap/reload-action/development-X/semantic-correction/AI-feedback features, router map and bounded capture-owner path/telemetry rotation guard corrections below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -1866,7 +1866,83 @@ This establishes the eighth bounded HTTP extraction, not completion of CL-3.3
 or CL-3. The router remains 106 top-level arms: 61 retained (35 feature delegations,
 26 thin/control/heartbeat) and 45 deferred (five native/dev/telemetry, 40 product).
 All 30 server.go declarations and 52 central Engine declarations remain retained.
-The next proposed read-only boundary is the three AI-feedback HTTP adapters;
+The then-proposed AI-feedback HTTP review and separately approved extraction
+are now complete; see the [AI feedback result](#cl-33-http-ai-feedback-result-2026-11-03).
+Deferred groups are not an automatic extraction queue; this record approves
+no further implementation, activation or trial.
+
+## CL-3.3 HTTP AI feedback result (2026-11-03)
+
+The separately approved extraction is committed as `a3718ff` in
+`internal/httpapi/ai_feedback.go`. Three Server methods own HTTP adaptation:
+addAIFeedback, aiFeedbackHistory and undoAIFeedback. The 31 original body lines
+are identical except indentation and the local `ctx := r.Context()` binding.
+Router-normalized path and caller context are passed unchanged. Predicates,
+dispatch order and the complete router remainder are exact. No Engine, Store,
+domain/schema, JSON/security helper, protocol, guard, lock, cancellation or
+resource-lifecycle implementation changed.
+
+Submit retains 201, the verdict/target/scope/reason contract, existing JSON
+parsing and DTO fields including targetKey and omission rules. History retains
+200, empty `feedback:null`, insertion-order precedence and matching captured-account
+sharing without crossing identities. Undo retains 200 and appends a new clear
+event with supersedesId, rather than deleting the old decision. Superseded/repeated
+undo remains 400; unknown or clear-event IDs remain 404. Undo still ignores body
+and Content-Type. Store/caller-context failures retain 500 for history versus
+400 for mutations, with existing missing-item and validation precedence.
+
+The unsure handoff still follows durable feedback commit. Disabled detection,
+a nil resolver or settings/item/queue failure does not undo the saved feedback.
+Eligible handoff can cancel an older AI review for the same session; another
+session and media provenance remain untouched. Review work retains its own
+context after the HTTP caller is cancelled. Clearing feedback does not cancel
+or requeue a running review. Engine owns operation/mu/work coordination and
+Store owns append-only persistence; no new cancellation policy or test seam.
+
+Characterization was added first and frozen byte-identically across the move:
+
+- Verdict/target/scope matrix, captured-account target keys, exact public DTO and
+  optional fields, raw-evidence sentinels and existing duplicate/trailing JSON.
+- Supersedes/clear history, stale/repeated undo, ignored body, insertion order
+  despite timestamp changes and shared-account versus other-identity history.
+- Validation/media/404 ordering, canonical/trailing/encoded slash/nested-ID
+  routing, method/host/origin and preflight behavior.
+- Isolated SQLite settings/item/queue faults after commit retain a 201 feedback
+  response; disabled/nil-resolver cases create no deep job.
+- Existing public SetAIDeepResolver with an offline fake checks durable feedback
+  before same-session cancellation/new review, independent review context and
+  undo while review runs. The unchanged Engine cancellation matrix separately
+  retains other-session/media-provenance isolation.
+- Cancelled/deadline/closed-Store and insert failures preserve prior history;
+  response-write failure does not undo committed feedback or clear events.
+
+Before/after default/dev characterization passes 80 parent/subtest results in
+each selection, zero skips/failures. Matching 14-package regressions (13 tested,
+Bridge builder compile-only) pass default 2,697/50 skip and dev 3,541/62 skip,
+zero failures. Four Windows amd64 tag graphs include the new test and produce
+16 Store/Engine/HTTP/application artifacts. Counts include parents/subtests and
+repeated tag selections, not unique independent cases.
+
+Coordinator review rechecked source/test/configuration and helper identities,
+raw log/package results, tag graphs, exact body/router equivalence and all 16
+binary hashes. Matching evidence is reused without product test/build reruns
+for commit/documentation/publication alone. No new race-detector run, real
+provider/native/browser trial, runtime/configuration change or activation is claimed.
+
+Implemented/tested and scoped review accepted; committed as `a3718ff`.
+Activation and operational acceptance remain open. Evidence:
+[validation](../runtime/qa/http-ai-feedback-20261103/validation.json),
+[extraction proof](../runtime/qa/http-ai-feedback-20261103/extraction-proof.json),
+[review](../runtime/qa/http-ai-feedback-review-20261103/review.json) and
+[later commit/publication readback](../runtime/qa/http-ai-feedback-review-20261103/final-readback.json).
+The validation's sourceDirty=true, committed=false and related fields describe
+its original capture time and remain unchanged.
+
+This establishes the ninth bounded HTTP extraction, not completion of CL-3.3
+or CL-3. The router remains 106 top-level arms: 64 retained (38 feature delegations,
+26 thin/control/heartbeat) and 42 deferred (five native/dev/telemetry, 37 product).
+All 30 server.go declarations and 52 central Engine declarations remain retained.
+The next proposed read-only boundary is Inbox selection correction/re-evaluation/undo;
 see the [cleanup roadmap](code-cleanup-roadmap.md#proposed-next-cleanup-analysis).
 Deferred groups are not an automatic extraction queue; this record approves
 no further implementation, activation or trial.

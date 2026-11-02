@@ -1,15 +1,15 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-03 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `3c5e61a` (semantic correction HTTP adapters, after development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
+Reviewed local source: AkuSidecar `a3718ff` (AI-feedback HTTP adapters, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
-The previous code/roadmap checkpoint was published as `a601c52`, including
-development X HTTP controls `1814c9b`. The owner has authorized publication of
-the semantic correction HTTP extraction and this roadmap synchronization to
+The previous code/roadmap checkpoint was published as `3463074`, including
+semantic correction HTTP adapters `3c5e61a`. The owner has authorized publication
+of the AI-feedback HTTP extraction and this roadmap synchronization to
 origin/main at https://github.com/abangkis/AkuSidecar.git. Validation and the
-later review/commit/publication readback are identified in the semantic correction
-result below; publication must be verified against the remote SHA.
+later review/commit/publication readback are identified in the AI feedback result
+below; publication must be verified against the remote SHA.
 Publication does not establish runtime activation or operational acceptance.
 The Browser worktree contains pre-existing build/cache changes; those changes
 are outside this synchronization and are not evidence of a released tuple.
@@ -603,14 +603,55 @@ Current router snapshot: 106 top-level arms, not endpoint count; 61 retained
 native/dev/telemetry and 40 product-domain arms). All 30 server.go declarations
 and 52 central Engine declarations remain retained. CL-3.3 and CL-3 remain partial.
 
+### AI feedback follow-up
+
+The then-proposed review and separately approved extraction are now complete;
+see the AI feedback result below.
+
+## HTTP AI feedback result (2026-11-03)
+
+Three Server adapters are committed as `a3718ff` in
+`internal/httpapi/ai_feedback.go`: addAIFeedback, aiFeedbackHistory and
+undoAIFeedback. Their 31 original body lines are unchanged except indentation
+and a local `ctx := r.Context()` binding. Router-normalized path, predicates,
+dispatch order and the whole router remainder are exact. Engine/Store state,
+operation/mu locks, cancellation, shared JSON/security helpers, protocol and
+guards retain their existing ownership and behavior.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | `a3718ff`, three AI-feedback HTTP adapters; ninth bounded HTTP extraction |
+| Tested | Frozen characterization: 80 passing default/dev parent/subtest results before and after. Matching 14-package selection: default 2,697 pass/50 skip; dev 3,541 pass/62 skip; zero failures. Four Windows amd64 tag combinations include the test and produce 16 artifacts |
+| Activated | Not performed for this increment |
+| Acceptance | Scoped source/test review accepted; broader source and whole-package operational acceptance remain open |
+
+The isolated SQLite/Engine fixture covers target/scope/DTO contracts, append-only
+supersedes/clear history, matching-account isolation, routing/parsing and failure
+order, durable feedback after failed unsure handoff, independent review context,
+same-session replacement and undo without cancelling a running review. Other-session
+and media-provenance cancellation isolation retain the unchanged Engine regression
+coverage. No real provider/native/browser call or new production test seam is
+introduced. Review rechecked source/helper/raw-log/tag-graph and 16 binary identities;
+matching evidence is reused without product test/build reruns. See the
+[detailed result](cl1-cleanup-candidates.md#cl-33-http-ai-feedback-result-2026-11-03),
+[validation](../runtime/qa/http-ai-feedback-20261103/validation.json),
+[review](../runtime/qa/http-ai-feedback-review-20261103/review.json) and
+[publication readback](../runtime/qa/http-ai-feedback-review-20261103/final-readback.json).
+
+Current router snapshot: 106 top-level arms, not endpoint count; 64 retained
+(38 delegations and 26 thin/control/heartbeat arms) and 42 deferred (five
+native/dev/telemetry and 37 product-domain arms). All 30 server.go declarations
+and 52 central Engine declarations remain retained. CL-3.3 and CL-3 remain partial.
+
 ### Proposed next cleanup analysis
 
-Read-only review of the three AI-feedback HTTP adapters: submit, history and
-undo. Trace supported UI callers, ID/body parsing, public output and error
-mapping, durable effects and existing cancellation before selecting one cohesive
-extraction or retaining the current boundary. Specify characterization first;
-keep Engine/Store ownership, protocol, guards and effect order. This proposal
-authorizes no implementation, activation, runtime/configuration change or trial.
+Read-only review of the three Inbox selection-review HTTP adapters: selection
+correction, failed-run re-evaluation and correction undo. Trace supported callers,
+run/candidate/ID parsing, admission/error mapping, durable effects and existing
+cancellation before selecting one cohesive extraction or retaining the current
+boundary. Specify characterization first; preserve Engine/Store ownership,
+protocol, guards, context and effect order. This proposal authorizes no
+implementation, activation, runtime/configuration change or trial.
 
 ## Product and installation roadmaps
 
