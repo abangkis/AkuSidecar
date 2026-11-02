@@ -643,23 +643,9 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"provider": s.engine.ProviderName(), "settings": settings, "collectionRuntime": s.engine.CollectionRuntime(), "reasoningProviders": s.engine.ReasoningProviders(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime()})
 	case r.Method == http.MethodPost && p == "/api/updates":
-		var body struct {
-			Intent string `json:"intent"`
-		}
-		if err := readJSON(r, &body); err != nil {
-			return err
-		}
-		session, err := s.engine.StartVisibleUpdate(ctx, body.Intent)
-		if err != nil {
-			return conflict(err.Error())
-		}
-		return writeJSON(w, http.StatusCreated, map[string]any{"session": session})
+		return s.startUpdate(w, r)
 	case r.Method == http.MethodGet && p == "/api/sessions/active":
-		session, err := s.engine.ActiveSession(ctx)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"session": sessionProgressProjection(session)})
+		return s.activeSession(w, r)
 	case r.Method == http.MethodGet && p == "/api/inbox":
 		limit := boundedInt(r.URL.Query().Get("limit"), 12, 1, 25)
 		offset := boundedInt(r.URL.Query().Get("offset"), 0, 0, 100000)
@@ -783,25 +769,9 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"correction": correction})
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/sessions/") && !strings.HasSuffix(p, "/cancel"):
-		id := path.Base(p)
-		session, err := s.engine.Session(ctx, id)
-		if errors.Is(err, sql.ErrNoRows) {
-			return notFound("session")
-		}
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"session": sessionProgressProjection(&session)})
+		return s.sessionDetail(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/sessions/") && strings.HasSuffix(p, "/cancel"):
-		id := path.Base(strings.TrimSuffix(p, "/cancel"))
-		if err := s.engine.CancelSession(ctx, id); err != nil {
-			return err
-		}
-		session, err := s.engine.Session(ctx, id)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"session": sessionProgressProjection(&session)})
+		return s.cancelSession(w, r, p)
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/runs/"):
 		id := path.Base(p)
 		run, err := s.engine.Run(ctx, id)
