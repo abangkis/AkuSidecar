@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance and CL-3.3 HTTP Bridge command/media-recapture features below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection and CL-3.3 HTTP Bridge command/media-recapture features below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -673,7 +673,7 @@ earlier four-package results. No runtime activation or live trial is performed.
 Publication occurs after the documentation commit and is verified separately
 by the post-push readback; it does not close CL-3 or live source acceptance.
 
-The next proposal is read-only analysis of Engine AI-detection orchestration.
+At that checkpoint, the next proposal was read-only analysis of Engine AI-detection orchestration.
 Map fast/deep candidate selection, reasoning-profile/model selection, durable
 job/result handling, background work registration and cancellation before
 selecting one coherent extraction and its characterization tests. Preserve
@@ -682,3 +682,68 @@ authority. In particular, `cancelDeepDetections` also cancels media provenance;
 keep that existing cross-feature behavior explicit. Do not change worker
 algorithms, add drain, reopen the declined Settings micro-extraction, or implement
 another refactor without separate approval.
+
+## CL-3.2 Engine AI-detection feature result (2026-11-02)
+
+This separately approved feature separation extends CL-3.2 without changing the
+original CL-1 inventory counts or closing comprehensive backend cleanup.
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Engine AI-detection feature | `b84a62d` | Identical characterization passes 32 results in both default/dev before/after relocation; seven-package Detector/Inspector/Store/Engine/HTTP/config/application suites pass default 1,270/45 skip and dev 2,096/57 skip, zero failures; four Engine build-tag graphs and 12 Windows artifacts; [review](../runtime/qa/engine-ai-detection-review-20261102/review.json) and [commit readback](../runtime/qa/engine-ai-detection-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped source/test review found no blocking issue; committed. Five methods in `ai_detection.go` retain receiver, locks, request/background contexts, admission/profile/job/result order, errors, protocol, guards and AI/media-provenance cancellation. Only standalone setter alignment normalized; Engine remainder byte-identical; CL-3 remains partial |
+
+The [validation](../runtime/qa/engine-ai-detection-20261102/validation.json) is the original pre-commit receipt at parent
+`222bcee45a4dff832810d1589237e16794fdceae`. Its three source hashes match
+`b84a62d2b050dc27cd32e77865ed15d78b37e1f2`. The [review](../runtime/qa/engine-ai-detection-review-20261102/review.json) verifies all five unchanged signatures/
+bodies, exact Engine remainder, six passing test logs, four build-tag graphs and
+12 Windows artifact hashes. The other 1,372 tracked files match the implementation
+baseline. The [commit readback](../runtime/qa/engine-ai-detection-review-20261102/final-readback.json) verifies parent, exact three-file
+scope and committed blobs. The tracked tree was clean at that commit; existing
+`.tmp/` and `experiments/` were preserved. Passing tests/builds were reused
+at matching source/artifact hashes; historical receipts were not rewritten.
+
+Moved methods: `SetAIDeepResolver`, `runFastDetection`,
+`launchDeepDetection`, `launchDeepDetectionItems` and `cancelDeepDetections`.
+Receiver, fields, callers, Store/Resolver ports and shared work lifecycle remain
+Engine-owned. Nil resolver/empty shortlist precede same-session cancellation;
+eligible work cancels predecessors before settings reads. Job create/register/
+start/resolve/assessment/finish order, profile snapshot and usage metadata remain
+unchanged. Fast detection retains caller context; deep worker uses cancellable
+background context and durable result writes retain background context. Global
+`ai:*` and exact `media-provenance` cancellation still runs under e.mu without
+removing active entries or waiting for drain. No new service, interface, state
+owner, worker admission, protocol or guard exception is introduced.
+
+Characterization covers fast persistence/context/errors, admission/cancellation
+precedence, session-loading before the resolver guard, plain/profiled resolver
+dispatch and Model/ModelForProfile order, candidate selection, running state
+before resolution, unlocked resolver boundary, assessment supersession before
+job completion, model/token/timing receipts, start/resolve/save/finish failures,
+usage-limit persistence before scheduler notification, cancellation/error versus
+success-after-cancellation, real provenance-worker cancellation/result persistence,
+and Settings persistence before cancellation. The 32 results count parents and
+subtests. Existing caller onboarding/budget, feedback, shortlist/resolver and
+Store coverage remains in the seven-package suites.
+
+The initial Settings integration fixture incorrectly reused synthetic orphan
+timeline rows. Settings persisted and cancellation occurred, but post-save
+retention correctly returned database cleanup required. The final Settings test
+uses a clean disposable Store and retains strict durable-before-cancellation
+and rejected-save assertions. This fixture correction preceded the passing
+baseline; no health/retention guard or production behavior was changed. Fake
+resolvers/inspectors, channels and SQL failure injection perform no network or
+live inference and introduce no production test hooks.
+
+No runtime activation or trial is performed. Publication follows the documentation
+commit and is verified separately by the post-push readback. Implemented/tested/
+scoped review does not establish CL-3 closure or operational source acceptance.
+
+The next proposal is read-only analysis of Engine session admission/creation.
+Map visible/automatic callers, readiness and consent, source selection, database/
+onboarding/calibration/recapture gates, enrichment cancellation, capture lease
+ownership, durable session creation and initial scheduling. Preserve operation/
+schedule lock ordering, release-before-schedule, request/background contexts,
+cleanup and error/effect order, protocol and guards. Identify one useful feature
+boundary and characterization gaps before any extraction. Keep daily/native,
+Store/Manager authority and completed lifecycle/scheduler work unchanged; do not
+add drain or implement another refactor without separate approval.
