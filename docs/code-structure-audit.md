@@ -3,7 +3,7 @@
 ## Status synchronization (2026-11-02)
 
 The original audit and its validation below are historical. Current source is
-reviewed through `5b39fa4`, including Engine process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
+reviewed through `eb05ac8`, including Engine reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
 for commit-to-receipt mappings. Cleanup is not provider qualification.
 
 | Increment | Implemented | Tested | Activated | Acceptance |
@@ -32,6 +32,7 @@ for commit-to-receipt mappings. Cleanup is not provider qualification.
 | Engine session-admission feature | `4bf0731` | Identical characterization passes 31 default/34 dev parent/subtest results before/after relocation; seven-package suites pass default 1,301/45 skip and dev 2,130/57 skip, zero failures; four Engine build-tag graphs and 12 Windows artifacts; [review](../runtime/qa/engine-session-admission-review-20261102/review.json) and [commit readback](../runtime/qa/engine-session-admission-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped source/test review found no blocking issue; committed. Three Engine methods and one error helper in `session_admission.go` retain signatures/bodies, caller/receiver ownership, lock/context/error/effect order, source/policy/lease behavior, protocol, guards and AI/provenance cancellation; Engine remainder byte-identical; CL-3 remains partial |
 | Engine observation contracts | `d9c3025` | Identical characterization passes 61 default/74 dev parent/subtest results before/after relocation; eight-package suites pass default 1,409/45 skip and dev 2,251/57 skip, zero failures; four build-tag graphs and 12 Windows amd64 artifacts; [validation](../runtime/qa/engine-observations-20261102/validation.json), [review](../runtime/qa/engine-observations-review-20261102/review.json) and [commit readback](../runtime/qa/engine-observations-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Three free functions move unchanged into existing observations.go; reconciliation, five production callers, normalization/validation/error order, native identity rejection, protocol and guards retained. CL-3 remains partial; operational acceptance remains open |
 | Engine process-error and usage-limit recovery | `5b39fa4` | Identical characterization passes 53 default/dev parent/subtest results before/after relocation; nine-package suites pass default 1,564/48 skip and dev 2,406/60 skip, zero failures; four build-tag graphs and 12 Windows amd64 artifacts; [validation](../runtime/qa/engine-process-recovery-20261102/validation.json), [review](../runtime/qa/engine-process-recovery-review-20261102/review.json) and [commit readback](../runtime/qa/engine-process-recovery-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Seven declarations in process_recovery.go retain three Engine receivers, exact bodies and Engine remainder, locks, caller contexts, persistence/error/effect order, accepted-capture/queued-peer guards, protocol and nonblocking wake. CL-3 remains partial; operational acceptance remains open |
+| Engine reasoning-result acceptance and Timeline mapping | `eb05ac8` | Identical characterization passes 52 default/dev parent/subtest results before/after relocation; ten-package suites pass default 1,622/48 skip and dev 2,464/60 skip, zero failures; four build-tag graphs and 12 Windows amd64 artifacts; [validation](../runtime/qa/engine-reasoning-result-20261102/validation.json), [review](../runtime/qa/engine-reasoning-result-review-20261102/review.json) and [commit readback](../runtime/qa/engine-reasoning-result-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Three free helpers in reasoning_result.go retain exact signatures/bodies; Engine remainder identical except unused fmt import removal. Caller binding/validation/selection/completion order, error/coverage semantics, Store ownership, protocol and guards unchanged. CL-3 remains partial; operational acceptance remains open |
 
 No code change, activation or trial is performed by this status update. Existing
 test receipts are reused at their verified source/artifact scope, not rerun.
@@ -54,6 +55,7 @@ those receipts and does not imply activation, live-source acceptance or CL-3 clo
 | Session admission/creation | [admission](../internal/engine/session_admission.go) owns visible policy, source admission, lease acquisition/durable creation and handoff to scheduling | `4bf0731` |
 | Shared observation contracts | [observations](../internal/engine/observations.go) owns normalization, validation and evidence-shape checks; five callers retain their own normalization/validation order and native identity guards | `d9c3025` |
 | Process-error and usage-limit recovery | [process recovery](../internal/engine/process_recovery.go) owns failure projection, durable failure/queued-peer stop and pause/restore decisions; caller contexts/locks, Store authority and scheduler lifecycle remain unchanged | `5b39fa4` |
+| Reasoning-result acceptance and Timeline mapping | [reasoning result](../internal/engine/reasoning_result.go) owns captured URL binding, assessment/evidence validation and selected item mapping; process keeps selection/effect order, Store assigns persistence fields and guards remain unchanged | `eb05ac8` |
 
 The Engine facade intentionally retains dependency/state ownership, `New`,
 locks, protocol constants/action anchors and suitable short delegations. The
@@ -62,8 +64,8 @@ wrapper. The declined provider-selection micro-extraction remains declined.
 
 | Remaining review area | Current question and boundary |
 | --- | --- |
-| Reasoning-result acceptance and Timeline mapping | Next read-only proposal: map bindReasoningSourceURLs, validateReasoning and selectedItems, including evidence/URL binding, assessment completeness, selection order and CompleteRun handoff; choose one cohesive boundary and characterization before implementation |
-| Vision/acquisition helpers | Vision routing/coverage, observation merging, continuation and completion decisions still need a coherent responsibility map; keep source-specific evidence and acquisition guards |
+| Observation rounds and capture continuation | Next read-only proposal: map mergeObservations, continuationFrom, snapshotContinuationAnchors, continuationAnchors and shared helper consumers; preserve latest-round telemetry, accumulated evidence, readiness/overlap/anchor contracts and follow-up consumers before choosing a boundary |
+| Vision/acquisition policy helpers | Vision routing/coverage and acquisition completion decisions remain separate review areas; keep source-specific evidence and acquisition guards |
 | Product correction/feedback/privacy/reset workflows | Selection correction, AI/semantic feedback, library removal/forgetting, reset and cleanup coordinate multiple domain effects; inspect one complete workflow at a time while retaining privacy/retention and operation locks |
 | Facade and adjacent runtime modules | Classify each remaining delegation as retain or useful boundary. Existing capture/daily/native modules are not automatically obsolete or complete; deeper runtime/QA work also belongs to CL-5, not wholesale Engine rewriting |
 
@@ -165,9 +167,12 @@ contracts now belong to existing `observations.go` as `d9c3025`; normalization,
 validation, evidence rules and all five caller files remain unchanged.
 Process-error/usage-limit recovery now belongs to `process_recovery.go` as
 `5b39fa4`, with seven exact declarations, unchanged Engine remainder and
-three caller files. Next propose read-only analysis of reasoning-result
-acceptance and Timeline item mapping, retaining selection, vision and
-acquisition ownership, evidence guards, contexts and effect/error order.
+three caller files. Reasoning-result acceptance and Timeline mapping now
+belong to `reasoning_result.go` as `eb05ac8`, retaining three exact helper
+bodies and the caller's binding/validation/selection/completion order.
+Next propose read-only analysis of merging observations across rounds and
+deriving capture continuation, retaining latest-round telemetry, accumulated
+evidence, source overlap/readiness rules, protocol, guards and caller ownership.
 No further implementation is approved here.
 No new service layer is proposed. Other remaining
 candidates include feature-level Timeline/frontend Settings orchestration,
