@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture features below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback/FullReset, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture features below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -1220,13 +1220,111 @@ operational acceptance remain open. CL-3 remains partial. Code/documentation
 publication is recorded separately under
 `runtime/qa/engine-ai-feedback-roadmap-sync-20261102/`.
 
-The next proposal is read-only analysis of Engine FullReset orchestration.
-Map operation locking, AI/provenance cancellation, default/provider resolution,
-idle admission, candidate preparation/disposal, Store reset, capture-runtime
-request, headless-authority clearing and provider activation before deciding
-whether one feature boundary is useful and which characterization is missing.
-Preserve Engine ownership, operation/mu scopes, caller/background contexts,
-side-effect/error order, candidate cleanup, Store authority, protocol and guards.
-ResetLearning, CleanDatabase, semantic delegations and scalar-reader relocation
-remain outside that proposal. No further implementation, reset, runtime change
-or trial is approved.
+The FullReset workflow is committed and published as `da019dd` in
+`full_reset.go`. See the [FullReset result](cl1-cleanup-candidates.md#cl-32-engine-fullreset-result-2026-11-02) and [validation](../runtime/qa/engine-full-reset-20261102/validation.json), [review](../runtime/qa/engine-full-reset-review-20261102/review.json) and [commit/publication readback](../runtime/qa/engine-full-reset-review-20261102/final-readback.json).
+The exact 44-line method block is removed from Engine; its remainder and imports
+are unchanged. The same final characterization bytes pass 23 default/dev
+parent/subtest results before and after relocation. Matching regressions pass
+default 2,129/50 skip and dev 2,973/62 skip, zero failures, across 14 selected
+packages (13 tested; Bridge builder compile-only). Four Windows tag graphs and
+16 artifacts pass. This sync reuses matching evidence without new product
+tests/builds. Implemented, tested and scoped review accepted; activation and
+operational acceptance remain open. CL-3 remains partial.
+
+The next implementation proposal, following read-only analysis, is to move only
+`RemoveLibraryItem` and `ForgetLibraryItem` together to
+`internal/engine/library_removal.go`, after adding characterization tests.
+Preserve their Engine receivers, exact signatures/bodies, absence of method-level
+locks, caller-context lookup/mutation, sorted topic-ID snapshot before membership
+removal, background queue context, per-topic error logging/continuation and
+existing worker ownership. Keep Store Remove/Forget semantics, HTTP routes,
+protocol, guards and AI/provenance cancellation unchanged. No implementation,
+reset, activation, configuration change or live trial is approved by this analysis.
+
+## CL-3.2 Engine FullReset result (2026-11-02)
+
+The separately approved move is committed and code published as `da019dd413c21a7a50b2b736200d6fe25815f21f`.
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Engine FullReset orchestration | `da019dd` | Identical characterization passes 23 default/dev parent/subtest results before/after relocation; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,129/50 skip and dev 2,973/62 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-full-reset-20261102/validation.json), [review](../runtime/qa/engine-full-reset-review-20261102/review.json) and [commit/publication readback](../runtime/qa/engine-full-reset-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed and code published. One Engine method retains exact signature/body; operation/mu scopes, cancellation before admission/errors, default/provider resolution, candidate disposal, Store authority and post-commit capture/headless/swap order unchanged. CL-3 remains partial; operational acceptance remains open |
+
+Only `Engine.FullReset` moved into `internal/engine/full_reset.go`; the
+44-line removal is the entire Engine diff. No Store/provider/HTTP/collection
+implementation, interface, guard, lock or cancellation behavior changed.
+Characterization was added first, then frozen unchanged before relocation.
+It covers configured/trimmed/fallback provider defaults, empty-registry behavior,
+executable projection, optional collector, Bridge identity/profile retention,
+cancellation scope and locks, pre-cancelled requests, distinct admission errors,
+candidate planning/backup/transaction failure and rollback, retained verified
+backup, and post-commit runtime/swap order including previous-provider Close errors.
+Existing provider candidate disposal/ownership tests remain in the full suites.
+
+Identical characterization passes 23 default/dev parent/subtest results before/after relocation; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,129/50 skip and dev 2,973/62 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts. Counts include parents/subtests and repeated tag selections,
+not unique independent cases. Source/log/artifact identities and committed blobs
+were checked at review/publication. Existing raw receipts are preserved.
+Activation and operational acceptance remain open; CL-3 remains partial.
+This documentation sync runs no product tests/builds or trial, changes no product
+code/config and has not been committed or pushed.
+
+## Library removal and Forget read-only analysis (2026-11-02)
+
+Goal: expose the Library evidence-removal use case without duplicating Store
+privacy authority or changing background enrichment lifecycle. This is one
+feature boundary, not a size-only extraction or a new service abstraction.
+
+| Phase | Existing behavior to preserve |
+| --- | --- |
+| Topic lookup | Both methods call Store.LivingTopicIDsForMemory with caller context before mutation; Store trims only the lookup ID and returns topic IDs sorted by topic_id. Return its original error immediately |
+| Durable mutation | RemoveMemory physically deletes the active item and related rows with no tombstone, allowing later recapture. ForgetMemory uses DeleteMemory to scrub private content and retain opaque tombstone/aliases, suppressing recapture. The original input ID is forwarded without new normalization |
+| Success handoff | Only a nil Store mutation error enters the topic loop. Each snapshotted topic is passed in order to launchLivingTopicUnderstanding with evidence_removed or evidence_forgotten. Remove returns nil; Forget returns the original Store item |
+| Queue and worker | Existing launcher synchronously queues with context.Background before its mu/active-worker check. Queue errors are logged and return only from that launcher call; the outer loop continues. One shared living-topics-understanding worker coalesces pending work; its lifecycle remains in living_topics.go |
+| Locks and cancellation | Neither entry method acquires operation or mu. The launcher owns its existing mu scope/background worker context. Do not add operation serialization, cancellation/drain, new goroutines or AI/provenance cancellation |
+| Partial outcomes | Queue failure does not roll back an already committed removal or change caller success. Forget may commit its tombstone and then fail during Store's post-commit item read; in that case Engine returns the Store error/zero item and does not enqueue. Do not silently repair this existing error contract in a relocation |
+| HTTP/Store ownership | HTTP still owns DELETE and forget-permanently route/404/JSON contracts; Store still owns transactions, privacy scrubbing, tombstones, recapture and queue coalescing. No cross-phase transaction is introduced |
+
+Evidence: [Engine entry methods](../internal/engine/engine.go),
+[Store topic snapshot/queue](../internal/store/living_topic_understanding.go),
+[Store Remove/Forget](../internal/store/personal_memory.go),
+[worker handoff](../internal/engine/living_topics.go),
+[existing Store privacy tests](../internal/store/personal_memory_test.go),
+[HTTP privacy/recapture tests](../internal/httpapi/library_test.go) and
+[topic queue tests](../internal/store/living_topics_test.go).
+Existing Store/HTTP tests cover deletion/privacy/recapture, and topic tests cover
+queue coalescing; they do not directly characterize this two-method Engine
+snapshot/mutation/trigger/error/continuation boundary with nonempty memberships.
+
+Proposed characterization before any move:
+
+1. Both operations with zero/one/multiple memberships: capture sorted topic IDs
+   before deletion, then queue the exact per-operation trigger after committed
+   mutation. Verify physical deletion versus opaque tombstone and respective
+   recapture behavior; retain the Store return object for Forget.
+2. Missing/empty/whitespace-surrounded IDs, repeated Forget, lookup failures and
+   mutation failures: preserve raw ID forwarding, error identity/zero result,
+   rollback and no queue when mutation reports failure. Do not promise absence
+   of all partial Store effects, including tombstone-key initialization or a
+   post-commit read error.
+3. Force the first topic's queue failure, verify logged error and continued
+   handoff to later topics, committed privacy state and successful caller result.
+   Use SQL triggers/audit rows with a fixture-owned registered understanding
+   worker to inspect durable order without launching inference or relying on
+   goroutine scheduling. No production factory or callback seam is needed.
+4. Characterize absence of entry-level operation locking and existing launcher
+   mu scope; request cancellation before mutation stops it, while successful
+   post-mutation queueing uses background context. Assert existing AI/provenance
+   cancellation callbacks are untouched. Use deterministic phase probes where
+   needed, not sleeps or probabilistic worker-order assertions.
+5. Preserve existing Store/HTTP/privacy and Living Topics regressions. If approved,
+   run unchanged tests before/after relocation, the established default/dev
+   14-package selection and Windows default/dev/fixture/combined compilation.
+
+The next implementation proposal, following read-only analysis, is to move only
+`RemoveLibraryItem` and `ForgetLibraryItem` together to
+`internal/engine/library_removal.go`, after adding characterization tests.
+Preserve their Engine receivers, exact signatures/bodies, absence of method-level
+locks, caller-context lookup/mutation, sorted topic-ID snapshot before membership
+removal, background queue context, per-topic error logging/continuation and
+existing worker ownership. Keep Store Remove/Forget semantics, HTTP routes,
+protocol, guards and AI/provenance cancellation unchanged. No implementation,
+reset, activation, configuration change or live trial is approved by this analysis.
