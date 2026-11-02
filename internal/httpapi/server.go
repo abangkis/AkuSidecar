@@ -1620,37 +1620,9 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	case r.Method == http.MethodGet && p == "/api/bridge/health":
 		return writeJSON(w, http.StatusOK, map[string]any{"bridge": s.engine.BridgeStatus()})
 	case r.Method == http.MethodGet && p == "/api/bridge/commands/next":
-		if err := s.requireBridge(r); err != nil {
-			return err
-		}
-		runID := r.URL.Query().Get("runId")
-		if runID == "" {
-			return badRequest("runId is required")
-		}
-		bridgeID := r.Header.Get("X-Aku-Bridge-Id")
-		command, err := s.engine.ClaimCommand(ctx, runID, bridgeID)
-		if err != nil {
-			return err
-		}
-		if command == nil {
-			w.WriteHeader(http.StatusNoContent)
-			return nil
-		}
-		s.startNativeCaptureTrace(command)
-		return writeJSON(w, http.StatusOK, map[string]any{"command": command})
+		return s.nextBridgeCommand(w, r)
 	case r.Method == http.MethodGet && p == "/api/bridge/commands/pending":
-		if err := s.requireBridge(r); err != nil {
-			return err
-		}
-		runID, err := s.engine.PendingBridgeRunID(ctx)
-		if err != nil {
-			return err
-		}
-		if runID == "" {
-			w.WriteHeader(http.StatusNoContent)
-			return nil
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"runId": runID})
+		return s.pendingBridgeCommand(w, r)
 	case r.Method == http.MethodPost && p == "/api/bridge/capture-surfaces/events":
 		if err := s.requireBridge(r); err != nil {
 			return err
@@ -1680,39 +1652,9 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}
 		return writeJSON(w, http.StatusAccepted, map[string]any{"events": recorded})
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/bridge/commands/") && strings.HasSuffix(p, "/observation"):
-		if err := s.requireBridge(r); err != nil {
-			return err
-		}
-		commandID := path.Base(strings.TrimSuffix(p, "/observation"))
-		var body struct {
-			RunID       string             `json:"runId"`
-			Observation domain.Observation `json:"observation"`
-		}
-		if err := readJSON(r, &body); err != nil {
-			return err
-		}
-		run, err := s.engine.AcceptObservation(ctx, commandID, body.RunID, body.Observation)
-		if err != nil {
-			return badRequest(err.Error())
-		}
-		return writeJSON(w, http.StatusAccepted, map[string]any{"run": run})
+		return s.acceptBridgeCommandObservation(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/bridge/commands/") && strings.HasSuffix(p, "/failure"):
-		if err := s.requireBridge(r); err != nil {
-			return err
-		}
-		commandID := path.Base(strings.TrimSuffix(p, "/failure"))
-		var body struct {
-			RunID string         `json:"runId"`
-			Error domain.Failure `json:"error"`
-		}
-		if err := readJSON(r, &body); err != nil {
-			return err
-		}
-		run, err := s.engine.FailCommand(ctx, commandID, body.RunID, body.Error)
-		if err != nil {
-			return badRequest(err.Error())
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"run": run})
+		return s.failBridgeCommand(w, r, p)
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/bridge/media-recaptures/") && strings.HasSuffix(p, "/claim"):
 		if err := s.requireBridge(r); err != nil {
 			return err
