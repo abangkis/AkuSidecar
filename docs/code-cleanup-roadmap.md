@@ -1,7 +1,7 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-02 (Asia/Jakarta), through Sidecar `b482ba2`.
+Status synchronized: 2026-11-02 (Asia/Jakarta), through Sidecar `6ea303c`.
 Status: execution in progress; each bounded increment requires separate approval.
 No implementation, deletion, dependency upgrade, activation or trial is approved
 by creating this roadmap. Approve one concrete increment, implement it, verify
@@ -106,7 +106,7 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-0: inherited bounded cleanup | Eight increments above complete | Scoped receipts retained | Cleanup activation not recorded | Bounded code reviews complete; no whole-repository completion claim |
 | CL-1: consumer and compatibility inventory | [Entry/consumer map](cl1-consumer-inventory.md) and [32-boundary candidate ledger](cl1-cleanup-candidates.md) delivered | Read-only four-tag metadata, native/package/reference and source-preservation checks; no product test/build | Not applicable to an audit | Ready for review; external-consumer and offline Browser dependency limits explicit; no implementation approved |
 | CL-2: proven obsolete-code retirement | Earlier wrappers plus G10 `DeleteMemoryItem` removal committed with roadmap as `21ac9ad` | G10 exact remainder check, full Store/HTTP regressions and four-mode Windows compilation passed | Not performed for G10 | G10 reviewed/committed; comprehensive retirement remains scoped by the remaining ledger entries |
-| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b` and media recapture `be9fcd2`; Engine media recapture `c614512`; Engine Bridge commands `3e13434`; Engine media provenance `8d7f7b6`; Engine AI detection `b84a62d`; Engine session admission `4bf0731`; observation contracts `d9c3025`; process recovery `5b39fa4`; reasoning result `eb05ac8`; capture rounds and deterministic Store test `683b1e8`; local acquisition policy `f16f11a`; vision-lane routing/coverage `25c3339`; selection corrections `f3d46b8`; AI feedback `6a1ce33`; FullReset `da019dd`; Library removal/Forget `a19bf86`; passive media evidence `2bdc0f1`; HTTP update/session `d32c065`; HTTP media entry `90e3a7f`; HTTP bootstrap `97bbe51`; capture-owner path guard `b482ba2`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Capture/Collection/Bridge builder/Selection/EventEngine/Reasoning/Domain/Detector/Inspector/Store/Engine/HTTP/config/application scope selects 14 packages (13 with tests, Bridge builder compile-only): default 2,348 pass/50 skip and dev 3,192 pass/62 skip, zero failures; owner-guard regression reproduces before/fixes after; bootstrap retains its 25-result before/after receipt, four HTTP build-tag graphs and 16 Windows artifacts pass. Earlier acquisition-policy/capture-round/privacy/HTTP/Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Scoped changes reviewed/committed; Engine/HTTP media-recapture, Engine/HTTP command, media-provenance/AI-detection, session admission, observation contracts, process recovery, reasoning-result acceptance/Timeline mapping, capture rounds, local acquisition policy, vision-lane routing/coverage, selection corrections, AI feedback, FullReset, Library removal/Forget, passive media evidence, HTTP update/session, HTTP media entry, HTTP bootstrap/router map, diagnostics/Bridge status and E01 boundaries established; further Engine/HTTP boundaries pending. Provider-selection micro-extraction declined; keep Settings cohesive; CL-3 remains partial |
+| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b` and media recapture `be9fcd2`; Engine media recapture `c614512`; Engine Bridge commands `3e13434`; Engine media provenance `8d7f7b6`; Engine AI detection `b84a62d`; Engine session admission `4bf0731`; observation contracts `d9c3025`; process recovery `5b39fa4`; reasoning result `eb05ac8`; capture rounds and deterministic Store test `683b1e8`; local acquisition policy `f16f11a`; vision-lane routing/coverage `25c3339`; selection corrections `f3d46b8`; AI feedback `6a1ce33`; FullReset `da019dd`; Library removal/Forget `a19bf86`; passive media evidence `2bdc0f1`; HTTP update/session `d32c065`; HTTP media entry `90e3a7f`; HTTP bootstrap `97bbe51`; capture-owner path guard `b482ba2`; HTTP reload actions `6ea303c`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Capture/Collection/Bridge builder/Selection/EventEngine/Reasoning/Domain/Detector/Inspector/Store/Engine/HTTP/config/application scope selects 14 packages (13 with tests, Bridge builder compile-only): default 2,393 pass/50 skip and dev 3,237 pass/62 skip, zero failures; HTTP reload-action characterization 45 default/dev before/after; earlier guard/bootstrap receipts retained, four HTTP build-tag graphs and 16 Windows artifacts pass. Earlier acquisition-policy/capture-round/privacy/HTTP/Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Scoped changes reviewed/committed; Engine/HTTP media-recapture, Engine/HTTP command, media-provenance/AI-detection, session admission, observation contracts, process recovery, reasoning-result acceptance/Timeline mapping, capture rounds, local acquisition policy, vision-lane routing/coverage, selection corrections, AI feedback, FullReset, Library removal/Forget, passive media evidence, HTTP update/session, HTTP media entry, HTTP bootstrap/router map, HTTP reload actions, diagnostics/Bridge status and E01 boundaries established; further Engine/HTTP boundaries pending. Provider-selection micro-extraction declined; keep Settings cohesive; CL-3 remains partial |
 | CL-4: frontend feature ownership | Existing navigation module retained; broader extraction proposed | Existing baseline only | Not recorded | Timeline/Settings/app orchestration pending |
 | CL-5: native runtime and QA boundaries | Factory/shared-helper separation complete; fixture-only timing correction `8dc3f5e` committed; deeper runtime split proposed | 98 Node tests, 200 offline integration iterations and dependency-pinned staging verified for this fixture correction; existing baseline only for remaining seams | Not performed for this correction | Bounded fixture acceptance only; remaining operation/transport/QA separation pending; no universal cross-runtime clock or real-provider qualification claim |
 | CL-6: Bridge responsibility boundaries | Existing source/lifecycle modules retained; further split proposed | Existing baseline only for remaining seams | No new rollout | Background dispatch/surface integration pending |
@@ -234,9 +234,12 @@ Do not delete a consumer merely to make the dependency scan appear clean.
   unchanged. Bootstrap composition follows in `bootstrap.go` as `97bbe51`,
   with 25 characterization results before/after, matching default/dev regression
   and four-mode Windows compilation. The router responsibility map is recorded;
-  five scoped HTTP boundaries are established, not completion of CL-3.3.
+  reload-action adapters follow in `bridge_actions.go` as `6ea303c`, with
+  45 characterization results before/after and matching regression/Windows checks.
+  Six scoped HTTP boundaries are established, not completion of CL-3.3.
   Capture-owner path normalization is corrected separately as `b482ba2`,
-  with default/dev regression and four-mode Windows compile; no sixth extraction.
+  with default/dev regression and four-mode Windows compile; the guard fix itself
+  adds no feature extraction.
   Keep infrastructure/shared helpers and deferred groups pending separate review.
 
 Exit: a reviewed responsibility map and separately validated extractions, with
@@ -674,7 +677,7 @@ runtime/qa/http-bootstrap-roadmap-sync-20261102.
 
 The baseline map covered 106 top-level router switch arms, not 106 endpoints
 (some arms contain multiple methods/subroutes): 48 retain, 57 defer and one
-bootstrap extraction candidate. Bootstrap is now delegated, leaving 49 retain
+bootstrap extraction candidate. At the bootstrap checkpoint, delegation left 49 retain
 (24 already-delegated feature arms and 25 thin/control/gate arms), 57 defer and
 no automatically approved extraction candidate. The 30 remaining server.go
 function/method declarations stay with Server lifecycle, dispatch, security/CORS,
@@ -703,19 +706,11 @@ the remaining evidence. The map and bootstrap close this selected analysis and
 extraction, not the entire HTTP package, CL-3.3, CL-3 or source/runtime acceptance.
 The central Engine checkpoint remains at 52 retained declarations.
 
-The read-only heartbeat/reload review identified two responsibilities: retain
-heartbeat in server.go, because it coordinates readiness, source authority,
-recovery, scheduler wake and reload observation; the four request/next/accept/
-detail handlers form one proposed reload-action HTTP boundary. A normalization
-guard gap found during that review was fixed separately as `b482ba2`.
-The next implementation proposal is characterization first, then four private
-Server methods in `internal/httpapi/bridge_actions.go`. It requires separate
-approval. Preserve route order/normalization, shared authentication/security,
-Engine and split-transport state/lock ownership, raw errors/statuses, delivery
-priority, request cancellation and in-memory side effects before write failure.
-Keep heartbeat, shared helpers, protocol and other refactors unchanged.
-The current continuation refines that proposal read-only; it grants no new
-implementation, runtime/configuration change, activation or live trial.
+The heartbeat/reload review retained heartbeat in server.go and selected four
+reload-action HTTP handlers. The separately approved extraction is implemented,
+tested and reviewed as `6ea303c`; see the [reload-action result](cl1-cleanup-candidates.md#cl-33-http-bridge-reload-actions-result-2026-11-02).
+The earlier owner-path guard correction remains `b482ba2`. State and locks
+remain in Engine/transport, with shared infrastructure retained.
 
 ## Capture-owner admission guard result (2026-11-02)
 
@@ -748,23 +743,68 @@ acceptance remains open. A separate statically noted telemetry request admitted
 before owner rotation has not been dynamically tested or changed; do not infer
 closure of all owner-rotation behavior from this admission-path repair.
 
-This is a guard correction, not a sixth HTTP extraction. The router-map counts
-remain 49 retained arms, 57 deferred arms and 30 retained server.go declarations.
+This is a guard correction, not a sixth HTTP extraction. At that guard checkpoint, the router-map counts
+remained 49 retained arms, 57 deferred arms and 30 retained server.go declarations.
 The central Engine checkpoint remains 52 retained declarations. CL-3.3 and CL-3
 remain partial; no comprehensive or live-source acceptance is established.
 
-### Next reload-action boundary
+### Reload-action boundary follow-up
 
-The read-only heartbeat/reload review identified two responsibilities: retain
-heartbeat in server.go, because it coordinates readiness, source authority,
-recovery, scheduler wake and reload observation; the four request/next/accept/
-detail handlers form one proposed reload-action HTTP boundary. A normalization
-guard gap found during that review was fixed separately as `b482ba2`.
-The next implementation proposal is characterization first, then four private
-Server methods in `internal/httpapi/bridge_actions.go`. It requires separate
-approval. Preserve route order/normalization, shared authentication/security,
-Engine and split-transport state/lock ownership, raw errors/statuses, delivery
-priority, request cancellation and in-memory side effects before write failure.
-Keep heartbeat, shared helpers, protocol and other refactors unchanged.
-The current continuation refines that proposal read-only; it grants no new
-implementation, runtime/configuration change, activation or live trial.
+The heartbeat/reload review retained heartbeat in server.go and selected four
+reload-action HTTP handlers. The separately approved extraction is implemented,
+tested and reviewed as `6ea303c`; see the [reload-action result](cl1-cleanup-candidates.md#cl-33-http-bridge-reload-actions-result-2026-11-02).
+The earlier owner-path guard correction remains `b482ba2`. State and locks
+remain in Engine/transport, with shared infrastructure retained.
+
+## HTTP Bridge reload actions result (2026-11-02)
+
+Four HTTP adapters are committed as `6ea303c` in
+`internal/httpapi/bridge_actions.go`: requestBridgeReload, nextBridgeAction,
+acceptBridgeAction and bridgeActionStatus. Their bodies are identical except
+indentation; the only server.go change replaces their 59 body lines with four
+delegations. Router predicates/order/normalization and the remainder are exact.
+Heartbeat, security/CORS/JSON/error helpers, the owner-path guard correction,
+Engine/Store state and locks, protocol and guards are unchanged.
+
+Characterization was added first and frozen byte-identically across the move.
+It covers split/non-split lifecycle, replay and active-action conflicts, output
+fields/metadata, request validation and existing trailing-JSON behavior, routing,
+UI relay versus worker authentication/owner fencing, empty 204/header behavior,
+caller context and response-write failures without undoing in-memory state.
+Cancellation before token authentication retains 401; the bounded long-poll
+fixture allows that legitimate race or empty 204. A separate deterministic Engine
+control checks pending delivery before cancellation. Unproduced generic error
+branches and expiry timing remain covered by exact body/Engine equivalence;
+no clock, interface or production test seam was introduced.
+
+Identical characterization passes 45 default/dev parent/subtest results before/after extraction; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,393/50 skip and dev 3,237/62 skip, zero failures; four HTTP build-tag graphs and 16 Windows amd64 artifacts. Counts include parents/subtests and repeated tag selections, not
+unique independent cases. Review reverified source/log/artifact and committed
+blob identity; this sync reuses evidence without product test/build reruns.
+Implemented/tested and scoped review accepted; not activated. Operational
+acceptance remains open, including the separate post-admission rotation scenario.
+See [validation](../runtime/qa/http-bridge-actions-20261102/validation.json), [review](../runtime/qa/http-bridge-actions-review-20261102/review.json) and
+[commit readback](../runtime/qa/http-bridge-actions-review-20261102/commit-readback.json). Publication readbacks belong under
+runtime/qa/http-bridge-actions-roadmap-sync-20261102.
+
+Current central-router snapshot: 106 top-level switch arms, not endpoint count;
+54 retained arms comprise 28 existing delegations and 26 thin/control/heartbeat
+arms. The 52 deferred arms comprise nine native/dev/telemetry arms and 43 product
+domain arms. Relative to the bootstrap checkpoint (49 retain/57 defer), four
+reload arms became delegations and heartbeat was explicitly reclassified retain.
+All 30 server.go function/method declarations and 52 central Engine declarations
+remain retained. Six bounded HTTP extractions are established; the owner-path
+guard correction is a separate correctness increment. Deferred groups are not
+an automatic extraction queue. Keep central-file splitting stopped unless a
+concrete ownership, coupling or testability problem justifies another boundary.
+CL-3.3 and CL-3 remain partial; this is not whole-package or operational acceptance.
+
+### Proposed next lifecycle check
+
+The next proposal is read-only analysis of capture-surface telemetry across
+owner rotation. Trace admission, body decoding, Store mutation, owner drain and
+RotateSplitCapture to determine whether an already-admitted request may outlive
+its owner's retirement under the intended lifecycle contract. The scenario is
+statically noted and dynamically unverified; the normalization fix does not
+establish its outcome. Specify one bounded regression/fix proposal only if the
+contract and evidence justify it. No code, test/build, runtime/configuration
+change, activation or trial is authorized by this next-step proposal.
