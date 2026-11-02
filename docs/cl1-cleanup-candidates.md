@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback/FullReset/Library removal/passive media evidence, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture/update-session/media-entry features below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback/FullReset/Library removal/passive media evidence, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture/update-session/media-entry/bootstrap features and router map below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -1326,14 +1326,11 @@ testability or behavior problem justifies it. This completes the bounded
 central-file responsibility review, not the entire Engine package, CL-3.2 or
 CL-3. Adjacent runtime/HTTP and CL-5/CL-7/CL-8 retain separate scope and evidence.
 
-The next proposal is a read-only responsibility map of the remaining
-internal/httpapi/server.go routes and shared helpers. Classify cohesive groups
-as retain, extract candidate or defer, map their security/context/Engine/Store
-ownership and existing tests, then choose at most one justified feature boundary
-and its missing characterization. Establish a stopping rule for the central HTTP
-router before more moves. Preserve completed boundaries, shared helpers, protocol,
-guards and cancellation. No further implementation, test/build, activation,
-configuration change or live trial is authorized by this checkpoint.
+At that checkpoint, the next proposal was the read-only HTTP router
+responsibility map. That analysis and its separately approved bootstrap
+extraction are now recorded in the
+[bootstrap/router-map result](cl1-cleanup-candidates.md#cl-33-http-bootstrap-and-router-map-result-2026-11-02).
+The map does not authorize extraction of deferred groups.
 
 ## CL-3.2 Engine Library removal result (2026-11-02)
 
@@ -1370,14 +1367,11 @@ testability or behavior problem justifies it. This completes the bounded
 central-file responsibility review, not the entire Engine package, CL-3.2 or
 CL-3. Adjacent runtime/HTTP and CL-5/CL-7/CL-8 retain separate scope and evidence.
 
-The next proposal is a read-only responsibility map of the remaining
-internal/httpapi/server.go routes and shared helpers. Classify cohesive groups
-as retain, extract candidate or defer, map their security/context/Engine/Store
-ownership and existing tests, then choose at most one justified feature boundary
-and its missing characterization. Establish a stopping rule for the central HTTP
-router before more moves. Preserve completed boundaries, shared helpers, protocol,
-guards and cancellation. No further implementation, test/build, activation,
-configuration change or live trial is authorized by this checkpoint.
+At that checkpoint, the next proposal was the read-only HTTP router
+responsibility map. That analysis and its separately approved bootstrap
+extraction are now recorded in the
+[bootstrap/router-map result](cl1-cleanup-candidates.md#cl-33-http-bootstrap-and-router-map-result-2026-11-02).
+The map does not authorize extraction of deferred groups.
 
 ## CL-3.2 Engine passive media evidence result (2026-11-02)
 
@@ -1413,14 +1407,11 @@ testability or behavior problem justifies it. This completes the bounded
 central-file responsibility review, not the entire Engine package, CL-3.2 or
 CL-3. Adjacent runtime/HTTP and CL-5/CL-7/CL-8 retain separate scope and evidence.
 
-The next proposal is a read-only responsibility map of the remaining
-internal/httpapi/server.go routes and shared helpers. Classify cohesive groups
-as retain, extract candidate or defer, map their security/context/Engine/Store
-ownership and existing tests, then choose at most one justified feature boundary
-and its missing characterization. Establish a stopping rule for the central HTTP
-router before more moves. Preserve completed boundaries, shared helpers, protocol,
-guards and cancellation. No further implementation, test/build, activation,
-configuration change or live trial is authorized by this checkpoint.
+At that checkpoint, the next proposal was the read-only HTTP router
+responsibility map. That analysis and its separately approved bootstrap
+extraction are now recorded in the
+[bootstrap/router-map result](cl1-cleanup-candidates.md#cl-33-http-bootstrap-and-router-map-result-2026-11-02).
+The map does not authorize extraction of deferred groups.
 
 ## CL-3.3 HTTP update and session result (2026-11-02)
 
@@ -1462,14 +1453,11 @@ with no new central-file move proposed. The roadmap header and detailed index
 now agree on the reviewed source commit. This does not close all Engine/runtime,
 HTTP capture, CL-3 or integration/package/source-acceptance work.
 
-The next proposal is a read-only responsibility map of the remaining
-internal/httpapi/server.go routes and shared helpers. Classify cohesive groups
-as retain, extract candidate or defer, map their security/context/Engine/Store
-ownership and existing tests, then choose at most one justified feature boundary
-and its missing characterization. Establish a stopping rule for the central HTTP
-router before more moves. Preserve completed boundaries, shared helpers, protocol,
-guards and cancellation. No further implementation, test/build, activation,
-configuration change or live trial is authorized by this checkpoint.
+At that checkpoint, the next proposal was the read-only HTTP router
+responsibility map. That analysis and its separately approved bootstrap
+extraction are now recorded in the
+[bootstrap/router-map result](cl1-cleanup-candidates.md#cl-33-http-bootstrap-and-router-map-result-2026-11-02).
+The map does not authorize extraction of deferred groups.
 
 ## CL-3.3 HTTP media-recapture entry result (2026-11-02)
 
@@ -1514,11 +1502,78 @@ The central Engine checkpoint remains unchanged: 52 declarations retained with
 no new central-file move proposed. Four scoped HTTP boundaries are established;
 the remaining router map and broader runtime/package/source acceptance are open.
 
-The next proposal is a read-only responsibility map of the remaining
-internal/httpapi/server.go routes and shared helpers. Classify cohesive groups
-as retain, extract candidate or defer, map their security/context/Engine/Store
-ownership and existing tests, then choose at most one justified feature boundary
-and its missing characterization. Establish a stopping rule for the central HTTP
-router before more moves. Preserve completed boundaries, shared helpers, protocol,
-guards and cancellation. No further implementation, test/build, activation,
-configuration change or live trial is authorized by this checkpoint.
+At that checkpoint, the next proposal was the read-only HTTP router
+responsibility map. That analysis and its separately approved bootstrap
+extraction are now recorded in the
+[bootstrap/router-map result](cl1-cleanup-candidates.md#cl-33-http-bootstrap-and-router-map-result-2026-11-02).
+The map does not authorize extraction of deferred groups.
+
+## CL-3.3 HTTP bootstrap and router-map result (2026-11-02)
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| HTTP bootstrap composition | `97bbe51` | Identical characterization passes 25 default/dev parent/subtest results before/after extraction; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,297/50 skip and dev 3,141/62 skip, zero failures; four HTTP build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/http-bootstrap-20261102/validation.json), [review](../runtime/qa/http-bootstrap-review-20261102/review.json) and [commit readback](../runtime/qa/http-bootstrap-review-20261102/commit-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. One Server method preserves route predicates/order/normalization, shared loopback/origin security, request context, complete output/progress projection, ten ordered fallible data calls, first-error mapping, token initialization, first-run calibration, prepared-batch expiry and durable effects before response-write failure. No new interface, transaction, cache or concurrency; Engine/Store, protocol and guards unchanged. CL-3.3 and CL-3 remain partial; activation and operational acceptance open |
+
+Bootstrap composition is committed as `97bbe51` in
+`internal/httpapi/bootstrap.go`, with one delegation in `server.go`.
+Characterization was added first and frozen unchanged across the move. It covers
+the response envelope/empty shapes, metadata, active-session projection and
+Timeline capacity; UI/security/method/path/preflight behavior; repeated first-run
+calibration and prepared-batch expiry; representative first-error/partial-effect
+cases; cancelled/deadline contexts and response-write failure. Eight failure
+stages are injected; the two other ordered calls retain exact body equivalence.
+Token initialization, calibration creation and expiry can write state, so this
+endpoint is not treated as a pure read. No new transaction/rollback, concurrency,
+cache, interface or test seam was introduced.
+
+Identical characterization passes 25 default/dev parent/subtest results before/after extraction; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,297/50 skip and dev 3,141/62 skip, zero failures; four HTTP build-tag graphs and 16 Windows amd64 artifacts. Counts include parents/subtests and repeated tag selections, not
+unique independent cases. Review reuses matching evidence without product
+test/build reruns. The initial capacity fixture was corrected to use the custom
+profile; a dev setup attempt hit sandbox cache access denial and passed with
+the same payload outside the sandbox. Those attempts remain separate from the
+final passing receipts. Implemented/tested and scoped review accepted; activation
+and operational acceptance remain open. CL-3.3 and CL-3 remain partial.
+
+See [validation](../runtime/qa/http-bootstrap-20261102/validation.json), [review](../runtime/qa/http-bootstrap-review-20261102/review.json) and
+[commit readback](../runtime/qa/http-bootstrap-review-20261102/commit-readback.json). Publication readbacks belong under
+runtime/qa/http-bootstrap-roadmap-sync-20261102.
+
+The baseline map covered 106 top-level router switch arms, not 106 endpoints
+(some arms contain multiple methods/subroutes): 48 retain, 57 defer and one
+bootstrap extraction candidate. Bootstrap is now delegated, leaving 49 retain
+(24 already-delegated feature arms and 25 thin/control/gate arms), 57 defer and
+no automatically approved extraction candidate. The 30 remaining server.go
+function/method declarations stay with Server lifecycle, dispatch, security/CORS,
+JSON/error handling and shared projection/validation ownership.
+
+| Deferred group | Top-level switch arms | Reason for deferral |
+| --- | ---: | --- |
+| Native/dev probes and capture telemetry | 9 | Native/runtime ownership, gates and trace lifetime need a dedicated review |
+| Product calibration | 4 | Preserve first-run workflow and domain ownership |
+| Settings/providers/credentials | 5 | Preserve secure persistence, validation order and partial effects; keep Settings cohesive |
+| Selection correction/re-evaluation | 3 | Engine owns cancellation and execution |
+| Timeline/content context | 4 | Existing view helpers and Store/Engine query authority remain |
+| Living Topics | 5 | Prefix arms contain additional subroutes with distinct product contracts |
+| Library queries/privacy/actions | 9 | Preserve privacy projection, tombstones and distinct Remove/Forget semantics |
+| Auto Update lifecycle/quota | 4 | Scheduler and quota authority remain in Engine |
+| Keep/read-later/preference/AI feedback | 6 | Distinct persistence, handoff and cancellation semantics |
+| Semantic corrections | 3 | Product correction contracts need separate consumer analysis |
+| Bridge heartbeat/reload actions | 5 | Shared Engine/transport authority and long-poll cancellation need a bounded review |
+
+No deletion candidate was established. Defer means retain pending a separately
+approved ownership/consumer decision, not obsolete or a mandatory move queue.
+The stopping rule is to retain infrastructure/shared helpers and thin facades;
+extract only a whole use case with a concrete coupling/testability benefit,
+never merely to shorten the file. After each bounded result, stop and assess
+the remaining evidence. The map and bootstrap close this selected analysis and
+extraction, not the entire HTTP package, CL-3.3, CL-3 or source/runtime acceptance.
+The central Engine checkpoint remains at 52 retained declarations.
+
+The next proposal is read-only analysis of the five remaining Bridge
+heartbeat/reload-action handlers: heartbeat, reload-self, next, accept and detail.
+Map Engine heartbeat/action ownership against split-capture key/mutex ownership,
+authentication/decode/error order, long-poll request cancellation and existing
+tests. Decide whether one complete feature boundary is justified or retention is
+better, and specify missing characterization before any implementation. This is
+a proposal requiring separate approval; no code, test/build, runtime/configuration
+change, activation or live trial is authorized by this documentation update.

@@ -3,7 +3,7 @@
 ## Status synchronization (2026-11-02)
 
 The original audit and its validation below are historical. Current source is
-reviewed through `90e3a7f`, including HTTP media-recapture entry points, HTTP update/session lifecycle, Engine passive media evidence, Library removal/Forget, FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
+reviewed through `97bbe51`, including HTTP bootstrap and the router responsibility map, HTTP media-recapture entry points, HTTP update/session lifecycle, Engine passive media evidence, Library removal/Forget, FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
 for commit-to-receipt mappings. Cleanup is not provider qualification.
 
 | Increment | Implemented | Tested | Activated | Acceptance |
@@ -43,6 +43,7 @@ for commit-to-receipt mappings. Cleanup is not provider qualification.
 | Engine passive X media evidence | `2bdc0f1` | Identical characterization passes 20 default/dev parent/subtest results before/after relocation; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,177/50 skip and dev 3,021/62 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-passive-media-20261102/validation.json), [review](../runtime/qa/engine-passive-media-review-20261102/review.json) and [commit readback](../runtime/qa/engine-passive-media-review-20261102/commit-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Exact method moved to existing media_recapture.go with no import changes; development gate, operation lock, Store result/errors, conditional Timeline/provenance handoff, background contexts, unlock-before-terminal-cleanup order, protocol and guards retained. Central-file checkpoint retains 52 declarations; CL-3 remains partial and operational acceptance open |
 | HTTP update/session lifecycle | `d32c065` | Identical characterization passes 53 default/dev parent/subtest results before/after extraction; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,230/50 skip and dev 3,074/62 skip, zero failures; four HTTP build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/http-session-updates-20261102/validation.json), [review](../runtime/qa/http-session-updates-review-20261102/review.json) and [commit readback](../runtime/qa/http-session-updates-review-20261102/commit-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Four Server handlers preserve router predicates/order/normalization, request contexts, shared loopback/origin security and progress projection, raw start output, asymmetric errors and durable cancel/read/write order. Engine, Store, protocol, guards and cancellation unchanged. CL-3 remains partial; operational acceptance open |
 | HTTP media-recapture status/enqueue/passive evidence | `90e3a7f` | Identical characterization passes 42 default/dev parent/subtest results before/after extraction; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,272/50 skip and dev 3,116/62 skip, zero failures; four HTTP build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/http-media-recapture-20261102/validation.json), [review](../runtime/qa/http-media-recapture-review-20261102/review.json) and [commit readback](../runtime/qa/http-media-recapture-review-20261102/commit-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Three Server handlers preserve router predicates/order/normalization, distinct ID parsing, private status projection, UI versus Bridge security, authentication before decode, unfenced passive relay, validation/defaults/errors, caller context and durable effects before response. Legacy Facebook branch, Engine/Store, Bridge claim/result handlers, protocol, guards and cancellation unchanged. CL-3 remains partial; operational acceptance open |
+| HTTP bootstrap composition | `97bbe51` | Identical characterization passes 25 default/dev parent/subtest results before/after extraction; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,297/50 skip and dev 3,141/62 skip, zero failures; four HTTP build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/http-bootstrap-20261102/validation.json), [review](../runtime/qa/http-bootstrap-review-20261102/review.json) and [commit readback](../runtime/qa/http-bootstrap-review-20261102/commit-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. One Server method preserves route predicates/order/normalization, shared loopback/origin security, request context, complete output/progress projection, ten ordered fallible data calls, first-error mapping, token initialization, first-run calibration, prepared-batch expiry and durable effects before response-write failure. No new interface, transaction, cache or concurrency; Engine/Store, protocol and guards unchanged. CL-3.3 and CL-3 remain partial; activation and operational acceptance open |
 
 No code change, activation or trial is performed by this status update. Existing
 test receipts are reused at their verified source/artifact scope, not rerun.
@@ -303,14 +304,11 @@ Do not create onboarding/heartbeat/retry/cleanup files just to reduce line count
 The central-file map is now checkpointed; this alone does not complete
 adjacent Engine/runtime/HTTP work, CL-3.2, CL-3 or CL-5/CL-7/CL-8 acceptance.
 No remaining methods are classified as removable legacy code by this review.
-The next proposal is a read-only responsibility map of the remaining
-internal/httpapi/server.go routes and shared helpers. Classify cohesive groups
-as retain, extract candidate or defer, map their security/context/Engine/Store
-ownership and existing tests, then choose at most one justified feature boundary
-and its missing characterization. Establish a stopping rule for the central HTTP
-router before more moves. Preserve completed boundaries, shared helpers, protocol,
-guards and cancellation. No further implementation, test/build, activation,
-configuration change or live trial is authorized by this checkpoint.
+At that checkpoint, the next proposal was the read-only HTTP router
+responsibility map. That analysis and its separately approved bootstrap
+extraction are now recorded in the
+[bootstrap/router-map result](cl1-cleanup-candidates.md#cl-33-http-bootstrap-and-router-map-result-2026-11-02).
+The map does not authorize extraction of deferred groups.
 
 ## HTTP update and session boundary (2026-11-02)
 
@@ -352,14 +350,11 @@ with no new central-file move proposed. The roadmap header and detailed index
 now agree on the reviewed source commit. This does not close all Engine/runtime,
 HTTP capture, CL-3 or integration/package/source-acceptance work.
 
-The next proposal is a read-only responsibility map of the remaining
-internal/httpapi/server.go routes and shared helpers. Classify cohesive groups
-as retain, extract candidate or defer, map their security/context/Engine/Store
-ownership and existing tests, then choose at most one justified feature boundary
-and its missing characterization. Establish a stopping rule for the central HTTP
-router before more moves. Preserve completed boundaries, shared helpers, protocol,
-guards and cancellation. No further implementation, test/build, activation,
-configuration change or live trial is authorized by this checkpoint.
+At that checkpoint, the next proposal was the read-only HTTP router
+responsibility map. That analysis and its separately approved bootstrap
+extraction are now recorded in the
+[bootstrap/router-map result](cl1-cleanup-candidates.md#cl-33-http-bootstrap-and-router-map-result-2026-11-02).
+The map does not authorize extraction of deferred groups.
 
 ## HTTP media-recapture entry boundary (2026-11-02)
 
@@ -372,11 +367,74 @@ not rerun by this sync. Privacy projection, UI/Bridge security and unfenced rela
 error/context/durable effect order, protocol and guards are preserved. Scoped
 review accepted; activation and operational acceptance remain open. CL-3 remains partial.
 
-The next proposal is a read-only responsibility map of the remaining
-internal/httpapi/server.go routes and shared helpers. Classify cohesive groups
-as retain, extract candidate or defer, map their security/context/Engine/Store
-ownership and existing tests, then choose at most one justified feature boundary
-and its missing characterization. Establish a stopping rule for the central HTTP
-router before more moves. Preserve completed boundaries, shared helpers, protocol,
-guards and cancellation. No further implementation, test/build, activation,
-configuration change or live trial is authorized by this checkpoint.
+At that checkpoint, the next proposal was the read-only HTTP router
+responsibility map. That analysis and its separately approved bootstrap
+extraction are now recorded in the
+[bootstrap/router-map result](cl1-cleanup-candidates.md#cl-33-http-bootstrap-and-router-map-result-2026-11-02).
+The map does not authorize extraction of deferred groups.
+
+## HTTP bootstrap and router responsibility map (2026-11-02)
+
+Bootstrap composition is committed as `97bbe51` in
+`internal/httpapi/bootstrap.go`, with one delegation in `server.go`.
+Characterization was added first and frozen unchanged across the move. It covers
+the response envelope/empty shapes, metadata, active-session projection and
+Timeline capacity; UI/security/method/path/preflight behavior; repeated first-run
+calibration and prepared-batch expiry; representative first-error/partial-effect
+cases; cancelled/deadline contexts and response-write failure. Eight failure
+stages are injected; the two other ordered calls retain exact body equivalence.
+Token initialization, calibration creation and expiry can write state, so this
+endpoint is not treated as a pure read. No new transaction/rollback, concurrency,
+cache, interface or test seam was introduced.
+
+Identical characterization passes 25 default/dev parent/subtest results before/after extraction; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,297/50 skip and dev 3,141/62 skip, zero failures; four HTTP build-tag graphs and 16 Windows amd64 artifacts. Counts include parents/subtests and repeated tag selections, not
+unique independent cases. Review reuses matching evidence without product
+test/build reruns. The initial capacity fixture was corrected to use the custom
+profile; a dev setup attempt hit sandbox cache access denial and passed with
+the same payload outside the sandbox. Those attempts remain separate from the
+final passing receipts. Implemented/tested and scoped review accepted; activation
+and operational acceptance remain open. CL-3.3 and CL-3 remain partial.
+
+See [validation](../runtime/qa/http-bootstrap-20261102/validation.json), [review](../runtime/qa/http-bootstrap-review-20261102/review.json) and
+[commit readback](../runtime/qa/http-bootstrap-review-20261102/commit-readback.json). Publication readbacks belong under
+runtime/qa/http-bootstrap-roadmap-sync-20261102.
+
+The baseline map covered 106 top-level router switch arms, not 106 endpoints
+(some arms contain multiple methods/subroutes): 48 retain, 57 defer and one
+bootstrap extraction candidate. Bootstrap is now delegated, leaving 49 retain
+(24 already-delegated feature arms and 25 thin/control/gate arms), 57 defer and
+no automatically approved extraction candidate. The 30 remaining server.go
+function/method declarations stay with Server lifecycle, dispatch, security/CORS,
+JSON/error handling and shared projection/validation ownership.
+
+| Deferred group | Top-level switch arms | Reason for deferral |
+| --- | ---: | --- |
+| Native/dev probes and capture telemetry | 9 | Native/runtime ownership, gates and trace lifetime need a dedicated review |
+| Product calibration | 4 | Preserve first-run workflow and domain ownership |
+| Settings/providers/credentials | 5 | Preserve secure persistence, validation order and partial effects; keep Settings cohesive |
+| Selection correction/re-evaluation | 3 | Engine owns cancellation and execution |
+| Timeline/content context | 4 | Existing view helpers and Store/Engine query authority remain |
+| Living Topics | 5 | Prefix arms contain additional subroutes with distinct product contracts |
+| Library queries/privacy/actions | 9 | Preserve privacy projection, tombstones and distinct Remove/Forget semantics |
+| Auto Update lifecycle/quota | 4 | Scheduler and quota authority remain in Engine |
+| Keep/read-later/preference/AI feedback | 6 | Distinct persistence, handoff and cancellation semantics |
+| Semantic corrections | 3 | Product correction contracts need separate consumer analysis |
+| Bridge heartbeat/reload actions | 5 | Shared Engine/transport authority and long-poll cancellation need a bounded review |
+
+No deletion candidate was established. Defer means retain pending a separately
+approved ownership/consumer decision, not obsolete or a mandatory move queue.
+The stopping rule is to retain infrastructure/shared helpers and thin facades;
+extract only a whole use case with a concrete coupling/testability benefit,
+never merely to shorten the file. After each bounded result, stop and assess
+the remaining evidence. The map and bootstrap close this selected analysis and
+extraction, not the entire HTTP package, CL-3.3, CL-3 or source/runtime acceptance.
+The central Engine checkpoint remains at 52 retained declarations.
+
+The next proposal is read-only analysis of the five remaining Bridge
+heartbeat/reload-action handlers: heartbeat, reload-self, next, accept and detail.
+Map Engine heartbeat/action ownership against split-capture key/mutex ownership,
+authentication/decode/error order, long-poll request cancellation and existing
+tests. Decide whether one complete feature boundary is justified or retention is
+better, and specify missing characterization before any implementation. This is
+a proposal requiring separate approval; no code, test/build, runtime/configuration
+change, activation or live trial is authorized by this documentation update.
