@@ -1,7 +1,7 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-02 (Asia/Jakarta), through Sidecar `3e13434`.
+Status synchronized: 2026-11-02 (Asia/Jakarta), through Sidecar `8d7f7b6`.
 Status: execution in progress; each bounded increment requires separate approval.
 No implementation, deletion, dependency upgrade, activation or trial is approved
 by creating this roadmap. Approve one concrete increment, implement it, verify
@@ -106,7 +106,7 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-0: inherited bounded cleanup | Eight increments above complete | Scoped receipts retained | Cleanup activation not recorded | Bounded code reviews complete; no whole-repository completion claim |
 | CL-1: consumer and compatibility inventory | [Entry/consumer map](cl1-consumer-inventory.md) and [32-boundary candidate ledger](cl1-cleanup-candidates.md) delivered | Read-only four-tag metadata, native/package/reference and source-preservation checks; no product test/build | Not applicable to an audit | Ready for review; external-consumer and offline Browser dependency limits explicit; no implementation approved |
 | CL-2: proven obsolete-code retirement | Earlier wrappers plus G10 `DeleteMemoryItem` removal committed with roadmap as `21ac9ad` | G10 exact remainder check, full Store/HTTP regressions and four-mode Windows compilation passed | Not performed for G10 | G10 reviewed/committed; comprehensive retirement remains scoped by the remaining ledger entries |
-| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b` and media recapture `be9fcd2`; Engine media recapture `c614512`; Engine Bridge commands `3e13434`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Engine/HTTP/config/application suites: default 801 pass/38 skip, dev 1,475 pass/48 skip, zero failures; Engine Bridge command characterization passes 37 results in both default/dev before/after relocation, four Engine build-tag graphs and 12 Windows artifacts pass. Earlier HTTP/Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Scoped changes reviewed/committed; Engine/HTTP media-recapture, Engine/HTTP command, diagnostics/Bridge status and E01 boundaries established; further Engine/HTTP boundaries pending. Provider-selection micro-extraction declined; keep Settings cohesive; CL-3 remains partial |
+| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b` and media recapture `be9fcd2`; Engine media recapture `c614512`; Engine Bridge commands `3e13434`; Engine media provenance `8d7f7b6`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Inspector/Store/Engine/HTTP/config/application suites (six packages): default 1,214 pass/43 skip, dev 2,040 pass/55 skip, zero failures; Engine media-provenance characterization passes 24 results in both default/dev before/after relocation, four Engine build-tag graphs and 12 Windows artifacts pass. Earlier HTTP/Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Scoped changes reviewed/committed; Engine/HTTP media-recapture, Engine/HTTP command, media-provenance, diagnostics/Bridge status and E01 boundaries established; further Engine/HTTP boundaries pending. Provider-selection micro-extraction declined; keep Settings cohesive; CL-3 remains partial |
 | CL-4: frontend feature ownership | Existing navigation module retained; broader extraction proposed | Existing baseline only | Not recorded | Timeline/Settings/app orchestration pending |
 | CL-5: native runtime and QA boundaries | Factory/shared-helper separation complete; fixture-only timing correction `8dc3f5e` committed; deeper runtime split proposed | 98 Node tests, 200 offline integration iterations and dependency-pinned staging verified for this fixture correction; existing baseline only for remaining seams | Not performed for this correction | Bounded fixture acceptance only; remaining operation/transport/QA separation pending; no universal cross-runtime clock or real-provider qualification claim |
 | CL-6: Bridge responsibility boundaries | Existing source/lifecycle modules retained; further split proposed | Existing baseline only for remaining seams | No new rollout | Background dispatch/surface integration pending |
@@ -175,8 +175,11 @@ Do not delete a consumer merely to make the dependency scan appear clean.
   locks, context and queue/claim/result/cleanup/provenance order. Seven Engine
   Bridge command methods now belong to `bridge_commands.go` as `3e13434`;
   receiver, lock/context scopes, protocol, guards and recovery/persistence/
-  scheduling order remain unchanged. Next propose read-only analysis of Engine
-  media-provenance orchestration, including worker lifecycle and durable results.
+  scheduling order remain unchanged. Five Engine media-provenance methods now
+  belong to `media_provenance.go` as `8d7f7b6`, with worker admission,
+  queue/claim/result order and context/cancellation contracts retained. Next
+  propose read-only analysis of AI-detection orchestration and its cross-feature
+  cancellation contract.
   Remaining source admission, enrichment and read-model boundaries still need
   evidence. Keep the Engine facade and existing Store authority; do not repeat
   completed lifecycle/session moves or split small blocks merely to reduce size.
@@ -435,14 +438,29 @@ heartbeat/scheduler consumers and post-persistence error contracts are retained.
 This is scoped implemented/tested/reviewed acceptance, without activation or live
 source acceptance. No push, activation or trial was performed for this increment.
 
-The next proposal is read-only analysis of Engine media-provenance orchestration.
-Its current Engine methods combine inspector availability/runtime projection,
-resume recovery, durable queue/claim/result handling and a cancellable background
-worker. Map callers, worker registration/retirement under `e.mu`, request versus
-background contexts, error/effect order and characterization gaps before choosing
-one coherent feature boundary. Retain Engine/Store/inspector ownership and
-best-effort enrichment semantics. Do not change the worker algorithm, add drain,
-combine it with AI detection, or implement an extraction without separate approval.
+The five Engine media-provenance methods were subsequently approved, characterized
+before relocation and committed as `8d7f7b6`. See the [result](cl1-cleanup-candidates.md#cl-32-engine-media-provenance-feature-result-2026-11-02),
+[validation](../runtime/qa/engine-media-provenance-20261102/validation.json), [review](../runtime/qa/engine-media-provenance-review-20261102/review.json) and [commit readback](../runtime/qa/engine-media-provenance-review-20261102/final-readback.json).
+All five signatures/bodies are identical. The Engine remainder differs only in
+gofmt alignment of `Epoch` and `ProviderName`; no worker algorithm or state
+ownership changed. The same characterization payload passes 24 parent/subtest
+results in both modes before/after. The latest combined regression scope now
+includes Inspector and Store as well as the prior four packages: 1,214/2,040
+passes, 43/55 skips and zero failures. These broader counts are not directly
+comparable with the previous four-package totals. Four build-tag graphs and
+12 Windows amd64 artifacts pass. Existing source/log/artifact evidence is reused
+at matching hashes; no new product test/build, activation or trial is run by this
+documentation synchronization. CL-3 and operational source acceptance remain open.
+
+The next proposal is read-only analysis of Engine AI-detection orchestration.
+Map fast/deep candidate selection, reasoning-profile/model selection, durable
+job/result handling, background work registration and cancellation before
+selecting one coherent extraction and its characterization tests. Preserve
+`e.mu`, worker keys, settings/budget gates, result contexts and Store/resolver
+authority. In particular, `cancelDeepDetections` also cancels media provenance;
+keep that existing cross-feature behavior explicit. Do not change worker
+algorithms, add drain, reopen the declined Settings micro-extraction, or implement
+another refactor without separate approval.
 
 No calendar estimate or cleanup percentage is assigned: this bounded inventory
 does not establish a complete repository-wide denominator or close every

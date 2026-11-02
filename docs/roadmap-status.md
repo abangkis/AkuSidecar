@@ -1,14 +1,17 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-02 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `3e13434` (Engine Bridge command separation, after Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
+Reviewed local source: AkuSidecar `8d7f7b6` (Engine media-provenance separation, after Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
-The [previous push receipt](../runtime/qa/engine-media-recapture-roadmap-sync-20261102/push-readback.json) records 19 cleanup code/documentation
-commits through `7b30a00` published to `origin/main`. The new `3e13434`
-increment is committed locally and has not been pushed. The remote was not
-queried again for this documentation review; publication is separate from
-runtime activation and acceptance.
+The [previous push receipt](../runtime/qa/engine-media-recapture-roadmap-sync-20261102/push-readback.json)
+records 19 cleanup code/documentation commits through `7b30a00` published to
+`origin/main`. The owner has authorized publication of the subsequent Bridge
+command/media-provenance code and roadmap commits, including this checkpoint, to
+`origin/main` at `https://github.com/abangkis/AkuSidecar.git`. The exact remote
+SHA must be established by the post-push readback under
+`runtime/qa/engine-media-provenance-roadmap-sync-20261102/`; publication does not
+establish runtime activation or operational acceptance.
 The Browser worktree contains pre-existing build/cache changes; those changes
 are outside this synchronization and are not evidence of a released tuple.
 
@@ -128,8 +131,19 @@ recovery before polling, durable results before cancellation/follow-on work,
 protocol and guards are unchanged. Implemented/tested/scoped review are complete;
 activation and operational acceptance remain unestablished. CL-3 is still partial.
 
-Next proposal: read-only analysis of Engine media-provenance queue/worker/result
-orchestration and its characterization gaps. No further implementation is approved.
+CL-3.2 now separates five Engine media-provenance methods as `8d7f7b6` in
+`media_provenance.go`. Its [result](cl1-cleanup-candidates.md#cl-32-engine-media-provenance-feature-result-2026-11-02) maps the original validation
+to reviewed committed blobs. The identical characterization payload passes 24
+results in default/dev before and after relocation. Latest regressions cover
+six packages, adding Inspector/Store to Engine/HTTP/config/application: default
+1,214 pass/43 skip, dev 2,040 pass/55 skip, zero failures. Four Engine build-tag
+graphs and 12 Windows artifacts pass. Request/background contexts, queue before
+active-worker check, e.mu registration/retirement, persistence after cancellation
+and best-effort primary-result semantics remain unchanged. Implemented/tested/
+scoped review are complete; activation and operational acceptance remain open.
+
+Next proposal: read-only analysis of Engine AI-detection orchestration, including
+its cancellation coupling with media provenance. No further implementation is approved.
 
 | Increment | Implemented commit | Tested evidence | Activated | Acceptance |
 | --- | --- | --- | --- | --- |

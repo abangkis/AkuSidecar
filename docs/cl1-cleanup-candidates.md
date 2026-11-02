@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command and CL-3.3 HTTP Bridge command/media-recapture features below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance and CL-3.3 HTTP Bridge command/media-recapture features below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -612,7 +612,7 @@ No push, activation or live trial was performed for this increment. This roadmap
 update changes documentation only. Implemented/tested/scoped review acceptance
 does not establish activation, live source acceptance, CL-3 closure or CL-6 work.
 
-The next proposal is read-only analysis of Engine media-provenance orchestration.
+At that checkpoint, the next proposal was read-only analysis of Engine media-provenance orchestration.
 Its current Engine methods combine inspector availability/runtime projection,
 resume recovery, durable queue/claim/result handling and a cancellable background
 worker. Map callers, worker registration/retirement under `e.mu`, request versus
@@ -620,3 +620,65 @@ background contexts, error/effect order and characterization gaps before choosin
 one coherent feature boundary. Retain Engine/Store/inspector ownership and
 best-effort enrichment semantics. Do not change the worker algorithm, add drain,
 combine it with AI detection, or implement an extraction without separate approval.
+
+## CL-3.2 Engine media-provenance feature result (2026-11-02)
+
+This separately approved feature separation extends CL-3.2 without changing the
+original CL-1 inventory counts or closing comprehensive backend cleanup.
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Engine media-provenance feature | `8d7f7b6` | Identical characterization passes 24 results in both default/dev before/after relocation; six-package Inspector/Store/Engine/HTTP/config/application suites pass default 1,214/43 skip and dev 2,040/55 skip, zero failures; four Engine build-tag graphs and 12 Windows artifacts; [review](../runtime/qa/engine-media-provenance-review-20261102/review.json) and [commit readback](../runtime/qa/engine-media-provenance-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped source/test review found no blocking issue; committed. Five Engine methods in `media_provenance.go` retain receiver, locks, request/background contexts, queue/worker/result order, protocol and guards. Exactly two gofmt-only alignment changes remain in `engine.go`; Store, Inspector, worker algorithm and authority unchanged; CL-3 remains partial |
+
+The [validation](../runtime/qa/engine-media-provenance-20261102/validation.json) is the original pre-commit receipt at parent
+`5d79fd4156d09031e8b29b227682c40ee1c863ee`. Its three source hashes match
+`8d7f7b606c7cfecdabd00d0fda5b7e8bb4d1c083`. The [review](../runtime/qa/engine-media-provenance-review-20261102/review.json) checks all five unchanged methods,
+the two explicit whitespace-only Engine alignment changes, six test logs,
+four build-tag graphs and 12 Windows artifact hashes. The other 1,370 tracked
+files match the implementation baseline. The [commit readback](../runtime/qa/engine-media-provenance-review-20261102/final-readback.json)
+checks parent, exact three-file scope and committed blobs; tracked source was
+clean at that commit and pre-existing `.tmp/`/`experiments/` were preserved.
+Passing tests/builds were reused at matching source and artifact hashes;
+historical receipts were not rewritten as later runs.
+
+Moved methods: `SetMediaProvenanceInspector`, `MediaProvenanceRuntime`,
+`ResumeMediaProvenance`, `launchMediaProvenance` and
+`launchMediaProvenanceItems`. Receiver and callers remain Engine-owned. The
+`mediaOrigin` field, Store/Inspector implementations and shared work lifecycle
+stay in their existing owners. Queue precedes the active-worker check; the
+global `media-provenance` key and e.mu register/retire sections remain unchanged.
+Resume retains caller context for durable recovery; worker inspection uses an
+independent cancellable background context and result persistence retains its
+background context after cancellation. No new service, interface, state owner,
+wake/drain policy, worker admission or protocol exception is introduced.
+
+Characterization covers inspector/runtime availability, resume guard/context/
+Store errors and metadata reset, verifier-version isolation, source host allowlist,
+queue-before-active admission, single-worker serialization, session/empty queues,
+load/queue/claim/inspect/finish error behavior and continuation after a failed
+result write. Shutdown cancels inspection, keeps the worker registered through
+result persistence, and then allows WaitForIdle to finish. All 24 results count
+parents/subtests. Tests use disposable Store data, fake inspectors, SQL failure
+injection and channels; no network capture, c2patool or new production test hook.
+
+The first mechanical proof expected byte-identical Engine remainder; gofmt
+instead aligned adjacent Epoch/ProviderName declarations after method removal.
+The final proof enumerates exactly those two whitespace-only changes. Completing
+the proof did not change the already tested source. This is a tooling assertion
+correction, not a test failure or production behavior fix.
+
+Regression scope is six packages, explicitly including Inspector and Store;
+the 1,214/2,040 pass totals and 43/55 skips are not directly comparable with
+earlier four-package results. No runtime activation or live trial is performed.
+Publication occurs after the documentation commit and is verified separately
+by the post-push readback; it does not close CL-3 or live source acceptance.
+
+The next proposal is read-only analysis of Engine AI-detection orchestration.
+Map fast/deep candidate selection, reasoning-profile/model selection, durable
+job/result handling, background work registration and cancellation before
+selecting one coherent extraction and its characterization tests. Preserve
+`e.mu`, worker keys, settings/budget gates, result contexts and Store/resolver
+authority. In particular, `cancelDeepDetections` also cancels media provenance;
+keep that existing cross-feature behavior explicit. Do not change worker
+algorithms, add drain, reopen the declined Settings micro-extraction, or implement
+another refactor without separate approval.
