@@ -3,7 +3,7 @@
 ## Status synchronization (2026-11-02)
 
 The original audit and its validation below are historical. Current source is
-reviewed through `c614512`, including Engine/HTTP media-recapture, HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
+reviewed through `3e13434`, including Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
 for commit-to-receipt mappings. Cleanup is not provider qualification.
 
 | Increment | Implemented | Tested | Activated | Acceptance |
@@ -25,7 +25,8 @@ for commit-to-receipt mappings. Cleanup is not provider qualification.
 | Bridge status/compatibility feature | `7b2d0d8` | Identical characterization passes 38 results before/after relocation; recorded default 623 pass/38 skip, dev 1,296 pass/48 skip, zero failures; four build-tag graphs and eight Windows artifacts; [review](../runtime/qa/bridge-status-review-20261101/review.json) verifies source/log/artifact hashes and identity-checker anchors | Not performed | Scoped source/test review complete and committed; nine functions/two types moved unchanged; constants, action catalog, full read-lock scope, heartbeat pointer guard and revocation/recovery/reload/scheduler order retained. This is Sidecar CL-3.2, not extension CL-6 completion |
 | HTTP Bridge command feature | `7cb712b` | Identical characterization passes 53 results before/after relocation; recorded default 676 pass/38 skip, dev 1,349 pass/48 skip, zero failures; four HTTP build-tag graphs and 12 Windows artifacts; [review](../runtime/qa/bridge-commands-review-20261102/review.json) and [commit readback](../runtime/qa/bridge-commands-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped source/test review complete and committed; four Server methods in `bridge_commands.go`, with route predicates/normalization, context, authentication, protocol, guards, status/error mappings and native trace order retained. This closes one CL-3.3 feature boundary, not the whole stage |
 | HTTP Bridge media-recapture feature | `be9fcd2` | Identical characterization passes 54 results before/after relocation; recorded default 730 pass/38 skip, dev 1,403 pass/48 skip, zero failures; four HTTP build-tag graphs and 12 Windows artifacts; [review](../runtime/qa/bridge-media-recapture-review-20261102/review.json) and [commit readback](../runtime/qa/bridge-media-recapture-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped source/test review complete and committed; three Server methods in `bridge_media_recapture.go`; route/context/authentication/protocol/guards and error/effect order unchanged. Queued/claimed failure acceptance, stale-claim side effect and commit-before-response behavior characterized; CL-3 remains partial |
-| Engine media-recapture feature | `c614512` | Identical characterization passes 34 default/35 dev results before/after relocation; latest default 764 pass/38 skip, dev 1,438 pass/48 skip, zero failures; four Engine build-tag graphs and 12 Windows artifacts; [review](../runtime/qa/engine-media-recapture-review-20261102/review.json) and [commit readback](../runtime/qa/engine-media-recapture-review-20261102/final-readback.json) verify method/remainder equivalence and source/log/artifact/commit identity | Not performed | Scoped source/test review complete and committed; ten methods in `media_recapture.go` retain receiver, locks, context, primary-error and side-effect order, protocol and guards. Store, capture runtime and HTTP unchanged; CL-3 remains partial |
+| Engine media-recapture feature | `c614512` | Identical characterization passes 34 default/35 dev results before/after relocation; recorded default 764 pass/38 skip, dev 1,438 pass/48 skip, zero failures; four Engine build-tag graphs and 12 Windows artifacts; [review](../runtime/qa/engine-media-recapture-review-20261102/review.json) and [commit readback](../runtime/qa/engine-media-recapture-review-20261102/final-readback.json) verify method/remainder equivalence and source/log/artifact/commit identity | Not performed | Scoped source/test review complete and committed; ten methods in `media_recapture.go` retain receiver, locks, context, primary-error and side-effect order, protocol and guards. Store, capture runtime and HTTP unchanged; CL-3 remains partial |
+| Engine Bridge command feature | `3e13434` | Identical characterization passes 37 results in both default/dev before and after relocation; latest default 801 pass/38 skip, dev 1,475 pass/48 skip, zero failures; four Engine build-tag graphs and 12 Windows artifacts; [review](../runtime/qa/engine-bridge-commands-review-20261102/review.json) and [commit readback](../runtime/qa/engine-bridge-commands-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped source/test review found no blocking issue; committed. Seven methods in Engine `bridge_commands.go` retain receiver, lock/context scopes, recovery and persistence/scheduling order, errors, protocol and guards. Shared normalization/validation, Store, capture runtime, heartbeat and scheduler unchanged; CL-3 remains partial |
 
 No code change, activation or trial is performed by this status update. Existing
 test receipts are reused at their verified source/artifact scope, not rerun.
@@ -107,13 +108,15 @@ with constants/actions and heartbeat/recovery/scheduler effects retained in
 Engine. HTTP Bridge command handlers belong to `bridge_commands.go`; the three
 media-recapture handlers belong to `bridge_media_recapture.go`, retaining routing
 and authority contracts. Ten Engine media-recapture methods now belong to
-`media_recapture.go`. Next propose read-only analysis of Engine Bridge command
-orchestration (claim, pending, observation and failure): map admission/fencing,
-Store effects, follow-on scheduling, locks and error/context contracts before
-selecting one useful extraction. Account for recovery shared with heartbeat/
-scheduler and normalization/validation shared with media recapture/native
-consumers. Retain Engine/Store/Manager/Coordinator authority and shared guards;
-keep completed lifecycle/media-recapture work outside this candidate.
+`media_recapture.go`. Seven Engine Bridge command methods now belong to
+`internal/engine/bridge_commands.go`, retaining admission/fencing, Store effects,
+recovery, follow-on scheduling and error/context contracts. Shared normalizers,
+validation, capture-runtime, heartbeat/scheduler consumers and state ownership
+remain unchanged. Next propose read-only analysis of Engine media-provenance
+orchestration: inspector runtime/resume, queue/claim/result handling and worker
+registration/retirement/cancellation. Map characterization gaps before selecting
+one useful feature boundary. Preserve Engine/Store/inspector authority and
+best-effort behavior; do not add drain or change the worker algorithm.
 No new service layer is proposed. Other remaining
 candidates include feature-level Timeline/frontend Settings orchestration,
 probe mode dispatch, HTTP capture-service boundaries and broader legacy/consumer

@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture and CL-3.3 HTTP Bridge command/media-recapture features below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command and CL-3.3 HTTP Bridge command/media-recapture features below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -555,10 +555,68 @@ No push, activation or live trial was performed. This documentation update
 changes no code and reruns no product tests/builds. It does not close CL-3,
 extension CL-6 or operational source acceptance.
 
-Next proposal: read-only analysis of Engine Bridge command orchestration in
+At that checkpoint, the next proposal was read-only analysis of Engine Bridge command orchestration in
 `engine.go` (claim, pending, observation and failure). Map admission/fencing,
 Store effects, scheduling, lock/context scopes, error order and characterization
 gaps before selecting one extraction. Recovery is shared with heartbeat and
 scheduler; normalization/validation is shared with media recapture and native
 consumers. Preserve shared guards and Engine/Store/Manager authority; do not
 duplicate helpers or repeat completed lifecycle work. No implementation approved.
+
+## CL-3.2 Engine Bridge command feature result (2026-11-02)
+
+This separately approved feature separation extends the CL-3.2 ledger. It does
+not change the original CL-1 inventory counts or establish global stage closure.
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Engine Bridge command feature | `3e13434` | Identical characterization passes 37 results in both default/dev before and after relocation; latest default 801 pass/38 skip, dev 1,475 pass/48 skip, zero failures; four Engine build-tag graphs and 12 Windows artifacts; [review](../runtime/qa/engine-bridge-commands-review-20261102/review.json) and [commit readback](../runtime/qa/engine-bridge-commands-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped source/test review found no blocking issue; committed. Seven methods in Engine `bridge_commands.go` retain receiver, lock/context scopes, recovery and persistence/scheduling order, errors, protocol and guards. Shared normalization/validation, Store, capture runtime, heartbeat and scheduler unchanged; CL-3 remains partial |
+
+The [validation](../runtime/qa/engine-bridge-commands-20261102/validation.json) is the original pre-commit receipt at parent
+`7b30a00bfe89e08a3813f3ba04fae4b4d9dfdece`. Its three source hashes match
+the payload committed as `3e13434daa8282d361316fa4cf280954121a1ccd`. The [review](../runtime/qa/engine-bridge-commands-review-20261102/review.json)
+checks all seven signatures/bodies, exact Engine remainder, all six passing
+test logs, four build-tag graphs and 12 PE artifact hashes. The other 1,368
+tracked files match the implementation baseline. The [commit readback](../runtime/qa/engine-bridge-commands-review-20261102/final-readback.json)
+checks parent, three-file scope and committed-blob hashes. The tracked tree was
+clean at that commit; pre-existing `.tmp/` and `experiments/` remain preserved.
+Historical receipts are unchanged; passing product tests/builds were reused
+after matching their source and artifact identity, not rerun for this review.
+
+The moved methods are `ClaimCommand`, `claimCommandForDriver`,
+`claimCommandForCollector`, `PendingBridgeRunID`,
+`recoverExpiredBridgeCommands`, `AcceptObservation` and `FailCommand`.
+They remain Engine methods with existing callers, fields, locks and request/
+background contexts. Recovery remains shared with heartbeat/scheduler. Observation
+normalization/validation and `afterAcceptedObservation` remain in their existing
+files. No new service, wrapper or state owner is introduced.
+
+Characterization records development/fixture/collector/owner/frozen-plan guards,
+queued versus claimed expiry during claim/pending polling, validation before
+writes, durable normalized evidence despite a later projection error, replay
+rejection, failure defaults and errors, X-only challenge cancellation after
+persistence, behavior-lock release before scheduling, request cancellation and
+background terminal-claim cleanup. The 37 results count parent tests and subtests,
+not 37 unique cases. Existing follow-up fallback, cross-driver, pacing and stale
+owner coverage remains in the combined suites. Tests use disposable Store data
+and fake capture processes without network capture or production test hooks.
+
+Initial non-green fixture logs are retained. Corrections attach the fake managed
+runtime before session creation, select the non-X source before creating its
+session rather than violating source uniqueness, and inject a projection-read
+error after durable capture without violating the transaction's CHECK constraint.
+These corrections preceded the passing baseline and required no production fix
+or guard relaxation.
+
+No push, activation or live trial was performed for this increment. This roadmap
+update changes documentation only. Implemented/tested/scoped review acceptance
+does not establish activation, live source acceptance, CL-3 closure or CL-6 work.
+
+The next proposal is read-only analysis of Engine media-provenance orchestration.
+Its current Engine methods combine inspector availability/runtime projection,
+resume recovery, durable queue/claim/result handling and a cancellable background
+worker. Map callers, worker registration/retirement under `e.mu`, request versus
+background contexts, error/effect order and characterization gaps before choosing
+one coherent feature boundary. Retain Engine/Store/inspector ownership and
+best-effort enrichment semantics. Do not change the worker algorithm, add drain,
+combine it with AI detection, or implement an extraction without separate approval.

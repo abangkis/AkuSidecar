@@ -1,9 +1,14 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-02 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `c614512` (Engine media-recapture separation, after HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
+Reviewed local source: AkuSidecar `3e13434` (Engine Bridge command separation, after Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
+The [previous push receipt](../runtime/qa/engine-media-recapture-roadmap-sync-20261102/push-readback.json) records 19 cleanup code/documentation
+commits through `7b30a00` published to `origin/main`. The new `3e13434`
+increment is committed locally and has not been pushed. The remote was not
+queried again for this documentation review; publication is separate from
+runtime activation and acceptance.
 The Browser worktree contains pre-existing build/cache changes; those changes
 are outside this synchronization and are not evidence of a released tuple.
 
@@ -112,6 +117,19 @@ method move, current regression/Windows evidence and the reviewed commit.
 Existing locks, request/background contexts, error precedence and effect order
 are retained. Store and shared capture-runtime ownership remain unchanged;
 CL-3 and operational acceptance are not closed by this file boundary.
+
+CL-3.2 also separates seven Engine Bridge command methods as `3e13434` in
+`internal/engine/bridge_commands.go`. Its [result](cl1-cleanup-candidates.md#cl-32-engine-bridge-command-feature-result-2026-11-02) maps the
+original validation receipt to reviewed committed blobs. The identical default/
+dev characterization payload passes 37 results before/after; latest combined
+suites pass 801/1,475 results with 38/48 skips and zero failures. Four Engine
+build-tag graphs and 12 Windows artifacts pass. Receiver, locks, contexts,
+recovery before polling, durable results before cancellation/follow-on work,
+protocol and guards are unchanged. Implemented/tested/scoped review are complete;
+activation and operational acceptance remain unestablished. CL-3 is still partial.
+
+Next proposal: read-only analysis of Engine media-provenance queue/worker/result
+orchestration and its characterization gaps. No further implementation is approved.
 
 | Increment | Implemented commit | Tested evidence | Activated | Acceptance |
 | --- | --- | --- | --- | --- |
