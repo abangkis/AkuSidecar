@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback/FullReset, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture features below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback/FullReset/Library removal/passive media evidence, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture features below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -1231,15 +1231,10 @@ packages (13 tested; Bridge builder compile-only). Four Windows tag graphs and
 tests/builds. Implemented, tested and scoped review accepted; activation and
 operational acceptance remain open. CL-3 remains partial.
 
-The next implementation proposal, following read-only analysis, is to move only
-`RemoveLibraryItem` and `ForgetLibraryItem` together to
-`internal/engine/library_removal.go`, after adding characterization tests.
-Preserve their Engine receivers, exact signatures/bodies, absence of method-level
-locks, caller-context lookup/mutation, sorted topic-ID snapshot before membership
-removal, background queue context, per-topic error logging/continuation and
-existing worker ownership. Keep Store Remove/Forget semantics, HTTP routes,
-protocol, guards and AI/provenance cancellation unchanged. No implementation,
-reset, activation, configuration change or live trial is approved by this analysis.
+At that checkpoint, the next proposal was the Library removal/Forget boundary.
+It was separately approved and implemented as `a19bf86`; see the result and
+current central-facade checkpoint below. The earlier proposal granted no
+activation, configuration change or live trial authorization.
 
 ## CL-3.2 Engine FullReset result (2026-11-02)
 
@@ -1265,9 +1260,13 @@ not unique independent cases. Source/log/artifact identities and committed blobs
 were checked at review/publication. Existing raw receipts are preserved.
 Activation and operational acceptance remain open; CL-3 remains partial.
 This documentation sync runs no product tests/builds or trial, changes no product
-code/config and has not been committed or pushed.
+code/config. That checkpoint was later committed as `543b99e` and published;
+its [publication readback](../runtime/qa/engine-full-reset-roadmap-sync-20261102/push-readback.json) records the later Git state.
 
 ## Library removal and Forget read-only analysis (2026-11-02)
+
+Historical pre-move analysis. The separately approved implementation and current
+checkpoint are recorded in the Library removal result below.
 
 Goal: expose the Library evidence-removal use case without duplicating Store
 privacy authority or changing background enrichment lifecycle. This is one
@@ -1319,12 +1318,103 @@ Proposed characterization before any move:
    run unchanged tests before/after relocation, the established default/dev
    14-package selection and Windows default/dev/fixture/combined compilation.
 
-The next implementation proposal, following read-only analysis, is to move only
-`RemoveLibraryItem` and `ForgetLibraryItem` together to
-`internal/engine/library_removal.go`, after adding characterization tests.
-Preserve their Engine receivers, exact signatures/bodies, absence of method-level
-locks, caller-context lookup/mutation, sorted topic-ID snapshot before membership
-removal, background queue context, per-topic error logging/continuation and
-existing worker ownership. Keep Store Remove/Forget semantics, HTTP routes,
-protocol, guards and AI/provenance cancellation unchanged. No implementation,
-reset, activation, configuration change or live trial is approved by this analysis.
+The central [Engine facade checkpoint](code-structure-audit.md#engine-facade-stopping-checkpoint-2026-11-02)
+now retains all 52 declarations remaining in engine.go. The one proposed passive
+evidence colocation is implemented as `2bdc0f1` in the existing media-recapture
+module. Stop further central-file splitting unless a concrete coupling,
+testability or behavior problem justifies it. This completes the bounded
+central-file responsibility review, not the entire Engine package, CL-3.2 or
+CL-3. Adjacent runtime/HTTP and CL-5/CL-7/CL-8 retain separate scope and evidence.
+
+The next proposal is read-only analysis of HTTP update/session endpoints:
+POST /api/updates, GET /api/sessions/active, GET /api/sessions/{id} and
+POST /api/sessions/{id}/cancel. Map route precedence, request context,
+authentication/admission, Engine calls, status/error/JSON mapping and effect
+order before proposing one feature boundary and its characterization tests.
+Preserve protocol, guards and cancellation. No further code change, test/build,
+activation, configuration change or live trial is authorized by this checkpoint.
+
+## CL-3.2 Engine Library removal result (2026-11-02)
+
+The approved move is committed/published as `a19bf862531675556850389b730bc417f6e655a4`.
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Engine Library removal/Forget workflow | `a19bf86` | Identical characterization passes 28 default/dev parent/subtest results before/after relocation; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,157/50 skip and dev 3,001/62 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-library-removal-20261102/validation.json), [review](../runtime/qa/engine-library-removal-review-20261102/review.json) and [commit/publication readback](../runtime/qa/engine-library-removal-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; code committed/published. Two exact Engine methods retain topic snapshot before Store mutation, sorted/background queue handoff, per-topic error logging/continuation, caller return/error/context semantics, absence of entry-level locks, Store privacy authority, protocol, guards and AI/provenance cancellation. CL-3 remains partial; operational acceptance remains open |
+
+Only RemoveLibraryItem and ForgetLibraryItem moved to library_removal.go; the
+27-line Engine block removal is the entire production diff. Imports, Store,
+worker, HTTP and other product files are unchanged. The final test bytes were
+added before the move and frozen identically for the before/after runs. They
+cover zero/one/multiple topic snapshots, sorted post-mutation queue triggers,
+physical removal versus opaque tombstone/recapture, repeated Forget, raw-ID
+forwarding, missing/empty/whitespace IDs, caller context and absence of entry
+locks, lookup/mutation failures and rollback, and logged first-topic queue
+failure followed by later background queueing after request cancellation.
+Fixture-owned active worker registrations suppress inference and avoid timing
+assumptions; existing AI/provenance/other work is unchanged.
+
+Identical characterization passes 28 default/dev parent/subtest results before/after relocation; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,157/50 skip and dev 3,001/62 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts. Counts include parent/subtest results and repeated tag selections,
+not unique independent cases. Review/publication verified source/log/artifact
+identity and committed blobs. This sync reuses that evidence and runs no new
+product tests/builds or trial. Activation and operational acceptance remain open;
+CL-3 remains partial. Documentation publication requires a separate request;
+its later readbacks belong under runtime/qa/engine-library-removal-roadmap-sync-20261102.
+
+The central [Engine facade checkpoint](code-structure-audit.md#engine-facade-stopping-checkpoint-2026-11-02)
+now retains all 52 declarations remaining in engine.go. The one proposed passive
+evidence colocation is implemented as `2bdc0f1` in the existing media-recapture
+module. Stop further central-file splitting unless a concrete coupling,
+testability or behavior problem justifies it. This completes the bounded
+central-file responsibility review, not the entire Engine package, CL-3.2 or
+CL-3. Adjacent runtime/HTTP and CL-5/CL-7/CL-8 retain separate scope and evidence.
+
+The next proposal is read-only analysis of HTTP update/session endpoints:
+POST /api/updates, GET /api/sessions/active, GET /api/sessions/{id} and
+POST /api/sessions/{id}/cancel. Map route precedence, request context,
+authentication/admission, Engine calls, status/error/JSON mapping and effect
+order before proposing one feature boundary and its characterization tests.
+Preserve protocol, guards and cancellation. No further code change, test/build,
+activation, configuration change or live trial is authorized by this checkpoint.
+
+## CL-3.2 Engine passive media evidence result (2026-11-02)
+
+The approved move is committed as `2bdc0f1f91aacfbe7b41f8a7df34f182f7f2fd2f`.
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Engine passive X media evidence | `2bdc0f1` | Identical characterization passes 20 default/dev parent/subtest results before/after relocation; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,177/50 skip and dev 3,021/62 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-passive-media-20261102/validation.json), [review](../runtime/qa/engine-passive-media-review-20261102/review.json) and [commit readback](../runtime/qa/engine-passive-media-review-20261102/commit-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Exact method moved to existing media_recapture.go with no import changes; development gate, operation lock, Store result/errors, conditional Timeline/provenance handoff, background contexts, unlock-before-terminal-cleanup order, protocol and guards retained. Central-file checkpoint retains 52 declarations; CL-3 remains partial and operational acceptance open |
+
+Only ApplyPassiveXMediaEvidence moves from Engine to existing media_recapture.go.
+Both 16-line diffs and all unchanged source are verified; imports, Store, HTTP,
+inspector/worker, cleanup owner, protocol and guards are unchanged. The final
+characterization bytes were added before the move and frozen identically for
+both modes before/after. Coverage includes development gating before dependency
+access, Store identity/provenance/trusted-media errors, cancelled caller context,
+transaction rollback, repeat/no-op, inspector nil/unavailable, post-commit queue
+failure, ignored Timeline read failure, active-worker ownership, background
+queue/cleanup after request cancellation, operation held through handoff and
+released before terminal cleanup. Store data and Inspector/capture fixtures are
+disposable and offline; no inference or live browser operation is needed.
+
+Identical characterization passes 20 default/dev parent/subtest results before/after relocation; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,177/50 skip and dev 3,021/62 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts. Counts include parent/subtest results and repeated tag selections,
+not unique independent cases. Source/log/artifact and committed-blob hashes
+are checked at review. No product tests/builds are rerun for this sync. Activation
+and operational acceptance remain open; CL-3 remains partial. Publication is
+recorded separately under runtime/qa/engine-passive-media-roadmap-sync-20261102.
+
+The central [Engine facade checkpoint](code-structure-audit.md#engine-facade-stopping-checkpoint-2026-11-02)
+now retains all 52 declarations remaining in engine.go. The one proposed passive
+evidence colocation is implemented as `2bdc0f1` in the existing media-recapture
+module. Stop further central-file splitting unless a concrete coupling,
+testability or behavior problem justifies it. This completes the bounded
+central-file responsibility review, not the entire Engine package, CL-3.2 or
+CL-3. Adjacent runtime/HTTP and CL-5/CL-7/CL-8 retain separate scope and evidence.
+
+The next proposal is read-only analysis of HTTP update/session endpoints:
+POST /api/updates, GET /api/sessions/active, GET /api/sessions/{id} and
+POST /api/sessions/{id}/cancel. Map route precedence, request context,
+authentication/admission, Engine calls, status/error/JSON mapping and effect
+order before proposing one feature boundary and its characterization tests.
+Preserve protocol, guards and cancellation. No further code change, test/build,
+activation, configuration change or live trial is authorized by this checkpoint.

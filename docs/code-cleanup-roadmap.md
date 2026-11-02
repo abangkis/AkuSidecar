@@ -106,7 +106,7 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-0: inherited bounded cleanup | Eight increments above complete | Scoped receipts retained | Cleanup activation not recorded | Bounded code reviews complete; no whole-repository completion claim |
 | CL-1: consumer and compatibility inventory | [Entry/consumer map](cl1-consumer-inventory.md) and [32-boundary candidate ledger](cl1-cleanup-candidates.md) delivered | Read-only four-tag metadata, native/package/reference and source-preservation checks; no product test/build | Not applicable to an audit | Ready for review; external-consumer and offline Browser dependency limits explicit; no implementation approved |
 | CL-2: proven obsolete-code retirement | Earlier wrappers plus G10 `DeleteMemoryItem` removal committed with roadmap as `21ac9ad` | G10 exact remainder check, full Store/HTTP regressions and four-mode Windows compilation passed | Not performed for G10 | G10 reviewed/committed; comprehensive retirement remains scoped by the remaining ledger entries |
-| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b` and media recapture `be9fcd2`; Engine media recapture `c614512`; Engine Bridge commands `3e13434`; Engine media provenance `8d7f7b6`; Engine AI detection `b84a62d`; Engine session admission `4bf0731`; observation contracts `d9c3025`; process recovery `5b39fa4`; reasoning result `eb05ac8`; capture rounds and deterministic Store test `683b1e8`; local acquisition policy `f16f11a`; vision-lane routing/coverage `25c3339`; selection corrections `f3d46b8`; AI feedback `6a1ce33`; FullReset `da019dd`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Capture/Collection/Bridge builder/Selection/EventEngine/Reasoning/Domain/Detector/Inspector/Store/Engine/HTTP/config/application scope selects 14 packages (13 with tests, Bridge builder compile-only): default 2,129 pass/50 skip and dev 2,973 pass/62 skip, zero failures; FullReset characterization 23 default/dev before/after, four build-tag graphs and 16 Windows artifacts pass. Earlier acquisition-policy/capture-round/privacy/HTTP/Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Scoped changes reviewed/committed; Engine/HTTP media-recapture, Engine/HTTP command, media-provenance/AI-detection, session admission, observation contracts, process recovery, reasoning-result acceptance/Timeline mapping, capture rounds, local acquisition policy, vision-lane routing/coverage, selection corrections, AI feedback, FullReset, diagnostics/Bridge status and E01 boundaries established; further Engine/HTTP boundaries pending. Provider-selection micro-extraction declined; keep Settings cohesive; CL-3 remains partial |
+| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b` and media recapture `be9fcd2`; Engine media recapture `c614512`; Engine Bridge commands `3e13434`; Engine media provenance `8d7f7b6`; Engine AI detection `b84a62d`; Engine session admission `4bf0731`; observation contracts `d9c3025`; process recovery `5b39fa4`; reasoning result `eb05ac8`; capture rounds and deterministic Store test `683b1e8`; local acquisition policy `f16f11a`; vision-lane routing/coverage `25c3339`; selection corrections `f3d46b8`; AI feedback `6a1ce33`; FullReset `da019dd`; Library removal/Forget `a19bf86`; passive media evidence `2bdc0f1`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Capture/Collection/Bridge builder/Selection/EventEngine/Reasoning/Domain/Detector/Inspector/Store/Engine/HTTP/config/application scope selects 14 packages (13 with tests, Bridge builder compile-only): default 2,177 pass/50 skip and dev 3,021 pass/62 skip, zero failures; Passive-media characterization 20 default/dev before/after, four build-tag graphs and 16 Windows artifacts pass. Earlier acquisition-policy/capture-round/privacy/HTTP/Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Scoped changes reviewed/committed; Engine/HTTP media-recapture, Engine/HTTP command, media-provenance/AI-detection, session admission, observation contracts, process recovery, reasoning-result acceptance/Timeline mapping, capture rounds, local acquisition policy, vision-lane routing/coverage, selection corrections, AI feedback, FullReset, Library removal/Forget, passive media evidence, diagnostics/Bridge status and E01 boundaries established; further Engine/HTTP boundaries pending. Provider-selection micro-extraction declined; keep Settings cohesive; CL-3 remains partial |
 | CL-4: frontend feature ownership | Existing navigation module retained; broader extraction proposed | Existing baseline only | Not recorded | Timeline/Settings/app orchestration pending |
 | CL-5: native runtime and QA boundaries | Factory/shared-helper separation complete; fixture-only timing correction `8dc3f5e` committed; deeper runtime split proposed | 98 Node tests, 200 offline integration iterations and dependency-pinned staging verified for this fixture correction; existing baseline only for remaining seams | Not performed for this correction | Bounded fixture acceptance only; remaining operation/transport/QA separation pending; no universal cross-runtime clock or real-provider qualification claim |
 | CL-6: Bridge responsibility boundaries | Existing source/lifecycle modules retained; further split proposed | Existing baseline only for remaining seams | No new rollout | Background dispatch/surface integration pending |
@@ -203,8 +203,12 @@ Do not delete a consumer merely to make the dependency scan appear clean.
   writes before review handoff, logged failures after commit and exact cancellation
   behavior. FullReset now belongs to `full_reset.go` as `da019dd`, preserving
   cancellation/admission, Store authority, candidate cleanup and runtime effects.
-  Read-only analysis recommends one two-method Library removal/Forget boundary;
-  implementation remains proposed.
+  Library removal/Forget now belongs to `library_removal.go` as `a19bf86`, with
+  exact entry methods and Store/queue/context/cancellation contracts retained.
+  The passive evidence method is colocated in existing `media_recapture.go` as
+  `2bdc0f1`; all 52 remaining central declarations are retained. Central-file
+  splitting stops at this checkpoint; the next read-only scope is HTTP update/
+  session adaptation, without closing broader Engine/runtime or CL-3 work.
   Remaining reasoning/acquisition, enrichment and read-model boundaries still need
   evidence. Keep the Engine facade and existing Store authority; do not repeat
   completed lifecycle/session moves or split small blocks merely to reduce size.
@@ -610,15 +614,21 @@ packages (13 tested; Bridge builder compile-only). Four Windows tag graphs and
 tests/builds. Implemented, tested and scoped review accepted; activation and
 operational acceptance remain open. CL-3 remains partial.
 
-The next implementation proposal, following read-only analysis, is to move only
-`RemoveLibraryItem` and `ForgetLibraryItem` together to
-`internal/engine/library_removal.go`, after adding characterization tests.
-Preserve their Engine receivers, exact signatures/bodies, absence of method-level
-locks, caller-context lookup/mutation, sorted topic-ID snapshot before membership
-removal, background queue context, per-topic error logging/continuation and
-existing worker ownership. Keep Store Remove/Forget semantics, HTTP routes,
-protocol, guards and AI/provenance cancellation unchanged. No implementation,
-reset, activation, configuration change or live trial is approved by this analysis.
+The central [Engine facade checkpoint](code-structure-audit.md#engine-facade-stopping-checkpoint-2026-11-02)
+now retains all 52 declarations remaining in engine.go. The one proposed passive
+evidence colocation is implemented as `2bdc0f1` in the existing media-recapture
+module. Stop further central-file splitting unless a concrete coupling,
+testability or behavior problem justifies it. This completes the bounded
+central-file responsibility review, not the entire Engine package, CL-3.2 or
+CL-3. Adjacent runtime/HTTP and CL-5/CL-7/CL-8 retain separate scope and evidence.
+
+The next proposal is read-only analysis of HTTP update/session endpoints:
+POST /api/updates, GET /api/sessions/active, GET /api/sessions/{id} and
+POST /api/sessions/{id}/cancel. Map route precedence, request context,
+authentication/admission, Engine calls, status/error/JSON mapping and effect
+order before proposing one feature boundary and its characterization tests.
+Preserve protocol, guards and cancellation. No further code change, test/build,
+activation, configuration change or live trial is authorized by this checkpoint.
 
 No calendar estimate or cleanup percentage is assigned: this bounded inventory
 does not establish a complete repository-wide denominator or close every

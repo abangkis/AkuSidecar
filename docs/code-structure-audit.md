@@ -3,7 +3,7 @@
 ## Status synchronization (2026-11-02)
 
 The original audit and its validation below are historical. Current source is
-reviewed through `da019dd`, including Engine FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
+reviewed through `2bdc0f1`, including Engine passive media evidence, Library removal/Forget, FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
 for commit-to-receipt mappings. Cleanup is not provider qualification.
 
 | Increment | Implemented | Tested | Activated | Acceptance |
@@ -39,6 +39,8 @@ for commit-to-receipt mappings. Cleanup is not provider qualification.
 | Engine selection-correction workflow | `f3d46b8` | Identical characterization passes 32 default/dev parent/subtest results before/after relocation; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,048/50 skip and dev 2,892/62 skip, zero failures; EventEngine added to prior scope; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-selection-corrections-20261102/validation.json), [review](../runtime/qa/engine-selection-corrections-review-20261102/review.json) and [commit readback](../runtime/qa/engine-selection-corrections-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Two Engine methods retain exact signatures/bodies; Engine remainder, caller/Store/background ownership, operation/mu scopes, partial errors, durable/enrichment/cancellation order, protocol and guards unchanged. Undo retains same-session AI cancellation only and post-commit cleanup error behavior. CL-3 remains partial; operational acceptance remains open |
 | Engine AI-feedback workflow | `6a1ce33` | Identical characterization passes 58 default/dev parent/subtest results before/after relocation; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,106/50 skip and dev 2,950/62 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-ai-feedback-20261102/validation.json), [review](../runtime/qa/engine-ai-feedback-review-20261102/review.json) and [commit readback](../runtime/qa/engine-ai-feedback-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Three Engine methods retain exact signatures/bodies; Add/Undo operation locks, lock-free history, durable-write/read/handoff order, review failures logged after commit while saved feedback is returned, append-only clear, cancellation/context behavior, Store/domain/HTTP ownership, protocol and guards unchanged. CL-3 remains partial; operational acceptance remains open |
 | Engine FullReset orchestration | `da019dd` | Identical characterization passes 23 default/dev parent/subtest results before/after relocation; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,129/50 skip and dev 2,973/62 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-full-reset-20261102/validation.json), [review](../runtime/qa/engine-full-reset-review-20261102/review.json) and [commit/publication readback](../runtime/qa/engine-full-reset-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed and code published. One Engine method retains exact signature/body; operation/mu scopes, cancellation before admission/errors, default/provider resolution, candidate disposal, Store authority and post-commit capture/headless/swap order unchanged. CL-3 remains partial; operational acceptance remains open |
+| Engine Library removal/Forget workflow | `a19bf86` | Identical characterization passes 28 default/dev parent/subtest results before/after relocation; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,157/50 skip and dev 3,001/62 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-library-removal-20261102/validation.json), [review](../runtime/qa/engine-library-removal-review-20261102/review.json) and [commit/publication readback](../runtime/qa/engine-library-removal-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; code committed/published. Two exact Engine methods retain topic snapshot before Store mutation, sorted/background queue handoff, per-topic error logging/continuation, caller return/error/context semantics, absence of entry-level locks, Store privacy authority, protocol, guards and AI/provenance cancellation. CL-3 remains partial; operational acceptance remains open |
+| Engine passive X media evidence | `2bdc0f1` | Identical characterization passes 20 default/dev parent/subtest results before/after relocation; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,177/50 skip and dev 3,021/62 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-passive-media-20261102/validation.json), [review](../runtime/qa/engine-passive-media-review-20261102/review.json) and [commit readback](../runtime/qa/engine-passive-media-review-20261102/commit-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Exact method moved to existing media_recapture.go with no import changes; development gate, operation lock, Store result/errors, conditional Timeline/provenance handoff, background contexts, unlock-before-terminal-cleanup order, protocol and guards retained. Central-file checkpoint retains 52 declarations; CL-3 remains partial and operational acceptance open |
 
 No code change, activation or trial is performed by this status update. Existing
 test receipts are reused at their verified source/artifact scope, not rerun.
@@ -68,6 +70,8 @@ those receipts and does not imply activation, live-source acceptance or CL-3 clo
 | Selection correction and undo | [selection corrections](../internal/engine/selection_corrections.go) owns correction/enrichment and undo/cancellation orchestration; Engine receivers, operation/mu scopes, partial errors, Store transaction boundaries and exact cancellation targets remain unchanged | `f3d46b8` |
 | AI-feedback write, undo and history | [AI feedback](../internal/engine/ai_feedback.go) owns feedback-to-Deep handoff and Store delegations; mutation locks, lock-free history, durable/logging/error order, append-only output and existing cancellation behavior remain unchanged | `6a1ce33` |
 | FullReset orchestration | [FullReset](../internal/engine/full_reset.go) owns cancellation/default/provider/Store reset and post-commit runtime transitions; exact method, operation/mu scopes, error/cleanup order and Store authority retained | `da019dd` |
+| Library removal and permanent Forget | [Library removal](../internal/engine/library_removal.go) owns topic snapshot, Store privacy mutation and background topic handoff; exact methods, error/continuation/context behavior and absence of entry-level locks retained | `a19bf86` |
+| Passive X media evidence | [Media recapture](../internal/engine/media_recapture.go) also owns ApplyPassiveXMediaEvidence; exact Store/enrichment/cleanup order, Engine operation ownership, contexts, return/errors and guards retained | `2bdc0f1` |
 
 The Engine facade intentionally retains dependency/state ownership, `New`,
 locks, protocol constants/action anchors and suitable short delegations. The
@@ -77,8 +81,8 @@ wrapper. The declined provider-selection micro-extraction remains declined.
 | Remaining review area | Current question and boundary |
 | --- | --- |
 | Typed coverage readers | Retain the existing three scalar readers for now. Production consumers are in acquisition_policy.go; relocating them merely to shorten Engine is not the next priority and is not approved |
-| Product privacy/reset workflows | FullReset boundary is complete at its scoped source/test level. Read-only analysis recommends keeping RemoveLibraryItem and ForgetLibraryItem together in library_removal.go: topic snapshot before Store mutation, background understanding queue afterwards, logged queue failures and original return/error/context semantics. No move approved yet. ResetLearning, CleanDatabase and short semantic delegations remain separate retained/review areas |
-| Facade and adjacent runtime modules | Classify each remaining delegation as retain or useful boundary. Existing capture/daily/native modules are not automatically obsolete or complete; deeper runtime/QA work also belongs to CL-5, not wholesale Engine rewriting |
+| Product privacy/reset workflows | FullReset and Library removal/Forget boundaries are implemented/tested/reviewed. Retain ResetLearning and CleanDatabase with their existing operation/Store admission contracts; no additional privacy/reset file split is recommended at this checkpoint |
+| Facade and adjacent runtime modules | The central-file checkpoint below retains all 52 remaining declarations after passive-evidence colocation. Existing capture/daily/native modules are not automatically obsolete or complete; deeper runtime/QA work also belongs to CL-5, not wholesale Engine rewriting |
 
 CL-3 remains partial until its responsibility map and remaining boundary decisions
 are reviewed at their proper scope. Full packaging/consumer closure and final
@@ -198,8 +202,10 @@ to `ai_feedback.go` as `6a1ce33`, with three identical Engine methods, mutation
 locks, lock-free history, persistence/review gates and error/cancellation behavior
 retained. FullReset now belongs to `full_reset.go` as `da019dd`, preserving
 cancellation/admission, candidate disposal/swap, Store reset and capture authority
-effects. Read-only Library removal/Forget analysis recommends one cohesive
-two-method boundary; Store, worker lifecycle and thin wrappers stay in place.
+effects. Library removal/Forget now belongs to `library_removal.go` as `a19bf86`,
+with exact snapshot/mutation/background queue and partial-error contracts. The
+central Engine checkpoint retains all 52 remaining declarations after passive
+evidence colocation in the existing media-recapture module as `2bdc0f1`.
 The scalar readers remain in place for now.
 No further implementation is approved here.
 No new service layer is proposed. Other remaining
@@ -230,3 +236,75 @@ validation is linked in the 2026-11-02 matrix and status index above.
 - A later, separately authorized one-shot retained QA attempt rejected at the
   joint startup evidence deadline, before capture or QA database creation.
   Cleanup was verified, with no retry. See the current readiness checkpoint.
+
+## Engine facade stopping checkpoint (2026-11-02)
+
+Goal: leave Engine as the stable owner of dependencies, locks and application
+entry points, while feature modules own substantive workflows. The source
+review covered 53 declarations at `a19bf86`; the one selected colocation is now
+implemented at `2bdc0f1`. All 52 remaining declarations are retained. This does
+not certify every file in the Engine package or close CL-3.2.
+The [inventory](../runtime/qa/engine-passive-media-roadmap-sync-20261102/engine-facade-inventory.json) binds each name, line,
+classification and decision to the current source hash. Classification: 52 retain,
+zero pending central-file moves. These counts are an inventory, not cleanup progress.
+
+| Group | Count | Decision and reason |
+| --- | ---: | --- |
+| Constructor and identity/dependency access | 4 | Retain New, resolver injection, Epoch and ProviderName with Engine state ownership |
+| Store facade delegates | 31 | Retain stable query/mutation entry points; Store already owns domain transactions/read models and the wrappers add no competing policy |
+| Capture/scheduling adapters and scalar coverage readers | 5 | Retain capturePayload, launch and three scalar readers; builder/process/policy owners already exist and relocation adds no useful seam |
+| Short lock-protected Store delegates | 3 | Retain semantic correction/undo and ResetLearning; operation ownership stays visible and Store remains authoritative |
+| Onboarding admission | 1 | Retain CompleteOnboarding: one coherent operation-locked readiness-before-completion gateway. Provider readiness/probes and durable onboarding already have separate owners; another file alone does not separate those responsibilities |
+| Bridge heartbeat/reload entry points | 5 | Retain RecordHeartbeat and four reload methods. They coordinate Engine-owned heartbeat/origin/access state with existing BridgeStatus, ReloadActions, command recovery and scheduler owners; no new state owner/service is justified here |
+| Vision read projection | 1 | Retain VisionEvaluationJobs: source-scoped list derived from the existing run; no new policy object |
+| Failed-run retry admission | 1 | Retain ReevaluateFailedRun: operation gate, Store retry then existing process launcher. Do not introduce a separate retry worker or alter post-commit launch order |
+| Database cleanup admission | 1 | Retain CleanDatabase: operation gate and active-recapture guard before Store cleanup. No new cleanup policy or transaction owner |
+
+Focused source evidence: [Engine](../internal/engine/engine.go),
+[provider readiness](../internal/engine/provider_readiness.go),
+[Bridge status](../internal/engine/bridge_status.go),
+[reload lifecycle](../internal/engine/reload_actions.go),
+[media recapture](../internal/engine/media_recapture.go),
+[passive evidence Store](../internal/store/recapture.go),
+[provenance handoff](../internal/engine/media_provenance.go) and
+[terminal cleanup](../internal/engine/capture_runtime.go).
+
+Historical pre-move requirements below explain the boundary. The method and
+[focused tests](../internal/engine/passive_media_test.go) are now implemented and
+validated as `2bdc0f1`; this synchronization reuses that evidence:
+
+1. Non-nil developmentSources, including an empty map, rejects before Store,
+   operation lock and deferred cleanup. Preserve exact zero/false/error output.
+2. Ordinary calls hold operation through Store apply and conditional Timeline
+   read/provenance handoff. Store error and unchanged/no-op paths skip enrichment;
+   preserve the original result/updated/error tuple without new normalization.
+3. Successful Store commit precedes Timeline reload and provenance queue. A
+   Timeline reload error is ignored, retaining the successful Store result.
+   Inspector unavailable/queue failure/active-worker cases retain existing
+   helper behavior and do not change the returned Store success.
+4. Caller context reaches Store apply and Timeline reload. Provenance and deferred
+   terminal cleanup keep their existing background contexts. operation unlock
+   occurs before terminal cleanup because of defer order; cleanup still runs
+   after ordinary failures/no-op/cancellation. No new drain/cancellation, AI
+   cancellation or observer/identity/trusted-media guard change is proposed.
+5. Reuse existing Store passive-media validation/idempotence and HTTP Bridge
+   authentication tests; add focused Engine ordering/error/cleanup tests with
+   disposable real Store data and controlled Inspector/capture fixtures. There
+   was no direct Engine test at the earlier checkpoint; the new suite now covers
+   these paths. Exact relocation, default/dev regressions and four-tag Windows
+   compilation passed. No new product test/build or live-source activity ran
+   for this documentation synchronization.
+
+Stopping rule: that one colocation is now implemented. Retain the central facade
+until a concrete coupling, testability or behavior problem justifies more work.
+Do not create onboarding/heartbeat/retry/cleanup files just to reduce line count.
+The central-file map is now checkpointed; this alone does not complete
+adjacent Engine/runtime/HTTP work, CL-3.2, CL-3 or CL-5/CL-7/CL-8 acceptance.
+No remaining methods are classified as removable legacy code by this review.
+The next proposal is read-only analysis of HTTP update/session endpoints:
+POST /api/updates, GET /api/sessions/active, GET /api/sessions/{id} and
+POST /api/sessions/{id}/cancel. Map route precedence, request context,
+authentication/admission, Engine calls, status/error/JSON mapping and effect
+order before proposing one feature boundary and its characterization tests.
+Preserve protocol, guards and cancellation. No further code change, test/build,
+activation, configuration change or live trial is authorized by this checkpoint.
