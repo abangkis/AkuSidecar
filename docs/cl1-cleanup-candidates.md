@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission and CL-3.3 HTTP Bridge command/media-recapture features below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts and CL-3.3 HTTP Bridge command/media-recapture features below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -796,11 +796,52 @@ No activation or trial is performed. Publication follows the documentation commi
 and is verified separately by the post-push readback. Scoped review acceptance
 does not establish CL-3 closure or operational source acceptance.
 
-The next proposal is read-only analysis of shared observation normalization and
-validation in Engine: `normalizeObservation`, `validateObservation` and
-`blockHasEvidence`. Map ordinary Bridge, media-recapture and native/development
-consumers, error precedence, evidence-key derivation, canonical source URLs,
-direct-context/attachment/quoted-post rules and characterization gaps before
-choosing one useful feature boundary. Preserve all evidence admission guards,
-protocol and callers; do not add fallback acceptance or implement another
-extraction without separate approval.
+The observation-contract proposal was subsequently approved and implemented;
+the result and next proposal are recorded below.
+
+## CL-3.2 Engine observation contracts result (2026-11-02)
+
+The separately approved move is committed as `d9c30253560e3e07d95233aa86514a5dbb62e9ef`.
+Only `normalizeObservation`, `validateObservation` and `blockHasEvidence`
+move from Engine into the existing `observations.go`, with necessary import
+changes. Their signatures/bodies are identical; the existing reconciliation
+helper is unchanged. The remaining Engine source is identical after removing
+the declarations and unused SHA256 import.
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Engine observation contracts | `d9c3025` | Identical characterization passes 61 default/74 dev parent/subtest results before/after relocation; eight-package suites pass default 1,409/45 skip and dev 2,251/57 skip, zero failures; four build-tag graphs and 12 Windows amd64 artifacts; [validation](../runtime/qa/engine-observations-20261102/validation.json), [review](../runtime/qa/engine-observations-review-20261102/review.json) and [commit readback](../runtime/qa/engine-observations-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Three free functions move unchanged into existing observations.go; reconciliation, five production callers, normalization/validation/error order, native identity rejection, protocol and guards retained. CL-3 remains partial; operational acceptance remains open |
+
+The [validation](../runtime/qa/engine-observations-20261102/validation.json), [review](../runtime/qa/engine-observations-review-20261102/review.json) and [commit readback](../runtime/qa/engine-observations-review-20261102/final-readback.json) map the original receipt at parent
+`09da43323c0a30dc4b063bfd023fbb53ad35993c` to the exact four committed blobs.
+Review rechecked all six raw test logs, source/caller hashes and 12 PE artifacts
+without rerunning passing tests/builds or rewriting historical receipts. The
+other 1,376 tracked files matched the implementation baseline. Existing
+`.tmp/` and `experiments/` remain preserved.
+
+Characterization was added and passed before relocation, then passed unchanged
+afterward. It covers fixed golden evidence keys, identity precedence and
+idempotence, validation immutability/error precedence, URL/context/attachment/
+quoted-evidence rules, repeated identities, and Bridge/recapture guards before
+normalization and persistence. Windows development tests exercise the generic
+strict native decoder with X/Instagram source parameters: missing identity is
+rejected without normalization. They do not exercise live private X workers or
+account capture. All five production caller files remain byte-identical,
+including development persistence and native X/Instagram paths.
+
+The eight-package regression scope adds Domain to the preceding seven-package
+Detector/Inspector/Store/Engine/HTTP/config/application scope. Counts include
+parent tests and subtests, not unique independent cases. Windows default,
+auth_session_dev, auth_session_fixture and combined graphs retain Engine/HTTP
+test binaries and application artifacts. No runtime/configuration change,
+activation or live trial is performed. Scoped source review is accepted;
+operational source acceptance and CL-3 closure remain open. Publication is
+verified separately by the post-push readback.
+
+The next proposal is read-only analysis of process-error handling and usage-limit
+recovery in Engine. Map failure formatting, durable run failure, queued-run
+termination, Auto Update pause/restore and scheduler notification across
+execution, finalization and AI detection. Determine one cohesive boundary and
+missing characterization while preserving accepted-capture authority, caller
+contexts, error/effect order, protocol and guards. Do not move code or change
+recovery behavior before separate implementation approval.

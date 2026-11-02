@@ -1,7 +1,7 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-02 (Asia/Jakarta), through Sidecar `4bf0731`.
+Status synchronized: 2026-11-02 (Asia/Jakarta), through Sidecar `d9c3025`.
 Status: execution in progress; each bounded increment requires separate approval.
 No implementation, deletion, dependency upgrade, activation or trial is approved
 by creating this roadmap. Approve one concrete increment, implement it, verify
@@ -106,7 +106,7 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-0: inherited bounded cleanup | Eight increments above complete | Scoped receipts retained | Cleanup activation not recorded | Bounded code reviews complete; no whole-repository completion claim |
 | CL-1: consumer and compatibility inventory | [Entry/consumer map](cl1-consumer-inventory.md) and [32-boundary candidate ledger](cl1-cleanup-candidates.md) delivered | Read-only four-tag metadata, native/package/reference and source-preservation checks; no product test/build | Not applicable to an audit | Ready for review; external-consumer and offline Browser dependency limits explicit; no implementation approved |
 | CL-2: proven obsolete-code retirement | Earlier wrappers plus G10 `DeleteMemoryItem` removal committed with roadmap as `21ac9ad` | G10 exact remainder check, full Store/HTTP regressions and four-mode Windows compilation passed | Not performed for G10 | G10 reviewed/committed; comprehensive retirement remains scoped by the remaining ledger entries |
-| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b` and media recapture `be9fcd2`; Engine media recapture `c614512`; Engine Bridge commands `3e13434`; Engine media provenance `8d7f7b6`; Engine AI detection `b84a62d`; Engine session admission `4bf0731`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Detector/Inspector/Store/Engine/HTTP/config/application suites (seven packages): default 1,301 pass/45 skip, dev 2,130 pass/57 skip, zero failures; Engine session-admission characterization passes 31 default/34 dev results before/after relocation, four Engine build-tag graphs and 12 Windows artifacts pass. Earlier HTTP/Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Scoped changes reviewed/committed; Engine/HTTP media-recapture, Engine/HTTP command, media-provenance/AI-detection, session admission, diagnostics/Bridge status and E01 boundaries established; further Engine/HTTP boundaries pending. Provider-selection micro-extraction declined; keep Settings cohesive; CL-3 remains partial |
+| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b` and media recapture `be9fcd2`; Engine media recapture `c614512`; Engine Bridge commands `3e13434`; Engine media provenance `8d7f7b6`; Engine AI detection `b84a62d`; Engine session admission `4bf0731`; observation contracts `d9c3025`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Domain/Detector/Inspector/Store/Engine/HTTP/config/application suites (eight packages): default 1,409 pass/45 skip, dev 2,251 pass/57 skip, zero failures; observation characterization passes 61 default/74 dev results before/after relocation, four Engine build-tag graphs and 12 Windows artifacts pass. Earlier HTTP/Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Scoped changes reviewed/committed; Engine/HTTP media-recapture, Engine/HTTP command, media-provenance/AI-detection, session admission, observation contracts, diagnostics/Bridge status and E01 boundaries established; further Engine/HTTP boundaries pending. Provider-selection micro-extraction declined; keep Settings cohesive; CL-3 remains partial |
 | CL-4: frontend feature ownership | Existing navigation module retained; broader extraction proposed | Existing baseline only | Not recorded | Timeline/Settings/app orchestration pending |
 | CL-5: native runtime and QA boundaries | Factory/shared-helper separation complete; fixture-only timing correction `8dc3f5e` committed; deeper runtime split proposed | 98 Node tests, 200 offline integration iterations and dependency-pinned staging verified for this fixture correction; existing baseline only for remaining seams | Not performed for this correction | Bounded fixture acceptance only; remaining operation/transport/QA separation pending; no universal cross-runtime clock or real-provider qualification claim |
 | CL-6: Bridge responsibility boundaries | Existing source/lifecycle modules retained; further split proposed | Existing baseline only for remaining seams | No new rollout | Background dispatch/surface integration pending |
@@ -182,8 +182,10 @@ Do not delete a consumer merely to make the dependency scan appear clean.
   fast/deep admission, profile/job/result order and media-provenance cancellation.
   Session admission/creation now belongs to `session_admission.go` as
   `4bf0731`, retaining guard/source/lease/cancellation ordering and operation
-  release before scheduling. Next propose read-only analysis of shared
-  observation normalization/validation and its multi-path evidence contracts.
+  release before scheduling. Three shared observation functions now belong to
+  existing `observations.go` as `d9c3025`, with unchanged caller/error/evidence
+  contracts. Next propose read-only analysis of process-error handling and
+  usage-limit recovery across execution, finalization and AI detection.
   Remaining source admission, enrichment and read-model boundaries still need
   evidence. Keep the Engine facade and existing Store authority; do not repeat
   completed lifecycle/session moves or split small blocks merely to reduce size.
@@ -485,14 +487,22 @@ activation or trial. CL-3 and operational source acceptance remain open.
 The [current Engine responsibility map](code-structure-audit.md#current-engine-responsibility-map-2026-11-02)
 separates completed boundaries, retained facade ownership and remaining review areas.
 
-The next proposal is read-only analysis of shared observation normalization and
-validation in Engine: `normalizeObservation`, `validateObservation` and
-`blockHasEvidence`. Map ordinary Bridge, media-recapture and native/development
-consumers, error precedence, evidence-key derivation, canonical source URLs,
-direct-context/attachment/quoted-post rules and characterization gaps before
-choosing one useful feature boundary. Preserve all evidence admission guards,
-protocol and callers; do not add fallback acceptance or implement another
-extraction without separate approval.
+The observation-contract feature was subsequently approved, characterized before
+relocation and committed as `d9c3025`. See the [result](cl1-cleanup-candidates.md#cl-32-engine-observation-contracts-result-2026-11-02)
+and [validation](../runtime/qa/engine-observations-20261102/validation.json), [review](../runtime/qa/engine-observations-review-20261102/review.json) and [commit readback](../runtime/qa/engine-observations-review-20261102/final-readback.json). Identical characterization passes 61/74 default/dev results;
+eight-package regressions pass 1,409/2,251 results with 45/57 skips and zero
+failures, four build-tag graphs and 12 Windows artifacts. This adds Domain to
+the preceding seven-package scope. Five caller files and all moved bodies are
+unchanged; native validation still rejects missing evidence identity without
+normalization. No activation or trial is performed; CL-3 remains partial.
+
+The next proposal is read-only analysis of process-error handling and usage-limit
+recovery in Engine. Map failure formatting, durable run failure, queued-run
+termination, Auto Update pause/restore and scheduler notification across
+execution, finalization and AI detection. Determine one cohesive boundary and
+missing characterization while preserving accepted-capture authority, caller
+contexts, error/effect order, protocol and guards. Do not move code or change
+recovery behavior before separate implementation approval.
 
 No calendar estimate or cleanup percentage is assigned: this bounded inventory
 does not establish a complete repository-wide denominator or close every
