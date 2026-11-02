@@ -1,14 +1,15 @@
 # Roadmap status and evidence index
 
-Status synchronized: 2026-11-02 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `6ea303c` (HTTP Bridge reload actions, after capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
+Status synchronized: 2026-11-03 (Asia/Jakarta).
+Reviewed local source: AkuSidecar `237dbd1` (capture telemetry rotation/shutdown compatibility, after HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
-The previous code/roadmap checkpoint was published as `4dd1030`, including
-owner-path guard `b482ba2`. The owner has authorized publication of this HTTP
-reload-action code and roadmap synchronization to origin/main at
-https://github.com/abangkis/AkuSidecar.git. Validation, review, commit and
-publication readbacks are linked in the reload-action result below.
+The previous code/roadmap checkpoint was published as `2b03fee`, including
+HTTP reload actions `6ea303c`. The owner has authorized publication of the
+telemetry rotation/shutdown repair and this roadmap synchronization to
+origin/main at https://github.com/abangkis/AkuSidecar.git. Validation and the
+later review/commit/publication readback are identified in the telemetry result
+below; publication must be verified against the remote SHA.
 Publication does not establish runtime activation or operational acceptance.
 The Browser worktree contains pre-existing build/cache changes; those changes
 are outside this synchronization and are not evidence of a released tuple.
@@ -432,9 +433,10 @@ fields such as committed=false describe the earlier capture time; retain them.
 The regression source is [split_capture_owner_guard_test.go](../internal/httpapi/split_capture_owner_guard_test.go).
 
 Implemented/tested and scoped review accepted; not activated. Operational
-acceptance remains open. A separate statically noted telemetry request admitted
-before owner rotation has not been dynamically tested or changed; do not infer
-closure of all owner-rotation behavior from this admission-path repair.
+acceptance remains open. At this admission-path checkpoint, the post-admission rotation scenario was
+still unverified. The later [telemetry rotation result](cl1-cleanup-candidates.md#capture-telemetry-rotation-result-2026-11-03)
+records its separate fix and offline tests; neither guard repair establishes
+all owner-rotation or live-source behavior.
 
 This is a guard correction, not a sixth HTTP extraction. At that guard checkpoint, the router-map counts
 remained 49 retained arms, 57 deferred arms and 30 retained server.go declarations.
@@ -474,7 +476,8 @@ Identical characterization passes 45 default/dev parent/subtest results before/a
 unique independent cases. Review reverified source/log/artifact and committed
 blob identity; this sync reuses evidence without product test/build reruns.
 Implemented/tested and scoped review accepted; not activated. Operational
-acceptance remains open, including the separate post-admission rotation scenario.
+acceptance remains open. The then-unverified post-admission rotation scenario
+now has a separate offline fix/result below.
 See [validation](../runtime/qa/http-bridge-actions-20261102/validation.json), [review](../runtime/qa/http-bridge-actions-review-20261102/review.json) and
 [commit readback](../runtime/qa/http-bridge-actions-review-20261102/commit-readback.json). Publication readbacks belong under
 runtime/qa/http-bridge-actions-roadmap-sync-20261102.
@@ -491,16 +494,47 @@ an automatic extraction queue. Keep central-file splitting stopped unless a
 concrete ownership, coupling or testability problem justifies another boundary.
 CL-3.3 and CL-3 remain partial; this is not whole-package or operational acceptance.
 
-### Proposed next lifecycle check
+## Capture telemetry rotation result (2026-11-03)
 
-The next proposal is read-only analysis of capture-surface telemetry across
-owner rotation. Trace admission, body decoding, Store mutation, owner drain and
-RotateSplitCapture to determine whether an already-admitted request may outlive
-its owner's retirement under the intended lifecycle contract. The scenario is
-statically noted and dynamically unverified; the normalization fix does not
-establish its outcome. Specify one bounded regression/fix proposal only if the
-contract and evidence justify it. No code, test/build, runtime/configuration
-change, activation or trial is authorized by this next-step proposal.
+Implemented as `237dbd1`: admitted capture-surface HTTP telemetry rechecks the
+owner key under `splitCapture.mu` and retains that mutex through the original
+batch mutation loop. Body decoding and response I/O remain outside the lock.
+Retired-key requests return 409 without mutation; valid current-key cleanup
+continues during `Replacing`, without a replacement-blocking runtime lease.
+The review-discovered shutdown deadline regression is also fixed: a listening
+server can force-close HTTP connections on deadline while transport cleanup
+retains its existing ownership and finishes later.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | `237dbd1`, telemetry fencing plus coupled shutdown compatibility; no new protocol/schema or feature extraction |
+| Tested | Matching 14-package selection: default 2,419 pass/50 skip; dev 3,263 pass/62 skip; zero failures. Controlled concurrency/shutdown selection repeated 20 times: 540 passing parent/subtest results per mode. Four Windows amd64 tag combinations and 16 artifacts pass |
+| Activated | Not performed for this increment |
+| Acceptance | Scoped source/test review accepted; live rotation, source qualification and whole-package acceptance remain open |
+
+Review rechecked the unchanged mutation-loop order and all recorded source/test,
+configuration and 16 binary hashes. This synchronization reuses matching
+validation rather than rerunning product tests/builds. No race detector or real
+native observer/browser trial was run. Trusted internal native-trace emitters
+remain independent; the new fence covers stale HTTP mutations, not a global
+native-trace drain. See the [detailed result](cl1-cleanup-candidates.md#capture-telemetry-rotation-result-2026-11-03)
+for managed evidence retrieval and review limits.
+
+Router-map counts remain 106 arms: 54 retained and 52 deferred; six bounded
+HTTP extractions. The 30 server.go declarations and 52 central Engine
+declarations remain retained. CL-3.3 and CL-3 remain partial.
+
+### Proposed next cleanup analysis
+
+Read-only review of the four development X HTTP adapters: daily start/stop and
+manual start/stop. Determine whether their shared development/epoch admission,
+request decoding, error mapping and response projection justify one cohesive
+feature boundary, or should remain in the router. Trace supported callers and
+existing tests; specify characterization for development gating, stale epoch,
+body/errors, context/cancellation and side-effect ordering before any move.
+Retain Engine/runtime ownership and keep daily/manual behavior distinct. This
+proposal authorizes no implementation, runtime/configuration change, activation
+or live trial.
 
 ## Product and installation roadmaps
 
