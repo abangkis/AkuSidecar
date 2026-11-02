@@ -1,7 +1,8 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status: proposed execution roadmap; documentation created at the user's request.
+Status synchronized: 2026-11-02 (Asia/Jakarta), through Sidecar `7cb712b`.
+Status: execution in progress; each bounded increment requires separate approval.
 No implementation, deletion, dependency upgrade, activation or trial is approved
 by creating this roadmap. Approve one concrete increment, implement it, verify
 it and review its result before approving another increment.
@@ -105,7 +106,7 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-0: inherited bounded cleanup | Eight increments above complete | Scoped receipts retained | Cleanup activation not recorded | Bounded code reviews complete; no whole-repository completion claim |
 | CL-1: consumer and compatibility inventory | [Entry/consumer map](cl1-consumer-inventory.md) and [32-boundary candidate ledger](cl1-cleanup-candidates.md) delivered | Read-only four-tag metadata, native/package/reference and source-preservation checks; no product test/build | Not applicable to an audit | Ready for review; external-consumer and offline Browser dependency limits explicit; no implementation approved |
 | CL-2: proven obsolete-code retirement | Earlier wrappers plus G10 `DeleteMemoryItem` removal committed with roadmap as `21ac9ad` | G10 exact remainder check, full Store/HTTP regressions and four-mode Windows compilation passed | Not performed for G10 | G10 reviewed/committed; comprehensive retirement remains scoped by the remaining ledger entries |
-| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Engine/HTTP/config/application suites: default 623 pass/38 skip, dev 1,296 pass/48 skip, zero failures; 38 Bridge characterization results before/after relocation, four build-tag graphs and eight Windows artifacts pass. Earlier diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Scoped changes reviewed/committed; diagnostics/Bridge status and E01 boundaries established; further Engine/HTTP boundaries pending. Provider-selection micro-extraction declined; keep Settings cohesive; CL-3 remains partial |
+| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Engine/HTTP/config/application suites: default 676 pass/38 skip, dev 1,349 pass/48 skip, zero failures; 53 HTTP command characterization results before/after relocation, four HTTP build-tag graphs and 12 Windows artifacts pass. Earlier Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Scoped changes reviewed/committed; HTTP command, diagnostics/Bridge status and E01 boundaries established; further Engine/HTTP boundaries pending. Provider-selection micro-extraction declined; keep Settings cohesive; CL-3 remains partial |
 | CL-4: frontend feature ownership | Existing navigation module retained; broader extraction proposed | Existing baseline only | Not recorded | Timeline/Settings/app orchestration pending |
 | CL-5: native runtime and QA boundaries | Factory/shared-helper separation complete; fixture-only timing correction `8dc3f5e` committed; deeper runtime split proposed | 98 Node tests, 200 offline integration iterations and dependency-pinned staging verified for this fixture correction; existing baseline only for remaining seams | Not performed for this correction | Bounded fixture acceptance only; remaining operation/transport/QA separation pending; no universal cross-runtime clock or real-provider qualification claim |
 | CL-6: Bridge responsibility boundaries | Existing source/lifecycle modules retained; further split proposed | Existing baseline only for remaining seams | No new rollout | Background dispatch/surface integration pending |
@@ -176,8 +177,12 @@ Do not delete a consumer merely to make the dependency scan appear clean.
 - **CL-3.3 HTTP capture:** separate request/response adaptation from application
   orchestration where a complete use case is identifiable. Preserve endpoint
   shapes, authentication/admission, status codes, error categories and call order.
-  Next proposal: read-only analysis of the four Bridge command endpoints as one
-  module, retaining Server/Engine/Store ownership and existing route predicates.
+  Four Bridge command handlers (next, pending, observation and failure) now belong
+  to `bridge_commands.go` as `7cb712b`, with characterization before/after and
+  passing regressions/Windows compilation. Router predicates, normalized path,
+  context, authentication, protocol, guards and side-effect order are retained.
+  Next proposal: read-only analysis of the three Bridge media-recapture handlers
+  (claim, observation and failure) as one feature; no extraction is yet approved.
 
 Exit: a reviewed responsibility map and separately validated extractions, with
 no second source of state, broader admission, new concurrency or wire changes.
@@ -373,15 +378,28 @@ Nine functions and two types now belong to `bridge_status.go`, committed as
 retains its original anchors. `RecordHeartbeat`, revocation, recovery, reload and
 scheduler ordering are unchanged. This is CL-3.2, not CL-6 extension completion.
 
-The next proposal is read-only analysis of the HTTP Bridge command handlers:
-next, pending, observation and failure. Assess one coherent module with the
-existing Server receiver while keeping route predicates, request context,
-authentication, DTOs, status/error behavior and tracing order unchanged.
-Engine/Store keep admission, claim/result fencing and lifecycle authority. Do
-not introduce a service layer or include heartbeat, surface-event or recapture
-routes. Map callers/tests and define missing characterization before requesting
-implementation approval. No further refactor, protocol or guard change is
-approved by this status update.
+The four HTTP Bridge command handlers were subsequently analyzed, separately
+approved, characterized and moved to `bridge_commands.go` as `7cb712b`. See the
+[result](cl1-cleanup-candidates.md#cl-33-http-bridge-command-feature-result-2026-11-02),
+[validation](../runtime/qa/bridge-commands-20261102/validation.json),
+[review](../runtime/qa/bridge-commands-review-20261102/review.json) and
+[commit readback](../runtime/qa/bridge-commands-review-20261102/final-readback.json).
+Only four case bodies changed in the router; moved bodies are identical except
+for local `r.Context()` bindings. The same 53 characterization results pass before
+and after; combined default/dev regressions and 12 Windows artifacts pass.
+Engine/Store retain admission, fencing and lifecycle ownership. No push,
+activation or live trial was performed for this increment.
+
+The next proposal is read-only analysis of the three HTTP Bridge media-recapture
+handlers in `server.go`: claim, observation and failure. They adapt one existing
+job/result workflow and are separate from the completed command feature. Map
+callers, tests, request context, authentication/fences and effect/error order;
+assess whether one feature file would give a useful responsibility boundary.
+In particular, retain claim's existing 404/409/204/200 outcomes and POST result
+400/200 mappings. Define missing characterization before requesting any
+implementation approval. Reuse the Server receiver and Engine/Store authority;
+do not add a service layer, widen guards, or include UI recapture creation/status,
+heartbeat or surface-event routes. This proposal is not an approved extraction.
 
 No calendar estimate or cleanup percentage is assigned: this bounded inventory
 does not establish a complete repository-wide denominator or close every

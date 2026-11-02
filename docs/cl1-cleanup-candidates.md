@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics and Bridge status features below.
+approved CL-3.2 diagnostics/Bridge status and CL-3.3 HTTP Bridge command features below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -397,10 +397,56 @@ This is a Sidecar CL-3.2 increment. CL-6 still concerns extension background
 dispatch and surface ownership; neither it nor comprehensive cleanup is closed.
 No push, activation or live trial was performed.
 
-Next proposal: read-only analysis of HTTP Bridge command handlers (next, pending,
-observation and failure) as one coherent module. Retain route predicates, Server
-receiver, request context, authentication, DTO/status/error contracts and native
-trace order. Engine/Store keep admission, claim/result fencing and lifecycle
-ownership. Do not introduce a service layer or include heartbeat, surface events
-or media recapture routes. Define missing characterization before requesting
-implementation approval; no further code change is approved by this record.
+At that checkpoint, the next proposal was read-only analysis of HTTP Bridge
+command handlers. The analysis and a separately approved implementation are now
+complete; the result follows below. No heartbeat, surface-event or recapture
+handler was included in that extraction.
+
+## CL-3.3 HTTP Bridge command feature result (2026-11-02)
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| HTTP Bridge command feature | `7cb712b`: next, pending, observation and failure moved to four Server methods in `internal/httpapi/bridge_commands.go` | [Receipt](../runtime/qa/bridge-commands-20261102/validation.json): the identical characterization suite passes 53 results before/after relocation; default 676 pass/38 skip, dev 1,349 pass/48 skip, zero failures; four HTTP build-tag graphs and 12 Windows amd64 artifacts | Not performed | Scoped review found no blocking issue; committed. Route/context/authentication/protocol/guard and side-effect contracts preserved. CL-3 remains partial; no operational acceptance established |
+
+The validation receipt identifies parent `3a3ab3f` and the pre-commit worktree.
+Its three source hashes match the payload committed as
+`7cb712bc9f9b7bbb6d6d58862484f262a6521120`. The
+[review](../runtime/qa/bridge-commands-review-20261102/review.json) checks source,
+test-log and binary hashes, exact four-body relocation and the unchanged router
+remainder. The [commit readback](../runtime/qa/bridge-commands-review-20261102/final-readback.json)
+verifies the committed blobs, parent, three-file scope and clean tracked tree;
+existing `.tmp/` and `experiments/` were preserved. Passing evidence was reused
+after matching inputs; historical receipts were not rewritten as post-commit
+test executions. Counts include parent tests and subtests, not 53 unique cases.
+
+Only the four case bodies change in `server.go`. Method/path predicates, their
+order and single-trailing-slash normalization remain there. POST methods receive
+that normalized path; `path.Base` command selection is unchanged. Each method
+uses the same request context, and contract/token/capture-instance checks still
+precede query/body parsing and Engine calls. GET errors remain forwarded; POST
+Engine errors remain `badRequest(err.Error())`. Polling's empty 204 bodies,
+200 command/runId envelopes, observation's 202 and failure's 200 run envelopes,
+JSON/cache headers and existing decoder semantics are retained.
+
+Characterization covers authentication/fence precedence, unchanged state after
+rejection, empty/available/repeated polling, required run ID, strict JSON/media
+type and bounded-reader behavior, route/path/method behavior, durable observation
+acceptance, Engine failure defaults, queued/replayed results, missing run/command,
+source mismatch, stale runtime owner and cancellation before authentication or
+after body decode. Fixtures use the real Engine/Store with disposable data and
+omit `captureLeaseId`; no account/profile/network capture or OS observer starts.
+Native trace order remains claim, nil check, trace, response and is verified by
+source equivalence. Engine/Store retain admission, fencing, normalization,
+failure defaults and lifecycle authority. No new service layer or owner exists.
+
+No push, activation or live trial was performed. This 2026-11-02 documentation
+synchronization changes no code, reruns no product tests/builds and inspects no
+live runtime. It does not establish CL-6 extension or comprehensive CL-3 completion.
+
+Next proposal: read-only analysis of Bridge media-recapture claim, observation
+and failure in `server.go` as one existing job/result feature. Map callers/tests,
+authentication/context/fences, error/effect order and missing characterization;
+preserve Engine/Store authority and determine whether one feature file is useful.
+Claim currently distinguishes 404/409/204/200, while POST results retain 400/200.
+Do not include UI recapture creation/status, heartbeat or surface events. Further
+implementation requires separate approval; no extraction is approved here.

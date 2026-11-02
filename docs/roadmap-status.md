@@ -1,7 +1,7 @@
 # Roadmap status and evidence index
 
-Status synchronized: 2026-11-01 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `7b2d0d8` (Bridge status feature separation, after diagnostics export `1068e35`),
+Status synchronized: 2026-11-02 (Asia/Jakarta).
+Reviewed local source: AkuSidecar `7cb712b` (HTTP Bridge command separation, after Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
 The Browser worktree contains pre-existing build/cache changes; those changes
@@ -29,7 +29,7 @@ this checkpoint takes precedence for current status wording.
 | Daily native X | Existing daily controller/owner and `ab2dc40` diagnostics | Existing lifecycle suites and dated real-trial receipts | Historical `41ecd1c` daily-MVP receipt and later `ab2dc40` trial artifact; current process not inspected | Selected main-dev MVP accepted on 2026-10-29; one later X-only repeat completed on 2026-11-01. Not full rotation or mixed X/IG qualification |
 | X/IG convergence stages 1-3 | Shared cleanup/deadlines, ownership-aware dispatch, pre-claim expiry, readiness and capability projection exist in source | Offline contracts and mixed-source synthetic coverage recorded in [foundation progress](shared-capture-foundation-progress.md) | IG diagnostic artifact reached `32b8552`; a complete paired Sidecar/Bridge rollout of every convergence change is not certified by that receipt | Contract/baseline boundary covered; repeated real mixed-source acceptance remains pending |
 | IG bootstrap and document diagnostics, stage 4 | Shared bootstrap verifier, continuous observer and method/caller diagnostic in `32b8552` | Historical Node/Go suites; accountless Chrome 156 fixture captured both History methods and retained invalidation | One IG-only trial used the recorded `32b8552` artifact; provenance says `sourceDirty=true` | Failed: reader `historyApi` invalidation during `readiness`; native daily IG remains unqualified; no caller attribution in the final receipt |
-| Daily acceptance and obsolete-path retirement, stage 5 | Existing daily machinery and bounded cleanup extractions; not a wholesale retirement | Synthetic/repeated-batch checks exist | No activation of the 2026-11-01 cleanup commits recorded | Repeated real X/IG batches, restart/cancel/consent/reader acceptance remain pending |
+| Daily acceptance and obsolete-path retirement, stage 5 | Existing daily machinery and bounded cleanup extractions; not a wholesale retirement | Synthetic/repeated-batch checks exist | No activation of the 2026-11-01/02 cleanup commits recorded | Repeated real X/IG batches, restart/cancel/consent/reader acceptance remain pending |
 | Broader browser/headless parity | Existing Manager/Coordinator, driver and handoff implementation | Historical component, source-parity and selected Windows evidence | Historical selected-mode evidence only | General integrated handoff, reader/login and full media/package parity are not all closed; do not reset the accepted X MVP |
 | Shared capture reservation | Proposed only | Conservative predecessor-drain tests are not reservation tests | Not recorded | Deferred; not another gate for the accepted X MVP |
 
@@ -76,16 +76,24 @@ remains partial; neither commit establishes runtime activation or acceptance.
 
 CL-3.2 now separates the complete diagnostics export feature as `1068e35`.
 Its [result](cl1-cleanup-candidates.md#cl-32-diagnostics-export-feature-result-2026-11-01)
-records characterization before the move, unchanged declarations and the latest
-combined passing suites. The provider-selection micro-extraction proposal was
+records characterization before the move, unchanged declarations and its
+recorded combined passing suites. The provider-selection micro-extraction proposal was
 subsequently declined: keep the existing 98-line `SaveSettings` cohesive rather
 than adding another single-caller wrapper. No provider-selection helper was added.
 
 CL-3.2 also separates Bridge status/compatibility as `7b2d0d8`, with unchanged
 constants, action catalog, lock scopes and heartbeat side effects. Its
 [result](cl1-cleanup-candidates.md#cl-32-bridge-status-feature-result-2026-11-01)
-records the latest characterization/regression/Windows evidence. This is a
+records its characterization/regression/Windows evidence. This is a
 Sidecar backend increment, not completion of CL-6 extension responsibility work.
+
+CL-3.3 now separates the four HTTP Bridge command handlers as `7cb712b` in
+`bridge_commands.go`. Its
+[result](cl1-cleanup-candidates.md#cl-33-http-bridge-command-feature-result-2026-11-02)
+maps the pre-commit validation to the reviewed commit. Route predicates and
+normalization remain in `server.go`; existing context, authentication, protocol,
+guards and claim/trace/result ordering are unchanged. This completes one HTTP
+feature boundary, not all HTTP capture work or CL-3.
 
 | Increment | Implemented commit | Tested evidence | Activated | Acceptance |
 | --- | --- | --- | --- | --- |
@@ -105,8 +113,9 @@ Sidecar backend increment, not completion of CL-6 extension responsibility work.
 | Reader cancellation validation detour | `edb246d` | [Combined receipt](../runtime/qa/split-reader-cancellation-20261101/validation.json): deterministic red-to-green regression; 300 stress passes; default 547 pass/38 skip, dev 1,220 pass/48 skip, zero failures; three profile contracts, four build-tag graphs and eight Windows artifacts | Not performed | Scoped correction/test review complete and committed; cancelled waiters retain context errors, new requests after close remain rejected; tombstone/replay/activation guards retained |
 | E01 executable-change preparation | `c303ed4` | [Initial extraction receipt](../runtime/qa/settings-executable-20261101/validation.json): 20 characterization results pass before/after extraction; exact helper/caller equivalence. Its native-pilot failures remain historical. [Review](../runtime/qa/settings-executable-review-20261101/review.json) verifies the unchanged payload against the latest combined passing evidence below | Not performed | Scoped review complete and committed; receiver, locks, trim-equal no-op, errors, active-provider ownership, pre-save discovery and post-save activation retained |
 | Offline Node startup timing validation detour | `8dc3f5e` | [Combined receipt](../runtime/qa/native-pilot-node-integration-20261101/validation.json): default 568 pass/38 skip, dev 1,241 pass/48 skip, zero failures; 98 Node tests; two independent 100-iteration integration batches; four build-tag graphs and eight Windows artifacts. Review verifies hashes, raw logs and staging pins | Not performed | Scoped fixture/test correction reviewed and committed; real bounded scheduling intervals, original monotonic clock, protocol, timestamps, document/freshness/deadline guards retained. This is fixture stabilization, not universal clock synchronization or live-provider acceptance |
-| CL-3.2 diagnostics export feature | `1068e35` | [Receipt](../runtime/qa/diagnostics-export-20261101/validation.json): identical characterization tests pass 17 results before and after the move; latest default 585 pass/38 skip, dev 1,258 pass/48 skip, zero failures; four build-tag graphs and eight Windows artifacts. [Review](../runtime/qa/diagnostics-export-review-20261101/review.json) verifies source equivalence, raw logs and artifact hashes | Not performed | Scoped source/test review complete and committed; `DiagnosticsExport` and nine helpers relocated unchanged, Engine receiver and Store/read/error/output/protocol/guard contracts preserved. Default-range zero usage remains existing behavior; no operational acceptance claim |
-| CL-3.2 Bridge status/compatibility feature | `7b2d0d8` | [Receipt](../runtime/qa/bridge-status-20261101/validation.json): identical characterization passes 38 results before/after relocation; latest default 623 pass/38 skip, dev 1,296 pass/48 skip, zero failures; four build-tag graphs and eight Windows artifacts. [Review](../runtime/qa/bridge-status-review-20261101/review.json) checks source/log/artifact hashes, existing protocol/guard regressions and identity-checker anchors | Not performed | Scoped source/test review complete and committed; nine functions/two types relocated unchanged; constants, `expectedBridgeActions`, `e.mu`, heartbeat/revocation/recovery/reload/scheduler ordering retained. No protocol, authority, freshness or operational acceptance change |
+| CL-3.2 diagnostics export feature | `1068e35` | [Receipt](../runtime/qa/diagnostics-export-20261101/validation.json): identical characterization tests pass 17 results before and after the move; recorded default 585 pass/38 skip, dev 1,258 pass/48 skip, zero failures; four build-tag graphs and eight Windows artifacts. [Review](../runtime/qa/diagnostics-export-review-20261101/review.json) verifies source equivalence, raw logs and artifact hashes | Not performed | Scoped source/test review complete and committed; `DiagnosticsExport` and nine helpers relocated unchanged, Engine receiver and Store/read/error/output/protocol/guard contracts preserved. Default-range zero usage remains existing behavior; no operational acceptance claim |
+| CL-3.2 Bridge status/compatibility feature | `7b2d0d8` | [Receipt](../runtime/qa/bridge-status-20261101/validation.json): identical characterization passes 38 results before/after relocation; recorded default 623 pass/38 skip, dev 1,296 pass/48 skip, zero failures; four build-tag graphs and eight Windows artifacts. [Review](../runtime/qa/bridge-status-review-20261101/review.json) checks source/log/artifact hashes, existing protocol/guard regressions and identity-checker anchors | Not performed | Scoped source/test review complete and committed; nine functions/two types relocated unchanged; constants, `expectedBridgeActions`, `e.mu`, heartbeat/revocation/recovery/reload/scheduler ordering retained. No protocol, authority, freshness or operational acceptance change |
+| CL-3.3 HTTP Bridge command feature | `7cb712b` | [Receipt](../runtime/qa/bridge-commands-20261102/validation.json): identical characterization passes 53 results before/after relocation; latest default 676 pass/38 skip, dev 1,349 pass/48 skip, zero failures; four HTTP build-tag graphs and 12 Windows amd64 artifacts (Engine tests, HTTP tests and application). [Review](../runtime/qa/bridge-commands-review-20261102/review.json) and [commit readback](../runtime/qa/bridge-commands-review-20261102/final-readback.json) verify source/log/artifact hashes and exact router/moved-body equivalence | Not performed | Scoped source/test review complete and committed; four Server methods extracted, existing route/context/authentication/protocol/guard/status/error/effect contracts retained. Native trace order checked structurally without starting a real OS observer; no live acceptance claim |
 
 Counts include subtests and repeated build-tag selections; do not add them as
 unique test cases. Receipts captured before commit may retain `committed:false`
@@ -117,21 +126,23 @@ raw receipts to make their historical fields look current.
 Remaining structural candidates are organized in the
 [cleanup roadmap](code-cleanup-roadmap.md#execution-stages-and-current-status)
 and grounded in [the structure audit](code-structure-audit.md):
-feature-level Timeline/frontend Settings extraction, deeper backend Settings
-decomposition, probe dispatch, HTTP capture-service boundaries and a broader
+feature-level Timeline/frontend Settings extraction, probe dispatch, remaining
+Engine/HTTP capture-service boundaries and a broader
 legacy/compatibility inventory. These are proposals,
 not authorization to implement or delete. Scheduler drain and further execution
-refactors have not been added to this completed slice.
+refactors have not been added to this completed slice. Further small backend
+Settings splitting remains deferred; keep the existing method cohesive.
 
-Next source-cleanup proposal: read-only analysis of the HTTP Bridge command
-handlers in `server.go` (next, pending, observation and failure) as one coherent
-protocol feature. Keep route predicates, request context, Bridge authentication,
-DTOs, status/error mappings and native-trace ordering unchanged. Engine/Store
-retain command admission, claim/result fencing and lifecycle ownership. Assess
-one module using the existing Server receiver; do not introduce a service layer
-or absorb heartbeat, surface events or media recapture routes. Identify missing
-characterization before requesting implementation approval. No further code or
-operational change is approved by this status update.
+Next source-cleanup proposal: read-only analysis of the three HTTP Bridge
+media-recapture handlers in `server.go` (claim, observation and failure). They
+adapt one existing recapture job/result workflow. Determine whether a coherent
+feature file is worthwhile and identify missing characterization for route/path,
+context, authentication/fence precedence, claim's 404/409/204/200 outcomes,
+POST result 400/200 mappings and rejection without mutation. Preserve Engine/Store
+ownership and existing side-effect order. Do not introduce a service layer or
+include UI recapture creation/status, heartbeat or surface events. Implementation
+requires separate approval after analysis; no code, testing, activation or trial
+is performed by this documentation synchronization.
 
 ## Product and installation roadmaps
 

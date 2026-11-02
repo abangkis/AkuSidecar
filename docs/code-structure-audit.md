@@ -1,9 +1,9 @@
 # Product source structure audit — 2026-10-25
 
-## Status synchronization (2026-11-01)
+## Status synchronization (2026-11-02)
 
 The original audit and its validation below are historical. Current source is
-reviewed through `7b2d0d8`, including Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
+reviewed through `7cb712b`, including HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
 for commit-to-receipt mappings. Cleanup is not provider qualification.
 
 | Increment | Implemented | Tested | Activated | Acceptance |
@@ -22,7 +22,8 @@ for commit-to-receipt mappings. Cleanup is not provider qualification.
 | Executable-change preparation | `c303ed4` | 20 characterization results pass before/after extraction; exact helper/caller equivalence. Initial native-pilot failures remain historical; latest combined evidence below passes | Not performed | Scoped helper/test review complete and committed; operation/work lock scopes, no-op and error contracts, discovery before persistence and activation before provider swap retained |
 | Offline Node startup timing detour | `8dc3f5e` | Recorded default 568 pass/38 skip, dev 1,241 pass/48 skip, zero failures; 98 Node tests, 200 repeated integration iterations, four build-tag graphs and eight Windows artifacts; [review](../runtime/qa/settings-executable-review-20261101/review.json) matches source/log/artifact and staging hashes | Not performed | Scoped fixture/test correction committed; original clock, timestamps, protocol, document, cancellation, freshness and deadline guards retained. This bounded fixture scheduling does not establish universal clock synchronization or live-source acceptance |
 | Diagnostics export feature | `1068e35` | Identical characterization passes 17 results before/after relocation; recorded default 585 pass/38 skip, dev 1,258 pass/48 skip, zero failures; four build-tag graphs and eight Windows artifacts; [review](../runtime/qa/diagnostics-export-review-20261101/review.json) verifies unchanged declarations/remainder and source/log/artifact hashes | Not performed | Scoped source/test review complete and committed; ten declarations moved together, receiver, Store ownership, read/error order, JSON/protocol/guard behavior retained; default-range zero usage remains existing behavior |
-| Bridge status/compatibility feature | `7b2d0d8` | Identical characterization passes 38 results before/after relocation; latest default 623 pass/38 skip, dev 1,296 pass/48 skip, zero failures; four build-tag graphs and eight Windows artifacts; [review](../runtime/qa/bridge-status-review-20261101/review.json) verifies source/log/artifact hashes and identity-checker anchors | Not performed | Scoped source/test review complete and committed; nine functions/two types moved unchanged; constants, action catalog, full read-lock scope, heartbeat pointer guard and revocation/recovery/reload/scheduler order retained. This is Sidecar CL-3.2, not extension CL-6 completion |
+| Bridge status/compatibility feature | `7b2d0d8` | Identical characterization passes 38 results before/after relocation; recorded default 623 pass/38 skip, dev 1,296 pass/48 skip, zero failures; four build-tag graphs and eight Windows artifacts; [review](../runtime/qa/bridge-status-review-20261101/review.json) verifies source/log/artifact hashes and identity-checker anchors | Not performed | Scoped source/test review complete and committed; nine functions/two types moved unchanged; constants, action catalog, full read-lock scope, heartbeat pointer guard and revocation/recovery/reload/scheduler order retained. This is Sidecar CL-3.2, not extension CL-6 completion |
+| HTTP Bridge command feature | `7cb712b` | Identical characterization passes 53 results before/after relocation; latest default 676 pass/38 skip, dev 1,349 pass/48 skip, zero failures; four HTTP build-tag graphs and 12 Windows artifacts; [review](../runtime/qa/bridge-commands-review-20261102/review.json) and [commit readback](../runtime/qa/bridge-commands-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped source/test review complete and committed; four Server methods in `bridge_commands.go`, with route predicates/normalization, context, authentication, protocol, guards, status/error mappings and native trace order retained. This closes one CL-3.3 feature boundary, not the whole stage |
 
 No code change, activation or trial is performed by this status update. Existing
 test receipts are reused at their verified source/artifact scope, not rerun.
@@ -87,9 +88,9 @@ at 3,123, the native probe driver at 2,439, and Bridge `service-worker.js` at
 2,524. These are historical measurements, not current counts: production
 factory/helper and Engine extractions have since changed the source layout.
 Size identifies review targets, not evidence that code is removable.
-Follow-up extraction should move complete
-features with their tests: Timeline rendering, Settings orchestration, then
-probe mode dispatch. Avoid moving all pages at once or hiding authority behind a
+Feature extraction should move complete responsibilities with their tests,
+such as Timeline rendering, frontend Settings orchestration or probe mode
+dispatch; the immediate proposal is recorded below. Avoid moving all pages at once or hiding authority behind a
 generic helper merely to reduce line count.
 
 The earlier fixture-factory coupling has been addressed by `29ec2b4` and
@@ -101,9 +102,13 @@ the remaining 98-line `SaveSettings` cohesive rather than adding another wrapper
 The complete diagnostics export feature now belongs to `diagnostics_export.go`;
 Bridge status/compatibility and its public types belong to `bridge_status.go`,
 with constants/actions and heartbeat/recovery/scheduler effects retained in
-Engine. Next analyze the HTTP Bridge command handlers as one protocol feature,
-preserving route/authentication/context/status/error behavior and Engine/Store
-authority. No new service layer is proposed. Other remaining
+Engine. Four HTTP Bridge command handlers now belong to `bridge_commands.go`,
+retaining routing and authority contracts. Next propose read-only analysis of
+Bridge media-recapture claim, observation and failure as one job/result feature;
+map its authentication/context/fences, distinct error/status outcomes, effect
+order and characterization needs before deciding on any extraction. Keep UI
+recapture creation/status, heartbeat and surface events outside that proposal.
+No new service layer is proposed. Other remaining
 candidates include feature-level Timeline/frontend Settings orchestration,
 probe mode dispatch, HTTP capture-service boundaries and broader legacy/consumer
 review. They require separate bounded analysis/approval, not a deletion list or
@@ -114,7 +119,7 @@ document-continuity reasons, not because the production factory is still in QA.
 ## Validation
 
 The following results belong to the original 2026-10-25 audit. Later cleanup
-validation is linked in the 2026-11-01 matrix and status index above.
+validation is linked in the 2026-11-02 matrix and status index above.
 
 - Full Store suite passed in default, development, fixture and combined builds.
 - All 226 frontend tests passed, including the new page registry regressions.
