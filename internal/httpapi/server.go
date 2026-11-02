@@ -1286,39 +1286,11 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		outcome = "ok"
 		return nil
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/ai-feedback"):
-		id := path.Base(strings.TrimSuffix(p, "/ai-feedback"))
-		var body domain.AIFeedbackInput
-		if err := readJSON(r, &body); err != nil {
-			return err
-		}
-		feedback, err := s.engine.AddAIFeedback(ctx, id, body)
-		if errors.Is(err, sql.ErrNoRows) {
-			return notFound("timeline item")
-		}
-		if err != nil {
-			return badRequest(err.Error())
-		}
-		return writeJSON(w, http.StatusCreated, map[string]any{"feedback": feedback})
+		return s.addAIFeedback(w, r, p)
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/ai-feedback"):
-		id := path.Base(strings.TrimSuffix(p, "/ai-feedback"))
-		feedback, err := s.engine.AIFeedbackHistory(ctx, id)
-		if errors.Is(err, sql.ErrNoRows) {
-			return notFound("timeline item")
-		}
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"feedback": feedback})
+		return s.aiFeedbackHistory(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/ai-feedback/") && strings.HasSuffix(p, "/undo"):
-		id := path.Base(strings.TrimSuffix(p, "/undo"))
-		feedback, err := s.engine.UndoAIFeedback(ctx, id)
-		if errors.Is(err, sql.ErrNoRows) {
-			return notFound("AI feedback")
-		}
-		if err != nil {
-			return badRequest(err.Error())
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"feedback": feedback})
+		return s.undoAIFeedback(w, r, p)
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/media-recaptures/"):
 		return s.mediaRecaptureStatus(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/recapture"):
