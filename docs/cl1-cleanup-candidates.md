@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status and CL-3.3 HTTP Bridge command features below.
+approved CL-3.2 diagnostics/Bridge status and CL-3.3 HTTP Bridge command/media-recapture features below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -443,10 +443,65 @@ No push, activation or live trial was performed. This 2026-11-02 documentation
 synchronization changes no code, reruns no product tests/builds and inspects no
 live runtime. It does not establish CL-6 extension or comprehensive CL-3 completion.
 
-Next proposal: read-only analysis of Bridge media-recapture claim, observation
-and failure in `server.go` as one existing job/result feature. Map callers/tests,
-authentication/context/fences, error/effect order and missing characterization;
-preserve Engine/Store authority and determine whether one feature file is useful.
-Claim currently distinguishes 404/409/204/200, while POST results retain 400/200.
-Do not include UI recapture creation/status, heartbeat or surface events. Further
-implementation requires separate approval; no extraction is approved here.
+At that checkpoint the next proposal was read-only analysis of the three HTTP
+Bridge media-recapture handlers. Analysis and a separately approved feature move
+are now complete; the result follows below. UI creation/status, heartbeat and
+surface-event routes were not included.
+
+## CL-3.3 HTTP Bridge media-recapture feature result (2026-11-02)
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| HTTP Bridge media-recapture feature | `be9fcd2`: claim, observation and failure moved to three Server methods in `internal/httpapi/bridge_media_recapture.go` | [Receipt](../runtime/qa/bridge-media-recapture-20261102/validation.json): identical characterization passes 54 results before/after relocation; default 730 pass/38 skip, dev 1,403 pass/48 skip, zero failures; four HTTP build-tag graphs and 12 Windows amd64 artifacts | Not performed | Scoped source/test review found no blocking issue; committed. Route/context/authentication/protocol/guards, status/error behavior and side-effect order preserved; CL-3 remains partial |
+
+The validation receipt identifies parent `cd0adb3` and the pre-commit worktree.
+Its three source hashes match the payload committed as
+`be9fcd296449e2b382c216cee1f55ac1a709487f`. The
+[review](../runtime/qa/bridge-media-recapture-review-20261102/review.json) verifies
+raw logs/artifacts and exact moved-body/router-remainder equivalence, including
+the other 1,363 tracked-file hashes. The
+[commit readback](../runtime/qa/bridge-media-recapture-review-20261102/final-readback.json)
+verifies committed blobs, parent, three-file scope and the clean tracked tree at
+commit. `.tmp/` and `experiments/` remain untouched. Passing tests were reused
+after matching inputs; historical validation receipts were not rewritten.
+
+Only three case bodies change in `server.go`; predicates, order and path
+normalization remain there, with normalized `p` forwarded to each method.
+Bodies remain identical except local `r.Context()` bindings. Contract, token and
+capture-instance checks still precede input/Engine calls. Claim retains ordered
+404/409/204/200 outcomes; POST Engine errors retain `badRequest(err.Error())`
+and successful results retain 200. JSON/cache headers and single-Decode behavior
+remain unchanged. Engine/Store locks, admission/fencing, persistence, provenance
+and deferred cleanup ordering are unchanged.
+
+Characterization covers authentication/fence precedence and rejection without
+job/evidence mutation; missing/available/repeated claims, exact Bridge-ID
+forwarding, wrong-collector/waiting-admission 204 responses; strict JSON/media
+type/reader limits; path/method/trailing-slash behavior; committed results before
+success response, durable evidence replacement without new Timeline items;
+queued/replayed observations, source/target mismatch, stale owner and cancellation.
+Failure intentionally accepts queued and claimed jobs, defaults only stage to
+`media_recapture` and preserves an empty code. Stale-owner claim intentionally
+can fail a job; not every rejected claim is read-only. These contracts were not
+changed to match command-handler behavior. Fixtures attach no real collector,
+account, provenance inspector or OS observer.
+
+The initial non-green characterization run is preserved in the receipt. Its
+source-mismatch fixture still carried a LinkedIn URL after changing source to X;
+the existing canonical-URL guard correctly rejected it before the Store source
+check. Correcting that fixture produced the passing baseline before extraction.
+Oversize cases also use known string fields to exercise the actual reader bound.
+No production fix or relaxed guard was needed. The 54 results include parent
+tests and subtests and are not a unique-case count.
+
+No push, activation or live trial was performed. This documentation update
+changes no code, reruns no tests/builds and inspects no live runtime. Neither
+comprehensive HTTP/Engine cleanup nor CL-6 extension acceptance is established.
+
+Next proposal: read-only analysis of Engine media-recapture orchestration in
+`engine.go` (queue, claim, result completion and admission helpers). Map callers,
+readiness/consent and owner/collector decisions, lock scopes, Store effects,
+cleanup/provenance order and missing characterization before selecting one
+feature boundary. Retain the Engine receiver and existing Store/Manager/
+Coordinator ownership. Passive enrichment, generic capture-runtime lifecycle and
+further HTTP handlers remain outside the candidate. No implementation approved.

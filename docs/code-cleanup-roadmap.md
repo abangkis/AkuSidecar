@@ -1,7 +1,7 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-02 (Asia/Jakarta), through Sidecar `7cb712b`.
+Status synchronized: 2026-11-02 (Asia/Jakarta), through Sidecar `be9fcd2`.
 Status: execution in progress; each bounded increment requires separate approval.
 No implementation, deletion, dependency upgrade, activation or trial is approved
 by creating this roadmap. Approve one concrete increment, implement it, verify
@@ -106,7 +106,7 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-0: inherited bounded cleanup | Eight increments above complete | Scoped receipts retained | Cleanup activation not recorded | Bounded code reviews complete; no whole-repository completion claim |
 | CL-1: consumer and compatibility inventory | [Entry/consumer map](cl1-consumer-inventory.md) and [32-boundary candidate ledger](cl1-cleanup-candidates.md) delivered | Read-only four-tag metadata, native/package/reference and source-preservation checks; no product test/build | Not applicable to an audit | Ready for review; external-consumer and offline Browser dependency limits explicit; no implementation approved |
 | CL-2: proven obsolete-code retirement | Earlier wrappers plus G10 `DeleteMemoryItem` removal committed with roadmap as `21ac9ad` | G10 exact remainder check, full Store/HTTP regressions and four-mode Windows compilation passed | Not performed for G10 | G10 reviewed/committed; comprehensive retirement remains scoped by the remaining ledger entries |
-| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Engine/HTTP/config/application suites: default 676 pass/38 skip, dev 1,349 pass/48 skip, zero failures; 53 HTTP command characterization results before/after relocation, four HTTP build-tag graphs and 12 Windows artifacts pass. Earlier Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Scoped changes reviewed/committed; HTTP command, diagnostics/Bridge status and E01 boundaries established; further Engine/HTTP boundaries pending. Provider-selection micro-extraction declined; keep Settings cohesive; CL-3 remains partial |
+| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b` and media recapture `be9fcd2`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Engine/HTTP/config/application suites: default 730 pass/38 skip, dev 1,403 pass/48 skip, zero failures; 54 HTTP media-recapture characterization results before/after relocation, four HTTP build-tag graphs and 12 Windows artifacts pass. Earlier command/Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Scoped changes reviewed/committed; HTTP command/media-recapture, diagnostics/Bridge status and E01 boundaries established; further Engine/HTTP boundaries pending. Provider-selection micro-extraction declined; keep Settings cohesive; CL-3 remains partial |
 | CL-4: frontend feature ownership | Existing navigation module retained; broader extraction proposed | Existing baseline only | Not recorded | Timeline/Settings/app orchestration pending |
 | CL-5: native runtime and QA boundaries | Factory/shared-helper separation complete; fixture-only timing correction `8dc3f5e` committed; deeper runtime split proposed | 98 Node tests, 200 offline integration iterations and dependency-pinned staging verified for this fixture correction; existing baseline only for remaining seams | Not performed for this correction | Bounded fixture acceptance only; remaining operation/transport/QA separation pending; no universal cross-runtime clock or real-provider qualification claim |
 | CL-6: Bridge responsibility boundaries | Existing source/lifecycle modules retained; further split proposed | Existing baseline only for remaining seams | No new rollout | Background dispatch/surface integration pending |
@@ -170,9 +170,11 @@ Do not delete a consumer merely to make the dependency scan appear clean.
   in `diagnostics_export.go` as `1068e35`; Bridge status's nine functions/two types
   follow in `bridge_status.go` as `7b2d0d8`, retaining constants, action catalog,
   lock scopes and heartbeat side effects. Both have characterization and passing
-  combined regressions/Windows compilation. Remaining command adaptation, observation
-  acceptance, source admission, enrichment and read-model boundaries still need
-  evidence. Keep the Engine facade and existing Store authority; do not repeat
+  combined regressions/Windows compilation. Next proposal: read-only analysis of
+  Engine media-recapture orchestration (queue, claim, result and admission helpers)
+  as one responsibility, following the completed HTTP adaptation. Remaining source
+  admission, observation acceptance, enrichment and read-model boundaries still
+  need evidence. Keep the Engine facade and existing Store authority; do not repeat
   completed lifecycle/session moves or split small blocks merely to reduce size.
 - **CL-3.3 HTTP capture:** separate request/response adaptation from application
   orchestration where a complete use case is identifiable. Preserve endpoint
@@ -181,8 +183,11 @@ Do not delete a consumer merely to make the dependency scan appear clean.
   to `bridge_commands.go` as `7cb712b`, with characterization before/after and
   passing regressions/Windows compilation. Router predicates, normalized path,
   context, authentication, protocol, guards and side-effect order are retained.
-  Next proposal: read-only analysis of the three Bridge media-recapture handlers
-  (claim, observation and failure) as one feature; no extraction is yet approved.
+  Media-recapture claim, observation and failure follow in `bridge_media_recapture.go`
+  as `be9fcd2`; 54 characterization results pass before/after, with combined
+  regressions and four-mode Windows compilation. Their distinct error mappings,
+  queued/claimed failure behavior and stale-claim side effect remain unchanged.
+  These are two scoped feature boundaries, not completion of CL-3.3.
 
 Exit: a reviewed responsibility map and separately validated extractions, with
 no second source of state, broader admission, new concurrency or wire changes.
@@ -390,16 +395,26 @@ and after; combined default/dev regressions and 12 Windows artifacts pass.
 Engine/Store retain admission, fencing and lifecycle ownership. No push,
 activation or live trial was performed for this increment.
 
-The next proposal is read-only analysis of the three HTTP Bridge media-recapture
-handlers in `server.go`: claim, observation and failure. They adapt one existing
-job/result workflow and are separate from the completed command feature. Map
-callers, tests, request context, authentication/fences and effect/error order;
-assess whether one feature file would give a useful responsibility boundary.
-In particular, retain claim's existing 404/409/204/200 outcomes and POST result
-400/200 mappings. Define missing characterization before requesting any
-implementation approval. Reuse the Server receiver and Engine/Store authority;
-do not add a service layer, widen guards, or include UI recapture creation/status,
-heartbeat or surface-event routes. This proposal is not an approved extraction.
+The three HTTP Bridge media-recapture handlers were then separately approved,
+characterized and moved to `bridge_media_recapture.go` as `be9fcd2`. See the
+[result](cl1-cleanup-candidates.md#cl-33-http-bridge-media-recapture-feature-result-2026-11-02),
+[validation](../runtime/qa/bridge-media-recapture-20261102/validation.json),
+[review](../runtime/qa/bridge-media-recapture-review-20261102/review.json) and
+[commit readback](../runtime/qa/bridge-media-recapture-review-20261102/final-readback.json).
+Only three router case bodies changed. The initial source-mismatch fixture was
+corrected before the passing baseline; no production guard was changed. Exact
+source/log/artifact hashes retain the passing evidence through commit. No push,
+activation or live trial was performed.
+
+The next proposal is read-only analysis of Engine media-recapture orchestration
+in `engine.go`: queue, claim, observation/failure completion and their admission
+helpers. HTTP adaptation now has its own feature file; the remaining Engine block
+combines readiness/consent checks, collector/owner selection, durable calls and
+cleanup/provenance ordering. Map callers, lock scopes, error/effect contracts and
+existing tests before selecting one useful extraction. Retain the Engine receiver
+and Store/Manager/Coordinator authority. Keep passive media enrichment, generic
+capture-runtime lifecycle and further HTTP routes outside the candidate. No new
+owner, lock redesign, protocol/guard change or implementation is approved here.
 
 No calendar estimate or cleanup percentage is assigned: this bounded inventory
 does not establish a complete repository-wide denominator or close every
