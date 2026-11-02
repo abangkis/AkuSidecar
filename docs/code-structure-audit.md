@@ -3,7 +3,7 @@
 ## Status synchronization (2026-11-02)
 
 The original audit and its validation below are historical. Current source is
-reviewed through `b84a62d`, including Engine AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
+reviewed through `4bf0731`, including Engine session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
 for commit-to-receipt mappings. Cleanup is not provider qualification.
 
 | Increment | Implemented | Tested | Activated | Acceptance |
@@ -29,9 +29,45 @@ for commit-to-receipt mappings. Cleanup is not provider qualification.
 | Engine Bridge command feature | `3e13434` | Identical characterization passes 37 results in both default/dev before and after relocation; recorded default 801 pass/38 skip, dev 1,475 pass/48 skip, zero failures; four Engine build-tag graphs and 12 Windows artifacts; [review](../runtime/qa/engine-bridge-commands-review-20261102/review.json) and [commit readback](../runtime/qa/engine-bridge-commands-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped source/test review found no blocking issue; committed. Seven methods in Engine `bridge_commands.go` retain receiver, lock/context scopes, recovery and persistence/scheduling order, errors, protocol and guards. Shared normalization/validation, Store, capture runtime, heartbeat and scheduler unchanged; CL-3 remains partial |
 | Engine media-provenance feature | `8d7f7b6` | Identical characterization passes 24 results in both default/dev before/after relocation; six-package Inspector/Store/Engine/HTTP/config/application suites pass default 1,214/43 skip and dev 2,040/55 skip, zero failures; four Engine build-tag graphs and 12 Windows artifacts; [review](../runtime/qa/engine-media-provenance-review-20261102/review.json) and [commit readback](../runtime/qa/engine-media-provenance-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped source/test review found no blocking issue; committed. Five Engine methods in `media_provenance.go` retain receiver, locks, request/background contexts, queue/worker/result order, protocol and guards. Exactly two gofmt-only alignment changes remain in `engine.go`; Store, Inspector, worker algorithm and authority unchanged; CL-3 remains partial |
 | Engine AI-detection feature | `b84a62d` | Identical characterization passes 32 results in both default/dev before/after relocation; seven-package Detector/Inspector/Store/Engine/HTTP/config/application suites pass default 1,270/45 skip and dev 2,096/57 skip, zero failures; four Engine build-tag graphs and 12 Windows artifacts; [review](../runtime/qa/engine-ai-detection-review-20261102/review.json) and [commit readback](../runtime/qa/engine-ai-detection-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped source/test review found no blocking issue; committed. Five methods in `ai_detection.go` retain receiver, locks, request/background contexts, admission/profile/job/result order, errors, protocol, guards and AI/media-provenance cancellation. Only standalone setter alignment normalized; Engine remainder byte-identical; CL-3 remains partial |
+| Engine session-admission feature | `4bf0731` | Identical characterization passes 31 default/34 dev parent/subtest results before/after relocation; seven-package suites pass default 1,301/45 skip and dev 2,130/57 skip, zero failures; four Engine build-tag graphs and 12 Windows artifacts; [review](../runtime/qa/engine-session-admission-review-20261102/review.json) and [commit readback](../runtime/qa/engine-session-admission-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped source/test review found no blocking issue; committed. Three Engine methods and one error helper in `session_admission.go` retain signatures/bodies, caller/receiver ownership, lock/context/error/effect order, source/policy/lease behavior, protocol, guards and AI/provenance cancellation; Engine remainder byte-identical; CL-3 remains partial |
 
 No code change, activation or trial is performed by this status update. Existing
 test receipts are reused at their verified source/artifact scope, not rerun.
+
+## Current Engine responsibility map (2026-11-02)
+
+These are bounded implemented/tested/reviewed source changes. Earlier increments
+retain their own recorded validation scope; this map does not rerun or enlarge
+those receipts and does not imply activation, live-source acceptance or CL-3 closure.
+
+| Completed boundary | Current ownership | Relevant code commits |
+| --- | --- | --- |
+| Work and Engine lifecycle | [work state](../internal/engine/work_lifecycle.go) tracks active/pending/cancelled work; [Engine lifecycle](../internal/engine/engine_lifecycle.go) retains launch, cancellation, shutdown and idle/readiness orchestration under existing locks | `202ecbb` |
+| Scheduler lifecycle | [scheduler lifecycle](../internal/engine/scheduler_lifecycle.go) owns start-once, stop, wake and tick-loop mechanics; automatic policy remains separate | `056b53b` |
+| Session execution/finalization | [execution](../internal/engine/session_execution.go) owns process/advance/accepted-observation/resume orchestration; [finalization](../internal/engine/session_finalization.go) retains the caller-held schedule lock and effect/error order | `d897130`, `ae1a535` |
+| Settings execution | [save orchestration](../internal/engine/settings_execution.go), [profile merge](../internal/engine/settings_profiles.go) and [executable preparation](../internal/engine/settings_executable.go); candidate cleanup preserves error and provider ownership | `7d00d9c`, `02e063e`, `aea3867`, `c303ed4` |
+| Diagnostics/status | [diagnostics export](../internal/engine/diagnostics_export.go) and [Bridge status](../internal/engine/bridge_status.go) separate output/compatibility work; constants/action catalog and heartbeat effects remain anchored | `1068e35`, `7b2d0d8` |
+| Capture command/recapture use cases | [Bridge commands](../internal/engine/bridge_commands.go) and [media recapture](../internal/engine/media_recapture.go) own their orchestration while reusing Store/Manager and shared guards | `3e13434`, `c614512` |
+| Background provenance/AI enrichment | [media provenance](../internal/engine/media_provenance.go) and [AI detection](../internal/engine/ai_detection.go) retain worker contexts, durable result order and shared cancellation | `8d7f7b6`, `b84a62d` |
+| Session admission/creation | [admission](../internal/engine/session_admission.go) owns visible policy, source admission, lease acquisition/durable creation and handoff to scheduling | `4bf0731` |
+
+The Engine facade intentionally retains dependency/state ownership, `New`,
+locks, protocol constants/action anchors and suitable short delegations. The
+goal is clear responsibilities, not an empty `engine.go` or removal of every
+wrapper. The declined provider-selection micro-extraction remains declined.
+
+| Remaining review area | Current question and boundary |
+| --- | --- |
+| Shared observation normalization/validation | Next read-only proposal: map all consumers and error/evidence contracts of normalizeObservation, validateObservation and blockHasEvidence before choosing one feature extraction |
+| Reasoning/acquisition helpers | URL binding, reasoning/vision result validation, selected-item mapping, merging, continuation and completion decisions still need a coherent responsibility map; keep source-specific evidence and acquisition guards |
+| Process error and usage-limit recovery | Failure formatting/provider details, run failure advancement and Auto Update pause/restore are shared with execution/enrichment; evaluate as use cases before moving or adding wrappers |
+| Product correction/feedback/privacy/reset workflows | Selection correction, AI/semantic feedback, library removal/forgetting, reset and cleanup coordinate multiple domain effects; inspect one complete workflow at a time while retaining privacy/retention and operation locks |
+| Facade and adjacent runtime modules | Classify each remaining delegation as retain or useful boundary. Existing capture/daily/native modules are not automatically obsolete or complete; deeper runtime/QA work also belongs to CL-5, not wholesale Engine rewriting |
+
+CL-3 remains partial until its responsibility map and remaining boundary decisions
+are reviewed at their proper scope. Full packaging/consumer closure and final
+integration/source sign-off remain CL-7/CL-8 work; operational source qualification
+and activation have separate evidence gates. No cleanup percentage is asserted.
 
 ## Scope and method
 
@@ -119,12 +155,13 @@ remain unchanged. Five Engine media-provenance methods now belong to
 order, e.mu scopes, result persistence after cancellation and best-effort behavior.
 Five AI-detection methods now belong to `ai_detection.go`, preserving fast/deep
 candidate/profile/job/result orchestration, e.mu scopes, result contexts and
-global AI/media-provenance cancellation. Next propose read-only analysis of
-Engine session admission/creation: readiness/consent, source selection, guards,
-enrichment cancellation, capture lease ownership, durable session creation and
-initial scheduling. Map lock/context/error/effect order and characterization gaps
-before choosing one useful boundary; preserve operation release before schedule
-and existing Store/Manager authority. No implementation is approved here.
+global AI/media-provenance cancellation. Session admission now belongs to
+`session_admission.go`, retaining guard/source/lease/cancellation order, durable
+session behavior and operation release before scheduling. Next propose read-only
+analysis of shared observation normalization/validation and its ordinary Bridge,
+recapture and native/development consumers before choosing one useful boundary.
+Preserve evidence admission, canonical URL/context/attachment guards and error
+precedence; no implementation is approved here.
 No new service layer is proposed. Other remaining
 candidates include feature-level Timeline/frontend Settings orchestration,
 probe mode dispatch, HTTP capture-service boundaries and broader legacy/consumer

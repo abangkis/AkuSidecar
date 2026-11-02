@@ -1,17 +1,17 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-02 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `b84a62d` (Engine AI-detection separation, after media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
+Reviewed local source: AkuSidecar `4bf0731` (Engine session-admission separation, after AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
-The [latest recorded push receipt](../runtime/qa/engine-media-provenance-roadmap-sync-20261102/push-readback.json)
-verifies four Bridge-command/media-provenance code and roadmap commits through
-`222bcee` published to `origin/main`. The owner has authorized publication of
-the subsequent AI-detection code and roadmap commits, including this checkpoint,
-to `origin/main` at `https://github.com/abangkis/AkuSidecar.git`. The exact new
-remote SHA must be established by the post-push readback under
-`runtime/qa/engine-ai-detection-roadmap-sync-20261102/`; publication does not
-establish runtime activation or operational acceptance.
+The [latest recorded push receipt](../runtime/qa/engine-ai-detection-roadmap-sync-20261102/push-readback.json)
+verifies AI-detection code and roadmap commits through `105c427` published to
+`origin/main`. The owner has authorized publication of the subsequent session-
+admission code and roadmap commits, including this checkpoint, to `origin/main`
+at `https://github.com/abangkis/AkuSidecar.git`. The exact new remote SHA must be
+established by the post-push readback under
+`runtime/qa/engine-session-admission-roadmap-sync-20261102/`; publication does
+not establish runtime activation or operational acceptance.
 The Browser worktree contains pre-existing build/cache changes; those changes
 are outside this synchronization and are not evidence of a released tuple.
 
@@ -153,9 +153,19 @@ assessment order, usage-limit handling and media-provenance cancellation remain
 unchanged. Implemented/tested/scoped review are complete; activation and
 operational acceptance remain open. CL-3 is still partial.
 
-Next proposal: read-only analysis of Engine session admission/creation, including
-guard/lease ownership, durable-write and initial-scheduling boundaries. No further
-implementation is approved.
+CL-3.2 now separates session admission as `4bf0731` in `session_admission.go`.
+Its [result](cl1-cleanup-candidates.md#cl-32-engine-session-admission-feature-result-2026-11-02) maps the original receipt to reviewed committed blobs.
+Three Engine methods and one shared error helper move unchanged, with exact
+Engine remainder. Identical characterization passes 31 default/34 dev results
+before/after; seven-package regressions pass 1,301/2,130 results with 45/57 skips,
+zero failures, four build-tag graphs and 12 Windows artifacts. Lock/context/
+guard/error order, AI/provenance cancellation and durable ownership before
+operation release and scheduling remain unchanged. Implemented/tested/scoped
+review are complete; activation and operational acceptance remain open.
+
+Next proposal: read-only analysis of shared observation normalization/validation.
+The [Engine responsibility map](code-structure-audit.md#current-engine-responsibility-map-2026-11-02)
+records completed and remaining areas. No further implementation is approved.
 
 | Increment | Implemented commit | Tested evidence | Activated | Acceptance |
 | --- | --- | --- | --- | --- |

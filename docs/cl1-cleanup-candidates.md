@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection and CL-3.3 HTTP Bridge command/media-recapture features below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission and CL-3.3 HTTP Bridge command/media-recapture features below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -738,7 +738,7 @@ No runtime activation or trial is performed. Publication follows the documentati
 commit and is verified separately by the post-push readback. Implemented/tested/
 scoped review does not establish CL-3 closure or operational source acceptance.
 
-The next proposal is read-only analysis of Engine session admission/creation.
+At that checkpoint, the next proposal was read-only analysis of Engine session admission/creation.
 Map visible/automatic callers, readiness and consent, source selection, database/
 onboarding/calibration/recapture gates, enrichment cancellation, capture lease
 ownership, durable session creation and initial scheduling. Preserve operation/
@@ -747,3 +747,60 @@ cleanup and error/effect order, protocol and guards. Identify one useful feature
 boundary and characterization gaps before any extraction. Keep daily/native,
 Store/Manager authority and completed lifecycle/scheduler work unchanged; do not
 add drain or implement another refactor without separate approval.
+
+## CL-3.2 Engine session-admission feature result (2026-11-02)
+
+This separately approved increment extends CL-3.2 without changing the original
+CL-1 inventory counts or closing comprehensive backend cleanup.
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Engine session-admission feature | `4bf0731` | Identical characterization passes 31 default/34 dev parent/subtest results before/after relocation; seven-package suites pass default 1,301/45 skip and dev 2,130/57 skip, zero failures; four Engine build-tag graphs and 12 Windows artifacts; [review](../runtime/qa/engine-session-admission-review-20261102/review.json) and [commit readback](../runtime/qa/engine-session-admission-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped source/test review found no blocking issue; committed. Three Engine methods and one error helper in `session_admission.go` retain signatures/bodies, caller/receiver ownership, lock/context/error/effect order, source/policy/lease behavior, protocol, guards and AI/provenance cancellation; Engine remainder byte-identical; CL-3 remains partial |
+
+The [validation](../runtime/qa/engine-session-admission-20261102/validation.json) is the original pre-commit receipt at parent
+`105c427edeee71fbee6bc0eb023770a52a016d0e`. Its four source hashes match
+`4bf0731e1874130cbd9ee503cc50fbb00685cc4f`. The [review](../runtime/qa/engine-session-admission-review-20261102/review.json) verifies unchanged declarations and
+Engine remainder, six passing test logs, four build-tag graphs and 12 Windows
+artifact hashes. The other 1,374 tracked files match the implementation baseline.
+The [commit readback](../runtime/qa/engine-session-admission-review-20261102/final-readback.json) verifies parent, exact four-file scope and
+committed blobs; existing `.tmp/` and `experiments/` remain preserved.
+Passing tests/builds were reused at matching source/artifact hashes. Historical
+receipts were not rewritten as later runs.
+
+Declarations: `StartVisibleUpdate`, `grantedActiveSources`,
+`noGrantedActiveSourceError` and `startSession`. The first, second and fourth
+retain Engine receivers; the error factory remains a free helper. Automatic
+status/update and HTTP callers retain their signatures and context choices.
+Store creates and freezes durable policy/source plans; Manager retains lease
+authority. Shared scheduling, daily/source helpers, AI/provenance cancellation,
+Engine fields and protocol/guard implementations remain in their existing owners.
+
+Characterization covers visible user/onboarding versus prepared policy, guard
+precedence, browser/headless source intersection/order and saved-preference
+preservation, cancellation before lease/Store failure, lease release on Store
+write/readback error, retained durable session/lease after scheduling failure,
+operation release after durable ownership and before blocked scheduling, and
+request cancellation before admission or after durable creation. Development
+coverage uses the existing offline daily fixture to verify source append order,
+frozen browser/daily drivers and ready-but-unselected daily routing without
+changing saved settings. The 31/34 counts include parents/subtests; no live
+source/account/browser capture or new production hook is used.
+
+The initial source-selection fixture marked X not ready while still retaining
+inconsistent permission/script/grant fields. The strict Bridge contract rejected
+that heartbeat. The final fixture uses a consistent readiness/grant tuple before
+the passing baseline. No protocol, health, ownership or admission guard changed.
+No service/interface/state owner or new rollback/drain behavior was introduced.
+
+No activation or trial is performed. Publication follows the documentation commit
+and is verified separately by the post-push readback. Scoped review acceptance
+does not establish CL-3 closure or operational source acceptance.
+
+The next proposal is read-only analysis of shared observation normalization and
+validation in Engine: `normalizeObservation`, `validateObservation` and
+`blockHasEvidence`. Map ordinary Bridge, media-recapture and native/development
+consumers, error precedence, evidence-key derivation, canonical source URLs,
+direct-context/attachment/quoted-post rules and characterization gaps before
+choosing one useful feature boundary. Preserve all evidence admission guards,
+protocol and callers; do not add fallback acceptance or implement another
+extraction without separate approval.
