@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture features below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture features below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -1010,11 +1010,64 @@ activation, live-source qualification and operational acceptance remain open.
 CL-3 remains partial. The [code publication receipt](../runtime/qa/engine-capture-rounds-review-20261102/push-readback.json)
 establishes the code push; the subsequent documentation push is verified separately.
 
-The next proposal is read-only analysis of local acquisition decisions:
-`localStructuredFallbackCompletionReason`, `localAcquisitionCompletionReason`,
-`localXFollowUpReason` and the `localFrontierFinishesAcquisition` wrapper.
-Map source descriptors, candidate/quality/deadline/frontier predicates,
-model-planning fallback and receipt/error order before choosing one cohesive
-boundary and missing characterization. Keep shared coverage readers,
-continuation derivation, payload dispatch, protocol and guards unchanged.
-No further implementation, runtime change or trial is approved.
+At that checkpoint, the next proposal was read-only analysis of local acquisition
+decisions. It was separately approved and implemented; the result and next
+proposal are recorded below.
+
+## CL-3.2 Engine acquisition policy result (2026-11-02)
+
+The separately approved move is committed as `f16f11abdb42b65c1d1379603317f09d68540cec`.
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Engine local acquisition policy | `f16f11a` | Identical characterization passes 206 default/dev parent/subtest results before/after relocation; matching 13-package selection (12 tested, Bridge builder compile-only) passes default 1,911/48 skip and dev 2,755/60 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-acquisition-policy-20261102/validation.json), [review](../runtime/qa/engine-acquisition-policy-review-20261102/review.json) and [commit readback](../runtime/qa/engine-acquisition-policy-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Four free functions retain exact signatures/bodies/comments/reasons; Engine remainder, caller priority, scalar readers, continuation, source descriptors, Store authority, queue/receipt/error order, protocol and guards unchanged. CL-3 remains partial; operational acceptance remains open |
+
+The four declarations are `localFrontierFinishesAcquisition`,
+`localStructuredFallbackCompletionReason`, `localAcquisitionCompletionReason`
+and `localXFollowUpReason`. The move preserves signatures, bodies, the X
+ambiguity comment and all exact reason strings. Engine loses only that contiguous
+77-line block; existing imports, scalar readers and the rest of Engine are
+unchanged. Session execution, source descriptors, continuation derivation, payload
+builder, Store, locks, contexts, protocol and guards retain their existing owners.
+No interface, state owner, fallback policy or capture authority is added.
+
+Characterization was added before relocation; the final test bytes are identical
+before and after. The 206 results include parents/subtests, not 206 unique
+independent scenarios. They cover source/quality/deadline/frontier/candidate
+thresholds and priority, exact reasons, typed/missing/ambiguous telemetry, input
+immutability, raw wrapper versus eligible candidate counts, structured fallback,
+local/model/daily issuance gates and private run correlation. Disposable Store
+process tests retain queue-before-receipt durability, error prefixes, gated planning,
+round-two continuation and unchanged wire guard fields. Existing two-round yield
+and optional planner failure/cancellation regressions remain in the passing suites.
+
+An initial extra daily-gate fixture supplied its policy only in observation coverage;
+the unchanged Store predicate correctly required run coverage plus a private issuance
+record. The fixture was corrected before relocation. The failed log is retained as
+fixture setup evidence, not a product failure or a guard relaxation. Final default/dev
+characterization and complete regression runs pass with zero failures. Counts and
+source/log/artifact hashes are in the validation receipt.
+
+Thirteen packages are selected; 12 execute tests and collection/bridge compiles
+without test files. Default passes 1,911/48 skip; dev passes 2,755/60 skip. All
+four Windows amd64 build-tag graphs include acquisition_policy.go. Sixteen
+artifacts pass compile/hash/PE checks: Store, Engine and HTTP test binaries plus
+the application for default, dev, fixture and combined tags. Review rechecked
+matching evidence without rerunning product tests/builds, then verified exact
+committed blobs. Existing evidence is preserved unchanged.
+
+Implemented, tested and scoped source review accepted; activation, live-source
+qualification and operational acceptance remain open. CL-3 remains partial.
+The pre-existing config edit, .tmp/ and experiments/ are preserved and excluded
+from this code/documentation publication. Publication is recorded separately in
+`runtime/qa/engine-acquisition-policy-roadmap-sync-20261102/push-readback.json`;
+it does not activate a runtime.
+
+The next proposal is read-only analysis of vision-lane routing in Engine:
+`splitVisionLaneCandidates` and `visionEvaluationCoverage`. Map media-only
+candidate isolation, source predicates, snapshot/block ordering, input aliasing,
+coverage shape and the caller's enqueue/summary/receipt/evaluation order before
+choosing one cohesive boundary and missing characterization. Keep text-only
+reasoning admission, queue limits, Store authority, protocol and guards unchanged.
+This is an analysis proposal; no further implementation, runtime change or trial
+is approved.
