@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"errors"
-	"fmt"
 	"github.com/abangkis/AkuSidecar/internal/activationguard"
 	"strings"
 	"sync"
@@ -332,27 +331,6 @@ func (e *Engine) launch(runID string) {
 	e.launchProcess(runID, true)
 }
 
-func bindReasoningSourceURLs(observation domain.Observation, result *domain.ReasoningResult) {
-	permalinks := map[string]string{}
-	for _, snapshot := range observation.Snapshots {
-		for _, block := range snapshot.Blocks {
-			if canonical, ok := domain.CanonicalSourceURL(observation.Source, block.Permalink); ok {
-				permalinks[block.EvidenceKey] = canonical
-			}
-		}
-	}
-	for index := range result.Items {
-		item := &result.Items[index]
-		item.Source = observation.Source
-		item.SourceURL = permalinks[item.EvidenceKey]
-		if item.SourceURL == "" {
-			item.SourceURLKind = ""
-		} else {
-			item.SourceURLKind = "native_post"
-		}
-	}
-}
-
 func splitVisionLaneCandidates(observation domain.Observation) (domain.Observation, []domain.VisionEvaluationInput) {
 	result := observation
 	result.Snapshots = make([]domain.Snapshot, len(observation.Snapshots))
@@ -378,53 +356,6 @@ func visionEvaluationCoverage(value domain.InboxVisionEvaluation) map[string]any
 		"deferred": value.Deferred, "evaluating": value.Evaluating, "retrying": value.Retrying,
 		"ready": value.Ready, "failed": value.Failed,
 	}
-}
-
-func validateReasoning(observation domain.Observation, result domain.ReasoningResult) error {
-	keys := map[string]bool{}
-	for _, snapshot := range observation.Snapshots {
-		for _, block := range snapshot.Blocks {
-			keys[block.EvidenceKey] = true
-		}
-	}
-	assessed := map[string]bool{}
-	for _, value := range result.CandidateAssessments {
-		if !keys[value.EvidenceKey] {
-			return fmt.Errorf("assessment references unknown evidence %s", value.EvidenceKey)
-		}
-		if assessed[value.EvidenceKey] {
-			return fmt.Errorf("duplicate assessment %s", value.EvidenceKey)
-		}
-		assessed[value.EvidenceKey] = true
-	}
-	if len(assessed) != len(keys) {
-		return fmt.Errorf("reasoning assessed %d of %d candidates", len(assessed), len(keys))
-	}
-	for _, item := range result.Items {
-		if !keys[item.EvidenceKey] {
-			return fmt.Errorf("item references unknown evidence %s", item.EvidenceKey)
-		}
-	}
-	return nil
-}
-
-func selectedItems(run domain.Run, result domain.ReasoningResult, scored []store.ScoredAssessment, coverage map[string]any) []domain.TimelineItem {
-	itemsByKey := map[string]domain.ReasonedItem{}
-	for _, item := range result.Items {
-		itemsByKey[item.EvidenceKey] = item
-	}
-	var items []domain.TimelineItem
-	for _, value := range scored {
-		if !value.Selected {
-			continue
-		}
-		item, ok := itemsByKey[value.Assessment.EvidenceKey]
-		if !ok {
-			continue
-		}
-		items = append(items, domain.TimelineItem{ID: domain.NewID("timeline"), SessionID: run.SessionID, RunID: run.ID, Source: run.Source, EvidenceKey: item.EvidenceKey, Item: item, Assessment: value.Assessment, Coverage: coverage})
-	}
-	return items
 }
 
 func mergeObservations(values []domain.Observation) domain.Observation {
