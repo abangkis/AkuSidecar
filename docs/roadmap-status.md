@@ -1,15 +1,15 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-02 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `f16f11a` (Engine local acquisition policy, after capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
+Reviewed local source: AkuSidecar `25c3339` (Engine vision-lane routing/coverage, after local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
-The [commit readback](../runtime/qa/engine-acquisition-policy-review-20261102/final-readback.json) verifies the exact local acquisition-policy code commit.
-The owner has authorized publication of that code and this roadmap synchronization
-to `origin/main` at `https://github.com/abangkis/AkuSidecar.git`. The documentation
-commit and exact remote SHA are established separately by the readbacks under
-`runtime/qa/engine-acquisition-policy-roadmap-sync-20261102/`; publication does
-not establish runtime activation or operational acceptance.
+The [commit readback](../runtime/qa/engine-vision-lane-review-20261102/final-readback.json) verifies the exact vision-lane source commit, and the
+[code publication receipt](../runtime/qa/engine-vision-lane-review-20261102/push-readback.json) records its publication to `origin/main`. This later documentation
+synchronization changes no source, runtime, configuration or live acceptance.
+Its working-copy verification is under
+`runtime/qa/engine-vision-lane-roadmap-sync-20261102/`; this synchronization
+does not itself establish a documentation commit or publication.
 The Browser worktree contains pre-existing build/cache changes; those changes
 are outside this synchronization and are not evidence of a released tuple.
 
@@ -218,14 +218,27 @@ source/log/artifact evidence without new product tests/builds. Implemented,
 tested and scoped review accepted; activation and operational acceptance remain
 open. CL-3 remains partial.
 
-The next proposal is read-only analysis of vision-lane routing in Engine:
-`splitVisionLaneCandidates` and `visionEvaluationCoverage`. Map media-only
-candidate isolation, source predicates, snapshot/block ordering, input aliasing,
-coverage shape and the caller's enqueue/summary/receipt/evaluation order before
-choosing one cohesive boundary and missing characterization. Keep text-only
-reasoning admission, queue limits, Store authority, protocol and guards unchanged.
-This is an analysis proposal; no further implementation, runtime change or trial
-is approved.
+The vision-lane feature is now committed/published as `25c3339` in
+`vision_lane.go`. See the [result](cl1-cleanup-candidates.md#cl-32-engine-vision-lane-result-2026-11-02), [validation](../runtime/qa/engine-vision-lane-20261102/validation.json), [review](../runtime/qa/engine-vision-lane-review-20261102/review.json), [commit readback](../runtime/qa/engine-vision-lane-review-20261102/final-readback.json) and [code publication receipt](../runtime/qa/engine-vision-lane-review-20261102/push-readback.json).
+Two free functions retain exact signatures and bodies; Engine loses only the
+contiguous 27-line block, with the remainder and session-execution caller unchanged.
+Identical characterization passes 83 default/dev parent/subtest results before and
+after relocation. Matching 13-package regressions (12 tested; Bridge builder
+compile-only) pass default 1,994/48 skip and dev 2,838/60 skip, zero failures.
+Four build-tag graphs and 16 Windows amd64 artifacts pass. This documentation sync
+reuses matching source/log/artifact evidence without new product tests/builds.
+Implemented, tested and scoped review accepted; activation and operational
+acceptance remain open. CL-3 remains partial.
+
+The next proposal is read-only analysis of the selection-correction workflow
+in Engine: `CorrectSelection` and `UndoSelectionCorrection`. Map active-session
+admission, durable correction/undo, semantic/knowledge/AI/provenance/topic effects,
+partial-error returns, best-effort logging and existing cancellation targets before
+choosing one cohesive boundary and missing characterization. Preserve the Engine
+receiver, `e.operation`/`e.mu` scopes, contexts, exact side-effect/error order,
+Store authority, protocol and guards. Retry of failed runs, passive media evidence,
+privacy/reset workflows and scalar-reader relocation remain outside that proposal.
+No further implementation, runtime change or trial is approved.
 The [Engine responsibility map](code-structure-audit.md#current-engine-responsibility-map-2026-11-02)
 records completed and remaining areas. No further implementation is approved.
 
@@ -257,6 +270,7 @@ records completed and remaining areas. No further implementation is approved.
 | CL-3.2 Engine reasoning-result acceptance and Timeline mapping | `eb05ac8` | Identical characterization passes 52 default/dev parent/subtest results before/after relocation; ten-package suites pass default 1,622/48 skip and dev 2,464/60 skip, zero failures; four build-tag graphs and 12 Windows amd64 artifacts; [validation](../runtime/qa/engine-reasoning-result-20261102/validation.json), [review](../runtime/qa/engine-reasoning-result-review-20261102/review.json) and [commit readback](../runtime/qa/engine-reasoning-result-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Three free helpers in reasoning_result.go retain exact signatures/bodies; Engine remainder identical except unused fmt import removal. Caller binding/validation/selection/completion order, error/coverage semantics, Store ownership, protocol and guards unchanged. CL-3 remains partial; operational acceptance remains open |
 | CL-3.2 Engine capture rounds and privacy-test validation detour | `683b1e8` | Capture-round characterization passes 59 default/dev results before/after relocation; privacy test passes 20 repetitions per build after deterministic legacy failure; fresh 13-package selection (12 tested, Bridge builder compile-only) passes default 1,705/48 skip and dev 2,549/60 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [final validation](../runtime/qa/store-tombstone-assertion-20261102/validation.json), [review](../runtime/qa/engine-capture-rounds-review-20261102/review.json) and [commit readback](../runtime/qa/engine-capture-rounds-review-20261102/final-readback.json) verify combined source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed/published. Eight free helpers and Engine remainder byte-identical; callers, telemetry/coverage/alias/reconciliation/continuation semantics, locks, contexts, protocol and guards retained. Exact independent HMAC test vectors replace the probabilistic assertion; production privacy behavior unchanged. CL-3 remains partial; operational acceptance remains open |
 | CL-3.2 Engine local acquisition policy | `f16f11a` | Identical characterization passes 206 default/dev parent/subtest results before/after relocation; matching 13-package selection (12 tested, Bridge builder compile-only) passes default 1,911/48 skip and dev 2,755/60 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-acquisition-policy-20261102/validation.json), [review](../runtime/qa/engine-acquisition-policy-review-20261102/review.json) and [commit readback](../runtime/qa/engine-acquisition-policy-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Four free functions retain exact signatures/bodies/comments/reasons; Engine remainder, caller priority, scalar readers, continuation, source descriptors, Store authority, queue/receipt/error order, protocol and guards unchanged. CL-3 remains partial; operational acceptance remains open |
+| CL-3.2 Engine vision-lane routing and coverage | `25c3339` | Identical characterization passes 83 default/dev parent/subtest results before/after relocation; matching 13-package selection (12 tested, Bridge builder compile-only) passes default 1,994/48 skip and dev 2,838/60 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-vision-lane-20261102/validation.json), [review](../runtime/qa/engine-vision-lane-review-20261102/review.json) and [commit readback](../runtime/qa/engine-vision-lane-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed/published. Two free functions retain exact signatures/bodies; Engine remainder, caller, source predicates, Coverage/nested aliasing, queue capacity, Store ownership, context/error/side-effect order, protocol and guards unchanged. Current manual_review availability is preserved. CL-3 remains partial; operational acceptance remains open |
 
 Counts include subtests and repeated build-tag selections; do not add them as
 unique test cases. Receipts captured before commit may retain `committed:false`
@@ -274,9 +288,9 @@ not authorization to implement or delete. Scheduler drain and further execution
 refactors have not been added to this completed slice. Further small backend
 Settings splitting remains deferred; keep the existing method cohesive.
 
-The current next source-cleanup proposal is vision-lane routing analysis above.
-Bridge command, observation, process-recovery, reasoning-result, capture-round
-and local acquisition-policy boundaries are implemented and reviewed; do not repeat those moves. This roadmap sync reuses
+The current next source-cleanup proposal is selection-correction/undo analysis above.
+Bridge command, observation, process-recovery, reasoning-result, capture-round,
+local acquisition-policy and vision-lane boundaries are implemented and reviewed; do not repeat those moves. This roadmap sync reuses
 matching test/build evidence and changes no runtime or configuration.
 
 ## Product and installation roadmaps

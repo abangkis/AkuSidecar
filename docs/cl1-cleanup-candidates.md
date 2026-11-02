@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture features below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture features below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -1063,11 +1063,64 @@ from this code/documentation publication. Publication is recorded separately in
 `runtime/qa/engine-acquisition-policy-roadmap-sync-20261102/push-readback.json`;
 it does not activate a runtime.
 
-The next proposal is read-only analysis of vision-lane routing in Engine:
-`splitVisionLaneCandidates` and `visionEvaluationCoverage`. Map media-only
-candidate isolation, source predicates, snapshot/block ordering, input aliasing,
-coverage shape and the caller's enqueue/summary/receipt/evaluation order before
-choosing one cohesive boundary and missing characterization. Keep text-only
-reasoning admission, queue limits, Store authority, protocol and guards unchanged.
-This is an analysis proposal; no further implementation, runtime change or trial
-is approved.
+At that checkpoint, the next proposal was read-only analysis of vision-lane
+routing. It was separately approved and implemented; the result and next
+proposal are recorded below.
+
+## CL-3.2 Engine vision lane result (2026-11-02)
+
+The separately approved move is committed/published as `25c33394804c3582b19117c7857ab5db49a95459`.
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Engine vision-lane routing and coverage | `25c3339` | Identical characterization passes 83 default/dev parent/subtest results before/after relocation; matching 13-package selection (12 tested, Bridge builder compile-only) passes default 1,994/48 skip and dev 2,838/60 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-vision-lane-20261102/validation.json), [review](../runtime/qa/engine-vision-lane-review-20261102/review.json) and [commit readback](../runtime/qa/engine-vision-lane-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed/published. Two free functions retain exact signatures/bodies; Engine remainder, caller, source predicates, Coverage/nested aliasing, queue capacity, Store ownership, context/error/side-effect order, protocol and guards unchanged. Current manual_review availability is preserved. CL-3 remains partial; operational acceptance remains open |
+
+`splitVisionLaneCandidates` and `visionEvaluationCoverage` now belong to
+`internal/engine/vision_lane.go`. Both remain free functions with exact signatures
+and bodies. Engine loses only their contiguous 27-line block; the remainder,
+imports and session-execution caller are unchanged. Domain policy/URL validation,
+source descriptors, Store queue/summary, locks, contexts, protocol and guards
+retain their existing owners. No new interface, state owner, worker or authority
+is added.
+
+Characterization was added before relocation and the final test bytes are identical
+before/after. The 83 results include parents/subtests, not 83 unique independent
+scenarios. Coverage includes Instagram versus other/unknown sources, authored
+text/whitespace, trusted and hostile media/poster URLs, duplicate/raw evidence
+keys, snapshot/block ordering, metadata and nil/empty shapes. Outer slices are
+new; Coverage and nested data retain their shallow aliases. This is required by
+the caller's receipt write before assigning the split observation. The coverage
+mapper retains exactly 11 typed fields, includes zero values, omits Jobs and
+allocates a fresh map on each call.
+
+Disposable Store process tests verify media-only provider isolation and an empty
+Timeline result, mixed/text-only provider inputs, durable queue/receipt before
+planning/evaluation, queue capacity eight with deferred overflow, and enqueue/receipt
+error prefixes with existing persistence order. Current Store summary policy remains
+manual_review with Available=false and the existing no-image-to-AI availability
+message. The move does not activate image inference or qualify a live provider.
+
+Matching full regressions pass default 1,994/48 skip and dev 2,838/60 skip, zero
+failures. Thirteen packages are selected: 12 execute tests and collection/bridge
+compiles without test files. All four Windows amd64 build-tag graphs include
+vision_lane.go, and 16 artifacts pass compile/hash/PE checks: Store, Engine and
+HTTP test binaries plus the application per mode. The validation/review/commit
+receipts map these results to the exact source and committed blobs. The
+[code publication receipt](../runtime/qa/engine-vision-lane-review-20261102/push-readback.json) records matching local/tracking/remote SHAs.
+
+This documentation sync reuses matching source/log/artifact evidence without new
+product tests/builds. Existing evidence, the pre-existing config edit, .tmp/ and
+experiments/ are preserved. Implemented, tested and scoped review accepted;
+activation, live-source qualification and operational acceptance remain open.
+CL-3 remains partial. The new documentation working-copy sync is verified
+separately and is not itself a documentation commit or push.
+
+The next proposal is read-only analysis of the selection-correction workflow
+in Engine: `CorrectSelection` and `UndoSelectionCorrection`. Map active-session
+admission, durable correction/undo, semantic/knowledge/AI/provenance/topic effects,
+partial-error returns, best-effort logging and existing cancellation targets before
+choosing one cohesive boundary and missing characterization. Preserve the Engine
+receiver, `e.operation`/`e.mu` scopes, contexts, exact side-effect/error order,
+Store authority, protocol and guards. Retry of failed runs, passive media evidence,
+privacy/reset workflows and scalar-reader relocation remain outside that proposal.
+No further implementation, runtime change or trial is approved.

@@ -3,7 +3,7 @@
 ## Status synchronization (2026-11-02)
 
 The original audit and its validation below are historical. Current source is
-reviewed through `f16f11a`, including Engine local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
+reviewed through `25c3339`, including Engine vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
 for commit-to-receipt mappings. Cleanup is not provider qualification.
 
 | Increment | Implemented | Tested | Activated | Acceptance |
@@ -35,6 +35,7 @@ for commit-to-receipt mappings. Cleanup is not provider qualification.
 | Engine reasoning-result acceptance and Timeline mapping | `eb05ac8` | Identical characterization passes 52 default/dev parent/subtest results before/after relocation; ten-package suites pass default 1,622/48 skip and dev 2,464/60 skip, zero failures; four build-tag graphs and 12 Windows amd64 artifacts; [validation](../runtime/qa/engine-reasoning-result-20261102/validation.json), [review](../runtime/qa/engine-reasoning-result-review-20261102/review.json) and [commit readback](../runtime/qa/engine-reasoning-result-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Three free helpers in reasoning_result.go retain exact signatures/bodies; Engine remainder identical except unused fmt import removal. Caller binding/validation/selection/completion order, error/coverage semantics, Store ownership, protocol and guards unchanged. CL-3 remains partial; operational acceptance remains open |
 | Engine capture rounds and privacy-test validation detour | `683b1e8` | Capture-round characterization passes 59 default/dev results before/after relocation; privacy test passes 20 repetitions per build after deterministic legacy failure; fresh 13-package selection (12 tested, Bridge builder compile-only) passes default 1,705/48 skip and dev 2,549/60 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [final validation](../runtime/qa/store-tombstone-assertion-20261102/validation.json), [review](../runtime/qa/engine-capture-rounds-review-20261102/review.json) and [commit readback](../runtime/qa/engine-capture-rounds-review-20261102/final-readback.json) verify combined source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed/published. Eight free helpers and Engine remainder byte-identical; callers, telemetry/coverage/alias/reconciliation/continuation semantics, locks, contexts, protocol and guards retained. Exact independent HMAC test vectors replace the probabilistic assertion; production privacy behavior unchanged. CL-3 remains partial; operational acceptance remains open |
 | Engine local acquisition policy | `f16f11a` | Identical characterization passes 206 default/dev parent/subtest results before/after relocation; matching 13-package selection (12 tested, Bridge builder compile-only) passes default 1,911/48 skip and dev 2,755/60 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-acquisition-policy-20261102/validation.json), [review](../runtime/qa/engine-acquisition-policy-review-20261102/review.json) and [commit readback](../runtime/qa/engine-acquisition-policy-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Four free functions retain exact signatures/bodies/comments/reasons; Engine remainder, caller priority, scalar readers, continuation, source descriptors, Store authority, queue/receipt/error order, protocol and guards unchanged. CL-3 remains partial; operational acceptance remains open |
+| Engine vision-lane routing and coverage | `25c3339` | Identical characterization passes 83 default/dev parent/subtest results before/after relocation; matching 13-package selection (12 tested, Bridge builder compile-only) passes default 1,994/48 skip and dev 2,838/60 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-vision-lane-20261102/validation.json), [review](../runtime/qa/engine-vision-lane-review-20261102/review.json) and [commit readback](../runtime/qa/engine-vision-lane-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed/published. Two free functions retain exact signatures/bodies; Engine remainder, caller, source predicates, Coverage/nested aliasing, queue capacity, Store ownership, context/error/side-effect order, protocol and guards unchanged. Current manual_review availability is preserved. CL-3 remains partial; operational acceptance remains open |
 
 No code change, activation or trial is performed by this status update. Existing
 test receipts are reused at their verified source/artifact scope, not rerun.
@@ -60,6 +61,7 @@ those receipts and does not imply activation, live-source acceptance or CL-3 clo
 | Reasoning-result acceptance and Timeline mapping | [reasoning result](../internal/engine/reasoning_result.go) owns captured URL binding, assessment/evidence validation and selected item mapping; process keeps selection/effect order, Store assigns persistence fields and guards remain unchanged | `eb05ac8` |
 | Observation rounds and capture continuation | [capture rounds](../internal/engine/capture_rounds.go) owns accumulated evidence, latest-round/durable coverage, yield and continuation derivation; source descriptors, reconciliation, caller decisions and payload/Store guards remain unchanged | `683b1e8` |
 | Local acquisition decisions | [acquisition policy](../internal/engine/acquisition_policy.go) owns structured-fallback/local-frontier completion, guarded X follow-up and the frontier wrapper; caller priority/effects, scalar readers, descriptors, continuation, Store and guards remain unchanged | `f16f11a` |
+| Vision-lane candidate routing and coverage | [vision lane](../internal/engine/vision_lane.go) owns media-only candidate separation and exact summary coverage; source predicates, shallow aliases, bounded Store queue, manual_review availability and caller effects remain unchanged | `25c3339` |
 
 The Engine facade intentionally retains dependency/state ownership, `New`,
 locks, protocol constants/action anchors and suitable short delegations. The
@@ -68,8 +70,8 @@ wrapper. The declined provider-selection micro-extraction remains declined.
 
 | Remaining review area | Current question and boundary |
 | --- | --- |
-| Vision routing and shared coverage readers | Next read-only proposal: inspect `splitVisionLaneCandidates` and `visionEvaluationCoverage` as one possible vision-lane boundary, retaining media-only/text isolation, ordering/aliasing, exact coverage and enqueue/receipt/evaluation order. Classify typed coverage readers separately; no extraction approved |
-| Product correction/feedback/privacy/reset workflows | Selection correction, AI/semantic feedback, library removal/forgetting, reset and cleanup coordinate multiple domain effects; inspect one complete workflow at a time while retaining privacy/retention and operation locks |
+| Typed coverage readers | Retain the existing three scalar readers for now. Production consumers are in acquisition_policy.go; relocating them merely to shorten Engine is not the next priority and is not approved |
+| Product correction/feedback/privacy/reset workflows | Next read-only proposal: map CorrectSelection and UndoSelectionCorrection as one correction/undo workflow, preserving operation/mu locks, Store writes, enrichment, partial errors and exact cancellation scope. AI/semantic feedback, library removal/forgetting and reset/cleanup remain separate review areas |
 | Facade and adjacent runtime modules | Classify each remaining delegation as retain or useful boundary. Existing capture/daily/native modules are not automatically obsolete or complete; deeper runtime/QA work also belongs to CL-5, not wholesale Engine rewriting |
 
 CL-3 remains partial until its responsibility map and remaining boundary decisions
@@ -180,8 +182,12 @@ fresh full default/dev runs and 16 Windows artifacts verify the combined payload
 Local acquisition decisions now belong to `acquisition_policy.go` as `f16f11a`: four
 free functions retain exact signatures, bodies, comments and reasons; source
 predicates, bounded follow-up, model fallback, protocol, guards and caller ownership
-remain unchanged. Next propose read-only analysis of vision-lane routing/coverage,
-retaining media-only/text isolation, queue limits and enqueue/receipt/evaluation order.
+remain unchanged. Vision-lane routing/coverage now belongs to `vision_lane.go`
+as `25c3339`, preserving exact helper bodies, Coverage/nested aliases, source
+predicates, queue/receipt/evaluation order and existing manual_review availability.
+Next propose read-only analysis of CorrectSelection and UndoSelectionCorrection,
+retaining operation/mu locks, contexts, durable/enrichment/error order and existing
+cancellation targets. The scalar readers remain in place for now.
 No further implementation is approved here.
 No new service layer is proposed. Other remaining
 candidates include feature-level Timeline/frontend Settings orchestration,
