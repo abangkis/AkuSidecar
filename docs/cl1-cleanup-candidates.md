@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback/FullReset/Library removal/passive media evidence, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture features below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback/FullReset/Library removal/passive media evidence, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture/update-session features below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -1326,13 +1326,15 @@ testability or behavior problem justifies it. This completes the bounded
 central-file responsibility review, not the entire Engine package, CL-3.2 or
 CL-3. Adjacent runtime/HTTP and CL-5/CL-7/CL-8 retain separate scope and evidence.
 
-The next proposal is read-only analysis of HTTP update/session endpoints:
-POST /api/updates, GET /api/sessions/active, GET /api/sessions/{id} and
-POST /api/sessions/{id}/cancel. Map route precedence, request context,
-authentication/admission, Engine calls, status/error/JSON mapping and effect
-order before proposing one feature boundary and its characterization tests.
-Preserve protocol, guards and cancellation. No further code change, test/build,
-activation, configuration change or live trial is authorized by this checkpoint.
+The next proposal is read-only analysis of three HTTP media-recapture entry points:
+GET /api/media-recaptures/{id}, POST /api/timeline/{id}/recapture and
+POST /api/bridge/timeline/{id}/media-evidence. Map status projection, enqueue
+validation/defaults, passive evidence, UI versus Bridge authentication, route/context,
+error/status mapping and effect order before choosing one feature boundary and
+its characterization tests. Preserve protocol, guards, authority and cancellation.
+No further code change, test/build, activation, configuration change or live trial
+is authorized by this checkpoint. The three already-extracted Bridge recapture
+claim/observation/failure handlers remain in place.
 
 ## CL-3.2 Engine Library removal result (2026-11-02)
 
@@ -1369,13 +1371,15 @@ testability or behavior problem justifies it. This completes the bounded
 central-file responsibility review, not the entire Engine package, CL-3.2 or
 CL-3. Adjacent runtime/HTTP and CL-5/CL-7/CL-8 retain separate scope and evidence.
 
-The next proposal is read-only analysis of HTTP update/session endpoints:
-POST /api/updates, GET /api/sessions/active, GET /api/sessions/{id} and
-POST /api/sessions/{id}/cancel. Map route precedence, request context,
-authentication/admission, Engine calls, status/error/JSON mapping and effect
-order before proposing one feature boundary and its characterization tests.
-Preserve protocol, guards and cancellation. No further code change, test/build,
-activation, configuration change or live trial is authorized by this checkpoint.
+The next proposal is read-only analysis of three HTTP media-recapture entry points:
+GET /api/media-recaptures/{id}, POST /api/timeline/{id}/recapture and
+POST /api/bridge/timeline/{id}/media-evidence. Map status projection, enqueue
+validation/defaults, passive evidence, UI versus Bridge authentication, route/context,
+error/status mapping and effect order before choosing one feature boundary and
+its characterization tests. Preserve protocol, guards, authority and cancellation.
+No further code change, test/build, activation, configuration change or live trial
+is authorized by this checkpoint. The three already-extracted Bridge recapture
+claim/observation/failure handlers remain in place.
 
 ## CL-3.2 Engine passive media evidence result (2026-11-02)
 
@@ -1411,10 +1415,62 @@ testability or behavior problem justifies it. This completes the bounded
 central-file responsibility review, not the entire Engine package, CL-3.2 or
 CL-3. Adjacent runtime/HTTP and CL-5/CL-7/CL-8 retain separate scope and evidence.
 
-The next proposal is read-only analysis of HTTP update/session endpoints:
-POST /api/updates, GET /api/sessions/active, GET /api/sessions/{id} and
-POST /api/sessions/{id}/cancel. Map route precedence, request context,
-authentication/admission, Engine calls, status/error/JSON mapping and effect
-order before proposing one feature boundary and its characterization tests.
-Preserve protocol, guards and cancellation. No further code change, test/build,
-activation, configuration change or live trial is authorized by this checkpoint.
+The next proposal is read-only analysis of three HTTP media-recapture entry points:
+GET /api/media-recaptures/{id}, POST /api/timeline/{id}/recapture and
+POST /api/bridge/timeline/{id}/media-evidence. Map status projection, enqueue
+validation/defaults, passive evidence, UI versus Bridge authentication, route/context,
+error/status mapping and effect order before choosing one feature boundary and
+its characterization tests. Preserve protocol, guards, authority and cancellation.
+No further code change, test/build, activation, configuration change or live trial
+is authorized by this checkpoint. The three already-extracted Bridge recapture
+claim/observation/failure handlers remain in place.
+
+## CL-3.3 HTTP update and session result (2026-11-02)
+
+The approved HTTP update/session extraction is committed as `d32c06562fd30b8a20c9e781e886faacfc4a8711`.
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| HTTP update/session lifecycle | `d32c065` | Identical characterization passes 53 default/dev parent/subtest results before/after extraction; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,230/50 skip and dev 3,074/62 skip, zero failures; four HTTP build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/http-session-updates-20261102/validation.json), [review](../runtime/qa/http-session-updates-review-20261102/review.json) and [commit readback](../runtime/qa/http-session-updates-review-20261102/commit-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Four Server handlers preserve router predicates/order/normalization, request contexts, shared loopback/origin security and progress projection, raw start output, asymmetric errors and durable cancel/read/write order. Engine, Store, protocol, guards and cancellation unchanged. CL-3 remains partial; operational acceptance open |
+
+Four private Server methods now live in internal/httpapi/session_updates.go:
+startUpdate, activeSession, sessionDetail and cancelSession. The router replaces
+only four inline bodies with delegation, preserving predicates and their order;
+detail/cancel receive the already-normalized path. Body equivalence allows only
+one-level deindentation and method-local r.Context binding. Shared api/security,
+readJSON/writeJSON/error helpers and sessionProgressProjection remain in place;
+bootstrap still uses the projection. No Engine interface, new admission owner,
+Store transaction, protocol or guard is introduced.
+
+Characterization was added first and frozen identically before/after. It covers
+reserved active-path precedence, path.Base aliases and trailing slash behavior,
+method mismatch, nil active session, polling projection/nonmutation, full raw
+start output, MIME/unknown/type/trailing-JSON behavior, loopback/origin guards
+without Bridge-token requirements, epoch/cache headers and OPTIONS, caller
+cancellation before work/after decode, distinct 404/409/500 mappings, cancellation
+rollback, durable start/cancel followed by read error, and response-write failure
+without rollback. Local httptest requests and disposable real Engine/Store data
+need no live capture or native observer. Initial two fault fixtures were corrected
+to supply valid intent, preserving production validation; their failed attempt
+is retained separately from the final passing logs.
+
+Identical characterization passes 53 default/dev parent/subtest results before/after extraction; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,230/50 skip and dev 3,074/62 skip, zero failures; four HTTP build-tag graphs and 16 Windows amd64 artifacts. Counts include parent/subtest results and repeated tag selections,
+not unique independent cases. Source/log/artifact and committed-blob identities
+were checked during review. This sync reuses that evidence without product test/
+build reruns. Activation and operational acceptance remain open; CL-3 remains
+partial. Publication readbacks belong under runtime/qa/http-session-updates-roadmap-sync-20261102.
+
+The central Engine stopping checkpoint remains unchanged: 52 declarations retained,
+with no new central-file move proposed. The roadmap header and detailed index
+now agree on the reviewed source commit. This does not close all Engine/runtime,
+HTTP capture, CL-3 or integration/package/source-acceptance work.
+
+The next proposal is read-only analysis of three HTTP media-recapture entry points:
+GET /api/media-recaptures/{id}, POST /api/timeline/{id}/recapture and
+POST /api/bridge/timeline/{id}/media-evidence. Map status projection, enqueue
+validation/defaults, passive evidence, UI versus Bridge authentication, route/context,
+error/status mapping and effect order before choosing one feature boundary and
+its characterization tests. Preserve protocol, guards, authority and cancellation.
+No further code change, test/build, activation, configuration change or live trial
+is authorized by this checkpoint. The three already-extracted Bridge recapture
+claim/observation/failure handlers remain in place.

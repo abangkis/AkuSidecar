@@ -3,7 +3,7 @@
 ## Status synchronization (2026-11-02)
 
 The original audit and its validation below are historical. Current source is
-reviewed through `2bdc0f1`, including Engine passive media evidence, Library removal/Forget, FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
+reviewed through `d32c065`, including HTTP update/session lifecycle, Engine passive media evidence, Library removal/Forget, FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
 for commit-to-receipt mappings. Cleanup is not provider qualification.
 
 | Increment | Implemented | Tested | Activated | Acceptance |
@@ -41,6 +41,7 @@ for commit-to-receipt mappings. Cleanup is not provider qualification.
 | Engine FullReset orchestration | `da019dd` | Identical characterization passes 23 default/dev parent/subtest results before/after relocation; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,129/50 skip and dev 2,973/62 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-full-reset-20261102/validation.json), [review](../runtime/qa/engine-full-reset-review-20261102/review.json) and [commit/publication readback](../runtime/qa/engine-full-reset-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed and code published. One Engine method retains exact signature/body; operation/mu scopes, cancellation before admission/errors, default/provider resolution, candidate disposal, Store authority and post-commit capture/headless/swap order unchanged. CL-3 remains partial; operational acceptance remains open |
 | Engine Library removal/Forget workflow | `a19bf86` | Identical characterization passes 28 default/dev parent/subtest results before/after relocation; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,157/50 skip and dev 3,001/62 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-library-removal-20261102/validation.json), [review](../runtime/qa/engine-library-removal-review-20261102/review.json) and [commit/publication readback](../runtime/qa/engine-library-removal-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; code committed/published. Two exact Engine methods retain topic snapshot before Store mutation, sorted/background queue handoff, per-topic error logging/continuation, caller return/error/context semantics, absence of entry-level locks, Store privacy authority, protocol, guards and AI/provenance cancellation. CL-3 remains partial; operational acceptance remains open |
 | Engine passive X media evidence | `2bdc0f1` | Identical characterization passes 20 default/dev parent/subtest results before/after relocation; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,177/50 skip and dev 3,021/62 skip, zero failures; four build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/engine-passive-media-20261102/validation.json), [review](../runtime/qa/engine-passive-media-review-20261102/review.json) and [commit readback](../runtime/qa/engine-passive-media-review-20261102/commit-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Exact method moved to existing media_recapture.go with no import changes; development gate, operation lock, Store result/errors, conditional Timeline/provenance handoff, background contexts, unlock-before-terminal-cleanup order, protocol and guards retained. Central-file checkpoint retains 52 declarations; CL-3 remains partial and operational acceptance open |
+| HTTP update/session lifecycle | `d32c065` | Identical characterization passes 53 default/dev parent/subtest results before/after extraction; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,230/50 skip and dev 3,074/62 skip, zero failures; four HTTP build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/http-session-updates-20261102/validation.json), [review](../runtime/qa/http-session-updates-review-20261102/review.json) and [commit readback](../runtime/qa/http-session-updates-review-20261102/commit-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Four Server handlers preserve router predicates/order/normalization, request contexts, shared loopback/origin security and progress projection, raw start output, asymmetric errors and durable cancel/read/write order. Engine, Store, protocol, guards and cancellation unchanged. CL-3 remains partial; operational acceptance open |
 
 No code change, activation or trial is performed by this status update. Existing
 test receipts are reused at their verified source/artifact scope, not rerun.
@@ -301,10 +302,62 @@ Do not create onboarding/heartbeat/retry/cleanup files just to reduce line count
 The central-file map is now checkpointed; this alone does not complete
 adjacent Engine/runtime/HTTP work, CL-3.2, CL-3 or CL-5/CL-7/CL-8 acceptance.
 No remaining methods are classified as removable legacy code by this review.
-The next proposal is read-only analysis of HTTP update/session endpoints:
-POST /api/updates, GET /api/sessions/active, GET /api/sessions/{id} and
-POST /api/sessions/{id}/cancel. Map route precedence, request context,
-authentication/admission, Engine calls, status/error/JSON mapping and effect
-order before proposing one feature boundary and its characterization tests.
-Preserve protocol, guards and cancellation. No further code change, test/build,
-activation, configuration change or live trial is authorized by this checkpoint.
+The next proposal is read-only analysis of three HTTP media-recapture entry points:
+GET /api/media-recaptures/{id}, POST /api/timeline/{id}/recapture and
+POST /api/bridge/timeline/{id}/media-evidence. Map status projection, enqueue
+validation/defaults, passive evidence, UI versus Bridge authentication, route/context,
+error/status mapping and effect order before choosing one feature boundary and
+its characterization tests. Preserve protocol, guards, authority and cancellation.
+No further code change, test/build, activation, configuration change or live trial
+is authorized by this checkpoint. The three already-extracted Bridge recapture
+claim/observation/failure handlers remain in place.
+
+## HTTP update and session boundary (2026-11-02)
+
+The approved HTTP update/session extraction is committed as `d32c06562fd30b8a20c9e781e886faacfc4a8711`.
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| HTTP update/session lifecycle | `d32c065` | Identical characterization passes 53 default/dev parent/subtest results before/after extraction; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,230/50 skip and dev 3,074/62 skip, zero failures; four HTTP build-tag graphs and 16 Windows amd64 artifacts; [validation](../runtime/qa/http-session-updates-20261102/validation.json), [review](../runtime/qa/http-session-updates-review-20261102/review.json) and [commit readback](../runtime/qa/http-session-updates-review-20261102/commit-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Four Server handlers preserve router predicates/order/normalization, request contexts, shared loopback/origin security and progress projection, raw start output, asymmetric errors and durable cancel/read/write order. Engine, Store, protocol, guards and cancellation unchanged. CL-3 remains partial; operational acceptance open |
+
+Four private Server methods now live in internal/httpapi/session_updates.go:
+startUpdate, activeSession, sessionDetail and cancelSession. The router replaces
+only four inline bodies with delegation, preserving predicates and their order;
+detail/cancel receive the already-normalized path. Body equivalence allows only
+one-level deindentation and method-local r.Context binding. Shared api/security,
+readJSON/writeJSON/error helpers and sessionProgressProjection remain in place;
+bootstrap still uses the projection. No Engine interface, new admission owner,
+Store transaction, protocol or guard is introduced.
+
+Characterization was added first and frozen identically before/after. It covers
+reserved active-path precedence, path.Base aliases and trailing slash behavior,
+method mismatch, nil active session, polling projection/nonmutation, full raw
+start output, MIME/unknown/type/trailing-JSON behavior, loopback/origin guards
+without Bridge-token requirements, epoch/cache headers and OPTIONS, caller
+cancellation before work/after decode, distinct 404/409/500 mappings, cancellation
+rollback, durable start/cancel followed by read error, and response-write failure
+without rollback. Local httptest requests and disposable real Engine/Store data
+need no live capture or native observer. Initial two fault fixtures were corrected
+to supply valid intent, preserving production validation; their failed attempt
+is retained separately from the final passing logs.
+
+Identical characterization passes 53 default/dev parent/subtest results before/after extraction; matching 14-package selection (13 tested, Bridge builder compile-only) passes default 2,230/50 skip and dev 3,074/62 skip, zero failures; four HTTP build-tag graphs and 16 Windows amd64 artifacts. Counts include parent/subtest results and repeated tag selections,
+not unique independent cases. Source/log/artifact and committed-blob identities
+were checked during review. This sync reuses that evidence without product test/
+build reruns. Activation and operational acceptance remain open; CL-3 remains
+partial. Publication readbacks belong under runtime/qa/http-session-updates-roadmap-sync-20261102.
+
+The central Engine stopping checkpoint remains unchanged: 52 declarations retained,
+with no new central-file move proposed. The roadmap header and detailed index
+now agree on the reviewed source commit. This does not close all Engine/runtime,
+HTTP capture, CL-3 or integration/package/source-acceptance work.
+
+The next proposal is read-only analysis of three HTTP media-recapture entry points:
+GET /api/media-recaptures/{id}, POST /api/timeline/{id}/recapture and
+POST /api/bridge/timeline/{id}/media-evidence. Map status projection, enqueue
+validation/defaults, passive evidence, UI versus Bridge authentication, route/context,
+error/status mapping and effect order before choosing one feature boundary and
+its characterization tests. Preserve protocol, guards, authority and cancellation.
+No further code change, test/build, activation, configuration change or live trial
+is authorized by this checkpoint. The three already-extracted Bridge recapture
+claim/observation/failure handlers remain in place.
