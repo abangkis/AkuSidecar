@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts and CL-3.3 HTTP Bridge command/media-recapture features below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery and CL-3.3 HTTP Bridge command/media-recapture features below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -838,10 +838,69 @@ activation or live trial is performed. Scoped source review is accepted;
 operational source acceptance and CL-3 closure remain open. Publication is
 verified separately by the post-push readback.
 
-The next proposal is read-only analysis of process-error handling and usage-limit
-recovery in Engine. Map failure formatting, durable run failure, queued-run
-termination, Auto Update pause/restore and scheduler notification across
-execution, finalization and AI detection. Determine one cohesive boundary and
-missing characterization while preserving accepted-capture authority, caller
-contexts, error/effect order, protocol and guards. Do not move code or change
-recovery behavior before separate implementation approval.
+The process-recovery proposal was subsequently approved and implemented;
+the result and next proposal are recorded below.
+
+## CL-3.2 Engine process recovery result (2026-11-02)
+
+The separately approved move is committed as `5b39fa4fb340ac40a64245c05d42c086ba8eaff3`.
+Three Engine methods and four free helpers move unchanged to
+`internal/engine/process_recovery.go`. Signatures/bodies and the Engine
+remainder are byte-identical. Existing Engine imports, production callers,
+state ownership, protocol and guard implementations remain unchanged.
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Engine process-error and usage-limit recovery | `5b39fa4` | Identical characterization passes 53 default/dev parent/subtest results before/after relocation; nine-package suites pass default 1,564/48 skip and dev 2,406/60 skip, zero failures; four build-tag graphs and 12 Windows amd64 artifacts; [validation](../runtime/qa/engine-process-recovery-20261102/validation.json), [review](../runtime/qa/engine-process-recovery-review-20261102/review.json) and [commit readback](../runtime/qa/engine-process-recovery-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Seven declarations in process_recovery.go retain three Engine receivers, exact bodies and Engine remainder, locks, caller contexts, persistence/error/effect order, accepted-capture/queued-peer guards, protocol and nonblocking wake. CL-3 remains partial; operational acceptance remains open |
+
+The [validation](../runtime/qa/engine-process-recovery-20261102/validation.json), [review](../runtime/qa/engine-process-recovery-review-20261102/review.json) and [commit readback](../runtime/qa/engine-process-recovery-review-20261102/final-readback.json) map the original receipt at parent
+`535b5f60a21a6c6274571f61b9f23b2bf663ca7d` to the exact three committed blobs.
+Review rechecked six passing raw test logs, four build-tag graphs and 12 PE
+artifact hashes. The other 1,379 tracked files matched the implementation
+baseline. Passing tests/builds are reused at matching source/artifact hashes;
+historical receipts retain their original fields. Existing `.tmp/` and
+`experiments/` are preserved. This sync runs no new product tests or builds.
+
+Declarations: `boundedFailureMessage`, `boundedText`,
+`providerFailureDetails`, `Engine.failRunAfterProcessError`,
+`Engine.pauseAutoUpdateForUsageLimit`,
+`Engine.clearAutoUpdateUsageLimitAfterSuccessfulUserSession` and
+`modelUsageProvesCodexRestored`. Engine lifecycle, session finalization and
+AI detection retain their call sites, shutdown bypass, caller-held locks,
+background/request contexts and cleanup ownership. Manual confirmation remains
+in `auto_update.go` with its operation lock and active-session guard.
+
+Characterization passes 53 default/dev parent/subtest results before and after
+relocation with identical test bytes. It covers byte-bound messages, safe copied
+metadata, plain/typed/quota errors, reasoning/generic run failure, durable
+failure before pause before queued-peer failure before advancement, Store error
+returns and best-effort pause failure, immutable first pause and coalesced wake.
+Restore tests retain the caller-held schedule lock, session-policy gates,
+model-backed success, unrelated-provider acceptance, absent/local/failed usage,
+cross-category failures and Store read/clear errors. The proof helper retains
+its current semantics; it does not require a specific provider brand.
+
+Initial fixture errors used a nonexistent trigger constant, an unsupported run
+status and an undrained setup-heartbeat wake. Only test setup was corrected
+before the passing baseline; production guards were not changed. Tests use
+disposable databases and SQL-trigger fault injection without new production
+hooks. Existing Store, shutdown/resume, AI cancellation and development X/IG
+accepted-capture/queued-peer guard tests remain in the regression scope.
+
+Nine-package regression adds Reasoning to the preceding eight-package scope;
+default passes 1,564 results with 48 skips and dev passes 2,406 with 60 skips,
+zero failures. Counts include parent tests/subtests, not unique independent
+cases. Windows amd64 default/dev/fixture/combined builds retain Engine tests,
+HTTP tests and application artifacts. No real provider/account capture,
+configuration change, activation or live trial is performed. Scoped source
+review is accepted; CL-3 and operational source acceptance remain open.
+Publication is verified separately by the post-push readback.
+
+The next proposal is read-only analysis of reasoning-result acceptance and
+Timeline item mapping: `bindReasoningSourceURLs`, `validateReasoning` and
+`selectedItems`. Map native URL binding, evidence-key/assessment validation,
+selection ordering, coverage ownership and the handoff to `CompleteRun` before
+choosing one cohesive boundary and missing characterization. Keep preference/
+continuity selection, vision routing and acquisition decisions in their current
+owners. Preserve protocol, guards, contexts and effect/error order; no further
+implementation is approved.

@@ -1,17 +1,17 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-02 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `d9c3025` (Engine observation-contract separation, after session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
+Reviewed local source: AkuSidecar `5b39fa4` (Engine process-recovery separation, after observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
-The [latest prior push receipt](../runtime/qa/engine-session-admission-roadmap-sync-20261102/push-readback.json)
-verifies session-admission code and roadmap commits through `09da433` published
-to `origin/main`. The owner has authorized publication of the observation-
-contract code and this roadmap checkpoint to `origin/main` at
+The [latest prior push receipt](../runtime/qa/engine-observations-roadmap-sync-20261102/push-readback.json)
+verifies observation-contract code and roadmap commits through `535b5f6`
+published to `origin/main`. The owner has authorized publication of the
+process-recovery code and this roadmap checkpoint to `origin/main` at
 `https://github.com/abangkis/AkuSidecar.git`. The exact new remote SHA is
 established by the post-push readback under
-`runtime/qa/engine-observations-roadmap-sync-20261102/`; publication does not
-establish runtime activation or operational acceptance.
+`runtime/qa/engine-process-recovery-roadmap-sync-20261102/`; publication does
+not establish runtime activation or operational acceptance.
 The Browser worktree contains pre-existing build/cache changes; those changes
 are outside this synchronization and are not evidence of a released tuple.
 
@@ -172,13 +172,25 @@ artifacts pass. Domain is added to the preceding seven-package scope. Native
 decoding still rejects missing identity without normalization. Implemented,
 tested and scoped review accepted; activation and operational acceptance open.
 
-The next proposal is read-only analysis of process-error handling and usage-limit
-recovery in Engine. Map failure formatting, durable run failure, queued-run
-termination, Auto Update pause/restore and scheduler notification across
-execution, finalization and AI detection. Determine one cohesive boundary and
-missing characterization while preserving accepted-capture authority, caller
-contexts, error/effect order, protocol and guards. Do not move code or change
-recovery behavior before separate implementation approval.
+The process-error/usage-limit recovery feature was subsequently approved,
+characterized before relocation and committed as `5b39fa4` in
+`process_recovery.go`. See the [result](cl1-cleanup-candidates.md#cl-32-engine-process-recovery-result-2026-11-02)
+and [validation](../runtime/qa/engine-process-recovery-20261102/validation.json), [review](../runtime/qa/engine-process-recovery-review-20261102/review.json) and [commit readback](../runtime/qa/engine-process-recovery-review-20261102/final-readback.json). All seven declarations, three Engine receivers and the Engine
+remainder are identical; the three caller files remain unchanged.
+Characterization passes 53 results in both default/dev before/after; nine-package
+regressions pass 1,564/2,406 results with 48/60 skips and zero failures. Reasoning
+is added to the preceding eight-package scope. Four build-tag graphs and 12
+Windows artifacts pass. Implemented, tested and scoped review accepted;
+activation and operational acceptance remain open. CL-3 remains partial.
+
+The next proposal is read-only analysis of reasoning-result acceptance and
+Timeline item mapping: `bindReasoningSourceURLs`, `validateReasoning` and
+`selectedItems`. Map native URL binding, evidence-key/assessment validation,
+selection ordering, coverage ownership and the handoff to `CompleteRun` before
+choosing one cohesive boundary and missing characterization. Keep preference/
+continuity selection, vision routing and acquisition decisions in their current
+owners. Preserve protocol, guards, contexts and effect/error order; no further
+implementation is approved.
 The [Engine responsibility map](code-structure-audit.md#current-engine-responsibility-map-2026-11-02)
 records completed and remaining areas. No further implementation is approved.
 
@@ -206,6 +218,7 @@ records completed and remaining areas. No further implementation is approved.
 | CL-3.3 HTTP Bridge media-recapture feature | `be9fcd2` | [Receipt](../runtime/qa/bridge-media-recapture-20261102/validation.json): identical characterization passes 54 results before/after relocation; recorded default 730 pass/38 skip, dev 1,403 pass/48 skip, zero failures; four HTTP build-tag graphs and 12 Windows amd64 artifacts. [Review](../runtime/qa/bridge-media-recapture-review-20261102/review.json) and [commit readback](../runtime/qa/bridge-media-recapture-review-20261102/final-readback.json) verify the exact source, logs, artifacts and committed blobs | Not performed | Scoped source/test review complete and committed; three Server methods retain route/context/authentication/protocol/guard/status/error/effect contracts. Durable result precedes success response; queued/claimed failure acceptance and stale-claim failure side effect retained. No live acceptance claim |
 | CL-3.2 Engine media-recapture feature | `c614512` | [Receipt](../runtime/qa/engine-media-recapture-20261102/validation.json): identical characterization passes 34 default/35 dev results before/after relocation; latest default 764 pass/38 skip, dev 1,438 pass/48 skip, zero failures; four Engine build-tag graphs and 12 Windows amd64 artifacts. [Review](../runtime/qa/engine-media-recapture-review-20261102/review.json) and [commit readback](../runtime/qa/engine-media-recapture-review-20261102/final-readback.json) verify exact signatures/bodies, source/log/artifact hashes and committed blobs | Not performed | Scoped source/test review complete and committed; ten methods moved with Engine receiver, locks, context, error/effect ordering, protocol and guards retained. State ownership, capture pump, generic cleanup, Store and HTTP unchanged; no operational acceptance claim |
 | CL-3.2 Engine observation contracts | `d9c3025` | Identical characterization passes 61 default/74 dev parent/subtest results before/after relocation; eight-package suites pass default 1,409/45 skip and dev 2,251/57 skip, zero failures; four build-tag graphs and 12 Windows amd64 artifacts; [validation](../runtime/qa/engine-observations-20261102/validation.json), [review](../runtime/qa/engine-observations-review-20261102/review.json) and [commit readback](../runtime/qa/engine-observations-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Three free functions move unchanged into existing observations.go; reconciliation, five production callers, normalization/validation/error order, native identity rejection, protocol and guards retained. CL-3 remains partial; operational acceptance remains open |
+| CL-3.2 Engine process-error and usage-limit recovery | `5b39fa4` | Identical characterization passes 53 default/dev parent/subtest results before/after relocation; nine-package suites pass default 1,564/48 skip and dev 2,406/60 skip, zero failures; four build-tag graphs and 12 Windows amd64 artifacts; [validation](../runtime/qa/engine-process-recovery-20261102/validation.json), [review](../runtime/qa/engine-process-recovery-review-20261102/review.json) and [commit readback](../runtime/qa/engine-process-recovery-review-20261102/final-readback.json) verify source/log/artifact and committed-blob identity | Not performed | Scoped review found no blocking issue; committed. Seven declarations in process_recovery.go retain three Engine receivers, exact bodies and Engine remainder, locks, caller contexts, persistence/error/effect order, accepted-capture/queued-peer guards, protocol and nonblocking wake. CL-3 remains partial; operational acceptance remains open |
 
 Counts include subtests and repeated build-tag selections; do not add them as
 unique test cases. Receipts captured before commit may retain `committed:false`
@@ -223,9 +236,9 @@ not authorization to implement or delete. Scheduler drain and further execution
 refactors have not been added to this completed slice. Further small backend
 Settings splitting remains deferred; keep the existing method cohesive.
 
-The current next source-cleanup proposal is the process-error/usage-limit
-recovery analysis above. Bridge command and observation boundaries are already
-implemented and reviewed; do not repeat those moves. This roadmap sync reuses
+The current next source-cleanup proposal is reasoning-result acceptance and
+Timeline item mapping above. Bridge command, observation and process-recovery
+boundaries are implemented and reviewed; do not repeat those moves. This roadmap sync reuses
 matching test/build evidence and changes no runtime or configuration.
 
 ## Product and installation roadmaps
