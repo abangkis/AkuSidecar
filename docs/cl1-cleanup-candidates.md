@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status and CL-3.3 HTTP Bridge command/media-recapture features below.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture and CL-3.3 HTTP Bridge command/media-recapture features below.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -498,10 +498,67 @@ No push, activation or live trial was performed. This documentation update
 changes no code, reruns no tests/builds and inspects no live runtime. Neither
 comprehensive HTTP/Engine cleanup nor CL-6 extension acceptance is established.
 
-Next proposal: read-only analysis of Engine media-recapture orchestration in
-`engine.go` (queue, claim, result completion and admission helpers). Map callers,
-readiness/consent and owner/collector decisions, lock scopes, Store effects,
-cleanup/provenance order and missing characterization before selecting one
-feature boundary. Retain the Engine receiver and existing Store/Manager/
-Coordinator ownership. Passive enrichment, generic capture-runtime lifecycle and
-further HTTP handlers remain outside the candidate. No implementation approved.
+At that checkpoint, the next proposal was read-only analysis of Engine
+media-recapture orchestration. That analysis and a separately approved feature
+move are now complete; the result follows below. Generic capture-runtime,
+passive enrichment and HTTP responsibilities were not included in that move.
+
+## CL-3.2 Engine media-recapture feature result (2026-11-02)
+
+| Increment | Implemented | Tested | Activated | Acceptance |
+| --- | --- | --- | --- | --- |
+| Engine media-recapture feature | `c614512`: ten methods moved unchanged to `internal/engine/media_recapture.go`; receiver and callers retained | [Receipt](../runtime/qa/engine-media-recapture-20261102/validation.json): identical characterization passes 34 default/35 dev results before/after relocation; default 764 pass/38 skip, dev 1,438 pass/48 skip, zero failures; four Engine build-tag graphs and 12 Windows amd64 artifacts | Not performed | Scoped review found no blocking issue; committed. Receiver, locks, request/background contexts, error/effect order, protocol and guards retained; CL-3 remains partial |
+
+The validation receipt identifies parent `9d6bf20` and the pre-commit worktree.
+Its four source hashes match the payload committed as
+`c61451227ae014be3815a318d1a312cffc563894`. The
+[review](../runtime/qa/engine-media-recapture-review-20261102/review.json) verifies
+raw source/log/artifact hashes, all ten method signatures/bodies and the Engine
+remainder. The existing final CRLF in `engine.go` was normalized by gofmt; this
+is the only remainder difference. The other 1,365 tracked-file hashes match.
+The [commit readback](../runtime/qa/engine-media-recapture-review-20261102/final-readback.json)
+verifies committed blobs, parent, four-file scope and clean tracked tree at
+commit; `.tmp/` and `experiments/` were preserved. Passing suites were reused
+after matching inputs. Historical receipts were not rewritten as later runs.
+
+The feature includes queue/default-reason adaptation, driver/collector claim
+delegation, admitted Browser owner checking, observation acceptance, status
+reading and failure completion. `operation`, `e.mu`, `captureMu` and
+`captureBehaviorMu` scopes remain identical, including route release and
+unlock-before-cleanup defer order. Primary work retains request context;
+terminal cleanup retains its existing background context. Engine fields and
+Store/Manager/Coordinator state ownership do not move. Capture pumps, generic
+owner/collector/cleanup helpers, provenance implementation, HTTP and passive
+enrichment remain unchanged; no new service, wrapper or state owner was added.
+
+Characterization covers queue guard/error precedence, no added jobs/leases on
+rejection, Bridge/Quiet/headless/foreground selection, epoch/generation stamps,
+duplicate/Store failure lease disposal, persisted waiting jobs after collection
+hold rejection, durable result before provenance/cancellation, best-effort
+provenance failures, challenge-only X cancellation, request cancellation and
+background cleanup. Cleanup checks the admitted identity, behavior-lock release,
+pending receipt and lease retention until acknowledgement. The hold-rejection
+test uses only the existing `auth_session_dev` concurrent binding with fake
+processes; no production admission exception was added. The 34/35 results count
+parent tests and subtests, not unique cases. Existing hybrid/owner/photo/restart
+coverage remains in the combined suites.
+
+The initial non-green fixture receipt is preserved. A queue rejection fixture
+incorrectly assumed zero leases despite an already active session; its final
+assertion preserves the pre-call lease count. The fake inspector initially used
+unsupported `absent`; it now returns schema-supported `no_manifest`. Both fixture
+corrections preceded the passing baseline and required no production fix or
+relaxed guard. All new tests use disposable Store data and fake process/inspector
+boundaries without network capture.
+
+No push, activation or live trial was performed. This documentation update
+changes no code and reruns no product tests/builds. It does not close CL-3,
+extension CL-6 or operational source acceptance.
+
+Next proposal: read-only analysis of Engine Bridge command orchestration in
+`engine.go` (claim, pending, observation and failure). Map admission/fencing,
+Store effects, scheduling, lock/context scopes, error order and characterization
+gaps before selecting one extraction. Recovery is shared with heartbeat and
+scheduler; normalization/validation is shared with media recapture and native
+consumers. Preserve shared guards and Engine/Store/Manager authority; do not
+duplicate helpers or repeat completed lifecycle work. No implementation approved.
