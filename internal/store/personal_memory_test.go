@@ -302,6 +302,11 @@ func TestMemoryKeepReleaseFullCopyAndLogicalStorage(t *testing.T) {
 func TestMemoryDeleteClearsPrivacyAndLeavesOpaqueTombstone(t *testing.T) {
 	state := openTestStore(t)
 	ctx := context.Background()
+	// This valid keyed digest deliberately contains 1001, exposing substring false positives.
+	const tombstoneKey = "0702000000000000000000000000000000000000000000000000000000000000"
+	if _, err := state.db.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES('memory_tombstone_key_v1',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, tombstoneKey); err != nil {
+		t.Fatal(err)
+	}
 	item, err := state.CreateMemoryRecallStub(ctx, memoryStubInput())
 	if err != nil {
 		t.Fatal(err)
@@ -361,12 +366,34 @@ func TestMemoryDeleteClearsPrivacyAndLeavesOpaqueTombstone(t *testing.T) {
 	if strings.Contains(actionDetails, "https://") || strings.Contains(actionDetails, "private") {
 		t.Fatalf("action details retained private data=%q", actionDetails)
 	}
-	var rawAliasCount int
-	if err := state.db.QueryRow(`SELECT COUNT(*) FROM memory_tombstone_aliases WHERE alias_digest LIKE '%x.com%' OR alias_digest LIKE '%1001%'`).Scan(&rawAliasCount); err != nil {
+	// Independent HMAC-SHA256 vectors verify keyed, domain-separated digests rather than
+	// rejecting coincidental substrings in otherwise valid opaque hexadecimal values.
+	wantDigests := map[string]string{
+		"canonical_evidence_key": "62b5fe65e658da382b73b37e774f66b82cf4010011f33a6a78e4951b23087366",
+		"canonical_permalink":    "62a878b6bc9ff55a442cd745be0a932329a646b035a15554c630946bf754c6a9",
+		"content_fingerprint":    "a16d2cdad2e41c890e2f3c7585d4e4f1b8671f79a71103a6dab3ba964ff49c7b",
+	}
+	rows, err := state.db.Query(`SELECT alias_kind,alias_digest FROM memory_tombstone_aliases WHERE memory_item_id=?`, item.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if rawAliasCount != 0 {
-		t.Fatalf("tombstone aliases contain raw identity material: %d", rawAliasCount)
+	defer rows.Close()
+	for rows.Next() {
+		var kind, digest string
+		if err := rows.Scan(&kind, &digest); err != nil {
+			t.Fatal(err)
+		}
+		want, ok := wantDigests[kind]
+		if !ok || digest != want {
+			t.Fatalf("unexpected tombstone alias kind=%q digest=%q", kind, digest)
+		}
+		delete(wantDigests, kind)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(wantDigests) != 0 {
+		t.Fatalf("missing tombstone alias kinds: %v", wantDigests)
 	}
 }
 
