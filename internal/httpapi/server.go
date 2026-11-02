@@ -1324,46 +1324,13 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/recapture"):
 		return s.queueMediaRecapture(w, r, p)
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/event-suggestions"):
-		id := path.Base(strings.TrimSuffix(p, "/event-suggestions"))
-		limit := boundedInt(r.URL.Query().Get("limit"), 3, 1, 3)
-		suggestions, err := s.engine.SemanticEventSuggestions(ctx, id, limit)
-		if errors.Is(err, sql.ErrNoRows) {
-			return notFound("timeline item")
-		}
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"suggestions": suggestions})
+		return s.semanticEventSuggestions(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/event-correction"):
-		id := path.Base(strings.TrimSuffix(p, "/event-correction"))
-		var body struct {
-			Action        string `json:"action"`
-			TargetEventID string `json:"targetEventId"`
-			Relation      string `json:"relation"`
-		}
-		if err := readJSON(r, &body); err != nil {
-			return err
-		}
-		correction, err := s.engine.CorrectSemanticEvent(ctx, id, body.Action, body.TargetEventID, body.Relation)
-		if errors.Is(err, sql.ErrNoRows) {
-			return notFound("semantic event report")
-		}
-		if err != nil {
-			return badRequest(err.Error())
-		}
-		return writeJSON(w, http.StatusCreated, map[string]any{"correction": correction})
+		return s.correctSemanticEvent(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/bridge/timeline/") && strings.HasSuffix(p, "/media-evidence"):
 		return s.acceptPassiveMediaEvidence(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/event-corrections/") && strings.HasSuffix(p, "/undo"):
-		id := path.Base(strings.TrimSuffix(p, "/undo"))
-		correction, err := s.engine.UndoSemanticCorrection(ctx, id)
-		if errors.Is(err, sql.ErrNoRows) {
-			return notFound("event correction")
-		}
-		if err != nil {
-			return badRequest(err.Error())
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"correction": correction})
+		return s.undoSemanticCorrection(w, r, p)
 	case r.Method == http.MethodPost && p == "/api/bridge/heartbeat":
 		if err := s.requireBridge(r); err != nil {
 			return err
