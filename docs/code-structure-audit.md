@@ -3,7 +3,7 @@
 ## Status synchronization (2026-11-03)
 
 The original audit and its validation below are historical. Current source is
-reviewed through `a3718ff`, including AI-feedback HTTP adapters, semantic correction HTTP adapters, development X HTTP controls, capture telemetry rotation/shutdown compatibility, HTTP reload-action separation, capture-owner path normalization, HTTP bootstrap and the router responsibility map, HTTP media-recapture entry points, HTTP update/session lifecycle, Engine passive media evidence, Library removal/Forget, FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
+reviewed through `3f4a66d`, including Inbox selection-review HTTP adapters, AI-feedback HTTP adapters, semantic correction HTTP adapters, development X HTTP controls, capture telemetry rotation/shutdown compatibility, HTTP reload-action separation, capture-owner path normalization, HTTP bootstrap and the router responsibility map, HTTP media-recapture entry points, HTTP update/session lifecycle, Engine passive media evidence, Library removal/Forget, FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
 for commit-to-receipt mappings. Cleanup is not provider qualification.
 
 | Increment | Implemented | Tested | Activated | Acceptance |
@@ -675,12 +675,62 @@ Current router snapshot: 106 top-level arms, not endpoint count; 64 retained
 native/dev/telemetry and 37 product-domain arms). All 30 server.go declarations
 and 52 central Engine declarations remain retained. CL-3.3 and CL-3 remain partial.
 
+### Selection-review follow-up
+
+The proposed selection-review extraction is complete as `3f4a66d`; see the
+Inbox selection-review result below.
+
+## HTTP Inbox selection review result (2026-11-03)
+
+Three Server adapters are committed as `3f4a66d` in
+`internal/httpapi/selection_review.go`: correctSelection, reevaluateFailedRun
+and undoSelectionCorrection. Their 42 original body lines are unchanged except
+indentation and a local `ctx := r.Context()` binding. Router predicates, dispatch
+order and normalized path are unchanged; the router remainder is exact. Lock,
+transaction, worker and cancellation ownership remains in Engine/Store. No
+protocol or guard is changed, and no production test seam is introduced.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | `3f4a66d`, three Inbox selection-review HTTP adapters; tenth bounded HTTP extraction |
+| Tested | Identical characterization payload and pass selection: 82 default/dev parent/subtest results before and after. Matching 14-package regression selection: default 2,779 pass/50 skip; dev 3,623 pass/62 skip; zero failures. Four Windows amd64 tag combinations include the test and produce 16 artifacts |
+| Activated | Not performed for this increment |
+| Acceptance | Scoped source/test review accepted and code committed; whole-package, CL-3.3/CL-3 and operational acceptance remain open |
+
+The isolated SQLite/real-Engine fixture uses a gated fake provider. It covers
+201 correction/item, 202 run and 200 undo envelopes; header/field contracts;
+route/security/ID parsing; JSON validation before admission; untrimmed candidate
+lookup, duplicate fields and first-document decoding; ignored retry/undo bodies;
+active-session priority; cancellation/deadline/store/SQL failures; duplicate and
+repeated undo; safe replay guards; partial effects after commit and response-write
+failure. Retry reuses durable capture without planning or a new capture command,
+and its background context survives request cancellation. Existing Engine lock,
+effect-order and AI/media-provenance cancellation coverage remains unchanged.
+
+Review independently matched the baseline server to its committed source, verified
+the exact moved feature and router remainder, and checked source/test/helper,
+raw-log, tag-graph and all 16 PE/amd64 artifact identities. Passing evidence was
+reused without product test/build reruns for this review or publication. No new
+race-detector run, real provider/native/browser trial, activation or configuration
+change is claimed. Evidence:
+[validation](../runtime/qa/http-selection-review-20261103/validation.json),
+[extraction proof](../runtime/qa/http-selection-review-20261103/extraction-proof.json),
+[review](../runtime/qa/http-selection-review-review-20261103/review.json) and
+[commit/publication readback](../runtime/qa/http-selection-review-review-20261103/final-readback.json).
+Original receipt fields describe their capture time and remain unchanged.
+
+Current router snapshot: 106 top-level arms, not endpoint count; 67 retained
+(41 feature delegations and 26 thin/control/heartbeat arms) and 39 deferred
+(five native/dev/telemetry and 34 product-domain arms). All 30 server.go functions
+and 52 central Engine functions/methods remain retained. CL-3.3 and CL-3 remain
+partial. Deferred groups are not an automatic extraction queue.
+
 ### Proposed next cleanup analysis
 
-Read-only review of the three Inbox selection-review HTTP adapters: selection
-correction, failed-run re-evaluation and correction undo. Trace supported callers,
-run/candidate/ID parsing, admission/error mapping, durable effects and existing
-cancellation before selecting one cohesive extraction or retaining the current
-boundary. Specify characterization first; preserve Engine/Store ownership,
-protocol, guards, context and effect order. This proposal authorizes no
-implementation, activation, runtime/configuration change or trial.
+Read-only review of two Inbox read adapters: GET /api/inbox and GET
+/api/inbox/runs/{runId}/trace. Trace supported callers, pagination/stage defaults,
+normalization, output projection and error precedence before deciding whether
+one cohesive feature extraction is useful. Specify characterization first;
+preserve request context, Engine/Store ownership, protocol and guards. This is
+a proposal only: no further implementation, activation, runtime/configuration
+change or trial is authorized by this record.

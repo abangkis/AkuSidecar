@@ -1,15 +1,15 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-03 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `a3718ff` (AI-feedback HTTP adapters, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
+Reviewed local source: AkuSidecar `3f4a66d` (Inbox selection-review HTTP adapters, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
-The previous code/roadmap checkpoint was published as `3463074`, including
-semantic correction HTTP adapters `3c5e61a`. The owner has authorized publication
-of the AI-feedback HTTP extraction and this roadmap synchronization to
+The previous code/roadmap checkpoint was published as `68c36de`, including
+AI-feedback HTTP adapters `a3718ff`. The owner has authorized publication of the
+Inbox selection-review HTTP extraction and this roadmap synchronization to
 origin/main at https://github.com/abangkis/AkuSidecar.git. Validation and the
-later review/commit/publication readback are identified in the AI feedback result
-below; publication must be verified against the remote SHA.
+later review/commit/publication readback are identified in the Inbox selection-review
+result below; publication must be verified against the remote SHA.
 Publication does not establish runtime activation or operational acceptance.
 The Browser worktree contains pre-existing build/cache changes; those changes
 are outside this synchronization and are not evidence of a released tuple.
@@ -643,15 +643,66 @@ Current router snapshot: 106 top-level arms, not endpoint count; 64 retained
 native/dev/telemetry and 37 product-domain arms). All 30 server.go declarations
 and 52 central Engine declarations remain retained. CL-3.3 and CL-3 remain partial.
 
+### Selection-review follow-up
+
+The proposed selection-review extraction is complete as `3f4a66d`; see the
+Inbox selection-review result below.
+
+
+## HTTP Inbox selection review result (2026-11-03)
+
+Three Server adapters are committed as `3f4a66d` in
+`internal/httpapi/selection_review.go`: correctSelection, reevaluateFailedRun
+and undoSelectionCorrection. Their 42 original body lines are unchanged except
+indentation and a local `ctx := r.Context()` binding. Router predicates, dispatch
+order and normalized path are unchanged; the router remainder is exact. Lock,
+transaction, worker and cancellation ownership remains in Engine/Store. No
+protocol or guard is changed, and no production test seam is introduced.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | `3f4a66d`, three Inbox selection-review HTTP adapters; tenth bounded HTTP extraction |
+| Tested | Identical characterization payload and pass selection: 82 default/dev parent/subtest results before and after. Matching 14-package regression selection: default 2,779 pass/50 skip; dev 3,623 pass/62 skip; zero failures. Four Windows amd64 tag combinations include the test and produce 16 artifacts |
+| Activated | Not performed for this increment |
+| Acceptance | Scoped source/test review accepted and code committed; whole-package, CL-3.3/CL-3 and operational acceptance remain open |
+
+The isolated SQLite/real-Engine fixture uses a gated fake provider. It covers
+201 correction/item, 202 run and 200 undo envelopes; header/field contracts;
+route/security/ID parsing; JSON validation before admission; untrimmed candidate
+lookup, duplicate fields and first-document decoding; ignored retry/undo bodies;
+active-session priority; cancellation/deadline/store/SQL failures; duplicate and
+repeated undo; safe replay guards; partial effects after commit and response-write
+failure. Retry reuses durable capture without planning or a new capture command,
+and its background context survives request cancellation. Existing Engine lock,
+effect-order and AI/media-provenance cancellation coverage remains unchanged.
+
+Review independently matched the baseline server to its committed source, verified
+the exact moved feature and router remainder, and checked source/test/helper,
+raw-log, tag-graph and all 16 PE/amd64 artifact identities. Passing evidence was
+reused without product test/build reruns for this review or publication. No new
+race-detector run, real provider/native/browser trial, activation or configuration
+change is claimed. Evidence:
+[validation](../runtime/qa/http-selection-review-20261103/validation.json),
+[extraction proof](../runtime/qa/http-selection-review-20261103/extraction-proof.json),
+[review](../runtime/qa/http-selection-review-review-20261103/review.json) and
+[commit/publication readback](../runtime/qa/http-selection-review-review-20261103/final-readback.json).
+Original receipt fields describe their capture time and remain unchanged.
+
+Current router snapshot: 106 top-level arms, not endpoint count; 67 retained
+(41 feature delegations and 26 thin/control/heartbeat arms) and 39 deferred
+(five native/dev/telemetry and 34 product-domain arms). All 30 server.go functions
+and 52 central Engine functions/methods remain retained. CL-3.3 and CL-3 remain
+partial. Deferred groups are not an automatic extraction queue.
+
 ### Proposed next cleanup analysis
 
-Read-only review of the three Inbox selection-review HTTP adapters: selection
-correction, failed-run re-evaluation and correction undo. Trace supported callers,
-run/candidate/ID parsing, admission/error mapping, durable effects and existing
-cancellation before selecting one cohesive extraction or retaining the current
-boundary. Specify characterization first; preserve Engine/Store ownership,
-protocol, guards, context and effect order. This proposal authorizes no
-implementation, activation, runtime/configuration change or trial.
+Read-only review of two Inbox read adapters: GET /api/inbox and GET
+/api/inbox/runs/{runId}/trace. Trace supported callers, pagination/stage defaults,
+normalization, output projection and error precedence before deciding whether
+one cohesive feature extraction is useful. Specify characterization first;
+preserve request context, Engine/Store ownership, protocol and guards. This is
+a proposal only: no further implementation, activation, runtime/configuration
+change or trial is authorized by this record.
 
 ## Product and installation roadmaps
 
