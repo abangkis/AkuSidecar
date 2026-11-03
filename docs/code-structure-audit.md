@@ -1,14 +1,18 @@
 # Product source structure audit — 2026-10-25
 
-## Status synchronization (2026-11-03)
+## Status synchronization (2026-11-04)
 
-Latest delta: the owner-authorized [automatic FE run](#automatic-frontend-feature-separation-result-2026-11-03)
+Latest delta: [CL-5 CDP result projection](#cl-5-cdp-result-projection-and-live-state-binding-result-2026-11-04), code `e146d40`,
+is implemented/tested/reviewed; this closes one increment while CL-5 stays
+partial. Earlier source receipts and CL-3/CL-4 closure retain their scope.
+
+Previous frontend checkpoint: the owner-authorized [automatic FE run](#automatic-frontend-feature-separation-result-2026-11-03)
 is reviewed code `3b9cfd1` after baseline 0533ad3. CL-4 source scope is closed;
 final Node 360/360, Go/Windows and desktop/mobile evidence pass. Publication
 is bound to the linked readback. The source history below retains its capture-time
 identities. Runtime activation and CL-3 closure are unchanged.
 
-The original audit and its validation below are historical. Current source is
+The original audit and its validation below are historical. Earlier source history is
 reviewed through `80acfb9` (Timeline More/Less and restart-dev assertion correction), after `f27e91b` (Store feature separation: 95 declarations in 15 feature files), including per-run candidate evaluation/completion, then acquisition planning orchestration, then automatic completion of the remaining 58 HTTP adapters, then Timeline composition HTTP adaptation, vision-evaluation HTTP adapters, model-usage HTTP adapters, Inbox read HTTP adapters, Inbox selection-review HTTP adapters, AI-feedback HTTP adapters, semantic correction HTTP adapters, development X HTTP controls, capture telemetry rotation/shutdown compatibility, HTTP reload-action separation, capture-owner path normalization, HTTP bootstrap and the router responsibility map, HTTP media-recapture entry points, HTTP update/session lifecycle, Engine passive media evidence, Library removal/Forget, FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
 for commit-to-receipt mappings. Cleanup is not provider qualification.
 
@@ -1508,3 +1512,36 @@ These original capture-time receipts are retained. Current [publication review](
 and [publication readback](../runtime/qa/frontend-auto-review-20261103/final-readback.json)
 record the later corrections and source closure. See the [CL-4 closure map](code-cleanup-roadmap.md#cl-4-source-closure-2026-11-03)
 for exit criteria, retain/defer decisions and the next read-only CL-5 proposal.
+
+## CL-5 CDP result projection and live-state binding result (2026-11-04)
+
+The owner approved the CDP-result extraction and active/driverMode correction,
+then roadmap synchronization, commit and push to origin/main at
+https://github.com/abangkis/AkuSidecar.git. Code `e146d40` follows checkpoint
+b3566dc. The reviewed four-file payload is bound to the unchanged passing
+evidence and the later publication readback. **CL-5 remains partial**; source
+CL-3 and CL-4 remain closed in their recorded scopes.
+
+| Dimension | Current evidence and scope |
+| --- | --- |
+| Implemented | e146d40: projectCDPResult moves to production shared/x-native-cdp-result-projection.mjs. One factory per runtime supplies live getActive/getDriverMode ports and the same validation helpers; 19 state reads are bound correctly |
+| Tested | Final characterization: 24 pass/7 binding failures on original ESM, then 31/31 pass on the candidate. Relevant Node regression: 667/667, zero failures/skips. Seven-package Collection/Engine/HTTP/config/application Go scope: default 2,600 pass/44 skip; dev 3,292 pass/54 skip; zero failures. Four Windows amd64 tag modes produce 16 PE artifacts. Sealed manual/daily/main graphs contain the projector and exclude fixture dependencies |
+| Activated | Not performed; no managed runtime restart, production configuration change or signed-in source trial |
+| Acceptance | Scoped review has no blocking finding; the frozen payload is committed and publication is bound to the readback below. This closes one CL-5 result-projection increment, not the whole native runtime/QA stage or operational qualification |
+
+See the [canonical result and remaining CL-5 map](code-cleanup-roadmap.md#cl-5-cdp-result-projection-and-live-state-binding-result-2026-11-04)
+for exact ownership, retained boundaries and acceptance limits.
+
+Evidence: [original validation](../runtime/qa/native-cdp-result-projection-20261104/validation.json),
+[structural review](../runtime/qa/native-cdp-result-projection-20261104/review.json),
+[candidate readback](../runtime/qa/native-cdp-result-projection-20261104/final-readback.json),
+[publication review](../runtime/qa/native-cdp-result-projection-publication-20261104/review.json),
+and [commit/publication readback](../runtime/qa/native-cdp-result-projection-publication-20261104/final-readback.json).
+These are ignored local receipts. Original sourceHead/sourceDirty/committed
+fields preserve capture-time meaning; the later readback binds tested payload,
+commits and remote SHA without rewriting historical receipts.
+
+Next proposal: read-only CDP framing/decoding ownership analysis of CDPFrameDecoder
+and parseJSONBytes, preserving frame limits, strict parsing, zeroization, error
+codes and dispatcher behavior. No next extraction or runtime trial is authorized
+by this status record.

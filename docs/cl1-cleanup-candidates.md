@@ -35,6 +35,11 @@ Publication is bound to the linked readback; activation remains separate.
 F02/test-asset packaging remains a CL-7 question. Original disposition counts
 are not a remaining-work count.
 
+Latest native-runtime result: [CL-5 CDP projector/binding](#cl-5-cdp-result-projection-and-live-state-binding-result-2026-11-04),
+code `e146d40`, is implemented/tested/reviewed. CL-5 remains partial; this
+source extraction does not delete a compatibility path or change the original
+inventory disposition counts. Activation remains separate.
+
 ## Dispositions and approval
 
 The disposition counts are the original CL-1 inventory, not a remaining-work
@@ -2793,3 +2798,36 @@ These original capture-time receipts are retained. Current [publication review](
 and [publication readback](../runtime/qa/frontend-auto-review-20261103/final-readback.json)
 record the later corrections and source closure. See the [CL-4 closure map](code-cleanup-roadmap.md#cl-4-source-closure-2026-11-03)
 for exit criteria, retain/defer decisions and the next read-only CL-5 proposal.
+
+## CL-5 CDP result projection and live-state binding result (2026-11-04)
+
+The owner approved the CDP-result extraction and active/driverMode correction,
+then roadmap synchronization, commit and push to origin/main at
+https://github.com/abangkis/AkuSidecar.git. Code `e146d40` follows checkpoint
+b3566dc. The reviewed four-file payload is bound to the unchanged passing
+evidence and the later publication readback. **CL-5 remains partial**; source
+CL-3 and CL-4 remain closed in their recorded scopes.
+
+| Dimension | Current evidence and scope |
+| --- | --- |
+| Implemented | e146d40: projectCDPResult moves to production shared/x-native-cdp-result-projection.mjs. One factory per runtime supplies live getActive/getDriverMode ports and the same validation helpers; 19 state reads are bound correctly |
+| Tested | Final characterization: 24 pass/7 binding failures on original ESM, then 31/31 pass on the candidate. Relevant Node regression: 667/667, zero failures/skips. Seven-package Collection/Engine/HTTP/config/application Go scope: default 2,600 pass/44 skip; dev 3,292 pass/54 skip; zero failures. Four Windows amd64 tag modes produce 16 PE artifacts. Sealed manual/daily/main graphs contain the projector and exclude fixture dependencies |
+| Activated | Not performed; no managed runtime restart, production configuration change or signed-in source trial |
+| Acceptance | Scoped review has no blocking finding; the frozen payload is committed and publication is bound to the readback below. This closes one CL-5 result-projection increment, not the whole native runtime/QA stage or operational qualification |
+
+See the [canonical result and remaining CL-5 map](code-cleanup-roadmap.md#cl-5-cdp-result-projection-and-live-state-binding-result-2026-11-04)
+for exact ownership, retained boundaries and acceptance limits.
+
+Evidence: [original validation](../runtime/qa/native-cdp-result-projection-20261104/validation.json),
+[structural review](../runtime/qa/native-cdp-result-projection-20261104/review.json),
+[candidate readback](../runtime/qa/native-cdp-result-projection-20261104/final-readback.json),
+[publication review](../runtime/qa/native-cdp-result-projection-publication-20261104/review.json),
+and [commit/publication readback](../runtime/qa/native-cdp-result-projection-publication-20261104/final-readback.json).
+These are ignored local receipts. Original sourceHead/sourceDirty/committed
+fields preserve capture-time meaning; the later readback binds tested payload,
+commits and remote SHA without rewriting historical receipts.
+
+Next proposal: read-only CDP framing/decoding ownership analysis of CDPFrameDecoder
+and parseJSONBytes, preserving frame limits, strict parsing, zeroization, error
+codes and dispatcher behavior. No next extraction or runtime trial is authorized
+by this status record.

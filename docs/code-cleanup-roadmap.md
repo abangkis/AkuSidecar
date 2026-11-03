@@ -1,7 +1,7 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-03 (Asia/Jakarta), reviewed code `3b9cfd1` after published baseline 0533ad3; source CL-4 closed in the bounded scope below.
+Status synchronized: 2026-11-04 (Asia/Jakarta), reviewed CL-5 code `e146d40` after b3566dc. Source CL-3/CL-4 stay closed; CL-5 remains partial.
 Status: source CL-3 closed after the accepted responsibility-map review at
 `6b9b3a0`; source CL-4 closed by the reviewed FE result below. Comprehensive
 cleanup remains in progress. See the
@@ -114,7 +114,7 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-2: proven obsolete-code retirement | Earlier wrappers plus G10 `DeleteMemoryItem` removal committed with roadmap as `21ac9ad` | G10 exact remainder check, full Store/HTTP regressions and four-mode Windows compilation passed | Not performed for G10 | G10 reviewed/committed; comprehensive retirement remains scoped by the remaining ledger entries |
 | CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b` and media recapture `be9fcd2`; Engine media recapture `c614512`; Engine Bridge commands `3e13434`; Engine media provenance `8d7f7b6`; Engine AI detection `b84a62d`; Engine session admission `4bf0731`; observation contracts `d9c3025`; process recovery `5b39fa4`; reasoning result `eb05ac8`; capture rounds and deterministic Store test `683b1e8`; local acquisition policy `f16f11a`; vision-lane routing/coverage `25c3339`; selection corrections `f3d46b8`; AI feedback `6a1ce33`; FullReset `da019dd`; Library removal/Forget `a19bf86`; passive media evidence `2bdc0f1`; HTTP update/session `d32c065`; HTTP media entry `90e3a7f`; HTTP bootstrap `97bbe51`; capture-owner path guard `b482ba2`; HTTP reload actions `6ea303c`; telemetry rotation/shutdown guard `237dbd1`; HTTP development X controls `1814c9b`; HTTP semantic corrections `3c5e61a`; HTTP AI feedback `a3718ff`; HTTP Inbox selection review `3f4a66d`; HTTP Inbox reads `ce57e79`; HTTP model usage `af8d722`; HTTP vision evaluation `cf534ec`; HTTP Timeline composition `3cf90b4`; automatic HTTP handler completion `9da6ed8`; acquisition execution `8027599`; candidate evaluation `ed35d82`; vision persistence tests `70ea120`; empty-candidate completion `de95c58`; Store Timeline read-model `bee6a9f`; automatic Store feature separation `f27e91b` (95 declarations/15 feature files); validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Capture/Collection/Bridge builder/Selection/EventEngine/Reasoning/Domain/Detector/Inspector/Store/Engine/HTTP/config/application scope selects 14 packages (13 with tests, Bridge builder compile-only): default 3,267 pass/50 skip and dev 4,111 pass/62 skip, zero failures; whole Store default 462 pass/5 skip and dev 614 pass/7 skip before/after (45 new results); earlier Store Timeline read-model characterization 72 pass/1 skip default/dev retained; empty-candidate completion characterization 218 default/dev before/after retained; earlier vision persistence characterization 94 default/dev retained; candidate evaluation characterization 88 default/dev before/after retained; acquisition execution characterization retained; remaining HTTP feature characterization retained; Timeline characterization retained; vision-evaluation characterization retained; model-usage characterization retained; Inbox read characterization retained; selection-review characterization retained; AI-feedback characterization retained; semantic correction characterization retained; development X characterization retained; earlier telemetry/reload characterization and concurrency evidence retained; earlier guard/bootstrap receipts retained, four Store build-tag graphs and 16 Windows artifacts pass. Earlier acquisition-policy/capture-round/privacy/HTTP/Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Backend source CL-3.1/CL-3.2/CL-3.3 closed after accepted responsibility-map/exit-criteria review at 6b9b3a0, with code through f27e91b; [retain/defer decisions](#cl-3-source-closure-2026-11-03) recorded. No material ownership gap requires another extraction. Runtime activation, operational acceptance and CL-8 source sign-off remain separate |
 | CL-4: frontend feature ownership | 3b9cfd1: 374 functions/20 feature factories; 30 shared/root functions retained | Frozen 29/29 characterization; Node 360/360; HTTP/app default 1,322 pass/25 skip and dev 1,345 pass/12 skip; four Windows modes/12 artifacts; actual embedded desktop/mobile checks | Not performed | CL-4.1/CL-4.2/CL-4.3 source closed after scoped review; retain/defer map below. Operational acceptance and CL-5 through CL-8 remain separate |
-| CL-5: native runtime and QA boundaries | Factory/shared-helper separation complete; fixture-only timing correction `8dc3f5e` committed; deeper runtime split proposed | 98 Node tests, 200 offline integration iterations and dependency-pinned staging verified for this fixture correction; existing baseline only for remaining seams | Not performed for this correction | Bounded fixture acceptance only; remaining operation/transport/QA separation pending; no universal cross-runtime clock or real-provider qualification claim |
+| CL-5: native runtime and QA boundaries | Existing production factory/shared-helper work retained; e146d40 separates CDP result projection and fixes live active/driverMode binding | Characterization 31/31 after seven reproduced baseline failures; Node 667/667; seven-package Go default 2,600 pass/44 skip and dev 3,292 pass/54 skip; four Windows modes/16 artifacts; sealed manual/daily/main graphs pass | Not performed for this increment | Scoped projector increment accepted; CL-5 remains partial. Codec/dispatch, remaining QA and owner-lifecycle boundaries still require evidence-backed review; no full operational qualification |
 | CL-6: Bridge responsibility boundaries | Existing source/lifecycle modules retained; further split proposed | Existing baseline only for remaining seams | No new rollout | Background dispatch/surface integration pending |
 | CL-7: build, packaging and test organization | Existing packaging retained; full consumer reconciliation proposed | Partial prior package evidence | No new rollout | Supported-entry/build-tag closure pending |
 | CL-8: integration and source sign-off | Not started for the comprehensive roadmap | Final matrix pending | Separate operational gate | Comprehensive source acceptance pending; runtime acceptance separate |
@@ -309,6 +309,11 @@ checks for the moved behavior. No signed-in source or live capture is required
 to establish a source-only frontend extraction.
 
 ### CL-5: native runtime and QA boundaries
+
+Current status: partial. The [CDP result-projection increment](#cl-5-cdp-result-projection-and-live-state-binding-result-2026-11-04)
+is implemented/tested/reviewed as e146d40. Existing factory/shared-helper
+work stays complete; remaining codec/dispatch, owner-lifecycle and QA boundaries
+retain their own entry/exit criteria. No activation is established.
 
 - Map operation routing, CDP framing/projection, owner lifecycle and source
   evidence orchestration in `x-native-owner-runtime.mjs` before choosing a split.
@@ -2043,3 +2048,86 @@ framing/projection and owner/source-evidence lifetime in x-native-owner-runtime.
 Identify one real boundary and its characterization needs, or retain the owner
 if no gap exists. Preserve deadlines, first cause, cancellation, provenance and
 owned cleanup. No CL-5 implementation, restart or live trial is included here.
+
+## CL-5 CDP result projection and live-state binding result (2026-11-04)
+
+The owner approved the CDP-result extraction and active/driverMode correction,
+then roadmap synchronization, commit and push to origin/main at
+https://github.com/abangkis/AkuSidecar.git. Code `e146d40` follows checkpoint
+b3566dc. The reviewed four-file payload is bound to the unchanged passing
+evidence and the later publication readback. **CL-5 remains partial**; source
+CL-3 and CL-4 remain closed in their recorded scopes.
+
+| Dimension | Current evidence and scope |
+| --- | --- |
+| Implemented | e146d40: projectCDPResult moves to production shared/x-native-cdp-result-projection.mjs. One factory per runtime supplies live getActive/getDriverMode ports and the same validation helpers; 19 state reads are bound correctly |
+| Tested | Final characterization: 24 pass/7 binding failures on original ESM, then 31/31 pass on the candidate. Relevant Node regression: 667/667, zero failures/skips. Seven-package Collection/Engine/HTTP/config/application Go scope: default 2,600 pass/44 skip; dev 3,292 pass/54 skip; zero failures. Four Windows amd64 tag modes produce 16 PE artifacts. Sealed manual/daily/main graphs contain the projector and exclude fixture dependencies |
+| Activated | Not performed; no managed runtime restart, production configuration change or signed-in source trial |
+| Acceptance | Scoped review has no blocking finding; the frozen payload is committed and publication is bound to the readback below. This closes one CL-5 result-projection increment, not the whole native runtime/QA stage or operational qualification |
+
+### Ownership and behavior
+
+The corrected function validates/projects CDP replies and performs its existing
+bounded owner updates. It retains its three-argument signature, branch order,
+closed error codes and existing production projection helpers. The runtime
+retains the only active/driverMode state; getters are resolved when projecting a
+reply, including callbacks, rather than capturing a bootstrap/owner snapshot.
+No generic registry, second singleton or additional admission authority exists.
+
+Before correction, the module-level function referenced active/driverMode that
+were declared inside createNativeOwnerRuntime. Valid manual inventory could
+therefore be rejected as xnp_cdp_result_invalid. The real-runtime regression
+reproduces this with mock CDP pipes, without flattening the closure. Related
+stateful branches cover instrumentation, body/cookie modes, enrollment and
+bootstrap. The same final test payload was replayed against the saved original
+ESM using a load hook, preserving its actual lexical scope. One early mock
+assertion was corrected to require the strict decoder's null prototype; the
+earlier receipts are retained and no parser/guard is relaxed.
+
+The declaration/remainder proof permits only the function move, 19 live getter
+substitutions, the named composition and import relocation. send, cdpWrite,
+dispatchCDP, pending accounting, first-cause handling, command timeout, owner
+admission, cancellation and cleanup bodies remain unchanged. Fixture exports
+and production factory admission remain unchanged. The existing package-graph
+test adds one assertion that the new production helper is included; none of its
+fixture-exclusion or protocol assertions is removed.
+
+### Remaining CL-5 scope
+
+| Responsibility | Current disposition |
+| --- | --- |
+| Production factory/shared-helper dependency direction | Existing completed increments retained; no production import from scripts/auth-session-fixture |
+| CDP result projection | Implemented, tested and reviewed as e146d40; live-state binding defect resolved |
+| Framing/decoding and dispatch boundaries | Remain in the runtime; read-only codec ownership review is the next proposal |
+| Operation admission and manual/daily/borrowed owner lifecycle | Retain the current owner and guards; further separation needs a concrete lifetime/responsibility gap, not a file-size target |
+| Remaining QA dispatch/source-evidence orchestration and packaged consumer closure | Still open under the CL-5 exit criteria; this increment does not retire supported modes or certify every entry point |
+
+The sealed graphs contain 73 manual, 74 daily and 93 main modules, with unchanged
+schema/capability contracts and a pinned projector hash. Windows modes are
+default, auth_session_dev, auth_session_fixture and combined. The Go headless
+package has no go:embed files: the sealed Node manifests establish JavaScript
+consumer completeness, while Windows compilation establishes its stated Go
+artifact scope. These are separate kinds of evidence.
+
+All 1,495 other previously tracked files match the captured baseline, including
+the already dirty config/sidecar.json. Only four code/test files and these four
+canonical roadmap documents belong to publication; .tmp/ and experiments/
+remain excluded. Publication reuses validated checks after hash verification;
+no product suite is rerun merely for commit/push. There is no race-detector,
+full-repository, installed-tuple or real-provider acceptance claim.
+
+Evidence: [original validation](../runtime/qa/native-cdp-result-projection-20261104/validation.json),
+[structural review](../runtime/qa/native-cdp-result-projection-20261104/review.json),
+[candidate readback](../runtime/qa/native-cdp-result-projection-20261104/final-readback.json),
+[publication review](../runtime/qa/native-cdp-result-projection-publication-20261104/review.json),
+and [commit/publication readback](../runtime/qa/native-cdp-result-projection-publication-20261104/final-readback.json).
+These are ignored local receipts. Original sourceHead/sourceDirty/committed
+fields preserve capture-time meaning; the later readback binds tested payload,
+commits and remote SHA without rewriting historical receipts.
+
+### Next proposed cleanup analysis
+
+The next proposal is a read-only ownership review of CDPFrameDecoder and parseJSONBytes: map framing/decoding, limits, strict JSON/UTF-8 rejection, buffer zeroization and handoff to dispatchCDP. Decide whether one codec owner is justified without duplicating guards; name characterization before selecting a move. No further implementation, runtime activation or trial is included in this publication.
+
+The earlier CL-4 next-proposal paragraph records its original checkpoint and is
+superseded by this CL-5 result and the narrower next proposal above.
