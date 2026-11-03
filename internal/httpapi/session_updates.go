@@ -57,3 +57,16 @@ func (s *Server) cancelSession(w http.ResponseWriter, r *http.Request, p string)
 	}
 	return writeJSON(w, http.StatusOK, map[string]any{"session": sessionProgressProjection(&session)})
 }
+
+func (s *Server) runDetail(w http.ResponseWriter, r *http.Request, p string) error {
+	ctx := r.Context()
+	id := path.Base(p)
+	run, err := s.engine.Run(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return notFound("run")
+	}
+	if err != nil {
+		return err
+	}
+	return writeJSON(w, http.StatusOK, map[string]any{"run": run})
+}

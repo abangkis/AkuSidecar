@@ -3,10 +3,15 @@ package httpapi
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/ai4u-inference-sdk-go/calibration"
 )
 
@@ -69,4 +74,50 @@ func readCalibrationReports(path string, limit int) ([]calibration.Report, error
 		reports = append(reports, report)
 	}
 	return reports, nil
+}
+
+func (s *Server) runCalibrationDiagnostic(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	ready, reason, err := s.engine.RuntimeUpdateReadiness(ctx)
+	if err != nil {
+		return err
+	}
+	if !ready {
+		return apiError{Status: http.StatusConflict, Code: "runtime_busy", Message: "Calibration needs an idle runtime.", Details: map[string]any{"reason": reason}}
+	}
+	var body struct {
+		Provider string `json:"provider"`
+	}
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			return badRequest("calibration request body must be valid JSON: " + err.Error())
+		}
+	}
+	cfg := s.config
+	if providerName := strings.TrimSpace(body.Provider); providerName != "" {
+		if err := cfg.Reasoning.Select(providerName); err != nil {
+			return apiError{Status: http.StatusBadRequest, Code: "unknown_provider", Message: err.Error()}
+		}
+	}
+	report, calErr := reasoning.RunCalibration(ctx, cfg)
+	if report.ModelID == "" && calErr != nil {
+		status, code := calibrationFailureStatus(calErr)
+		return apiError{Status: status, Code: code, Message: calErr.Error()}
+	}
+	if appendErr := appendCalibrationReport(s.calibrationLedgerPath(), report); appendErr != nil {
+		s.logger.Printf("calibration ledger append failed: %v", appendErr)
+	}
+	payload := map[string]any{"report": report}
+	if calErr != nil {
+		payload["error"] = calErr.Error()
+	}
+	return writeJSON(w, http.StatusOK, payload)
+}
+
+func (s *Server) calibrationDiagnosticReports(w http.ResponseWriter, r *http.Request) error {
+	reports, err := readCalibrationReports(s.calibrationLedgerPath(), calibrationLedgerLimit)
+	if err != nil {
+		return apiError{Status: http.StatusInternalServerError, Code: "calibration_ledger_unreadable", Message: err.Error()}
+	}
+	return writeJSON(w, http.StatusOK, map[string]any{"reports": reports})
 }

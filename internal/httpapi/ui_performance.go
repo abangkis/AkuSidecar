@@ -326,3 +326,18 @@ func cloneFloatPointer(value *float64) *float64 {
 	copy := *value
 	return &copy
 }
+
+func (s *Server) uiPerformance(w http.ResponseWriter, r *http.Request) error {
+	if !uiPerformanceDiagnosticsEnabled(s.config) {
+		return notFound("UI performance diagnostics")
+	}
+	if r.Method == http.MethodGet {
+		return writeJSON(w, http.StatusOK, map[string]any{"trace": s.latestUIPerformanceSnapshot()})
+	}
+	report, err := readUIPerformanceReport(w, r)
+	if err != nil {
+		return err
+	}
+	s.saveUIPerformanceReport(report)
+	return writeJSON(w, http.StatusOK, map[string]any{"saved": true})
+}

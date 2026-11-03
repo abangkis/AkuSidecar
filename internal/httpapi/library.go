@@ -1,11 +1,16 @@
 package httpapi
 
 import (
+	"database/sql"
+	"errors"
+	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
 const (
@@ -150,4 +155,181 @@ func parseLibraryStorageLimit(values url.Values) (int, error) {
 		return 0, badRequest("storage recommendation limit must be between 1 and 12")
 	}
 	return parsed, nil
+}
+
+func (s *Server) libraryItems(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	query, err := parseLibraryQuery(r.URL.Query())
+	if err != nil {
+		return err
+	}
+	result, err := s.engine.Library(ctx, query)
+	if err != nil {
+		if errors.Is(err, store.ErrMemoryLibraryQuery) {
+			return badRequest(err.Error())
+		}
+		return err
+	}
+	items := make([]libraryItemView, 0, len(result.Items))
+	for _, item := range result.Items {
+		items = append(items, publicLibraryItem(item, false))
+	}
+	payload := map[string]any{"items": items, "nextCursor": result.NextCursor}
+	if libraryTopicKnowledgeRequested(r.URL.Query()) && strings.TrimSpace(query.Query) != "" && query.Cursor == "" && !query.SavedOnly {
+		insights, err := s.engine.LibraryTopicKnowledge(ctx, query.Query, libraryTopicKnowledgeLimit)
+		if err != nil {
+			if errors.Is(err, store.ErrMemoryLibraryQuery) {
+				return badRequest(err.Error())
+			}
+			return err
+		}
+		knowledge := make([]libraryTopicKnowledgeView, 0, len(insights))
+		for _, insight := range insights {
+			knowledge = append(knowledge, publicLibraryTopicKnowledge(insight))
+		}
+		payload["topicKnowledge"] = knowledge
+	}
+	return writeJSON(w, http.StatusOK, payload)
+}
+
+func (s *Server) savedLibraryItems(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	query, err := parseLibraryQuery(r.URL.Query())
+	if err != nil {
+		return err
+	}
+	query.SavedOnly = true
+	result, err := s.engine.SavedLibrary(ctx, query)
+	if err != nil {
+		if errors.Is(err, store.ErrMemoryLibraryQuery) {
+			return badRequest(err.Error())
+		}
+		return err
+	}
+	items := make([]libraryItemView, 0, len(result.Items))
+	for _, item := range result.Items {
+		items = append(items, publicLibraryItem(item, false))
+	}
+	return writeJSON(w, http.StatusOK, map[string]any{"items": items, "nextCursor": result.NextCursor})
+}
+
+func (s *Server) libraryStorage(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	limit, err := parseLibraryStorageLimit(r.URL.Query())
+	if err != nil {
+		return err
+	}
+	report, err := s.engine.LibraryStorage(ctx, limit)
+	if errors.Is(err, store.ErrMemoryStorageRecommendationLimit) {
+		return badRequest(err.Error())
+	}
+	if err != nil {
+		return err
+	}
+	return writeJSON(w, http.StatusOK, report)
+}
+
+func (s *Server) releaseLibraryFullCopy(w http.ResponseWriter, r *http.Request, p string) error {
+	ctx := r.Context()
+	id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/library/items/"), "/release-full-copy")
+	if id == "" || strings.Contains(id, "/") {
+		return notFound("library item")
+	}
+	item, err := s.engine.ReleaseLibraryItem(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrMemoryNotFound) || errors.Is(err, store.ErrMemoryTombstoned) {
+		return notFound("library item")
+	}
+	if err != nil {
+		return err
+	}
+	return writeJSON(w, http.StatusOK, map[string]any{"released": true, "id": id, "retentionTier": item.RetentionTier})
+}
+
+func (s *Server) keepLibraryItem(w http.ResponseWriter, r *http.Request, p string) error {
+	ctx := r.Context()
+	id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/library/items/"), "/keep-in-library")
+	if id == "" || strings.Contains(id, "/") {
+		return notFound("library item")
+	}
+	item, err := s.engine.KeepMemoryInLibrary(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrMemoryNotFound) || errors.Is(err, store.ErrMemoryNotSaved) {
+		return notFound("library item")
+	}
+	if errors.Is(err, store.ErrSavedMemoryTextUnavailable) {
+		return apiError{Status: http.StatusConflict, Code: "saved_memory_text_unavailable", Message: "The saved source text is unavailable, so it cannot be kept as a full copy."}
+	}
+	if errors.Is(err, store.ErrMemoryTombstoned) {
+		return notFound("library item")
+	}
+	if err != nil {
+		return err
+	}
+	return writeJSON(w, http.StatusOK, map[string]any{"kept": true, "id": id, "saved": item.Saved, "permanentKeep": item.PermanentKeep, "retentionTier": item.RetentionTier})
+}
+
+func (s *Server) doneSavedMemory(w http.ResponseWriter, r *http.Request, p string) error {
+	ctx := r.Context()
+	id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/library/items/"), "/done")
+	if id == "" || strings.Contains(id, "/") {
+		return notFound("library item")
+	}
+	item, err := s.engine.DoneSavedMemory(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrMemoryNotFound) {
+		return notFound("library item")
+	}
+	if errors.Is(err, store.ErrMemoryTombstoned) {
+		return notFound("library item")
+	}
+	if err != nil {
+		return err
+	}
+	return writeJSON(w, http.StatusOK, map[string]any{"done": true, "id": id, "saved": item.Saved, "permanentKeep": item.PermanentKeep, "retentionTier": item.RetentionTier})
+}
+
+func (s *Server) forgetLibraryItem(w http.ResponseWriter, r *http.Request, p string) error {
+	ctx := r.Context()
+	id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/library/items/"), "/forget-permanently")
+	if id == "" || strings.Contains(id, "/") {
+		return notFound("library item")
+	}
+	_, err := s.engine.ForgetLibraryItem(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrMemoryNotFound) {
+		return notFound("library item")
+	}
+	if err != nil {
+		return err
+	}
+	return writeJSON(w, http.StatusOK, map[string]any{"forgotten": true, "id": id})
+}
+
+func (s *Server) removeLibraryItem(w http.ResponseWriter, r *http.Request, p string) error {
+	ctx := r.Context()
+	id := strings.TrimPrefix(p, "/api/library/items/")
+	if id == "" || strings.Contains(id, "/") {
+		return notFound("library item")
+	}
+	err := s.engine.RemoveLibraryItem(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrMemoryNotFound) {
+		return notFound("library item")
+	}
+	if err != nil {
+		return err
+	}
+	return writeJSON(w, http.StatusOK, map[string]any{"removed": true, "id": id})
+}
+
+func (s *Server) libraryItem(w http.ResponseWriter, r *http.Request, p string) error {
+	ctx := r.Context()
+	id := path.Base(p)
+	if id == "" || id == "items" {
+		return notFound("library item")
+	}
+	item, err := s.engine.LibraryItem(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrMemoryNotFound) {
+		return notFound("library item")
+	}
+	if err != nil {
+		return err
+	}
+	return writeJSON(w, http.StatusOK, map[string]any{"item": publicLibraryItem(item, true)})
 }

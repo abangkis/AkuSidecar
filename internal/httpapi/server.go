@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"crypto/subtle"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,7 +26,6 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/engine"
 	"github.com/abangkis/AkuSidecar/internal/nativetrace"
-	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
@@ -201,25 +199,6 @@ type apiError struct {
 
 func (e apiError) Error() string { return e.Message }
 
-func feedbackTraceID(value string) string {
-	if len(value) != 36 {
-		return domain.NewID("feedbacktrace")
-	}
-	for index := 0; index < len(value); index++ {
-		character := value[index]
-		if index == 8 || index == 13 || index == 18 || index == 23 {
-			if character != '-' {
-				return domain.NewID("feedbacktrace")
-			}
-			continue
-		}
-		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
-			return domain.NewID("feedbacktrace")
-		}
-	}
-	return value
-}
-
 func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	p := strings.TrimSuffix(r.URL.Path, "/")
@@ -243,46 +222,15 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	case r.Method == http.MethodPost && p == "/api/app-shell/startup-ready":
 		return s.acknowledgeAppShellStartup(w, r)
 	case r.Method == http.MethodPost && p == "/api/app-shell/open-extensions":
-		if !s.config.Dev || strings.TrimSpace(s.config.Deployment.Mode) != "development" {
-			return notFound("app-shell development action")
-		}
-		openCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		if err := s.openExtensionsPage(openCtx); err != nil {
-			return apiError{Status: http.StatusConflict, Code: "app_shell_action_unavailable", Message: "AkuBrowser could not open Chrome Extensions in its development profile.", Details: map[string]any{"reason": err.Error()}}
-		}
-		return writeJSON(w, http.StatusAccepted, map[string]any{"accepted": true})
+		return s.openExtensionsHTTP(w, r)
 	case r.Method == http.MethodGet && p == "/api/diagnostics/export":
-		since := r.URL.Query().Get("since")
-		until := r.URL.Query().Get("until")
-		sessionID := r.URL.Query().Get("sessionId")
-		export, err := s.engine.DiagnosticsExport(ctx, since, until, sessionID)
-		if err != nil {
-			return err
-		}
-		w.Header().Set("Content-Disposition", "attachment; filename=aku-diagnostics-"+time.Now().UTC().Format("20060102T150405")+".json")
-		return writeJSON(w, http.StatusOK, export)
+		return s.exportDiagnostics(w, r)
 	case p == "/api/diagnostics/ui-performance" && (r.Method == http.MethodGet || r.Method == http.MethodPost):
-		if !uiPerformanceDiagnosticsEnabled(s.config) {
-			return notFound("UI performance diagnostics")
-		}
-		if r.Method == http.MethodGet {
-			return writeJSON(w, http.StatusOK, map[string]any{"trace": s.latestUIPerformanceSnapshot()})
-		}
-		report, err := readUIPerformanceReport(w, r)
-		if err != nil {
-			return err
-		}
-		s.saveUIPerformanceReport(report)
-		return writeJSON(w, http.StatusOK, map[string]any{"saved": true})
+		return s.uiPerformance(w, r)
 	case r.Method == http.MethodGet && p == "/api/health":
-		settings, err := s.store.GetSettings(ctx)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "version": domain.ApplicationVersion, "runtime": "go", "deployment": s.config.Deployment.PublicStatus(), "provider": s.engine.ProviderName(), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime(), "bridgeContractVersion": domain.BridgeContractVersion, "softwareUpdate": domain.SidecarSoftwareUpdateMetadata(store.SchemaVersion), "instanceEpoch": s.engine.Epoch(), "uptimeMs": time.Since(s.started).Milliseconds(), "database": map[string]any{"status": "healthy"}, "loadProfile": settings.LoadProfile})
+		return s.health(w, r)
 	case r.Method == http.MethodGet && p == "/api/collection/runtime":
-		return writeJSON(w, http.StatusOK, map[string]any{"collectionRuntime": s.engine.CollectionRuntime(), "xManual": s.engine.XManualStatus(), "xCapture": s.engine.XCaptureStatus(), "instagramCapture": s.engine.SourceCaptureStatus(domain.SourceInstagram)})
+		return s.collectionRuntimeStatus(w, r)
 	case r.Method == http.MethodPost && p == "/api/development/instagram-trial/start":
 		return s.instagramTrialAction(w, r, ctx, "start")
 	case r.Method == http.MethodPost && p == "/api/development/instagram-trial/retry":
@@ -298,275 +246,45 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	case r.Method == http.MethodPost && p == "/api/development/x-manual/stop":
 		return s.stopXManual(w, r)
 	case r.Method == http.MethodPost && p == "/api/collection/interactive":
-		if err := s.engine.PrepareInteractiveCapture(ctx); err != nil {
-			return apiError{Status: 409, Code: "interactive_handoff_unavailable", Message: err.Error()}
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"collectionRuntime": s.engine.CollectionRuntime()})
+		return s.prepareInteractiveCapture(w, r)
 	case r.Method == http.MethodGet && p == "/api/runtime/update-readiness":
-		ready, reason, err := s.engine.RuntimeUpdateReadiness(ctx)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{
-			"ready": ready, "reason": reason, "instanceEpoch": s.engine.Epoch(),
-			"controlAvailable": s.config.RuntimeControlToken != "",
-		})
+		return s.runtimeUpdateReadiness(w, r)
 	case s.config.Dev && r.Method == http.MethodPost && p == "/api/diagnostics/calibration":
-		ready, reason, err := s.engine.RuntimeUpdateReadiness(ctx)
-		if err != nil {
-			return err
-		}
-		if !ready {
-			return apiError{Status: http.StatusConflict, Code: "runtime_busy", Message: "Calibration needs an idle runtime.", Details: map[string]any{"reason": reason}}
-		}
-		var body struct {
-			Provider string `json:"provider"`
-		}
-		if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
-			if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
-				return badRequest("calibration request body must be valid JSON: " + err.Error())
-			}
-		}
-		cfg := s.config
-		if providerName := strings.TrimSpace(body.Provider); providerName != "" {
-			if err := cfg.Reasoning.Select(providerName); err != nil {
-				return apiError{Status: http.StatusBadRequest, Code: "unknown_provider", Message: err.Error()}
-			}
-		}
-		report, calErr := reasoning.RunCalibration(ctx, cfg)
-		if report.ModelID == "" && calErr != nil {
-			status, code := calibrationFailureStatus(calErr)
-			return apiError{Status: status, Code: code, Message: calErr.Error()}
-		}
-		if appendErr := appendCalibrationReport(s.calibrationLedgerPath(), report); appendErr != nil {
-			s.logger.Printf("calibration ledger append failed: %v", appendErr)
-		}
-		payload := map[string]any{"report": report}
-		if calErr != nil {
-			payload["error"] = calErr.Error()
-		}
-		return writeJSON(w, http.StatusOK, payload)
+		return s.runCalibrationDiagnostic(w, r)
 	case s.config.Dev && r.Method == http.MethodGet && p == "/api/diagnostics/calibration":
-		reports, err := readCalibrationReports(s.calibrationLedgerPath(), calibrationLedgerLimit)
-		if err != nil {
-			return apiError{Status: http.StatusInternalServerError, Code: "calibration_ledger_unreadable", Message: err.Error()}
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"reports": reports})
+		return s.calibrationDiagnosticReports(w, r)
 	case r.Method == http.MethodPost && p == "/api/runtime/shutdown-if-idle":
-		if !validRuntimeControlToken(s.config.RuntimeControlToken, r.Header.Get("X-Aku-Runtime-Control-Token")) {
-			return apiError{Status: http.StatusForbidden, Code: "runtime_control_denied", Message: "Runtime control authorization failed."}
-		}
-		ready, reason, err := s.engine.RuntimeUpdateReadiness(ctx)
-		if err != nil {
-			return err
-		}
-		if !ready {
-			return apiError{Status: http.StatusConflict, Code: "runtime_busy", Message: "Runtime update is blocked by active work.", Details: map[string]any{"reason": reason}}
-		}
-		if err := writeJSON(w, http.StatusAccepted, map[string]any{"accepted": true, "instanceEpoch": s.engine.Epoch()}); err != nil {
-			return err
-		}
-		go func() {
-			time.Sleep(25 * time.Millisecond)
-			s.requestShutdown()
-		}()
-		return nil
+		return s.shutdownIfIdle(w, r)
 	case r.Method == http.MethodGet && p == "/api/database/health":
-		health, err := s.store.DatabaseHealth(ctx)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"databaseHealth": health})
+		return s.databaseHealth(w, r)
 	case r.Method == http.MethodGet && p == "/api/timeline/storage":
-		status, err := s.store.TimelineStorageStatus(ctx)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"timelineStorage": status})
+		return s.timelineStorage(w, r)
 	case r.Method == http.MethodPost && p == "/api/database/cleanup":
-		var body store.DatabaseCleanupRequest
-		if err := readJSON(r, &body); err != nil {
-			return err
-		}
-		result, err := s.engine.CleanDatabase(ctx, body)
-		if err != nil {
-			code := "database_cleanup_unavailable"
-			if errors.Is(err, store.ErrDatabaseHealthChanged) {
-				code = "database_health_changed"
-			}
-			return apiError{Status: http.StatusConflict, Code: code, Message: err.Error()}
-		}
-		return writeJSON(w, http.StatusOK, result)
+		return s.cleanDatabase(w, r)
 	case r.Method == http.MethodGet && p == "/api/bootstrap":
 		return s.bootstrap(w, r)
 	case r.Method == http.MethodGet && p == "/api/calibration/active":
-		calibration, err := s.engine.CalibrationOverview(ctx)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"calibration": calibration.Active})
+		return s.activeCalibration(w, r)
 	case r.Method == http.MethodPost && p == "/api/calibration/sessions":
-		var body struct {
-			UnifiedSessionID string `json:"unifiedSessionId"`
-			TriggerKind      string `json:"triggerKind"`
-		}
-		if err := readJSON(r, &body); err != nil {
-			return err
-		}
-		calibration, err := s.engine.StartCalibration(ctx, body.UnifiedSessionID, body.TriggerKind)
-		if err != nil {
-			if errors.Is(err, engine.ErrCalibrationRequiresValidatedCandidate) {
-				return apiError{Status: http.StatusConflict, Code: "calibration_sample_unavailable", Message: "The latest check produced no validated calibration entry. Choose Update now again."}
-			}
-			return badRequest(err.Error())
-		}
-		return writeJSON(w, http.StatusCreated, map[string]any{"calibration": calibration})
+		return s.startCalibration(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/calibration/sessions/") && !strings.Contains(strings.TrimPrefix(p, "/api/calibration/sessions/"), "/samples/"):
-		id := path.Base(p)
-		calibration, err := s.engine.Calibration(ctx, id)
-		if errors.Is(err, sql.ErrNoRows) {
-			return notFound("calibration")
-		}
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"calibration": calibration})
+		return s.calibrationSession(w, r, p)
 	case r.Method == http.MethodPut && strings.HasPrefix(p, "/api/calibration/sessions/"):
-		parts := strings.Split(strings.TrimPrefix(p, "/api/calibration/sessions/"), "/")
-		if len(parts) != 3 || parts[0] == "" || parts[1] != "samples" {
-			return notFound("calibration route")
-		}
-		ordinal, err := strconv.Atoi(parts[2])
-		if err != nil || ordinal < 0 || ordinal > 9 {
-			return badRequest("calibration sample ordinal must be between 0 and 9")
-		}
-		var decision domain.CalibrationDecision
-		if err := readJSON(r, &decision); err != nil {
-			return err
-		}
-		calibration, err := s.engine.DecideCalibration(ctx, parts[0], ordinal, decision)
-		if err != nil {
-			return badRequest(err.Error())
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"calibration": calibration})
+		return s.decideCalibrationSample(w, r, p)
 	case r.Method == http.MethodGet && p == "/api/onboarding":
-		onboarding, err := s.engine.Onboarding(ctx)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"onboarding": onboarding})
+		return s.onboarding(w, r)
 	case r.Method == http.MethodPut && p == "/api/onboarding":
-		var body struct {
-			ActiveSources []domain.Source `json:"activeSources"`
-		}
-		if err := readJSON(r, &body); err != nil {
-			return err
-		}
-		onboarding, err := s.engine.CompleteOnboarding(ctx, body.ActiveSources)
-		if err != nil {
-			return badRequest(err.Error())
-		}
-		settings, err := s.engine.Settings(ctx)
-		if err != nil {
-			return err
-		}
-		calibration, err := s.engine.CalibrationOverview(ctx)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"onboarding": onboarding, "settings": settings, "collectionRuntime": s.engine.CollectionRuntime(), "calibration": calibration})
+		return s.completeOnboarding(w, r)
 	case r.Method == http.MethodGet && p == "/api/settings":
-		settings, err := s.engine.Settings(ctx)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"provider": s.engine.ProviderName(), "settings": settings, "collectionRuntime": s.engine.CollectionRuntime(), "reasoningProviders": s.engine.ReasoningProviders(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime()})
+		return s.settings(w, r)
 	case r.Method == http.MethodGet && p == "/api/reasoning/providers/readiness":
-		providers, err := s.engine.ReasoningProviderReadiness(ctx)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"reasoningProviders": providers})
+		return s.reasoningProviderReadiness(w, r)
 	case r.Method == http.MethodPut && p == "/api/reasoning/credentials":
-		var body struct {
-			Provider string `json:"provider"`
-			Secret   string `json:"secret"`
-		}
-		if err := readJSON(r, &body); err != nil {
-			return err
-		}
-		providerName := strings.TrimSpace(body.Provider)
-		provider, ok := s.config.Reasoning.Providers[providerName]
-		if !ok || provider.HideFromSettings {
-			return apiError{Status: http.StatusBadRequest, Code: "unknown_provider", Message: "The selected reasoning provider is unavailable."}
-		}
-		credentialRef := strings.TrimSpace(provider.CredentialRef)
-		if credentialRef == "" {
-			return apiError{Status: http.StatusBadRequest, Code: "credential_not_supported", Message: "The selected reasoning provider does not use an API credential."}
-		}
-		secret := strings.TrimSpace(body.Secret)
-		if secret == "" {
-			return badRequest("credential value is required")
-		}
-		var validation reasoning.GeminiCredentialValidation
-		if config.IsGeminiProvider(providerName) {
-			validation = reasoning.ValidateGeminiCredential(ctx, provider.Endpoint, provider.Planning.StableModelID(), secret)
-			if validation.Status != reasoning.GeminiCredentialValid {
-				return apiError{Status: validation.HTTPStatus, Code: "gemini_" + validation.Status, Message: validation.Message, Details: map[string]any{"provider": providerName, "model": validation.Model, "validationStatus": validation.Status}}
-			}
-		}
-		if err := s.credentials.Put(credentialRef, secret); err != nil {
-			s.logger.Printf("secure credential write failed for ref %q: %v", credentialRef, err)
-			return apiError{Status: http.StatusInternalServerError, Code: "credential_store_failed", Message: "AkuBrowser could not save this credential securely."}
-		}
-		body.Secret = ""
-		providerSummaries := s.engine.ReasoningProviders()
-		for index := range providerSummaries {
-			if providerSummaries[index].Name == providerName {
-				providerSummaries[index].Configured = true
-				providerSummaries[index].ConfigurationStatus = "ready"
-				if config.IsGeminiProvider(providerName) {
-					providerSummaries[index].AvailabilityChecked = true
-					providerSummaries[index].Available = true
-					providerSummaries[index].AvailabilityStatus = reasoning.GeminiCredentialValid
-					providerSummaries[index].AvailabilityMessage = validation.Message
-				}
-			}
-		}
-		response := map[string]any{
-			"credential":         map[string]any{"provider": providerName, "reference": credentialRef, "configured": true},
-			"reasoningProviders": providerSummaries,
-		}
-		if config.IsGeminiProvider(providerName) {
-			response["validation"] = map[string]any{"status": validation.Status, "model": validation.Model, "message": validation.Message}
-		}
-		return writeJSON(w, http.StatusOK, response)
+		return s.saveReasoningCredential(w, r)
 	case r.Method == http.MethodPost && p == "/api/reasoning/runtime/discover":
-		runtime, err := s.engine.DiscoverReasoningExecutable(ctx)
-		if err != nil {
-			return badRequest(err.Error())
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"reasoningRuntime": runtime})
+		return s.discoverReasoningRuntime(w, r)
 	case r.Method == http.MethodPut && p == "/api/settings":
-		var body struct {
-			Settings           domain.Settings `json:"settings"`
-			ConfirmationPhrase string          `json:"confirmationPhrase"`
-		}
-		if err := readJSON(r, &body); err != nil {
-			return err
-		}
-		current, err := s.engine.Settings(ctx)
-		if err != nil {
-			return err
-		}
-		if body.Settings.AIDetectionEnabled && body.Settings.AIDetectionPresentation == "hide" && current.AIDetectionPresentation != "hide" && body.ConfirmationPhrase != domain.AIHideConfirmationPhrase {
-			return badRequest("activating Hide requires the exact confirmation phrase")
-		}
-		settings, err := s.engine.SaveSettings(ctx, body.Settings)
-		if err != nil {
-			return badRequest(err.Error())
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"provider": s.engine.ProviderName(), "settings": settings, "collectionRuntime": s.engine.CollectionRuntime(), "reasoningProviders": s.engine.ReasoningProviders(), "reasoningRuntime": s.engine.ReasoningRuntime(), "reasoningProcesses": s.engine.ReasoningProcesses(settings), "mediaProvenanceRuntime": s.engine.MediaProvenanceRuntime()})
+		return s.saveSettings(w, r)
 	case r.Method == http.MethodPost && p == "/api/updates":
 		return s.startUpdate(w, r)
 	case r.Method == http.MethodGet && p == "/api/sessions/active":
@@ -594,575 +312,65 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/sessions/") && strings.HasSuffix(p, "/cancel"):
 		return s.cancelSession(w, r, p)
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/runs/"):
-		id := path.Base(p)
-		run, err := s.engine.Run(ctx, id)
-		if errors.Is(err, sql.ErrNoRows) {
-			return notFound("run")
-		}
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"run": run})
+		return s.runDetail(w, r, p)
 	case r.Method == http.MethodGet && p == "/api/timeline":
 		return s.timeline(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/content-context"):
-		id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/timeline/"), "/content-context")
-		if id == "" || strings.Contains(id, "/") {
-			return notFound("timeline item")
-		}
-		limit, err := parseContentContextLimit(r.URL.Query())
-		if err != nil {
-			return err
-		}
-		result, err := s.engine.ContentContext(ctx, id, limit)
-		if errors.Is(err, sql.ErrNoRows) {
-			return notFound("timeline item")
-		}
-		if errors.Is(err, store.ErrContentContextNotEligible) {
-			return apiError{Status: http.StatusConflict, Code: "timeline_content_context_not_eligible", Message: "Only a final visible Timeline item can find related local context."}
-		}
-		if err != nil {
-			return err
-		}
-		matches := make([]contentContextMatchView, 0, len(result.Matches))
-		for _, match := range result.Matches {
-			matches = append(matches, publicContentContextMatch(match))
-		}
-		topicInsights := make([]contentContextTopicInsightView, 0, len(result.TopicInsights))
-		for _, insight := range result.TopicInsights {
-			topicInsights = append(topicInsights, publicContentContextTopicInsight(insight))
-		}
-		direct := result.DirectContext
-		if direct == nil {
-			direct = []domain.DirectContext{}
-		}
-		if len(direct) > domain.DirectContextLimit {
-			direct = direct[:domain.DirectContextLimit]
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"matches": matches, "topicInsights": topicInsights, "directContext": direct})
+		return s.contentContext(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/content-context-feedback"):
-		id := path.Base(strings.TrimSuffix(p, "/content-context-feedback"))
-		var body domain.ContentContextFeedbackInput
-		if err := readJSON(r, &body); err != nil {
-			return err
-		}
-		feedback, err := s.engine.AddContentContextFeedback(ctx, id, body)
-		if errors.Is(err, sql.ErrNoRows) {
-			return notFound("Timeline item or related context")
-		}
-		if errors.Is(err, store.ErrContentContextNotEligible) {
-			return apiError{Status: http.StatusConflict, Code: "timeline_content_context_not_eligible", Message: "Only a final visible Timeline item can receive related context feedback."}
-		}
-		if err != nil {
-			return badRequest(err.Error())
-		}
-		return writeJSON(w, http.StatusCreated, map[string]any{"feedback": feedback})
+		return s.addContentContextFeedback(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/content-context-feedback/") && strings.HasSuffix(p, "/undo"):
-		id := path.Base(strings.TrimSuffix(p, "/undo"))
-		feedback, err := s.engine.UndoContentContextFeedback(ctx, id)
-		if errors.Is(err, sql.ErrNoRows) {
-			return notFound("content context feedback")
-		}
-		if err != nil {
-			return badRequest(err.Error())
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"feedback": feedback})
+		return s.undoContentContextFeedback(w, r, p)
 	case r.Method == http.MethodGet && p == "/api/living-topics":
-		topics, err := s.engine.LivingTopics(ctx)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"topics": topics})
+		return s.livingTopics(w, r)
 	case r.Method == http.MethodGet && p == "/api/living-topics/notifications":
-		summary, err := s.engine.LivingTopicNotifications(ctx)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"notifications": summary})
+		return s.livingTopicNotifications(w, r)
 	case r.Method == http.MethodPost && p == "/api/living-topics":
-		var body struct {
-			Name            string   `json:"name"`
-			Description     string   `json:"description"`
-			Aliases         []string `json:"aliases"`
-			IncludeCriteria string   `json:"includeCriteria"`
-			ExcludeCriteria string   `json:"excludeCriteria"`
-		}
-		if err := readJSON(r, &body); err != nil {
-			return err
-		}
-		topic, err := s.engine.CreateLivingTopicWithRoutingCriteria(ctx, domain.LivingTopicCriteriaInput{Name: body.Name, Description: body.Description, Aliases: body.Aliases, IncludeCriteria: body.IncludeCriteria, ExcludeCriteria: body.ExcludeCriteria})
-		if err != nil {
-			return badRequest(err.Error())
-		}
-		return writeJSON(w, http.StatusCreated, map[string]any{"topic": topic})
+		return s.createLivingTopic(w, r)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/living-topic-moves/") && strings.HasSuffix(p, "/undo"):
-		moveID := path.Base(strings.TrimSuffix(p, "/undo"))
-		if err := requireEmptyBody(r); err != nil {
-			return err
-		}
-		move, err := s.engine.UndoLivingTopicMemberMove(ctx, moveID)
-		if errors.Is(err, store.ErrLivingTopicMoveNotFound) {
-			return notFound("living topic move")
-		}
-		if errors.Is(err, store.ErrLivingTopicMoveNotCurrent) || errors.Is(err, store.ErrLivingTopicMoveSourceConflict) || errors.Is(err, store.ErrLivingTopicMemberMax) {
-			return conflict(err.Error())
-		}
-		if errors.Is(err, store.ErrMemoryNotFound) {
-			return notFound("library item")
-		}
-		if err != nil {
-			return badRequest(err.Error())
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"move": move})
+		return s.undoLivingTopicMove(w, r, p)
 	case strings.HasPrefix(p, "/api/living-topics/"):
-		parts := strings.Split(strings.Trim(strings.TrimPrefix(p, "/api/living-topics/"), "/"), "/")
-		if len(parts) == 1 && parts[0] != "" && r.Method == http.MethodGet {
-			detail, err := s.engine.LivingTopic(ctx, parts[0])
-			if errors.Is(err, store.ErrLivingTopicNotFound) {
-				return notFound("living topic")
-			}
-			if err != nil {
-				return err
-			}
-			return writeJSON(w, http.StatusOK, publicLivingTopicDetail(detail))
-		}
-		if len(parts) == 1 && parts[0] != "" && r.Method == http.MethodPatch {
-			var body struct {
-				Name            string   `json:"name"`
-				Description     string   `json:"description"`
-				Aliases         []string `json:"aliases"`
-				IncludeCriteria string   `json:"includeCriteria"`
-				ExcludeCriteria string   `json:"excludeCriteria"`
-			}
-			if err := readJSON(r, &body); err != nil {
-				return err
-			}
-			topic, err := s.engine.UpdateLivingTopicRoutingCriteria(ctx, parts[0], domain.LivingTopicCriteriaInput{Name: body.Name, Description: body.Description, Aliases: body.Aliases, IncludeCriteria: body.IncludeCriteria, ExcludeCriteria: body.ExcludeCriteria})
-			if errors.Is(err, store.ErrLivingTopicNotFound) {
-				return notFound("living topic")
-			}
-			if err != nil {
-				return badRequest(err.Error())
-			}
-			return writeJSON(w, http.StatusOK, map[string]any{"topic": topic})
-		}
-		if len(parts) == 2 && parts[0] != "" && parts[1] == "members" && r.Method == http.MethodPost {
-			var body struct {
-				MemoryItemID string `json:"memoryItemId"`
-			}
-			if err := readJSON(r, &body); err != nil {
-				return err
-			}
-			detail, err := s.engine.AddLivingTopicMember(ctx, parts[0], body.MemoryItemID)
-			if errors.Is(err, store.ErrLivingTopicNotFound) {
-				return notFound("living topic")
-			}
-			if errors.Is(err, store.ErrMemoryNotFound) {
-				return notFound("library item")
-			}
-			if errors.Is(err, store.ErrLivingTopicMemberMax) {
-				return conflict(err.Error())
-			}
-			if err != nil {
-				return badRequest(err.Error())
-			}
-			return writeJSON(w, http.StatusOK, publicLivingTopicDetail(detail))
-		}
-		if len(parts) == 3 && parts[0] != "" && parts[1] == "members" && parts[2] != "" && r.Method == http.MethodDelete {
-			detail, err := s.engine.RemoveLivingTopicMember(ctx, parts[0], parts[2])
-			if errors.Is(err, store.ErrLivingTopicNotFound) {
-				return notFound("living topic")
-			}
-			if err != nil {
-				return err
-			}
-			return writeJSON(w, http.StatusOK, publicLivingTopicDetail(detail))
-		}
-		if len(parts) == 4 && parts[0] != "" && parts[1] == "members" && parts[2] != "" && parts[3] == "move" && r.Method == http.MethodPost {
-			var body struct {
-				ToTopicID string `json:"toTopicId"`
-			}
-			if err := readJSON(r, &body); err != nil {
-				return err
-			}
-			move, err := s.engine.MoveLivingTopicMember(ctx, parts[0], body.ToTopicID, parts[2])
-			if errors.Is(err, store.ErrLivingTopicNotFound) {
-				return notFound("living topic")
-			}
-			if errors.Is(err, store.ErrLivingTopicMoveNotFound) {
-				return notFound("living topic membership")
-			}
-			if errors.Is(err, store.ErrMemoryNotFound) {
-				return notFound("library item")
-			}
-			if errors.Is(err, store.ErrLivingTopicMemberMax) || errors.Is(err, store.ErrLivingTopicMoveSameTopic) {
-				return conflict(err.Error())
-			}
-			if err != nil {
-				return badRequest(err.Error())
-			}
-			return writeJSON(w, http.StatusOK, map[string]any{"move": move})
-		}
-		if len(parts) == 2 && parts[0] != "" && parts[1] == "snapshots" && r.Method == http.MethodPost {
-			if err := requireEmptyBody(r); err != nil {
-				return err
-			}
-			detail, err := s.engine.RequestLivingTopicUnderstanding(ctx, parts[0], "refresh_now")
-			if errors.Is(err, store.ErrLivingTopicNotFound) {
-				return notFound("living topic")
-			}
-			if err != nil {
-				return conflict(err.Error())
-			}
-			return writeJSON(w, http.StatusAccepted, map[string]any{"detail": publicLivingTopicDetail(detail)})
-		}
-		if len(parts) == 2 && parts[0] != "" && parts[1] == "activation" && r.Method == http.MethodPost {
-			if err := requireEmptyBody(r); err != nil {
-				return err
-			}
-			detail, err := s.engine.RequestLivingTopicActivation(ctx, parts[0], "rescan_now")
-			if errors.Is(err, store.ErrLivingTopicNotFound) {
-				return notFound("living topic")
-			}
-			if err != nil {
-				return conflict(err.Error())
-			}
-			return writeJSON(w, http.StatusAccepted, map[string]any{"detail": publicLivingTopicDetail(detail)})
-		}
-		if len(parts) == 2 && parts[0] != "" && parts[1] == "seen" && r.Method == http.MethodPost {
-			var body struct {
-				SeenThrough string `json:"seenThrough"`
-			}
-			if err := readJSON(r, &body); err != nil {
-				return err
-			}
-			topic, err := s.engine.AcknowledgeLivingTopicEvidence(ctx, parts[0], body.SeenThrough)
-			if errors.Is(err, store.ErrLivingTopicNotFound) {
-				return notFound("living topic")
-			}
-			if err != nil {
-				return badRequest(err.Error())
-			}
-			return writeJSON(w, http.StatusOK, map[string]any{"topic": topic})
-		}
-		if len(parts) == 4 && parts[0] != "" && parts[1] == "candidates" && parts[2] != "" && r.Method == http.MethodPost {
-			if err := requireEmptyBody(r); err != nil {
-				return err
-			}
-			action := parts[3]
-			if action != "accept" && action != "reject" && action != "undo" {
-				return notFound("living topic candidate action")
-			}
-			detail, err := s.engine.ReviewLivingTopicCandidate(ctx, parts[0], parts[2], action)
-			if errors.Is(err, store.ErrLivingTopicNotFound) {
-				return notFound("living topic")
-			}
-			if errors.Is(err, store.ErrLivingTopicCandidateNotFound) {
-				return notFound("living topic candidate")
-			}
-			if errors.Is(err, store.ErrMemoryNotFound) {
-				return notFound("library item")
-			}
-			if errors.Is(err, store.ErrLivingTopicMemberMax) || errors.Is(err, store.ErrLivingTopicCandidateReview) {
-				return conflict(err.Error())
-			}
-			if err != nil {
-				return badRequest(err.Error())
-			}
-			return writeJSON(w, http.StatusOK, publicLivingTopicDetail(detail))
-		}
-		return notFound("living topic route")
+		return s.livingTopicRoute(w, r, p)
 	case r.Method == http.MethodGet && p == "/api/library/items":
-		query, err := parseLibraryQuery(r.URL.Query())
-		if err != nil {
-			return err
-		}
-		result, err := s.engine.Library(ctx, query)
-		if err != nil {
-			if errors.Is(err, store.ErrMemoryLibraryQuery) {
-				return badRequest(err.Error())
-			}
-			return err
-		}
-		items := make([]libraryItemView, 0, len(result.Items))
-		for _, item := range result.Items {
-			items = append(items, publicLibraryItem(item, false))
-		}
-		payload := map[string]any{"items": items, "nextCursor": result.NextCursor}
-		if libraryTopicKnowledgeRequested(r.URL.Query()) && strings.TrimSpace(query.Query) != "" && query.Cursor == "" && !query.SavedOnly {
-			insights, err := s.engine.LibraryTopicKnowledge(ctx, query.Query, libraryTopicKnowledgeLimit)
-			if err != nil {
-				if errors.Is(err, store.ErrMemoryLibraryQuery) {
-					return badRequest(err.Error())
-				}
-				return err
-			}
-			knowledge := make([]libraryTopicKnowledgeView, 0, len(insights))
-			for _, insight := range insights {
-				knowledge = append(knowledge, publicLibraryTopicKnowledge(insight))
-			}
-			payload["topicKnowledge"] = knowledge
-		}
-		return writeJSON(w, http.StatusOK, payload)
+		return s.libraryItems(w, r)
 	case r.Method == http.MethodGet && p == "/api/library/saved":
-		query, err := parseLibraryQuery(r.URL.Query())
-		if err != nil {
-			return err
-		}
-		query.SavedOnly = true
-		result, err := s.engine.SavedLibrary(ctx, query)
-		if err != nil {
-			if errors.Is(err, store.ErrMemoryLibraryQuery) {
-				return badRequest(err.Error())
-			}
-			return err
-		}
-		items := make([]libraryItemView, 0, len(result.Items))
-		for _, item := range result.Items {
-			items = append(items, publicLibraryItem(item, false))
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"items": items, "nextCursor": result.NextCursor})
+		return s.savedLibraryItems(w, r)
 	case r.Method == http.MethodGet && p == "/api/library/storage":
-		limit, err := parseLibraryStorageLimit(r.URL.Query())
-		if err != nil {
-			return err
-		}
-		report, err := s.engine.LibraryStorage(ctx, limit)
-		if errors.Is(err, store.ErrMemoryStorageRecommendationLimit) {
-			return badRequest(err.Error())
-		}
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, report)
+		return s.libraryStorage(w, r)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/library/items/") && strings.HasSuffix(p, "/release-full-copy"):
-		id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/library/items/"), "/release-full-copy")
-		if id == "" || strings.Contains(id, "/") {
-			return notFound("library item")
-		}
-		item, err := s.engine.ReleaseLibraryItem(ctx, id)
-		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrMemoryNotFound) || errors.Is(err, store.ErrMemoryTombstoned) {
-			return notFound("library item")
-		}
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"released": true, "id": id, "retentionTier": item.RetentionTier})
+		return s.releaseLibraryFullCopy(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/library/items/") && strings.HasSuffix(p, "/keep-in-library"):
-		id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/library/items/"), "/keep-in-library")
-		if id == "" || strings.Contains(id, "/") {
-			return notFound("library item")
-		}
-		item, err := s.engine.KeepMemoryInLibrary(ctx, id)
-		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrMemoryNotFound) || errors.Is(err, store.ErrMemoryNotSaved) {
-			return notFound("library item")
-		}
-		if errors.Is(err, store.ErrSavedMemoryTextUnavailable) {
-			return apiError{Status: http.StatusConflict, Code: "saved_memory_text_unavailable", Message: "The saved source text is unavailable, so it cannot be kept as a full copy."}
-		}
-		if errors.Is(err, store.ErrMemoryTombstoned) {
-			return notFound("library item")
-		}
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"kept": true, "id": id, "saved": item.Saved, "permanentKeep": item.PermanentKeep, "retentionTier": item.RetentionTier})
+		return s.keepLibraryItem(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/library/items/") && strings.HasSuffix(p, "/done"):
-		id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/library/items/"), "/done")
-		if id == "" || strings.Contains(id, "/") {
-			return notFound("library item")
-		}
-		item, err := s.engine.DoneSavedMemory(ctx, id)
-		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrMemoryNotFound) {
-			return notFound("library item")
-		}
-		if errors.Is(err, store.ErrMemoryTombstoned) {
-			return notFound("library item")
-		}
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"done": true, "id": id, "saved": item.Saved, "permanentKeep": item.PermanentKeep, "retentionTier": item.RetentionTier})
+		return s.doneSavedMemory(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/library/items/") && strings.HasSuffix(p, "/forget-permanently"):
-		id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/library/items/"), "/forget-permanently")
-		if id == "" || strings.Contains(id, "/") {
-			return notFound("library item")
-		}
-		_, err := s.engine.ForgetLibraryItem(ctx, id)
-		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrMemoryNotFound) {
-			return notFound("library item")
-		}
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"forgotten": true, "id": id})
+		return s.forgetLibraryItem(w, r, p)
 	case r.Method == http.MethodDelete && strings.HasPrefix(p, "/api/library/items/"):
-		id := strings.TrimPrefix(p, "/api/library/items/")
-		if id == "" || strings.Contains(id, "/") {
-			return notFound("library item")
-		}
-		err := s.engine.RemoveLibraryItem(ctx, id)
-		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrMemoryNotFound) {
-			return notFound("library item")
-		}
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"removed": true, "id": id})
+		return s.removeLibraryItem(w, r, p)
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/library/items/"):
-		id := path.Base(p)
-		if id == "" || id == "items" {
-			return notFound("library item")
-		}
-		item, err := s.engine.LibraryItem(ctx, id)
-		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, store.ErrMemoryNotFound) {
-			return notFound("library item")
-		}
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"item": publicLibraryItem(item, true)})
+		return s.libraryItem(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/auto-update/batches/") && strings.HasSuffix(p, "/reveal"):
-		id := path.Base(strings.TrimSuffix(p, "/reveal"))
-		var body struct {
-			Presentation string `json:"presentation"`
-		}
-		if err := readJSON(r, &body); err != nil {
-			return err
-		}
-		batch, err := s.engine.RevealPreparedBatch(ctx, id, body.Presentation)
-		if err != nil {
-			return conflict(err.Error())
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"batch": batch})
+		return s.revealPreparedBatch(w, r, p)
 	case r.Method == http.MethodPost && p == "/api/auto-update/budget/reset":
-		status, err := s.engine.ResetAutoUpdateDailyQuota(ctx)
-		if err != nil {
-			return conflict(err.Error())
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"autoUpdate": status})
+		return s.resetAutoUpdateBudget(w, r)
 	case r.Method == http.MethodPost && p == "/api/capture/x/confirm-recovery":
-		var body struct {
-			PauseID   string `json:"pauseId"`
-			Confirmed bool   `json:"confirmed"`
-		}
-		if err := readJSON(r, &body); err != nil {
-			return err
-		}
-		if !body.Confirmed {
-			return badRequest("explicit manual recovery confirmation is required")
-		}
-		if err := s.engine.ConfirmXCaptureRecovery(ctx, body.PauseID); err != nil {
-			return conflict(err.Error())
-		}
-		status, err := s.engine.AutoUpdateStatus(ctx)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"autoUpdate": status})
+		return s.confirmXCaptureRecovery(w, r)
 	case r.Method == http.MethodPost && p == "/api/auto-update/usage-limit/restore":
-		status, err := s.engine.ConfirmAutoUpdateUsageRestored(ctx)
-		if err != nil {
-			return conflict(err.Error())
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"autoUpdate": status})
+		return s.restoreAutoUpdateUsage(w, r)
 	case r.Method == http.MethodPost && p == "/api/auto-update/prepare":
-		session, err := s.engine.StartPreparedUpdateNow(ctx)
-		if err != nil {
-			return conflict(err.Error())
-		}
-		return writeJSON(w, http.StatusCreated, map[string]any{"session": session})
+		return s.prepareAutoUpdate(w, r)
 	case r.Method == http.MethodPost && p == "/api/collection/native-reader/close-and-resume":
-		closeCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
-		defer cancel()
-		result, err := s.closeNativeReaderAndResume(closeCtx)
-		if err != nil {
-			return apiError{Status: http.StatusConflict, Code: "native_reader_close_unverified", Message: err.Error()}
-		}
-		return writeJSON(w, http.StatusOK, result)
+		return s.closeNativeReaderHTTP(w, r)
 	case r.Method == http.MethodPost && p == "/api/ui/activity":
-		s.engine.RecordUIAccess(ctx)
-		status, err := s.engine.AutoUpdateStatus(ctx)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"recorded": true, "autoUpdate": status})
+		return s.recordUIActivity(w, r)
 	case r.Method == http.MethodGet && p == "/api/auto-update/status":
-		status, err := s.engine.AutoUpdateStatus(ctx)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"autoUpdate": status})
+		return s.autoUpdateStatus(w, r)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/keep-full-copy"):
-		// Legacy API compatibility. The embedded UI exposes Read later, while
-		// older clients may finish an already-issued Keep request.
-		id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/timeline/"), "/keep-full-copy")
-		if id == "" || strings.Contains(id, "/") {
-			return notFound("timeline item")
-		}
-		item, alreadyKept, err := s.engine.KeepTimelineFullCopy(ctx, id)
-		if errors.Is(err, sql.ErrNoRows) {
-			return notFound("timeline item")
-		}
-		if errors.Is(err, store.ErrMemoryTombstoned) {
-			return apiError{Status: http.StatusConflict, Code: "memory_tombstoned", Message: "This Timeline item was permanently forgotten, so a full copy cannot be kept."}
-		}
-		if errors.Is(err, store.ErrTimelineMemoryTextUnavailable) {
-			return apiError{Status: http.StatusConflict, Code: "timeline_memory_text_unavailable", Message: "The source text is unavailable for this Timeline item, so no full copy was kept."}
-		}
-		if errors.Is(err, store.ErrTimelineMemoryNotEligible) {
-			return apiError{Status: http.StatusConflict, Code: "timeline_memory_not_eligible", Message: "Only a final Timeline item from a completed update can be kept as a full copy."}
-		}
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"kept": true, "alreadyKept": alreadyKept, "retentionTier": item.RetentionTier})
+		return s.keepTimelineFullCopy(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/read-later"):
-		id := strings.TrimSuffix(strings.TrimPrefix(p, "/api/timeline/"), "/read-later")
-		if id == "" || strings.Contains(id, "/") {
-			return notFound("timeline item")
-		}
-		item, alreadySaved, err := s.engine.ReadLaterTimeline(ctx, id)
-		if errors.Is(err, sql.ErrNoRows) {
-			return notFound("timeline item")
-		}
-		if errors.Is(err, store.ErrMemoryTombstoned) {
-			return apiError{Status: http.StatusConflict, Code: "memory_tombstoned", Message: "This Timeline item was permanently forgotten, so it cannot be Saved."}
-		}
-		if errors.Is(err, store.ErrTimelineMemoryNotEligible) {
-			return apiError{Status: http.StatusConflict, Code: "timeline_memory_not_eligible", Message: "Only a final Timeline item from a completed update can be Saved for later."}
-		}
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"saved": true, "alreadySaved": alreadySaved, "retentionTier": item.RetentionTier, "permanentKeep": item.PermanentKeep})
+		return s.readLaterTimeline(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/feedback"):
-		started := time.Now()
-		traceID := feedbackTraceID(r.Header.Get("X-Aku-Feedback-Trace"))
-		w.Header().Set("X-Aku-Feedback-Trace", traceID)
-		var timing store.FeedbackTiming
-		ctx = store.WithFeedbackTiming(ctx, &timing)
-		outcome := "error"
-		defer func() {
-			if s.logger != nil {
-				s.logger.Printf("timeline_feedback_trace trace=%s outcome=%s handler_ms=%d store_ms=%d lookup_ms=%d hydration_ms=%d begin_tx_ms=%d transaction_ms=%d commit_ms=%d pool_wait_count_delta=%d pool_wait_ms_delta=%d", traceID, outcome, time.Since(started).Milliseconds(), timing.Total.Milliseconds(), timing.Lookup.Milliseconds(), timing.Hydration.Milliseconds(), timing.BeginTx.Milliseconds(), timing.Transaction.Milliseconds(), timing.Commit.Milliseconds(), timing.PoolWaitCountDelta, timing.PoolWaitDurationDelta.Milliseconds())
-			}
-		}()
-		id := path.Base(strings.TrimSuffix(p, "/feedback"))
-		var value domain.Feedback
-		if err := readJSON(r, &value); err != nil {
-			return err
-		}
-		feedback, err := s.engine.AddFeedback(ctx, id, value)
-		if err != nil {
-			return badRequest(err.Error())
-		}
-		w.Header().Set("Server-Timing", fmt.Sprintf("feedback;dur=%.1f, lookup;dur=%.1f, hydration;dur=%.1f, begin_tx;dur=%.1f, transaction;dur=%.1f, commit;dur=%.1f", float64(timing.Total.Microseconds())/1000, float64(timing.Lookup.Microseconds())/1000, float64(timing.Hydration.Microseconds())/1000, float64(timing.BeginTx.Microseconds())/1000, float64(timing.Transaction.Microseconds())/1000, float64(timing.Commit.Microseconds())/1000))
-		if err := writeJSON(w, http.StatusCreated, map[string]any{"feedback": feedback}); err != nil {
-			return err
-		}
-		outcome = "ok"
-		return nil
+		return s.addTimelineFeedback(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/ai-feedback"):
 		return s.addAIFeedback(w, r, p)
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/timeline/") && strings.HasSuffix(p, "/ai-feedback"):
@@ -1182,33 +390,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/event-corrections/") && strings.HasSuffix(p, "/undo"):
 		return s.undoSemanticCorrection(w, r, p)
 	case r.Method == http.MethodPost && p == "/api/bridge/heartbeat":
-		if err := s.requireBridge(r); err != nil {
-			return err
-		}
-		// The UI's legacy handshake may read capture readiness but cannot
-		// manufacture/refresh a capture-process heartbeat in split mode.
-		if s.splitCapture != nil && !s.splitCapture.authorized(r) {
-			return writeJSON(w, http.StatusAccepted, map[string]any{"instanceEpoch": s.engine.Epoch(), "bridge": s.engine.BridgeStatus()})
-		}
-		var body struct {
-			Capabilities domain.BridgeHeartbeat `json:"capabilities"`
-		}
-		if err := readJSON(r, &body); err != nil {
-			return err
-		}
-		if origin := canonicalExtensionOrigin(r.Header.Get("Origin")); origin != "" {
-			body.Capabilities.ExtensionOrigin = origin
-		} else {
-			body.Capabilities.ExtensionOrigin = canonicalExtensionOrigin(body.Capabilities.ExtensionOrigin)
-		}
-		if s.splitCapture != nil {
-			s.splitCapture.mu.Lock()
-			defer s.splitCapture.mu.Unlock()
-			if s.splitCapture.key != r.Header.Get("X-Aku-Capture-Instance") {
-				return apiError{Status: 409, Code: "capture_instance_mismatch", Message: "Capture owner changed."}
-			}
-		}
-		return writeJSON(w, http.StatusAccepted, map[string]any{"instanceEpoch": s.engine.Epoch(), "bridge": s.engine.RecordHeartbeat(body.Capabilities)})
+		return s.bridgeHeartbeat(w, r)
 	case r.Method == http.MethodPost && p == "/api/operations/bridge/actions/reload-self":
 		return s.requestBridgeReload(w, r)
 	case r.Method == http.MethodGet && p == "/api/operations/bridge/actions/next":
@@ -1218,54 +400,13 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/operations/bridge/actions/"):
 		return s.bridgeActionStatus(w, r, p)
 	case r.Method == http.MethodGet && p == "/api/bridge/health":
-		return writeJSON(w, http.StatusOK, map[string]any{"bridge": s.engine.BridgeStatus()})
+		return s.bridgeHealth(w, r)
 	case r.Method == http.MethodGet && p == "/api/bridge/commands/next":
 		return s.nextBridgeCommand(w, r)
 	case r.Method == http.MethodGet && p == "/api/bridge/commands/pending":
 		return s.pendingBridgeCommand(w, r)
 	case r.Method == http.MethodPost && p == "/api/bridge/capture-surfaces/events":
-		if err := s.requireBridge(r); err != nil {
-			return err
-		}
-		var body struct {
-			Events []domain.CaptureSurfaceEvent `json:"events"`
-		}
-		if err := readJSON(r, &body); err != nil {
-			return err
-		}
-		if len(body.Events) < 1 || len(body.Events) > 32 {
-			return badRequest("capture surface telemetry must contain between 1 and 32 events")
-		}
-		recorded := make([]domain.CaptureSurfaceEvent, 0, len(body.Events))
-		record := func() error {
-			// Serialize the authenticated batch with rotation, keeping body and
-			// response I/O outside this section.
-			if t := s.splitCapture; t != nil {
-				t.mu.Lock()
-				defer t.mu.Unlock()
-				if subtle.ConstantTimeCompare([]byte(t.key), []byte(r.Header.Get("X-Aku-Capture-Instance"))) != 1 {
-					return apiError{Status: http.StatusConflict, Code: "capture_instance_mismatch", Message: "This operation belongs to the active Windows capture process."}
-				}
-			}
-			for _, event := range body.Events {
-				if event.Event == "native_trace" {
-					return badRequest("native capture telemetry is generated by Sidecar")
-				}
-				value, err := s.engine.RecordCaptureSurfaceEvent(ctx, event)
-				if err != nil {
-					return badRequest(err.Error())
-				}
-				recorded = append(recorded, value)
-				if value.Event == "released" {
-					s.nativeTrace.StopRun(value.RunID)
-				}
-			}
-			return nil
-		}
-		if err := record(); err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusAccepted, map[string]any{"events": recorded})
+		return s.captureSurfaceEvents(w, r)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/bridge/commands/") && strings.HasSuffix(p, "/observation"):
 		return s.acceptBridgeCommandObservation(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/bridge/commands/") && strings.HasSuffix(p, "/failure"):
@@ -1277,48 +418,9 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/bridge/media-recaptures/") && strings.HasSuffix(p, "/failure"):
 		return s.failBridgeMediaRecapture(w, r, p)
 	case r.Method == http.MethodPost && p == "/api/operations/reset-learning":
-		var body struct {
-			Confirmation string `json:"confirmation"`
-		}
-		if err := readJSON(r, &body); err != nil {
-			return err
-		}
-		if body.Confirmation != "RESET LEARNING" {
-			return badRequest("learning reset requires the exact confirmation RESET LEARNING")
-		}
-		if err := s.engine.ResetLearning(ctx); err != nil {
-			if strings.Contains(err.Error(), "update is running") {
-				return conflict(err.Error())
-			}
-			return err
-		}
-		calibration, err := s.engine.CalibrationOverview(ctx)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"status": "reset", "operation": "reset_learning", "calibration": calibration})
+		return s.resetLearning(w, r)
 	case r.Method == http.MethodPost && p == "/api/operations/full-reset":
-		var body struct {
-			Confirmation string `json:"confirmation"`
-		}
-		if err := readJSON(r, &body); err != nil {
-			return err
-		}
-		if body.Confirmation != "RESET AKUBROWSER" {
-			return badRequest("full reset requires the exact confirmation RESET AKUBROWSER")
-		}
-		reset, err := s.engine.FullReset(ctx)
-		if err != nil {
-			if strings.Contains(err.Error(), "update is running") {
-				return conflict(err.Error())
-			}
-			return err
-		}
-		onboarding, err := s.engine.Onboarding(ctx)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"status": "reset", "operation": "full_reset", "reset": reset, "onboarding": onboarding})
+		return s.fullReset(w, r)
 	default:
 		return notFound("route")
 	}

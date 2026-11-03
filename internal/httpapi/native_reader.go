@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
@@ -305,4 +306,15 @@ func (s *Server) runDirectNativeReader(ctx context.Context, t *splitCaptureTrans
 		outcome = errors.New("reader transport stopped")
 	}
 	timing("reader_completion_wait", outcome == nil)
+}
+
+func (s *Server) closeNativeReaderHTTP(w http.ResponseWriter, r *http.Request) error {
+	ctx := r.Context()
+	closeCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	result, err := s.closeNativeReaderAndResume(closeCtx)
+	if err != nil {
+		return apiError{Status: http.StatusConflict, Code: "native_reader_close_unverified", Message: err.Error()}
+	}
+	return writeJSON(w, http.StatusOK, result)
 }
