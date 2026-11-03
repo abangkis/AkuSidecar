@@ -1,14 +1,15 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-03 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `bee6a9f` (Store Timeline read-model, after empty-candidate completion `de95c58`, after vision persistence `70ea120`; per-run candidate evaluation/completion, after acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
+Reviewed local source: AkuSidecar `f27e91b` (reviewed automatic Store feature separation; 95 declarations/15 feature files; after Store Timeline read-model `bee6a9f`, after empty-candidate completion `de95c58`, after vision persistence `70ea120`; per-run candidate evaluation/completion, after acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
-The previous code/roadmap checkpoint was published as `4c6baf3`, including
-empty-candidate completion `de95c58`. The owner separately approved Store Timeline
-read-model separation and authorized review, roadmap synchronization, commit and
-publication to origin/main at https://github.com/abangkis/AkuSidecar.git. Code
-`bee6a9f` and this roadmap are bound to the commit/publication readback below.
+The preceding published checkpoint is `6f3b5bc`, including Store Timeline
+read-model `bee6a9f`. The owner authorized automatic Store refactoring and then
+approved scoped review, roadmap synchronization, commit and push to origin/main
+at https://github.com/abangkis/AkuSidecar.git. Code `f27e91b` and this roadmap
+are bound to the commit/publication readback below. No runtime activation or
+trial is part of this checkpoint.
 Publication does not establish runtime activation or operational acceptance.
 The Browser worktree contains pre-existing build/cache changes; those changes
 are outside this synchronization and are not evidence of a released tuple.
@@ -1277,17 +1278,112 @@ These are local ignored QA receipts. Original sourceHead/sourceDirty/committed
 fields describe capture time and remain unchanged; the later readback binds the
 frozen tested payload to commits and the verified publication target.
 
+### Routine feedback follow-up completed within the automatic run
+
+The owner broadened authorization from one-at-a-time feature work to automatic
+Store refactoring: "Oke berdasarkan pola yang ada, jalankan secara otomatis proses
+refactoring utk store." The bounded run separates the remaining mixed feature
+responsibilities in store.go, adds characterization before changes, reviews the
+exact moves, runs regression/Windows checks and synchronizes these documents.
+Routine feedback moves as one complete transaction owner; its feedback row,
+preference learning and memory projection/retraction are not split apart.
+
+## Automatic Store feature-separation result (2026-11-03)
+
+This result is committed as `f27e91b`, after published checkpoint 6f3b5bc
+(Store Timeline read-model bee6a9f). The owner approved scoped review, roadmap
+synchronization, commit and push to origin/main at
+https://github.com/abangkis/AkuSidecar.git. The commit/publication readback below
+binds the frozen tested payload to this code and roadmap publication. No runtime
+activation, trial, user database operation or configuration change is included.
+
+| Dimension | Evidence and scope |
+| --- | --- |
+| Implemented | `f27e91b`: 95 original declarations move into 15 feature files; store.go falls from 2,573 to 233 lines and retains 13 foundation declarations. No function body, signature, SQL, lock, transaction, error return or guard call is rewritten |
+| Tested | Whole Store before/after pass and skip names match: default 462 pass/5 skip; dev 614 pass/7 skip. Six new roots add 40 scenarios (45 parent/subtest results). Matching 14-package regression (13 tested; Bridge builder compile-only): default 3,267 pass/50 skip; dev 4,111 pass/62 skip; zero failures. Four Windows amd64 tag combinations include the new test and produce 16 PE/amd64 artifacts |
+| Activated | Not performed; no runtime, restart, configuration or live trial change |
+| Acceptance | Scoped source/test review accepted with no findings and committed; publication is bound to the readback below. The selected central Store feature-separation cohort is source-complete. CL-3 remains partial; this does not certify the entire Store package, every migration path or operational reliability |
+
+All files below remain in package store with their existing receivers and shared
+state owner. Symbols and callers are unchanged; only file ownership/imports and
+spacing between declarations change.
+
+| Feature file | Declarations | Responsibility |
+| --- | ---: | --- |
+| feedback.go | 4 | Feedback timing context and atomic routine feedback/learning/memory action |
+| schema_migrations.go | 18 | Existing supported schema migration steps; registry and semantics retained |
+| source_registry.go | 2 | Domain source registry sync and one-time default adoption |
+| bridge_token.go | 3 | Bridge token read/create and constant-time comparison |
+| settings.go | 5 | Runtime settings and onboarding profile persistence |
+| session_creation.go | 4 | Ordinary/daily session admission and durable creation |
+| session_read_model.go | 5 | Session/run reads and captured-owner metadata projection |
+| session_lifecycle.go | 8 | Pipeline stages, completion/finalization, cancellation and replay admission |
+| capture_dispatch.go | 20 | Command start/follow-up/claim, collector routing and bounded dispatch expiry |
+| observations.go | 6 | Accepted observation/identity/receipt transaction and resumable reads |
+| capture_failure.go | 5 | Claimed/queued failure, accepted-capture fallback and failure persistence |
+| reasoning_telemetry.go | 2 | Invocation persistence and diagnostic reads |
+| knowledge.go | 3 | Knowledge and prior delivered/known evidence queries |
+| session_composition.go | 2 | Global session composition and its private item type |
+| database_reset.go | 8 | Reset/idle gates, verified backup and existing profile-marker consumption |
+
+Retain Store, Clock/systemClock, both clock accessors, Open/OpenReadOnly/
+OpenWithClock/openWithClock, initialization, Close/Path and the shared decodeJSON
+helper in store.go. Initialization remains the ordered composition root and
+SQLite driver registration remains there. Existing cohesive feature files,
+schema definitions, the migration registry, native/QA ownership and guard modules
+are retained unchanged; no compatibility path was deleted merely to reduce size.
+There are no pending feature extractions in this selected central-file cohort.
+
+The new characterization exercises real Store operations and disposable SQLite
+faults: feedback normalization/timing and feedback/learning/memory rollback;
+onboarding/registry/session creation atomicity; capture start/observation/identity/
+coverage/follow-up/cancellation failures; completion/finalization/telemetry/replay
+contracts; reset/backup/marker/cancellation behavior; and exact queued-expiry
+boundaries. Timing tests use sentinels to identify executed stages, accepting
+valid zero durations on Windows. Existing Store tests run in full before and
+after the moves, including source/capture/identity/provenance and migration gates.
+Skipped optional/environment tests retain their own existing scope; no real
+provider, user database performance run or race-detector result is claimed.
+
+An independent readback matches every one of the 108 original declaration texts
+against Git source 6f3b5bc, then verifies their new placement: 95 moved and 13
+retained. All 1,451 other previously tracked files were unchanged at validation,
+including Engine/HTTP, existing tests, schema, protocol, guards and already dirty
+user config. Four roadmap documents change only after validation. User .tmp/ and
+experiments/ remain excluded. SourceHead/sourceDirty/committed in the original
+receipt describe capture time and are preserved.
+
+Evidence: [frozen validation](../runtime/qa/store-auto-refactor-20261103/validation.json),
+[feature plan](../runtime/qa/store-auto-refactor-20261103/plan.json),
+[declaration review](../runtime/qa/store-auto-refactor-20261103/move-review.json),
+and [final candidate readback](../runtime/qa/store-auto-refactor-20261103/final-readback.json).
+The capture-time candidate receipts remain unchanged. Additional publication
+evidence: [scoped review](../runtime/qa/store-auto-refactor-review-20261103/review.json)
+and [commit/publication readback](../runtime/qa/store-auto-refactor-review-20261103/final-readback.json).
+These are local ignored QA receipts, not a published release manifest.
+
+CL-3 status: Settings bounded extractions are implemented/tested; the declined
+provider-selection wrapper and further phase splitting remain retained/deferred.
+The selected Engine and central HTTP cohorts are source-complete with their
+facades/infrastructure retained. Central Store separation is source-complete as
+`f27e91b`, with existing cohesive feature files retained. Overall CL-3 remains
+partial pending a consolidated responsibility-map/exit-criteria review across
+these owners; this is not an instruction to split retained code again. Runtime
+activation and operational acceptance are separate dimensions, not prerequisites
+invented for the source-structure exit gate.
+
 ### Proposed next cleanup analysis
 
-Read-only review of Store.AddFeedback routine More/Less orchestration: authoritative
-Timeline lookup and input normalization, hydration and tombstone preparation,
-then the transaction that records feedback, preference learning and memory
-projection/retraction together. Assess whether one coherent file/feature seam
-is warranted; retain atomicity rather than separating transaction participants.
-Inventory existing regression and identify characterization for failure rollback,
-caller context, error prefixes and FeedbackTiming scopes. A retain-only result
-is valid if the function already has a clear owner. No implementation, schema,
-protocol/guard/configuration change, activation or trial is authorized here.
+The automatic central Store cohort is source-complete as f27e91b. The next
+bounded task is a read-only CL-3 exit-criteria map across Settings, Engine,
+HTTP and Store. Match each responsibility to its existing owner and classify
+implemented/tested, retain-required, deferred with a concrete trigger, or a
+remaining gap. Check the existing exit condition: reviewed ownership map and
+validated extractions without a second state owner, broader admission, new
+concurrency or wire changes. Recommend source closure if no material gap remains;
+otherwise identify one justified next increment and its characterization needs.
+Do not split the retained foundation or cohesive feature files by line count.
+No further code, configuration, activation or trial is selected by this proposal.
 
 
 ## Product and installation roadmaps
