@@ -4,15 +4,23 @@ Status synchronized: 2026-11-03 (Asia/Jakarta).
 Reviewed local source: AkuSidecar `f27e91b` (reviewed automatic Store feature separation; 95 declarations/15 feature files; after Store Timeline read-model `bee6a9f`, after empty-candidate completion `de95c58`, after vision persistence `70ea120`; per-run candidate evaluation/completion, after acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
-The preceding published checkpoint is `6f3b5bc`, including Store Timeline
-read-model `bee6a9f`. The owner authorized automatic Store refactoring and then
-approved scoped review, roadmap synchronization, commit and push to origin/main
-at https://github.com/abangkis/AkuSidecar.git. Code `f27e91b` and this roadmap
-are bound to the commit/publication readback below. No runtime activation or
-trial is part of this checkpoint.
+The preceding published checkpoint is `6b9b3a0`, including automatic Store
+feature separation `f27e91b`. The owner accepted the read-only CL-3 closure
+review, then authorized documentation synchronization, commit and push to
+origin/main at https://github.com/abangkis/AkuSidecar.git. The prior Store
+commit/publication readback below retains its historical identity; this update
+records source closure without changing code, runtime or trial state.
 Publication does not establish runtime activation or operational acceptance.
 The Browser worktree contains pre-existing build/cache changes; those changes
 are outside this synchronization and are not evidence of a released tuple.
+
+Current decision: source CL-3 is closed following the owner-accepted read-only
+responsibility-map review at Sidecar `6b9b3a0` (code through `f27e91b`). See
+[CL-3 source closure](code-cleanup-roadmap.md#cl-3-source-closure-2026-11-03) for the exit-criteria assessment,
+retained responsibilities and explicit deferral triggers. Earlier partial/open
+statements below describe their original checkpoints and are superseded only
+for this backend source gate. Activation and operational acceptance are not
+established by this closure; other cleanup stages retain their own status.
 
 ## Status vocabulary
 
@@ -21,7 +29,7 @@ are outside this synchronization and are not evidence of a released tuple.
 | Implemented | Code exists at the named commit, or an explicitly identified historical contract records implementation | Test success, deployment or provider qualification |
 | Tested | The named source/artifact passed the stated offline, synthetic or local checks | A current running binary, a clean-machine install or real-provider acceptance |
 | Activated | A dated receipt identifies the artifact used in a running process | Activation of later commits, continuous current health or a clean source build |
-| Acceptance | The stated product/operational gate has its own evidence and scope | Acceptance of another source, mode, release or broader reliability claim |
+| Acceptance | The stated source, product or operational gate has reviewed evidence and scope; source acceptance does not establish activation | Acceptance of another source, mode, release or broader reliability claim |
 
 `Not recorded` means evidence was not established here, not proof that an
 operation never happened. `Pending`, `frozen` and `deferred` preserve the existing
@@ -1362,28 +1370,25 @@ evidence: [scoped review](../runtime/qa/store-auto-refactor-review-20261103/revi
 and [commit/publication readback](../runtime/qa/store-auto-refactor-review-20261103/final-readback.json).
 These are local ignored QA receipts, not a published release manifest.
 
-CL-3 status: Settings bounded extractions are implemented/tested; the declined
-provider-selection wrapper and further phase splitting remain retained/deferred.
-The selected Engine and central HTTP cohorts are source-complete with their
-facades/infrastructure retained. Central Store separation is source-complete as
-`f27e91b`, with existing cohesive feature files retained. Overall CL-3 remains
-partial pending a consolidated responsibility-map/exit-criteria review across
-these owners; this is not an instruction to split retained code again. Runtime
-activation and operational acceptance are separate dimensions, not prerequisites
-invented for the source-structure exit gate.
+Current CL-3 status: **source closed** following the accepted consolidated
+responsibility-map/exit-criteria review at `6b9b3a0`, with product code through
+`f27e91b`. See [CL-3 source closure](code-cleanup-roadmap.md#cl-3-source-closure-2026-11-03). Earlier partial status in
+this result is its historical capture-time boundary. Intentional retain/defer
+decisions are recorded in the closure map; no additional backend extraction is
+required for this gate. Activation and operational acceptance remain separate.
 
 ### Proposed next cleanup analysis
 
-The automatic central Store cohort is source-complete as f27e91b. The next
-bounded task is a read-only CL-3 exit-criteria map across Settings, Engine,
-HTTP and Store. Match each responsibility to its existing owner and classify
-implemented/tested, retain-required, deferred with a concrete trigger, or a
-remaining gap. Check the existing exit condition: reviewed ownership map and
-validated extractions without a second state owner, broader admission, new
-concurrency or wire changes. Recommend source closure if no material gap remains;
-otherwise identify one justified next increment and its characterization needs.
-Do not split the retained foundation or cohesive feature files by line count.
-No further code, configuration, activation or trial is selected by this proposal.
+Source CL-3 is closed. The proposed next bounded task is a read-only CL-4.1
+Timeline responsibility map in app.js and existing web modules. Trace Timeline
+rendering and item-scoped actions against app bootstrap/polling, revision/epoch
+checks, cache invalidation, lazy media, drawer/context behavior, focus and
+teardown. Choose one coherent feature boundary only if it provides a real owner
+and testability benefit; otherwise retain the existing owner. Name its
+characterization needs and accountless rendered desktop/mobile interaction
+checks before proposing implementation. Frontend work uses Sol/Astra under the
+active routing policy. This proposal authorizes no code change, visual redesign,
+configuration change, activation or trial; the next analysis requires approval.
 
 
 ## Product and installation roadmaps

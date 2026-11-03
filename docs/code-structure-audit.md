@@ -6,6 +6,14 @@ The original audit and its validation below are historical. Current source is
 reviewed through `f27e91b` (reviewed automatic Store feature separation: 95 declarations in 15 feature files), including per-run candidate evaluation/completion, then acquisition planning orchestration, then automatic completion of the remaining 58 HTTP adapters, then Timeline composition HTTP adaptation, vision-evaluation HTTP adapters, model-usage HTTP adapters, Inbox read HTTP adapters, Inbox selection-review HTTP adapters, AI-feedback HTTP adapters, semantic correction HTTP adapters, development X HTTP controls, capture telemetry rotation/shutdown compatibility, HTTP reload-action separation, capture-owner path normalization, HTTP bootstrap and the router responsibility map, HTTP media-recapture entry points, HTTP update/session lifecycle, Engine passive media evidence, Library removal/Forget, FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
 for commit-to-receipt mappings. Cleanup is not provider qualification.
 
+Current decision: source CL-3 is closed following the owner-accepted read-only
+responsibility-map review at Sidecar `6b9b3a0` (code through `f27e91b`). See
+[CL-3 source closure](code-cleanup-roadmap.md#cl-3-source-closure-2026-11-03) for the exit-criteria assessment,
+retained responsibilities and explicit deferral triggers. Earlier partial/open
+statements below describe their original checkpoints and are superseded only
+for this backend source gate. Activation and operational acceptance are not
+established by this closure; other cleanup stages retain their own status.
+
 | Increment | Implemented | Tested | Activated | Acceptance |
 | --- | --- | --- | --- | --- |
 | Unused wrappers | Removed in `f348b9b` | Scoped cleanup validation | Not recorded | Bounded removal; no whole-repository dead-code claim |
@@ -1393,25 +1401,22 @@ evidence: [scoped review](../runtime/qa/store-auto-refactor-review-20261103/revi
 and [commit/publication readback](../runtime/qa/store-auto-refactor-review-20261103/final-readback.json).
 These are local ignored QA receipts, not a published release manifest.
 
-CL-3 status: Settings bounded extractions are implemented/tested; the declined
-provider-selection wrapper and further phase splitting remain retained/deferred.
-The selected Engine and central HTTP cohorts are source-complete with their
-facades/infrastructure retained. Central Store separation is source-complete as
-`f27e91b`, with existing cohesive feature files retained. Overall CL-3 remains
-partial pending a consolidated responsibility-map/exit-criteria review across
-these owners; this is not an instruction to split retained code again. Runtime
-activation and operational acceptance are separate dimensions, not prerequisites
-invented for the source-structure exit gate.
+Current CL-3 status: **source closed** following the accepted consolidated
+responsibility-map/exit-criteria review at `6b9b3a0`, with product code through
+`f27e91b`. See [CL-3 source closure](code-cleanup-roadmap.md#cl-3-source-closure-2026-11-03). Earlier partial status in
+this result is its historical capture-time boundary. Intentional retain/defer
+decisions are recorded in the closure map; no additional backend extraction is
+required for this gate. Activation and operational acceptance remain separate.
 
 ### Proposed next cleanup analysis
 
-The automatic central Store cohort is source-complete as f27e91b. The next
-bounded task is a read-only CL-3 exit-criteria map across Settings, Engine,
-HTTP and Store. Match each responsibility to its existing owner and classify
-implemented/tested, retain-required, deferred with a concrete trigger, or a
-remaining gap. Check the existing exit condition: reviewed ownership map and
-validated extractions without a second state owner, broader admission, new
-concurrency or wire changes. Recommend source closure if no material gap remains;
-otherwise identify one justified next increment and its characterization needs.
-Do not split the retained foundation or cohesive feature files by line count.
-No further code, configuration, activation or trial is selected by this proposal.
+Source CL-3 is closed. The proposed next bounded task is a read-only CL-4.1
+Timeline responsibility map in app.js and existing web modules. Trace Timeline
+rendering and item-scoped actions against app bootstrap/polling, revision/epoch
+checks, cache invalidation, lazy media, drawer/context behavior, focus and
+teardown. Choose one coherent feature boundary only if it provides a real owner
+and testability benefit; otherwise retain the existing owner. Name its
+characterization needs and accountless rendered desktop/mobile interaction
+checks before proposing implementation. Frontend work uses Sol/Astra under the
+active routing policy. This proposal authorizes no code change, visual redesign,
+configuration change, activation or trial; the next analysis requires approval.

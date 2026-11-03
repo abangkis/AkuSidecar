@@ -17,10 +17,23 @@ read-model/enrichment ownership review retains existing owners; separately
 approved Store Timeline read-model separation is `bee6a9f`. Candidate
 disposition counts are unchanged. The owner subsequently authorized the
 automatic Store run below: source-complete as `f27e91b`, with scoped source/test
-review accepted and publication bound to the readback below. Broader CL-3 and
-operational acceptance remain separate.
+review accepted and publication bound to the readback below. Source CL-3 is
+now closed as recorded in the current decision below; operational acceptance
+remains separate.
+
+Current decision: source CL-3 is closed following the owner-accepted read-only
+responsibility-map review at Sidecar `6b9b3a0` (code through `f27e91b`). See
+[CL-3 source closure](code-cleanup-roadmap.md#cl-3-source-closure-2026-11-03) for the exit-criteria assessment,
+retained responsibilities and explicit deferral triggers. Earlier partial/open
+statements below describe their original checkpoints and are superseded only
+for this backend source gate. Activation and operational acceptance are not
+established by this closure; other cleanup stages retain their own status.
 
 ## Dispositions and approval
+
+The disposition counts are the original CL-1 inventory, not a remaining-work
+count. E01 and E02 selected source boundaries are complete; further Settings
+phase splitting is deferred under the closure triggers, not an open CL-3 gate.
 
 | Disposition | Count | Meaning |
 | --- | ---: | --- |
@@ -2673,25 +2686,22 @@ evidence: [scoped review](../runtime/qa/store-auto-refactor-review-20261103/revi
 and [commit/publication readback](../runtime/qa/store-auto-refactor-review-20261103/final-readback.json).
 These are local ignored QA receipts, not a published release manifest.
 
-CL-3 status: Settings bounded extractions are implemented/tested; the declined
-provider-selection wrapper and further phase splitting remain retained/deferred.
-The selected Engine and central HTTP cohorts are source-complete with their
-facades/infrastructure retained. Central Store separation is source-complete as
-`f27e91b`, with existing cohesive feature files retained. Overall CL-3 remains
-partial pending a consolidated responsibility-map/exit-criteria review across
-these owners; this is not an instruction to split retained code again. Runtime
-activation and operational acceptance are separate dimensions, not prerequisites
-invented for the source-structure exit gate.
+Current CL-3 status: **source closed** following the accepted consolidated
+responsibility-map/exit-criteria review at `6b9b3a0`, with product code through
+`f27e91b`. See [CL-3 source closure](code-cleanup-roadmap.md#cl-3-source-closure-2026-11-03). Earlier partial status in
+this result is its historical capture-time boundary. Intentional retain/defer
+decisions are recorded in the closure map; no additional backend extraction is
+required for this gate. Activation and operational acceptance remain separate.
 
 ### Proposed next cleanup analysis
 
-The automatic central Store cohort is source-complete as f27e91b. The next
-bounded task is a read-only CL-3 exit-criteria map across Settings, Engine,
-HTTP and Store. Match each responsibility to its existing owner and classify
-implemented/tested, retain-required, deferred with a concrete trigger, or a
-remaining gap. Check the existing exit condition: reviewed ownership map and
-validated extractions without a second state owner, broader admission, new
-concurrency or wire changes. Recommend source closure if no material gap remains;
-otherwise identify one justified next increment and its characterization needs.
-Do not split the retained foundation or cohesive feature files by line count.
-No further code, configuration, activation or trial is selected by this proposal.
+Source CL-3 is closed. The proposed next bounded task is a read-only CL-4.1
+Timeline responsibility map in app.js and existing web modules. Trace Timeline
+rendering and item-scoped actions against app bootstrap/polling, revision/epoch
+checks, cache invalidation, lazy media, drawer/context behavior, focus and
+teardown. Choose one coherent feature boundary only if it provides a real owner
+and testability benefit; otherwise retain the existing owner. Name its
+characterization needs and accountless rendered desktop/mobile interaction
+checks before proposing implementation. Frontend work uses Sol/Astra under the
+active routing policy. This proposal authorizes no code change, visual redesign,
+configuration change, activation or trial; the next analysis requires approval.
