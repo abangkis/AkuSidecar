@@ -29,6 +29,10 @@ statements below describe their original checkpoints and are superseded only
 for this backend source gate. Activation and operational acceptance are not
 established by this closure; other cleanup stages retain their own status.
 
+Latest approved frontend increment: [Timeline More/Less result](#cl-41-timeline-moreless-result-2026-11-03),
+code `80acfb9`, establishes one F01/CL-4.1 feature boundary. F01 remains partial;
+the original inventory disposition counts are not a remaining-work count.
+
 ## Dispositions and approval
 
 The disposition counts are the original CL-1 inventory, not a remaining-work
@@ -2693,15 +2697,61 @@ this result is its historical capture-time boundary. Intentional retain/defer
 decisions are recorded in the closure map; no additional backend extraction is
 required for this gate. Activation and operational acceptance remain separate.
 
+## CL-4.1 Timeline More/Less result (2026-11-03)
+
+Code commit: `80acfb9`. The approved first Timeline item-action feature now
+belongs to timeline-feedback.js: createTimelineFeedbackUI builds More/Less
+controls and keeps sendFeedback private. app.js composes the feature using its
+existing API, feedbackButton, cache invalidation, error and trace ports.
+The request/handler bodies and app remainder are unchanged except the import,
+composition and delegation, allowing indentation and CRLF/LF differences.
+Shared Inbox buttons and native-post tracing stay in app.js. Bootstrap/polling,
+Timeline rendering, Read later, semantic correction, AI feedback, media and
+context-drawer ownership are unchanged; no new timer, observer or state owner.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | 80acfb9: isolated More/Less feature plus its composition, characterization, offline UI fixture and contract-test corrections |
+| Tested | Frozen characterization 17/17 before and after; latest complete Node regression 304/304, zero failures. HTTP/application default 1,322 pass/25 skip, dev 1,345 pass/12 skip, zero failures. Four Windows amd64 tag modes include the embedded module and produce 12 Engine/HTTP/application artifacts |
+| Activated | Not performed; no restart, production configuration change or signed-in provider trial |
+| Acceptance | Scoped source/test review accepted with no findings. Accountless real-Chromium desktop 1100x850 and mobile 390x844 interaction/geometry match before/after; screenshots inspected and owned-tree cleanup verified. This is the item-action fixture, not full-app/provider acceptance. CL-4.1/CL-4 remain partial; source CL-3 stays closed |
+
+The existing API wrapper and epoch rejection are retained. Success still
+invalidates Library storage before returning feedback, then mutates the same
+entry and renders selection. Failure retains the previous choice. Feedback
+does not refresh Timeline. Repeated/concurrent clicks remain unblocked and
+responses apply in completion order; no optimistic selection, deduplication,
+serialization or new stale-response contract is added.
+
+The initial broad Node run had two pre-existing restart-dev source assertions
+that expected registration inside the old entry script. The separately approved
+test correction follows restart-dev.ps1 delegation to dev-restart-workflow.ps1,
+checks rejection of registration takeover, both vendor ownership checks, and
+database/preflight/graceful-shutdown/resource/config/promotion order. Explicit
+registration keeps its separate fences. No production restart/registration
+script changed. Latest 304/304 Node evidence supersedes those failures without
+rewriting the historical failing receipt. Library cache and Go embedded-asset
+assertions now verify the new module and actual app wiring rather than the old
+function location; their behavioral/guard intent is preserved.
+
+Evidence: [feature validation](../runtime/qa/timeline-feedback-20261103/validation.json),
+[latest combined Node correction](../runtime/qa/timeline-feedback-restart-tests-20261103/validation.json),
+[scoped review](../runtime/qa/timeline-feedback-review-20261103/review.json), and
+[publication readback](../runtime/qa/timeline-feedback-review-20261103/final-readback.json).
+Earlier sourceHead/sourceDirty/committed fields retain capture-time meaning.
+Publication reuses passing evidence after payload/log/artifact hash checks;
+it does not rerun tests/builds or establish runtime activation.
+
 ### Proposed next cleanup analysis
 
-Source CL-3 is closed. The proposed next bounded task is a read-only CL-4.1
-Timeline responsibility map in app.js and existing web modules. Trace Timeline
-rendering and item-scoped actions against app bootstrap/polling, revision/epoch
-checks, cache invalidation, lazy media, drawer/context behavior, focus and
-teardown. Choose one coherent feature boundary only if it provides a real owner
-and testability benefit; otherwise retain the existing owner. Name its
-characterization needs and accountless rendered desktop/mobile interaction
-checks before proposing implementation. Frontend work uses Sol/Astra under the
-active routing policy. This proposal authorizes no code change, visual redesign,
-configuration change, activation or trial; the next analysis requires approval.
+Source CL-3 remains closed. The first CL-4.1 item-action increment, More/Less,
+is implemented/tested/reviewed as 80acfb9; CL-4.1/CL-4 remain partial. The next
+proposed bounded task is a read-only ownership review of buildTimelineReadLaterAction
+and its existing timeline-memory-state.js helpers. Trace confirmation, per-item
+in-flight admission, Saved response projection, Library storage invalidation,
+status timer and re-render lifetime against existing app rendering/polling.
+Decide whether a separate UI feature owner provides a concrete benefit or the
+current owner should be retained. Name characterization/error/concurrency and
+accountless desktop/mobile checks before selecting any implementation. Keep
+Library full-copy/Remove/Forget semantics distinct. No code, protocol, guard,
+configuration, activation or trial change is authorized by this proposal.

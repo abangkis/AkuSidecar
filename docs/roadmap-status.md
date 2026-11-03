@@ -1,15 +1,15 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-03 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `f27e91b` (reviewed automatic Store feature separation; 95 declarations/15 feature files; after Store Timeline read-model `bee6a9f`, after empty-candidate completion `de95c58`, after vision persistence `70ea120`; per-run candidate evaluation/completion, after acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
+Reviewed local source: AkuSidecar `80acfb9` (Timeline More/Less and restart-dev assertion correction, after `f27e91b` automatic Store feature separation; 95 declarations/15 feature files; after Store Timeline read-model `bee6a9f`, after empty-candidate completion `de95c58`, after vision persistence `70ea120`; per-run candidate evaluation/completion, after acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
-The preceding published checkpoint is `6b9b3a0`, including automatic Store
-feature separation `f27e91b`. The owner accepted the read-only CL-3 closure
-review, then authorized documentation synchronization, commit and push to
-origin/main at https://github.com/abangkis/AkuSidecar.git. The prior Store
-commit/publication readback below retains its historical identity; this update
-records source closure without changing code, runtime or trial state.
+The preceding published checkpoint is `f758ac0`, recording source CL-3 closure.
+The owner approved review of Timeline More/Less and restart-dev assertion fixes,
+then roadmap synchronization, commit and push to origin/main at
+https://github.com/abangkis/AkuSidecar.git. Code `80acfb9` is the reviewed
+frontend/test payload; its publication readback is recorded below. Earlier
+Store and CL-3 receipts retain their historical identities and acceptance scope.
 Publication does not establish runtime activation or operational acceptance.
 The Browser worktree contains pre-existing build/cache changes; those changes
 are outside this synchronization and are not evidence of a released tuple.
@@ -1377,18 +1377,64 @@ this result is its historical capture-time boundary. Intentional retain/defer
 decisions are recorded in the closure map; no additional backend extraction is
 required for this gate. Activation and operational acceptance remain separate.
 
+## CL-4.1 Timeline More/Less result (2026-11-03)
+
+Code commit: `80acfb9`. The approved first Timeline item-action feature now
+belongs to timeline-feedback.js: createTimelineFeedbackUI builds More/Less
+controls and keeps sendFeedback private. app.js composes the feature using its
+existing API, feedbackButton, cache invalidation, error and trace ports.
+The request/handler bodies and app remainder are unchanged except the import,
+composition and delegation, allowing indentation and CRLF/LF differences.
+Shared Inbox buttons and native-post tracing stay in app.js. Bootstrap/polling,
+Timeline rendering, Read later, semantic correction, AI feedback, media and
+context-drawer ownership are unchanged; no new timer, observer or state owner.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | 80acfb9: isolated More/Less feature plus its composition, characterization, offline UI fixture and contract-test corrections |
+| Tested | Frozen characterization 17/17 before and after; latest complete Node regression 304/304, zero failures. HTTP/application default 1,322 pass/25 skip, dev 1,345 pass/12 skip, zero failures. Four Windows amd64 tag modes include the embedded module and produce 12 Engine/HTTP/application artifacts |
+| Activated | Not performed; no restart, production configuration change or signed-in provider trial |
+| Acceptance | Scoped source/test review accepted with no findings. Accountless real-Chromium desktop 1100x850 and mobile 390x844 interaction/geometry match before/after; screenshots inspected and owned-tree cleanup verified. This is the item-action fixture, not full-app/provider acceptance. CL-4.1/CL-4 remain partial; source CL-3 stays closed |
+
+The existing API wrapper and epoch rejection are retained. Success still
+invalidates Library storage before returning feedback, then mutates the same
+entry and renders selection. Failure retains the previous choice. Feedback
+does not refresh Timeline. Repeated/concurrent clicks remain unblocked and
+responses apply in completion order; no optimistic selection, deduplication,
+serialization or new stale-response contract is added.
+
+The initial broad Node run had two pre-existing restart-dev source assertions
+that expected registration inside the old entry script. The separately approved
+test correction follows restart-dev.ps1 delegation to dev-restart-workflow.ps1,
+checks rejection of registration takeover, both vendor ownership checks, and
+database/preflight/graceful-shutdown/resource/config/promotion order. Explicit
+registration keeps its separate fences. No production restart/registration
+script changed. Latest 304/304 Node evidence supersedes those failures without
+rewriting the historical failing receipt. Library cache and Go embedded-asset
+assertions now verify the new module and actual app wiring rather than the old
+function location; their behavioral/guard intent is preserved.
+
+Evidence: [feature validation](../runtime/qa/timeline-feedback-20261103/validation.json),
+[latest combined Node correction](../runtime/qa/timeline-feedback-restart-tests-20261103/validation.json),
+[scoped review](../runtime/qa/timeline-feedback-review-20261103/review.json), and
+[publication readback](../runtime/qa/timeline-feedback-review-20261103/final-readback.json).
+Earlier sourceHead/sourceDirty/committed fields retain capture-time meaning.
+Publication reuses passing evidence after payload/log/artifact hash checks;
+it does not rerun tests/builds or establish runtime activation.
+
 ### Proposed next cleanup analysis
 
-Source CL-3 is closed. The proposed next bounded task is a read-only CL-4.1
-Timeline responsibility map in app.js and existing web modules. Trace Timeline
-rendering and item-scoped actions against app bootstrap/polling, revision/epoch
-checks, cache invalidation, lazy media, drawer/context behavior, focus and
-teardown. Choose one coherent feature boundary only if it provides a real owner
-and testability benefit; otherwise retain the existing owner. Name its
-characterization needs and accountless rendered desktop/mobile interaction
-checks before proposing implementation. Frontend work uses Sol/Astra under the
-active routing policy. This proposal authorizes no code change, visual redesign,
-configuration change, activation or trial; the next analysis requires approval.
+Source CL-3 remains closed. The first CL-4.1 item-action increment, More/Less,
+is implemented/tested/reviewed as 80acfb9; CL-4.1/CL-4 remain partial. The next
+proposed bounded task is a read-only ownership review of buildTimelineReadLaterAction
+and its existing timeline-memory-state.js helpers. Trace confirmation, per-item
+in-flight admission, Saved response projection, Library storage invalidation,
+status timer and re-render lifetime against existing app rendering/polling.
+Decide whether a separate UI feature owner provides a concrete benefit or the
+current owner should be retained. Name characterization/error/concurrency and
+accountless desktop/mobile checks before selecting any implementation. Keep
+Library full-copy/Remove/Forget semantics distinct. No code, protocol, guard,
+configuration, activation or trial change is authorized by this proposal.
 
 
 ## Product and installation roadmaps

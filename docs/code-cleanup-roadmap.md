@@ -1,7 +1,7 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-03 (Asia/Jakarta), through Sidecar `f27e91b` (reviewed automatic Store feature separation).
+Status synchronized: 2026-11-03 (Asia/Jakarta), through Sidecar `80acfb9` (reviewed Timeline More/Less feature and restart-dev test correction).
 Status: source CL-3 closed after the accepted responsibility-map review at
 `6b9b3a0`; comprehensive cleanup remains in progress. See the
 [closure decision](#cl-3-source-closure-2026-11-03) for retain/defer triggers.
@@ -112,7 +112,7 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-1: consumer and compatibility inventory | [Entry/consumer map](cl1-consumer-inventory.md) and [32-boundary candidate ledger](cl1-cleanup-candidates.md) delivered | Read-only four-tag metadata, native/package/reference and source-preservation checks; no product test/build | Not applicable to an audit | Ready for review; external-consumer and offline Browser dependency limits explicit; no implementation approved |
 | CL-2: proven obsolete-code retirement | Earlier wrappers plus G10 `DeleteMemoryItem` removal committed with roadmap as `21ac9ad` | G10 exact remainder check, full Store/HTTP regressions and four-mode Windows compilation passed | Not performed for G10 | G10 reviewed/committed; comprehensive retirement remains scoped by the remaining ledger entries |
 | CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b` and media recapture `be9fcd2`; Engine media recapture `c614512`; Engine Bridge commands `3e13434`; Engine media provenance `8d7f7b6`; Engine AI detection `b84a62d`; Engine session admission `4bf0731`; observation contracts `d9c3025`; process recovery `5b39fa4`; reasoning result `eb05ac8`; capture rounds and deterministic Store test `683b1e8`; local acquisition policy `f16f11a`; vision-lane routing/coverage `25c3339`; selection corrections `f3d46b8`; AI feedback `6a1ce33`; FullReset `da019dd`; Library removal/Forget `a19bf86`; passive media evidence `2bdc0f1`; HTTP update/session `d32c065`; HTTP media entry `90e3a7f`; HTTP bootstrap `97bbe51`; capture-owner path guard `b482ba2`; HTTP reload actions `6ea303c`; telemetry rotation/shutdown guard `237dbd1`; HTTP development X controls `1814c9b`; HTTP semantic corrections `3c5e61a`; HTTP AI feedback `a3718ff`; HTTP Inbox selection review `3f4a66d`; HTTP Inbox reads `ce57e79`; HTTP model usage `af8d722`; HTTP vision evaluation `cf534ec`; HTTP Timeline composition `3cf90b4`; automatic HTTP handler completion `9da6ed8`; acquisition execution `8027599`; candidate evaluation `ed35d82`; vision persistence tests `70ea120`; empty-candidate completion `de95c58`; Store Timeline read-model `bee6a9f`; automatic Store feature separation `f27e91b` (95 declarations/15 feature files); validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Capture/Collection/Bridge builder/Selection/EventEngine/Reasoning/Domain/Detector/Inspector/Store/Engine/HTTP/config/application scope selects 14 packages (13 with tests, Bridge builder compile-only): default 3,267 pass/50 skip and dev 4,111 pass/62 skip, zero failures; whole Store default 462 pass/5 skip and dev 614 pass/7 skip before/after (45 new results); earlier Store Timeline read-model characterization 72 pass/1 skip default/dev retained; empty-candidate completion characterization 218 default/dev before/after retained; earlier vision persistence characterization 94 default/dev retained; candidate evaluation characterization 88 default/dev before/after retained; acquisition execution characterization retained; remaining HTTP feature characterization retained; Timeline characterization retained; vision-evaluation characterization retained; model-usage characterization retained; Inbox read characterization retained; selection-review characterization retained; AI-feedback characterization retained; semantic correction characterization retained; development X characterization retained; earlier telemetry/reload characterization and concurrency evidence retained; earlier guard/bootstrap receipts retained, four Store build-tag graphs and 16 Windows artifacts pass. Earlier acquisition-policy/capture-round/privacy/HTTP/Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Backend source CL-3.1/CL-3.2/CL-3.3 closed after accepted responsibility-map/exit-criteria review at 6b9b3a0, with code through f27e91b; [retain/defer decisions](#cl-3-source-closure-2026-11-03) recorded. No material ownership gap requires another extraction. Runtime activation, operational acceptance and CL-8 source sign-off remain separate |
-| CL-4: frontend feature ownership | Existing navigation module retained; broader extraction proposed | Existing baseline only | Not recorded | Timeline/Settings/app orchestration pending |
+| CL-4: frontend feature ownership | Partial: first CL-4.1 More/Less item-action feature 80acfb9; existing navigation retained | 17/17 characterization before/after, Node 304/304, HTTP/application default/dev regressions, four-mode Windows compilation and isolated desktop/mobile acceptance below | Not performed for this increment | More/Less scoped source/test review accepted; broader Timeline, frontend Settings and app orchestration remain pending. CL-4.1/CL-4 are partial |
 | CL-5: native runtime and QA boundaries | Factory/shared-helper separation complete; fixture-only timing correction `8dc3f5e` committed; deeper runtime split proposed | 98 Node tests, 200 offline integration iterations and dependency-pinned staging verified for this fixture correction; existing baseline only for remaining seams | Not performed for this correction | Bounded fixture acceptance only; remaining operation/transport/QA separation pending; no universal cross-runtime clock or real-provider qualification claim |
 | CL-6: Bridge responsibility boundaries | Existing source/lifecycle modules retained; further split proposed | Existing baseline only for remaining seams | No new rollout | Background dispatch/surface integration pending |
 | CL-7: build, packaging and test organization | Existing packaging retained; full consumer reconciliation proposed | Partial prior package evidence | No new rollout | Supported-entry/build-tag closure pending |
@@ -282,6 +282,10 @@ Exit: a reviewed responsibility map and separately validated extractions, with
 no second source of state, broader admission, new concurrency or wire changes.
 
 ### CL-4: frontend feature ownership
+
+Current status: partial. The first CL-4.1 More/Less increment is recorded in the
+[feature result](#cl-41-timeline-moreless-result-2026-11-03); broader ownership
+work below remains separate. Source CL-3 closure is unchanged.
 
 - **CL-4.1 Timeline:** separate rendering and item-scoped action ownership from
   application bootstrap/polling. Preserve revision/epoch checks, lazy media,
@@ -477,8 +481,9 @@ historical parent-file hashes. No old receipt was rewritten to claim a new run.
 | Acceptance | Backend source CL-3 closed by accepted responsibility-map/exit-criteria review; operational qualification and comprehensive CL-8 sign-off remain separate |
 
 This closes the outstanding consolidated map review; it does not require
-another backend extraction. CL-4 remains pending; CL-5/CL-6 remain partial and
-CL-7/CL-8 remain open under their recorded scopes. CL-2 retains its candidate
+another backend extraction. At this closure checkpoint CL-4 was pending,
+CL-5/CL-6 were partial and CL-7/CL-8 were open under their recorded scopes.
+The later CL-4.1 result below records the first approved frontend increment. CL-2 retains its candidate
 and supported-consumer constraints. Native IG qualification, real mixed-source
 acceptance, installation/release work and unrelated dirty files are unchanged.
 
@@ -1811,15 +1816,61 @@ this result is its historical capture-time boundary. Intentional retain/defer
 decisions are recorded in the closure map; no additional backend extraction is
 required for this gate. Activation and operational acceptance remain separate.
 
+## CL-4.1 Timeline More/Less result (2026-11-03)
+
+Code commit: `80acfb9`. The approved first Timeline item-action feature now
+belongs to timeline-feedback.js: createTimelineFeedbackUI builds More/Less
+controls and keeps sendFeedback private. app.js composes the feature using its
+existing API, feedbackButton, cache invalidation, error and trace ports.
+The request/handler bodies and app remainder are unchanged except the import,
+composition and delegation, allowing indentation and CRLF/LF differences.
+Shared Inbox buttons and native-post tracing stay in app.js. Bootstrap/polling,
+Timeline rendering, Read later, semantic correction, AI feedback, media and
+context-drawer ownership are unchanged; no new timer, observer or state owner.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | 80acfb9: isolated More/Less feature plus its composition, characterization, offline UI fixture and contract-test corrections |
+| Tested | Frozen characterization 17/17 before and after; latest complete Node regression 304/304, zero failures. HTTP/application default 1,322 pass/25 skip, dev 1,345 pass/12 skip, zero failures. Four Windows amd64 tag modes include the embedded module and produce 12 Engine/HTTP/application artifacts |
+| Activated | Not performed; no restart, production configuration change or signed-in provider trial |
+| Acceptance | Scoped source/test review accepted with no findings. Accountless real-Chromium desktop 1100x850 and mobile 390x844 interaction/geometry match before/after; screenshots inspected and owned-tree cleanup verified. This is the item-action fixture, not full-app/provider acceptance. CL-4.1/CL-4 remain partial; source CL-3 stays closed |
+
+The existing API wrapper and epoch rejection are retained. Success still
+invalidates Library storage before returning feedback, then mutates the same
+entry and renders selection. Failure retains the previous choice. Feedback
+does not refresh Timeline. Repeated/concurrent clicks remain unblocked and
+responses apply in completion order; no optimistic selection, deduplication,
+serialization or new stale-response contract is added.
+
+The initial broad Node run had two pre-existing restart-dev source assertions
+that expected registration inside the old entry script. The separately approved
+test correction follows restart-dev.ps1 delegation to dev-restart-workflow.ps1,
+checks rejection of registration takeover, both vendor ownership checks, and
+database/preflight/graceful-shutdown/resource/config/promotion order. Explicit
+registration keeps its separate fences. No production restart/registration
+script changed. Latest 304/304 Node evidence supersedes those failures without
+rewriting the historical failing receipt. Library cache and Go embedded-asset
+assertions now verify the new module and actual app wiring rather than the old
+function location; their behavioral/guard intent is preserved.
+
+Evidence: [feature validation](../runtime/qa/timeline-feedback-20261103/validation.json),
+[latest combined Node correction](../runtime/qa/timeline-feedback-restart-tests-20261103/validation.json),
+[scoped review](../runtime/qa/timeline-feedback-review-20261103/review.json), and
+[publication readback](../runtime/qa/timeline-feedback-review-20261103/final-readback.json).
+Earlier sourceHead/sourceDirty/committed fields retain capture-time meaning.
+Publication reuses passing evidence after payload/log/artifact hash checks;
+it does not rerun tests/builds or establish runtime activation.
+
 ### Proposed next cleanup analysis
 
-Source CL-3 is closed. The proposed next bounded task is a read-only CL-4.1
-Timeline responsibility map in app.js and existing web modules. Trace Timeline
-rendering and item-scoped actions against app bootstrap/polling, revision/epoch
-checks, cache invalidation, lazy media, drawer/context behavior, focus and
-teardown. Choose one coherent feature boundary only if it provides a real owner
-and testability benefit; otherwise retain the existing owner. Name its
-characterization needs and accountless rendered desktop/mobile interaction
-checks before proposing implementation. Frontend work uses Sol/Astra under the
-active routing policy. This proposal authorizes no code change, visual redesign,
-configuration change, activation or trial; the next analysis requires approval.
+Source CL-3 remains closed. The first CL-4.1 item-action increment, More/Less,
+is implemented/tested/reviewed as 80acfb9; CL-4.1/CL-4 remain partial. The next
+proposed bounded task is a read-only ownership review of buildTimelineReadLaterAction
+and its existing timeline-memory-state.js helpers. Trace confirmation, per-item
+in-flight admission, Saved response projection, Library storage invalidation,
+status timer and re-render lifetime against existing app rendering/polling.
+Decide whether a separate UI feature owner provides a concrete benefit or the
+current owner should be retained. Name characterization/error/concurrency and
+accountless desktop/mobile checks before selecting any implementation. Keep
+Library full-copy/Remove/Forget semantics distinct. No code, protocol, guard,
+configuration, activation or trial change is authorized by this proposal.
