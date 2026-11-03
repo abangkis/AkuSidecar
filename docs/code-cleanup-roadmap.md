@@ -1,7 +1,7 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-04 (Asia/Jakarta), reviewed CL-5 code `e146d40` after b3566dc. Source CL-3/CL-4 stay closed; CL-5 remains partial.
+Status synchronized: 2026-11-04 (Asia/Jakarta). Reviewed automatic CL-5 source cohort based on 555dea9 closes source CL-5; publication identity is bound to readback. Source CL-3/CL-4 remain closed; activation/operational acceptance remain separate.
 Status: source CL-3 closed after the accepted responsibility-map review at
 `6b9b3a0`; source CL-4 closed by the reviewed FE result below. Comprehensive
 cleanup remains in progress. See the
@@ -114,7 +114,7 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-2: proven obsolete-code retirement | Earlier wrappers plus G10 `DeleteMemoryItem` removal committed with roadmap as `21ac9ad` | G10 exact remainder check, full Store/HTTP regressions and four-mode Windows compilation passed | Not performed for G10 | G10 reviewed/committed; comprehensive retirement remains scoped by the remaining ledger entries |
 | CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b` and media recapture `be9fcd2`; Engine media recapture `c614512`; Engine Bridge commands `3e13434`; Engine media provenance `8d7f7b6`; Engine AI detection `b84a62d`; Engine session admission `4bf0731`; observation contracts `d9c3025`; process recovery `5b39fa4`; reasoning result `eb05ac8`; capture rounds and deterministic Store test `683b1e8`; local acquisition policy `f16f11a`; vision-lane routing/coverage `25c3339`; selection corrections `f3d46b8`; AI feedback `6a1ce33`; FullReset `da019dd`; Library removal/Forget `a19bf86`; passive media evidence `2bdc0f1`; HTTP update/session `d32c065`; HTTP media entry `90e3a7f`; HTTP bootstrap `97bbe51`; capture-owner path guard `b482ba2`; HTTP reload actions `6ea303c`; telemetry rotation/shutdown guard `237dbd1`; HTTP development X controls `1814c9b`; HTTP semantic corrections `3c5e61a`; HTTP AI feedback `a3718ff`; HTTP Inbox selection review `3f4a66d`; HTTP Inbox reads `ce57e79`; HTTP model usage `af8d722`; HTTP vision evaluation `cf534ec`; HTTP Timeline composition `3cf90b4`; automatic HTTP handler completion `9da6ed8`; acquisition execution `8027599`; candidate evaluation `ed35d82`; vision persistence tests `70ea120`; empty-candidate completion `de95c58`; Store Timeline read-model `bee6a9f`; automatic Store feature separation `f27e91b` (95 declarations/15 feature files); validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Capture/Collection/Bridge builder/Selection/EventEngine/Reasoning/Domain/Detector/Inspector/Store/Engine/HTTP/config/application scope selects 14 packages (13 with tests, Bridge builder compile-only): default 3,267 pass/50 skip and dev 4,111 pass/62 skip, zero failures; whole Store default 462 pass/5 skip and dev 614 pass/7 skip before/after (45 new results); earlier Store Timeline read-model characterization 72 pass/1 skip default/dev retained; empty-candidate completion characterization 218 default/dev before/after retained; earlier vision persistence characterization 94 default/dev retained; candidate evaluation characterization 88 default/dev before/after retained; acquisition execution characterization retained; remaining HTTP feature characterization retained; Timeline characterization retained; vision-evaluation characterization retained; model-usage characterization retained; Inbox read characterization retained; selection-review characterization retained; AI-feedback characterization retained; semantic correction characterization retained; development X characterization retained; earlier telemetry/reload characterization and concurrency evidence retained; earlier guard/bootstrap receipts retained, four Store build-tag graphs and 16 Windows artifacts pass. Earlier acquisition-policy/capture-round/privacy/HTTP/Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Backend source CL-3.1/CL-3.2/CL-3.3 closed after accepted responsibility-map/exit-criteria review at 6b9b3a0, with code through f27e91b; [retain/defer decisions](#cl-3-source-closure-2026-11-03) recorded. No material ownership gap requires another extraction. Runtime activation, operational acceptance and CL-8 source sign-off remain separate |
 | CL-4: frontend feature ownership | 3b9cfd1: 374 functions/20 feature factories; 30 shared/root functions retained | Frozen 29/29 characterization; Node 360/360; HTTP/app default 1,322 pass/25 skip and dev 1,345 pass/12 skip; four Windows modes/12 artifacts; actual embedded desktop/mobile checks | Not performed | CL-4.1/CL-4.2/CL-4.3 source closed after scoped review; retain/defer map below. Operational acceptance and CL-5 through CL-8 remain separate |
-| CL-5: native runtime and QA boundaries | Existing production factory/shared-helper work retained; e146d40 separates CDP result projection and fixes live active/driverMode binding | Characterization 31/31 after seven reproduced baseline failures; Node 667/667; seven-package Go default 2,600 pass/44 skip and dev 3,292 pass/54 skip; four Windows modes/16 artifacts; sealed manual/daily/main graphs pass | Not performed for this increment | Scoped projector increment accepted; CL-5 remains partial. Codec/dispatch, remaining QA and owner-lifecycle boundaries still require evidence-backed review; no full operational qualification |
+| CL-5: native runtime and QA boundaries | Reviewed automatic cohort based on 555dea9: 47 declarations/seven production modules; e146d40 projector fix retained; commit bound to publication readback | New characterization 31/31 before; combined 62/62 after/final; native Node 780/780; seven-package default/dev Go; four Windows modes/16 PE artifacts; sealed manual/daily/main 80/81/100 modules | Not performed | Source CL-5 closed after owner-authorized review; retain/defer map below. Operational acceptance remains separate |
 | CL-6: Bridge responsibility boundaries | Existing source/lifecycle modules retained; further split proposed | Existing baseline only for remaining seams | No new rollout | Background dispatch/surface integration pending |
 | CL-7: build, packaging and test organization | Existing packaging retained; full consumer reconciliation proposed | Partial prior package evidence | No new rollout | Supported-entry/build-tag closure pending |
 | CL-8: integration and source sign-off | Not started for the comprehensive roadmap | Final matrix pending | Separate operational gate | Comprehensive source acceptance pending; runtime acceptance separate |
@@ -310,10 +310,7 @@ to establish a source-only frontend extraction.
 
 ### CL-5: native runtime and QA boundaries
 
-Current status: partial. The [CDP result-projection increment](#cl-5-cdp-result-projection-and-live-state-binding-result-2026-11-04)
-is implemented/tested/reviewed as e146d40. Existing factory/shared-helper
-work stays complete; remaining codec/dispatch, owner-lifecycle and QA boundaries
-retain their own entry/exit criteria. No activation is established.
+Current status: source closed after owner-authorized review. The [automatic CL-5 result](#automatic-cl-5-native-responsibility-separation-result-2026-11-04) records the responsibility map, unchanged passing evidence and explicit retain/defer decisions. Publication readback binds the reviewed code to its commit and remote SHA. No activation is established.
 
 - Map operation routing, CDP framing/projection, owner lifecycle and source
   evidence orchestration in `x-native-owner-runtime.mjs` before choosing a split.
@@ -2131,3 +2128,109 @@ The next proposal is a read-only ownership review of CDPFrameDecoder and parseJS
 
 The earlier CL-4 next-proposal paragraph records its original checkpoint and is
 superseded by this CL-5 result and the narrower next proposal above.
+
+## Automatic CL-5 native responsibility separation result (2026-11-04)
+
+The owner authorized automatic CL-5 refactoring using the established
+characterize-before-move pattern. This run starts at 555dea9 and retains the
+published e146d40 live active/driverMode projector fix. It implements the
+remaining justified source boundaries, then assesses the retained owner and QA
+paths against the CL-5 exit criteria. Source CL-3/CL-4 remain closed.
+
+| Dimension | Current evidence and scope |
+| --- | --- |
+| Implemented | Reviewed source cohort based on 555dea9 (commit identity bound to publication readback): 47 existing declarations move unchanged to seven production shared modules; runtime composition and supported exports remain intact |
+| Tested | Frozen new characterization: 31/31 before relocation; combined new and existing projector characterization: 62/62 after relocation and on final source. Relevant native/QA/package Node regression: 780/780 before and after. Seven-package Go: default 2,600 pass/44 skip; dev 3,292 pass/54 skip; zero failures. Four Windows amd64 tag modes: 16 PE artifacts. Sealed manual/daily/main graphs: 80/81/100 modules |
+| Activated | Not performed; no restart, account/profile/config change or live source trial |
+| Acceptance | Owner-authorized review has no blocking finding; CL-5 source scope is closed with the retain/defer map below. Commit and remote identity are bound to the publication readback. Activation and operational acceptance remain separate |
+
+### Extracted responsibility map
+
+All files below are under internal/collection/headless/worker/native-pilot/shared.
+Declaration counts include constants and private helpers, not just functions.
+
+| Production module | Declarations | Responsibility |
+| --- | --- | --- |
+| x-native-value-validation.mjs | 7 | Closed value, key, identifier and loopback control-origin checks reused by runtime features |
+| x-native-cdp-framing.mjs | 7 | Bounded NUL frames, strict JSON/UTF-8, buffer clearing and decoder limits |
+| x-native-network-metadata.mjs | 14 | Closed operation classification, value-free metadata projection and bounded aggregation |
+| x-native-cdp-event-projection.mjs | 1 | Opaque CDP event projection before stateful dispatch |
+| x-native-observation-policy.mjs | 6 | Fixed X target/readiness policy and per-instance login observation gate |
+| x-native-owner-workflow.mjs | 5 | Directory identity, launch envelope and consumed two-phase grant policy |
+| x-native-cdp-command-policy.mjs | 7 | Closed CDP vocabulary, existing deadlines and branded failure categories |
+
+The central runtime falls from 1,898 to 1,327 lines and retains 13 top-level
+declarations. File size is descriptive, not an exit criterion. Existing public
+exports directly reference the same moved constructors/functions, including the
+frozen nativeProbeDefinitions fixture port. No fallback shim, generic registry,
+second owner or exported decoder singleton is added. Imports resolve to the same
+strict parser, launch policy, clock/timing policy and private error-brand module.
+
+### Retain and defer decisions
+
+| Boundary | Decision and concrete return trigger |
+| --- | --- |
+| send, cdpWrite, dispatchCDP, pending commands, first-cause latch and active/driverMode | Retain inside createNativeOwnerRuntime. These own the same state and synchronous reply/ACK ordering. Revisit only if another real consumer requires an independently owned transport lifecycle |
+| Manual/daily operation admission and post reservation | Retain with the owner. Failed init/seed consumption, generation checks, batchPending, fresh grants, retry admission and reservation-before-await remain exact. Revisit if supported lifetimes diverge, not to reduce line count |
+| Borrowed main reader versus owned collector | Retain the existing boundary: Go owns main Chrome/profile/process lifetime; the borrower owns collector/bootstrap/attachments and their bounded cleanup. Revisit only with an explicitly approved ownership change |
+| Reader/collector evidence, enrollment, provenance and paired checkpoints | Retain role-specific orchestration and shared first-cause/rendezvous. Cookie-write ACK baselines remain synchronous in result projection; observer/enrollment order remains unchanged. Revisit a narrow duplicated policy only when its exact independent contract is demonstrated |
+| QA operation dispatch and fixture ingress | Retain sealed operation validators and existing QA adapters. The fixture dispatcher remains outside production graphs. Revisit an actual shared production/QA consumer need; do not export owner authority or flatten runtime closures |
+| Live-provider qualification, clock parity, installed tuple and final integration | Separate operational/product evidence and CL-8 where already assigned; no acceptance claim or authorization is inherited from this source run |
+| Test-asset/package organization F02, Bridge dispatch and consumer cleanup | Retain existing CL-7, CL-6 and consumer-stage ownership. Their work is not required to manufacture another CL-5 extraction |
+
+The independent read-only owner-lifecycle assessment supports retaining these
+closures. A common reader/collector runner would require broad callback/state
+ports and would obscure the authority boundary. There is no demonstrated source
+gap requiring that abstraction in this cohort.
+
+### Exit criteria assessment
+
+| CL-5 source criterion | Evidence and result |
+| --- | --- |
+| Correct runtime/QA dependency direction | Production factories and shared helpers remain production-owned; fixture adapters consume native definitions rather than becoming production dependencies |
+| No fixture imports in production package graphs | All three sealed manifests exclude scripts/auth-session-fixture and the fixture probe driver, include the seven new modules and existing projector, and bind current source hashes |
+| Existing protocol/provenance/negative conformance passes | The 780-result Node cohort includes owner/daily/main protocol, provenance, startup, ingress, seed, reader-post and package tests. Existing guard assertions remain; only graph-inclusion assertions are added |
+| Source-pinned manual/daily/main bundles complete | Manifest schema/capabilities and top-level dailyLifecycle/mainLifecycle contracts pass; all module/data-asset hashes and driver identities are verified |
+
+All source criteria are satisfied. The owner authorized source closure after
+review; the reviewed cohort closes source CL-5. The remaining decisions are
+explicit retain/defer outcomes, not an unbounded file-splitting backlog. Commit
+and remote readback identify the exact published payload.
+
+The 47 moved declaration bodies match exactly ignoring EOL; all retained
+declarations, including the complete createNativeOwnerRuntime body, are byte
+identical. A reconstruction proof permits only import/export composition,
+declaration relocation and removal of temporary location comments/extra blank
+lines. Final characterization is rerun after that presentation cleanup; the
+780-result regression remains applicable to identical execution bodies.
+
+The Go headless package has no embedded JavaScript. Sealed Node graphs establish
+JavaScript inclusion; Windows compilation establishes only its Go artifact
+scope. No race-detector, whole-repository, installed-tuple or real-provider
+acceptance is claimed. All 1,493 other tracked files match the original baseline,
+including already dirty config/sidecar.json. Unrelated .tmp/ and experiments/
+remain excluded. No configuration, guard, protocol, timeout, cancellation or
+cleanup policy is changed.
+
+Evidence: [validation](../runtime/qa/cl5-auto-20261104/validation.json),
+[structural proof](../runtime/qa/cl5-auto-20261104/structural-review.json),
+[sealed package readback](../runtime/qa/cl5-auto-20261104/packages.json),
+[scoped review](../runtime/qa/cl5-auto-20261104/review.json), and
+[final candidate readback](../runtime/qa/cl5-auto-20261104/final-readback.json).
+These are ignored local receipts, not repository-shipped assets. Earlier
+e146d40/555dea9 receipts retain their capture-time source and publication scope.
+
+Publication: [scoped review](../runtime/qa/cl5-publication-20261104/review.json)
+and [commit/remote readback](../runtime/qa/cl5-publication-20261104/final-readback.json).
+The original candidate receipts are preserved unchanged; later readback binds
+that tested code to the committed Git blobs and origin/main SHA. No product
+suite is rerun solely for documentation, commit or push.
+
+### Next boundary
+
+Source CL-5 is closed after scoped review. The next proposal is read-only CL-6
+background dispatch ownership analysis in AkuBridge: map message routing,
+capture dispatch, tab/window ownership, readiness and lifecycle consumers before
+choosing one responsibility and its characterization tests. No CL-6 edit,
+restart or trial is part of this publication. The prior codec-analysis proposal is superseded by this authorized automatic
+run; historical partial-status sections retain their capture-time meaning.

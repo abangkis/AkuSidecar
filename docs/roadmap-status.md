@@ -1,6 +1,6 @@
 # Roadmap status and evidence index
 
-Status synchronized: 2026-11-04 (Asia/Jakarta). Latest delta is CL-5 projector/binding code `e146d40`; CL-5 remains partial, and source CL-3/CL-4 remain closed. Publication is bound to the linked readback.
+Status synchronized: 2026-11-04 (Asia/Jakarta). Latest delta is reviewed automatic CL-5 source closure based on 555dea9; publication identity is bound to readback. Source CL-3/CL-4 remain closed. Activation and operational acceptance remain separate.
 Earlier source history before the latest result: AkuSidecar `80acfb9` (Timeline More/Less and restart-dev assertion correction, after `f27e91b` automatic Store feature separation; 95 declarations/15 feature files; after Store Timeline read-model `bee6a9f`, after empty-candidate completion `de95c58`, after vision persistence `70ea120`; per-run candidate evaluation/completion, after acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
@@ -1505,6 +1505,47 @@ Next proposal: read-only CDP framing/decoding ownership analysis of CDPFrameDeco
 and parseJSONBytes, preserving frame limits, strict parsing, zeroization, error
 codes and dispatcher behavior. No next extraction or runtime trial is authorized
 by this status record.
+
+## Automatic CL-5 native responsibility separation result (2026-11-04)
+
+The owner-authorized automatic run at 555dea9 separates 47 existing declarations
+into seven production native modules. The complete runtime lifecycle body,
+protocol/guard/deadline/cancellation/cleanup behavior and prior live-state
+projector correction remain unchanged. Source CL-3/CL-4 retain their closure.
+
+| Dimension | Current evidence and scope |
+| --- | --- |
+| Implemented | Reviewed source cohort based on 555dea9 (commit identity bound to publication readback): 47 existing declarations move unchanged to seven production shared modules; runtime composition and supported exports remain intact |
+| Tested | Frozen new characterization: 31/31 before relocation; combined new and existing projector characterization: 62/62 after relocation and on final source. Relevant native/QA/package Node regression: 780/780 before and after. Seven-package Go: default 2,600 pass/44 skip; dev 3,292 pass/54 skip; zero failures. Four Windows amd64 tag modes: 16 PE artifacts. Sealed manual/daily/main graphs: 80/81/100 modules |
+| Activated | Not performed; no restart, account/profile/config change or live source trial |
+| Acceptance | Owner-authorized review has no blocking finding; CL-5 source scope is closed with the retain/defer map below. Commit and remote identity are bound to the publication readback. Activation and operational acceptance remain separate |
+
+See the [canonical responsibility map, retain/defer decisions and exit assessment](code-cleanup-roadmap.md#automatic-cl-5-native-responsibility-separation-result-2026-11-04).
+The owner-authorized review confirms the source criteria; source CL-5 is closed. Stateful
+dispatch, manual/daily/borrowed ownership and role-specific provenance remain
+together deliberately; no new controller or broad callback abstraction is
+introduced. Original inventory disposition counts and operational evidence are
+unchanged. Publication includes the reviewed source and four roadmap files;
+activation and live trials remain separate.
+
+Evidence: [validation](../runtime/qa/cl5-auto-20261104/validation.json),
+[structural proof](../runtime/qa/cl5-auto-20261104/structural-review.json),
+[sealed package readback](../runtime/qa/cl5-auto-20261104/packages.json),
+[scoped review](../runtime/qa/cl5-auto-20261104/review.json), and
+[final candidate readback](../runtime/qa/cl5-auto-20261104/final-readback.json).
+These are ignored local receipts, not repository-shipped assets. Earlier
+e146d40/555dea9 receipts retain their capture-time source and publication scope.
+
+Publication: [scoped review](../runtime/qa/cl5-publication-20261104/review.json)
+and [commit/remote readback](../runtime/qa/cl5-publication-20261104/final-readback.json).
+The original candidate receipts are preserved unchanged; later readback binds
+that tested code to the committed Git blobs and origin/main SHA. No product
+suite is rerun solely for documentation, commit or push.
+
+Next proposal: read-only CL-6 Bridge background messaging/capture dispatch,
+tab/window ownership, readiness and lifecycle analysis, with one justified
+responsibility and characterization scope. The earlier codec proposal is
+superseded; earlier partial-status sections retain capture-time meaning.
 
 ## Product and installation roadmaps
 
