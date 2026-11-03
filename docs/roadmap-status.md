@@ -1,6 +1,6 @@
 # Roadmap status and evidence index
 
-Status synchronized: 2026-11-03 (Asia/Jakarta).
+Status synchronized: 2026-11-03 (Asia/Jakarta). Latest delta is reviewed frontend code `3b9cfd1` after baseline 0533ad3; source CL-4 is closed in its bounded scope, with publication bound to the linked readback. Earlier commit references retain their historical scope.
 Reviewed local source: AkuSidecar `80acfb9` (Timeline More/Less and restart-dev assertion correction, after `f27e91b` automatic Store feature separation; 95 declarations/15 feature files; after Store Timeline read-model `bee6a9f`, after empty-candidate completion `de95c58`, after vision persistence `70ea120`; per-run candidate evaluation/completion, after acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
@@ -1436,6 +1436,42 @@ accountless desktop/mobile checks before selecting any implementation. Keep
 Library full-copy/Remove/Forget semantics distinct. No code, protocol, guard,
 configuration, activation or trial change is authorized by this proposal.
 
+
+## Automatic frontend feature-separation result (2026-11-03)
+
+The owner authorized the automatic frontend run, then scoped review, roadmap
+synchronization, commit and push to origin/main at
+https://github.com/abangkis/AkuSidecar.git. Code `3b9cfd1` is the reviewed result
+after baseline 0533ad3 (More/Less code 80acfb9). Source **CL-4.1, CL-4.2 and CL-4.3
+are closed within the selected central frontend responsibility scope**. The
+publication readback below binds the frozen tested payload and roadmap commit
+to the verified remote branch. Original candidate receipts retain their
+capture-time sourceHead/sourceDirty/committed fields. Source CL-3 stays closed;
+activation, operational acceptance and CL-5 through CL-8 remain separate.
+
+| Dimension | Evidence and scope |
+| --- | --- |
+| Implemented | `3b9cfd1`: 374 original functions move into 20 named feature factories. app.js falls from 9,937 to 2,225 lines, retaining 30 navigation/shared/transport functions and explicit composition/global wiring. Existing More/Less owner remains intact |
+| Tested | Frozen characterization: 29/29 before and after. Node baseline including these tests: 333/333; final regression including 23 actual-factory composition results and four checkout-regression results: 360/360. HTTP/application default: 1,322 pass/25 skip; dev: 1,345 pass/12 skip; zero failures. Four Windows amd64 tag combinations include all new embedded modules and produce 12 Engine/HTTP/application PE artifacts |
+| Activated | Not performed. Disposable loopback QA uses its own Store, profiles and owned process tree; no managed service, user database, configuration, source session, provider or capture trial changes |
+| Acceptance | Scoped source/test review found and resolved a test-only CRLF parsing defect and staged whitespace defects; final review has no blocking findings. CL-4 source scope is closed against the responsibility map and exit criteria below. Actual embedded desktop/mobile acceptance retains its stated limits; no real-provider/native-capture/clean-install qualification is implied |
+
+| CL-4 boundary | Current responsibility and status |
+| --- | --- |
+| CL-4.1 Timeline | Rendering, card content, AI actions, media, item actions and context drawer have explicit feature owners; existing feedback/state/policy modules retained. Source separation and scoped tests accepted in 3b9cfd1 |
+| CL-4.2 Settings | Draft/render/save behavior stays cohesive in settings-feature.js; storage, provider setup, reset/revocation operations and Auto Update presentation have their own owners. Existing dirty tracker remains the single baseline authority |
+| CL-4.3 App entry | Lifecycle/bootstrap/runtime polling and session UI orchestration have named factories. app.js retains initial state, navigation, API/bridgeApi/epoch enforcement, global listeners, observers/queues and existing startup order. No new scheduler, teardown policy or duplicate owner |
+
+The full responsibility map, intentional retain decisions, verification limits
+and next proposal are recorded in the [canonical CL-4 result](code-cleanup-roadmap.md#automatic-frontend-feature-separation-result-2026-11-03).
+Evidence: [validation](../runtime/qa/frontend-auto-20261103/validation.json),
+[scoped review](../runtime/qa/frontend-auto-20261103/review.json), and
+[final candidate readback](../runtime/qa/frontend-auto-20261103/final-readback.json).
+These original capture-time receipts are retained. Current [publication review](../runtime/qa/frontend-auto-review-20261103/review.json),
+[final validation](../runtime/qa/frontend-auto-review-20261103/current-candidate.json),
+and [publication readback](../runtime/qa/frontend-auto-review-20261103/final-readback.json)
+record the later corrections and source closure. See the [CL-4 closure map](code-cleanup-roadmap.md#cl-4-source-closure-2026-11-03)
+for exit criteria, retain/defer decisions and the next read-only CL-5 proposal.
 
 ## Product and installation roadmaps
 

@@ -1,9 +1,10 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-03 (Asia/Jakarta), through Sidecar `80acfb9` (reviewed Timeline More/Less feature and restart-dev test correction).
+Status synchronized: 2026-11-03 (Asia/Jakarta), reviewed code `3b9cfd1` after published baseline 0533ad3; source CL-4 closed in the bounded scope below.
 Status: source CL-3 closed after the accepted responsibility-map review at
-`6b9b3a0`; comprehensive cleanup remains in progress. See the
+`6b9b3a0`; source CL-4 closed by the reviewed FE result below. Comprehensive
+cleanup remains in progress. See the
 [closure decision](#cl-3-source-closure-2026-11-03) for retain/defer triggers.
 Other workstreams and changes outside approved increments require approval.
 Earlier partial/open statements retain their historical checkpoint scope.
@@ -112,7 +113,7 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-1: consumer and compatibility inventory | [Entry/consumer map](cl1-consumer-inventory.md) and [32-boundary candidate ledger](cl1-cleanup-candidates.md) delivered | Read-only four-tag metadata, native/package/reference and source-preservation checks; no product test/build | Not applicable to an audit | Ready for review; external-consumer and offline Browser dependency limits explicit; no implementation approved |
 | CL-2: proven obsolete-code retirement | Earlier wrappers plus G10 `DeleteMemoryItem` removal committed with roadmap as `21ac9ad` | G10 exact remainder check, full Store/HTTP regressions and four-mode Windows compilation passed | Not performed for G10 | G10 reviewed/committed; comprehensive retirement remains scoped by the remaining ledger entries |
 | CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b` and media recapture `be9fcd2`; Engine media recapture `c614512`; Engine Bridge commands `3e13434`; Engine media provenance `8d7f7b6`; Engine AI detection `b84a62d`; Engine session admission `4bf0731`; observation contracts `d9c3025`; process recovery `5b39fa4`; reasoning result `eb05ac8`; capture rounds and deterministic Store test `683b1e8`; local acquisition policy `f16f11a`; vision-lane routing/coverage `25c3339`; selection corrections `f3d46b8`; AI feedback `6a1ce33`; FullReset `da019dd`; Library removal/Forget `a19bf86`; passive media evidence `2bdc0f1`; HTTP update/session `d32c065`; HTTP media entry `90e3a7f`; HTTP bootstrap `97bbe51`; capture-owner path guard `b482ba2`; HTTP reload actions `6ea303c`; telemetry rotation/shutdown guard `237dbd1`; HTTP development X controls `1814c9b`; HTTP semantic corrections `3c5e61a`; HTTP AI feedback `a3718ff`; HTTP Inbox selection review `3f4a66d`; HTTP Inbox reads `ce57e79`; HTTP model usage `af8d722`; HTTP vision evaluation `cf534ec`; HTTP Timeline composition `3cf90b4`; automatic HTTP handler completion `9da6ed8`; acquisition execution `8027599`; candidate evaluation `ed35d82`; vision persistence tests `70ea120`; empty-candidate completion `de95c58`; Store Timeline read-model `bee6a9f`; automatic Store feature separation `f27e91b` (95 declarations/15 feature files); validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Capture/Collection/Bridge builder/Selection/EventEngine/Reasoning/Domain/Detector/Inspector/Store/Engine/HTTP/config/application scope selects 14 packages (13 with tests, Bridge builder compile-only): default 3,267 pass/50 skip and dev 4,111 pass/62 skip, zero failures; whole Store default 462 pass/5 skip and dev 614 pass/7 skip before/after (45 new results); earlier Store Timeline read-model characterization 72 pass/1 skip default/dev retained; empty-candidate completion characterization 218 default/dev before/after retained; earlier vision persistence characterization 94 default/dev retained; candidate evaluation characterization 88 default/dev before/after retained; acquisition execution characterization retained; remaining HTTP feature characterization retained; Timeline characterization retained; vision-evaluation characterization retained; model-usage characterization retained; Inbox read characterization retained; selection-review characterization retained; AI-feedback characterization retained; semantic correction characterization retained; development X characterization retained; earlier telemetry/reload characterization and concurrency evidence retained; earlier guard/bootstrap receipts retained, four Store build-tag graphs and 16 Windows artifacts pass. Earlier acquisition-policy/capture-round/privacy/HTTP/Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Backend source CL-3.1/CL-3.2/CL-3.3 closed after accepted responsibility-map/exit-criteria review at 6b9b3a0, with code through f27e91b; [retain/defer decisions](#cl-3-source-closure-2026-11-03) recorded. No material ownership gap requires another extraction. Runtime activation, operational acceptance and CL-8 source sign-off remain separate |
-| CL-4: frontend feature ownership | Partial: first CL-4.1 More/Less item-action feature 80acfb9; existing navigation retained | 17/17 characterization before/after, Node 304/304, HTTP/application default/dev regressions, four-mode Windows compilation and isolated desktop/mobile acceptance below | Not performed for this increment | More/Less scoped source/test review accepted; broader Timeline, frontend Settings and app orchestration remain pending. CL-4.1/CL-4 are partial |
+| CL-4: frontend feature ownership | 3b9cfd1: 374 functions/20 feature factories; 30 shared/root functions retained | Frozen 29/29 characterization; Node 360/360; HTTP/app default 1,322 pass/25 skip and dev 1,345 pass/12 skip; four Windows modes/12 artifacts; actual embedded desktop/mobile checks | Not performed | CL-4.1/CL-4.2/CL-4.3 source closed after scoped review; retain/defer map below. Operational acceptance and CL-5 through CL-8 remain separate |
 | CL-5: native runtime and QA boundaries | Factory/shared-helper separation complete; fixture-only timing correction `8dc3f5e` committed; deeper runtime split proposed | 98 Node tests, 200 offline integration iterations and dependency-pinned staging verified for this fixture correction; existing baseline only for remaining seams | Not performed for this correction | Bounded fixture acceptance only; remaining operation/transport/QA separation pending; no universal cross-runtime clock or real-provider qualification claim |
 | CL-6: Bridge responsibility boundaries | Existing source/lifecycle modules retained; further split proposed | Existing baseline only for remaining seams | No new rollout | Background dispatch/surface integration pending |
 | CL-7: build, packaging and test organization | Existing packaging retained; full consumer reconciliation proposed | Partial prior package evidence | No new rollout | Supported-entry/build-tag closure pending |
@@ -283,9 +284,12 @@ no second source of state, broader admission, new concurrency or wire changes.
 
 ### CL-4: frontend feature ownership
 
-Current status: partial. The first CL-4.1 More/Less increment is recorded in the
-[feature result](#cl-41-timeline-moreless-result-2026-11-03); broader ownership
-work below remains separate. Source CL-3 closure is unchanged.
+Current status: source closed after the owner-authorized automatic run and
+scoped review/publication of 3b9cfd1. See the [current result](#automatic-frontend-feature-separation-result-2026-11-03)
+for CL-4.1/CL-4.2/CL-4.3 ownership, verification and retained boundaries. Scoped
+local acceptance passes; publication is bound to the readback below.
+The earlier [More/Less result](#cl-41-timeline-moreless-result-2026-11-03) keeps
+its historical scope. Source CL-3 closure is unchanged.
 
 - **CL-4.1 Timeline:** separate rendering and item-scoped action ownership from
   application bootstrap/polling. Preserve revision/epoch checks, lazy media,
@@ -1874,3 +1878,168 @@ current owner should be retained. Name characterization/error/concurrency and
 accountless desktop/mobile checks before selecting any implementation. Keep
 Library full-copy/Remove/Forget semantics distinct. No code, protocol, guard,
 configuration, activation or trial change is authorized by this proposal.
+
+## Automatic frontend feature-separation result (2026-11-03)
+
+The owner authorized the automatic frontend run, then scoped review, roadmap
+synchronization, commit and push to origin/main at
+https://github.com/abangkis/AkuSidecar.git. Code `3b9cfd1` is the reviewed result
+after baseline 0533ad3 (More/Less code 80acfb9). Source **CL-4.1, CL-4.2 and CL-4.3
+are closed within the selected central frontend responsibility scope**. The
+publication readback below binds the frozen tested payload and roadmap commit
+to the verified remote branch. Original candidate receipts retain their
+capture-time sourceHead/sourceDirty/committed fields. Source CL-3 stays closed;
+activation, operational acceptance and CL-5 through CL-8 remain separate.
+
+| Dimension | Evidence and scope |
+| --- | --- |
+| Implemented | `3b9cfd1`: 374 original functions move into 20 named feature factories. app.js falls from 9,937 to 2,225 lines, retaining 30 navigation/shared/transport functions and explicit composition/global wiring. Existing More/Less owner remains intact |
+| Tested | Frozen characterization: 29/29 before and after. Node baseline including these tests: 333/333; final regression including 23 actual-factory composition results and four checkout-regression results: 360/360. HTTP/application default: 1,322 pass/25 skip; dev: 1,345 pass/12 skip; zero failures. Four Windows amd64 tag combinations include all new embedded modules and produce 12 Engine/HTTP/application PE artifacts |
+| Activated | Not performed. Disposable loopback QA uses its own Store, profiles and owned process tree; no managed service, user database, configuration, source session, provider or capture trial changes |
+| Acceptance | Scoped source/test review found and resolved a test-only CRLF parsing defect and staged whitespace defects; final review has no blocking findings. CL-4 source scope is closed against the responsibility map and exit criteria below. Actual embedded desktop/mobile acceptance retains its stated limits; no real-provider/native-capture/clean-install qualification is implied |
+
+| CL-4 boundary | Current responsibility and status |
+| --- | --- |
+| CL-4.1 Timeline | Rendering, card content, AI actions, media, item actions and context drawer have explicit feature owners; existing feedback/state/policy modules retained. Source separation and scoped tests accepted in 3b9cfd1 |
+| CL-4.2 Settings | Draft/render/save behavior stays cohesive in settings-feature.js; storage, provider setup, reset/revocation operations and Auto Update presentation have their own owners. Existing dirty tracker remains the single baseline authority |
+| CL-4.3 App entry | Lifecycle/bootstrap/runtime polling and session UI orchestration have named factories. app.js retains initial state, navigation, API/bridgeApi/epoch enforcement, global listeners, observers/queues and existing startup order. No new scheduler, teardown policy or duplicate owner |
+
+### Feature ownership
+
+| New feature owner | Functions | Purpose |
+| --- | ---: | --- |
+| capture-ui.js | 21 | Bridge readiness/recovery, source access and native-post UI routing |
+| app-lifecycle.js | 10 | Bootstrap, activity reporting, runtime polling and database health/cleanup |
+| settings-storage-ui.js | 3 | Settings storage summary read/render |
+| living-topics-ui.js | 38 | Existing local topic/evidence/snapshot UI operations |
+| library-ui.js | 49 | Library/Saved/detail/storage actions and request lifetimes |
+| inbox-ui.js | 35 | Inbox review, model usage and capture diagnostic presentation |
+| settings-feature.js | 20 | Settings draft, rendering, validation/admission and persistence |
+| auto-update-ui.js | 10 | Existing Auto Update status, mode presentation and user actions |
+| timeline-rendering.js | 35 | Timeline batches, render scheduling, side pane and scroll geometry |
+| onboarding-ui.js | 24 | Onboarding, learning panel and calibration presentation/actions |
+| provider-setup-ui.js | 11 | Existing provider readiness/setup/switch UI |
+| settings-operations.js | 5 | Reset/revocation/AI Hide confirmation operations |
+| diagnostics-ui.js | 4 | Existing timing trace and diagnostic export actions |
+| session-ui.js | 29 | Update/session polling, cancellation, cleanup and outcome presentation |
+| passive-media-ui.js | 5 | Existing bounded passive X media enrichment presentation flow |
+| timeline-content.js | 12 | Card/source/text/attachment/engagement construction |
+| timeline-ai-ui.js | 3 | Existing AI detection detail/feedback controls |
+| timeline-media.js | 26 | Media construction, playback fallback, carousel and viewer |
+| timeline-actions.js | 12 | Read later, semantic correction and existing item actions |
+| timeline-context.js | 22 | Context lookup, feedback, drawer, trigger and placement lifecycle |
+
+Factories receive explicit named ports and the same state object. Cross-feature
+callbacks and late-bound host objects resolve lazily; no bootstrap snapshot,
+generic registry, Proxy or second state authority is introduced in production.
+Feature-only Set/WeakMap/primitive state moves with its existing readers/writers.
+The existing factory constructors do not call late host ports during composition.
+These boundaries organize responsibilities; they are not security/capability
+isolation. No pattern is introduced solely to reduce line counts.
+
+Retain the original API/fetch/epoch and source-URL authority, shared notices,
+formatters, navigation, root state and event/observer/queue composition in app.js.
+Retain existing pure helper modules, X/IG control owners, dirty tracker, screenshot,
+frame/idle and recovery queues. Remove 102 unused root import bindings after their
+consumers move; retained helper implementations/exports are not deleted. Existing
+top-level lifecycle wiring and side-effect statement order are preserved.
+
+### Verification and limits
+
+The declaration review matches every moved function against source 0533ad3,
+allowing only indentation/EOL and explicit late getter/setter accesses. It also
+checks lexical dependency resolution independently of the extraction scanner,
+owned local declarations, module imports/exports, all 30 retained functions and
+an exact reconstruction of the composition root. API wrappers, epoch rejection,
+original state initialization and global listener/observer/timer ordering remain
+unchanged. All 1,434 other tracked files match the captured baseline, including
+the already dirty user config; .tmp/ and experiments/ remain excluded.
+
+Existing source/VM contracts now read declarations from their actual feature
+files through a test-only source view. Their assertions remain unchanged except
+one obsolete unused-app-import location check: its state-owner assertion remains.
+The adapter is not production code or an executable fallback. HTTP tests also
+fetch every actual new module, check JavaScript content/type and factory wiring.
+Twenty-three additional results import/instantiate the actual factories and
+exercise late dirty-tracker resolution and stale session-response rejection.
+The frozen characterization covers Read later admission/concurrency/error,
+Settings save order and AI Hide admission, selective provider baseline updates,
+session cleanup retry and bootstrap stale-attempt/polling contracts.
+
+The actual embedded app runs against a disposable real Store/Engine/HTTP server,
+with a provider that rejects generation and no scheduler or capture started.
+Desktop 1440x1000 and mobile 390x844 exercise bootstrap, More/Less, Read later,
+Settings dirty/save, all primary navigation and the Saved Library read. Desktop
+also opens/loads/closes the context drawer; mobile preserves the existing hidden
+trigger when the narrow gutter cannot fit it. This is not mobile drawer-opening
+acceptance. Before/after screenshots were inspected, JavaScript exceptions and
+horizontal overflow are absent, and Go-owned process-tree cleanup is verified.
+Existing CSS/HTML are unchanged. A fixture assumption about context-trigger
+actionability failed on the baseline; its logs/screenshots remain recorded.
+The corrected fixture waits for layout, checks the real hidden-panel class and
+respects reading-position/gutter eligibility, without changing product behavior.
+
+Relevant Go regression covers HTTP and application packages; Windows compilation
+covers default, auth_session_dev, auth_session_fixture and combined tags. This
+run does not rerun the whole backend, race detector, signed-in/native-source media,
+provider credentials, performance qualification or installed-app acceptance.
+Those limits do not reopen source CL-3 or close CL-5 through CL-8.
+
+Evidence: [validation and payload hashes](../runtime/qa/frontend-auto-20261103/validation.json),
+[extraction proof](../runtime/qa/frontend-auto-20261103/extraction-proof.json),
+[scoped review](../runtime/qa/frontend-auto-20261103/review.json),
+[desktop/mobile result](../runtime/qa/frontend-auto-20261103/visual-after/result.json),
+and [final candidate readback](../runtime/qa/frontend-auto-20261103/final-readback.json).
+These are local ignored QA receipts. sourceHead/sourceDirty/committed identify
+capture-time state, not a published commit or running managed binary.
+
+
+## CL-4 source closure (2026-11-03)
+
+The owner authorized review/publication of the automatic FE result; scoped review
+accepts code `3b9cfd1`. No material responsibility gap requires another
+extraction in this central frontend cohort. This closes the source gate for
+CL-4.1/CL-4.2/CL-4.3, with the following evidence and explicit retain/defer scope.
+
+| Exit criterion | Assessment |
+| --- | --- |
+| Timeline rendering/actions separate from bootstrap/polling | Met: six Timeline owners plus retained More/Less and existing state/policy helpers; original request, epoch, cache, focus, media and context behavior preserved |
+| Settings ownership and dirty/save semantics explicit | Met: cohesive draft/render/admission/save owner, separate provider/storage/reset/automation UI owners, one existing dirty tracker; no new serializer or single-caller wrapper merely to split phases |
+| App entry/lifecycle explicit without duplicate ownership | Met: lifecycle/session factories and explicit root wiring; same state/API/epoch owner, same attach/cleanup points, same existing polling cadence and shared pollInFlight barrier |
+| Focused feature and rendered desktop/mobile checks | Met in source-only scope: 29 frozen characterization results, 23 real-factory results, four checkout-regression results, final Node 360/360, Go default/dev and four Windows modes; actual embedded default-app desktop/mobile checks pass |
+
+| Retain/defer decision | Return trigger |
+| --- | --- |
+| Retain app.js shared state, transport/epoch/URL authority, navigation, shared notices/formatters and global event/observer/queue composition | A concrete behavior/lifetime change demonstrates multiple owners or a responsibility conflict; file length alone is insufficient |
+| Retain existing helpers, dirty tracker, X/IG controls, screenshot/frame/idle/playback queues and feature-local state | A new supported feature requires a documented ownership change; no generic controller or additional state source is needed now |
+| Retain existing mobile narrow-gutter context-trigger behavior and existing bootstrap timer policy | A separately approved UX/lifecycle change defines new behavior and acceptance; this source move does not introduce mobile drawer access or timer deduplication |
+| Defer test-asset packaging F02, native operation/CDP/QA ownership, Bridge dispatch and final integration | Respectively CL-7, CL-5, CL-6 and CL-8 entry/consumer/acceptance work; CL-4 closure does not retire supported paths or waive those gates |
+
+Review found that CRLF module footers could make the test-only source reader
+include a factory return in a function slice. It now normalizes source inputs;
+the added regression reads copies of actual declarations under LF, CRLF and
+mixed line endings. The six original failures remain in the local receipt.
+Whitespace cleanup preserves complete module ASTs, including string/template
+content. These corrections do not change production logic, protocol or guards.
+Final checks were repeated after these corrections: Node 360 pass; HTTP/app
+default 1,322 pass/25 skip and dev 1,345 pass/12 skip; zero failures; 12 fresh
+Windows PE/amd64 artifacts and embedded accountless desktop/mobile pass.
+
+Only the 59 approved code/test/fixture files and four canonical roadmap documents
+belong to this publication. The pre-existing config/sidecar.json change, .tmp/
+and experiments/ remain excluded. The 374-function declaration/lexical/root
+proof is retained and extended by full-module AST equality for formatting; the
+review also verifies all 319 named dependency ports across 20 factories.
+
+Evidence: [final validation](../runtime/qa/frontend-auto-review-20261103/current-candidate.json),
+[scoped review](../runtime/qa/frontend-auto-review-20261103/review.json),
+[formatting equivalence](../runtime/qa/frontend-auto-review-20261103/formatting.json),
+and [commit/publication readback](../runtime/qa/frontend-auto-review-20261103/final-readback.json).
+These are ignored local receipts; the original implementation receipts remain
+unchanged. Published source does not establish managed runtime activation.
+
+Next proposal: read-only CL-5 ownership analysis of operation routing, CDP
+framing/projection and owner/source-evidence lifetime in x-native-owner-runtime.mjs.
+Identify one real boundary and its characterization needs, or retain the owner
+if no gap exists. Preserve deadlines, first cause, cancellation, provenance and
+owned cleanup. No CL-5 implementation, restart or live trial is included here.

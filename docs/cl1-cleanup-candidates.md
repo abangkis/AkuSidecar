@@ -29,9 +29,11 @@ statements below describe their original checkpoints and are superseded only
 for this backend source gate. Activation and operational acceptance are not
 established by this closure; other cleanup stages retain their own status.
 
-Latest approved frontend increment: [Timeline More/Less result](#cl-41-timeline-moreless-result-2026-11-03),
-code `80acfb9`, establishes one F01/CL-4.1 feature boundary. F01 remains partial;
-the original inventory disposition counts are not a remaining-work count.
+Latest frontend result: [automatic CL-4 separation](#automatic-frontend-feature-separation-result-2026-11-03),
+code `3b9cfd1`, closes the selected F01/CL-4 source cohort after scoped review.
+Publication is bound to the linked readback; activation remains separate.
+F02/test-asset packaging remains a CL-7 question. Original disposition counts
+are not a remaining-work count.
 
 ## Dispositions and approval
 
@@ -2755,3 +2757,39 @@ current owner should be retained. Name characterization/error/concurrency and
 accountless desktop/mobile checks before selecting any implementation. Keep
 Library full-copy/Remove/Forget semantics distinct. No code, protocol, guard,
 configuration, activation or trial change is authorized by this proposal.
+
+## Automatic frontend feature-separation result (2026-11-03)
+
+The owner authorized the automatic frontend run, then scoped review, roadmap
+synchronization, commit and push to origin/main at
+https://github.com/abangkis/AkuSidecar.git. Code `3b9cfd1` is the reviewed result
+after baseline 0533ad3 (More/Less code 80acfb9). Source **CL-4.1, CL-4.2 and CL-4.3
+are closed within the selected central frontend responsibility scope**. The
+publication readback below binds the frozen tested payload and roadmap commit
+to the verified remote branch. Original candidate receipts retain their
+capture-time sourceHead/sourceDirty/committed fields. Source CL-3 stays closed;
+activation, operational acceptance and CL-5 through CL-8 remain separate.
+
+| Dimension | Evidence and scope |
+| --- | --- |
+| Implemented | `3b9cfd1`: 374 original functions move into 20 named feature factories. app.js falls from 9,937 to 2,225 lines, retaining 30 navigation/shared/transport functions and explicit composition/global wiring. Existing More/Less owner remains intact |
+| Tested | Frozen characterization: 29/29 before and after. Node baseline including these tests: 333/333; final regression including 23 actual-factory composition results and four checkout-regression results: 360/360. HTTP/application default: 1,322 pass/25 skip; dev: 1,345 pass/12 skip; zero failures. Four Windows amd64 tag combinations include all new embedded modules and produce 12 Engine/HTTP/application PE artifacts |
+| Activated | Not performed. Disposable loopback QA uses its own Store, profiles and owned process tree; no managed service, user database, configuration, source session, provider or capture trial changes |
+| Acceptance | Scoped source/test review found and resolved a test-only CRLF parsing defect and staged whitespace defects; final review has no blocking findings. CL-4 source scope is closed against the responsibility map and exit criteria below. Actual embedded desktop/mobile acceptance retains its stated limits; no real-provider/native-capture/clean-install qualification is implied |
+
+| CL-4 boundary | Current responsibility and status |
+| --- | --- |
+| CL-4.1 Timeline | Rendering, card content, AI actions, media, item actions and context drawer have explicit feature owners; existing feedback/state/policy modules retained. Source separation and scoped tests accepted in 3b9cfd1 |
+| CL-4.2 Settings | Draft/render/save behavior stays cohesive in settings-feature.js; storage, provider setup, reset/revocation operations and Auto Update presentation have their own owners. Existing dirty tracker remains the single baseline authority |
+| CL-4.3 App entry | Lifecycle/bootstrap/runtime polling and session UI orchestration have named factories. app.js retains initial state, navigation, API/bridgeApi/epoch enforcement, global listeners, observers/queues and existing startup order. No new scheduler, teardown policy or duplicate owner |
+
+The full responsibility map, intentional retain decisions, verification limits
+and next proposal are recorded in the [canonical CL-4 result](code-cleanup-roadmap.md#automatic-frontend-feature-separation-result-2026-11-03).
+Evidence: [validation](../runtime/qa/frontend-auto-20261103/validation.json),
+[scoped review](../runtime/qa/frontend-auto-20261103/review.json), and
+[final candidate readback](../runtime/qa/frontend-auto-20261103/final-readback.json).
+These original capture-time receipts are retained. Current [publication review](../runtime/qa/frontend-auto-review-20261103/review.json),
+[final validation](../runtime/qa/frontend-auto-review-20261103/current-candidate.json),
+and [publication readback](../runtime/qa/frontend-auto-review-20261103/final-readback.json)
+record the later corrections and source closure. See the [CL-4 closure map](code-cleanup-roadmap.md#cl-4-source-closure-2026-11-03)
+for exit criteria, retain/defer decisions and the next read-only CL-5 proposal.
