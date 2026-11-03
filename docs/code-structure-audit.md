@@ -3,7 +3,7 @@
 ## Status synchronization (2026-11-03)
 
 The original audit and its validation below are historical. Current source is
-reviewed through `ed35d82`, including per-run candidate evaluation/completion, then acquisition planning orchestration, then automatic completion of the remaining 58 HTTP adapters, then Timeline composition HTTP adaptation, vision-evaluation HTTP adapters, model-usage HTTP adapters, Inbox read HTTP adapters, Inbox selection-review HTTP adapters, AI-feedback HTTP adapters, semantic correction HTTP adapters, development X HTTP controls, capture telemetry rotation/shutdown compatibility, HTTP reload-action separation, capture-owner path normalization, HTTP bootstrap and the router responsibility map, HTTP media-recapture entry points, HTTP update/session lifecycle, Engine passive media evidence, Library removal/Forget, FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
+reviewed through `70ea120` (test-only vision persistence; production handoff retained), including per-run candidate evaluation/completion, then acquisition planning orchestration, then automatic completion of the remaining 58 HTTP adapters, then Timeline composition HTTP adaptation, vision-evaluation HTTP adapters, model-usage HTTP adapters, Inbox read HTTP adapters, Inbox selection-review HTTP adapters, AI-feedback HTTP adapters, semantic correction HTTP adapters, development X HTTP controls, capture telemetry rotation/shutdown compatibility, HTTP reload-action separation, capture-owner path normalization, HTTP bootstrap and the router responsibility map, HTTP media-recapture entry points, HTTP update/session lifecycle, Engine passive media evidence, Library removal/Forget, FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
 for commit-to-receipt mappings. Cleanup is not provider qualification.
 
 | Increment | Implemented | Tested | Activated | Acceptance |
@@ -1134,15 +1134,66 @@ and [commit/publication readback](../runtime/qa/candidate-evaluation-review-2026
 Original sourceHead/sourceDirty/committed receipt fields describe capture time
 and remain unchanged; the later readback binds the payload to commits.
 
+### Vision handoff follow-up completed
+
+The proposed read-only review is complete. Retain the compact vision handoff
+inside Engine.process: Store already owns queue capacity, deferred promotion,
+deduplication and persistence; vision_lane.go owns pure routing/projection.
+Another Engine helper would add indirection without separating an owner.
+The owner approved characterization tests instead of a production extraction.
+
+## Vision lane persistence characterization result (2026-11-03)
+
+The owner approved review, roadmap synchronization, commit and publication of
+this test-only increment to origin/main at https://github.com/abangkis/AkuSidecar.git.
+The preceding published checkpoint is 7b312ff. Test commit 70ea120 adds one file;
+production remains at the preceding candidate-evaluation source ed35d82.
+
+| Dimension | Evidence and scope |
+| --- | --- |
+| Implemented | 70ea120: vision_lane_persistence_test.go adds three test roots with six scenarios (nine parent/subtest results). No production extraction; the vision handoff remains in Engine.process |
+| Tested | Matching frozen test/source/log/artifact hashes reviewed. Focused Store/Engine characterization: 94 pass in each default/dev mode. Fourteen-package regression (13 tested; Bridge builder compile-only): default 3,168 pass/50 skip; dev 4,012 pass/62 skip; zero failures. Four Windows amd64 tag combinations include the new test and produce 16 PE/amd64 artifacts |
+| Activated | Not performed; no runtime, configuration, restart or live trial change |
+| Acceptance | Scoped characterization review accepted with no findings. Retain decision recorded; CL-3 remains partial. Broader package, integration and operational acceptance remain open |
+
+The tests exercise real Engine.process and Store methods with a deterministic
+provider. Fixture SQL initializes historical state and injects INSERT failures;
+it does not replace the queue operations under test. The assertions establish:
+
+- Earlier enqueues survive a later insertion failure; failure stops before a
+  success receipt, text reasoning, assessments, Timeline delivery or follow-up.
+- A deferred job in another session/run is promoted before insertion and keeps
+  that promotion if the new insert fails. Its occupied source-wide capacity
+  makes an earlier successful new insert deferred when the second insert fails.
+- Cross-run deduplication preserves the complete historical row, including owner,
+  retry metadata and JSON bytes/storage types. The new run gets no duplicate job
+  and a zero-count run-scoped receipt while the source-wide summary retains the
+  retrying job. Mixed text reasoning observes the durable receipt first; media-only
+  completion still reports input candidate count rather than newly inserted jobs.
+
+All 1,447 pre-existing tracked files were hash-identical at validation and review,
+including production, protocol, guards, previous tests and the already dirty
+user configuration. Only this new test and four approved roadmap documents are
+committed by this publication. Existing .tmp/ and experiments/ remain excluded.
+The new results extend the previous candidate-evaluation and vision suites;
+they do not replace their historical before/after evidence. No race-detector or
+independent summary-query failure injection is claimed.
+
+Evidence: [validation](../runtime/qa/vision-lane-persistence-20261103/validation.json),
+[scoped review](../runtime/qa/vision-lane-persistence-review-20261103/review.json),
+and [commit/publication readback](../runtime/qa/vision-lane-persistence-review-20261103/final-readback.json).
+These are local ignored QA receipts. Original sourceHead/sourceDirty/committed
+fields describe capture time and remain unchanged; the later readback binds
+the frozen tested payload to commits and the verified publication target.
+
 ### Proposed next cleanup analysis
 
-Read-only review of the media-only vision queue handoff in Engine.process:
-splitVisionLaneCandidates, EnqueueVisionEvaluations, VisionEvaluationSummary
-and persistence of the visionEvaluation receipt before text reasoning. Assess
-whether one small Engine helper belongs with the existing vision_lane.go owner,
-rather than creating another queue owner or splitting by line count. Reuse the
-existing media-only/mixed/capacity/enqueue-error/receipt-error tests and identify
-any summary-query, context/cancellation and partial-commit gaps. Preserve queue
-capacity, text/media isolation, map aliases, effect/error order, protocol and
-guards. No further implementation, runtime/configuration change, activation
-or trial is authorized by this proposal.
+Read-only closure review of the remaining Engine.process preparation and
+empty-candidate completion branch: observation merge/durable coverage,
+continuity classification/filtering, bypass receipt and completion/scheduling.
+Determine which orchestration should remain together and whether any real
+responsibility boundary still warrants one bounded extraction. Inventory
+existing characterization and error/cancellation coverage before proposing code.
+Retain the reviewed vision block, Engine facade and Store authority. Preserve
+lock, context, effect/error order, protocol and guards. This proposal authorizes
+no implementation, configuration change, activation or live trial.
