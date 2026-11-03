@@ -580,29 +580,9 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/inbox/runs/") && strings.HasSuffix(p, "/trace"):
 		return s.inboxRunTrace(w, r, p)
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/inbox/runs/") && strings.HasSuffix(p, "/vision-evaluations"):
-		runID := strings.TrimSuffix(strings.TrimPrefix(p, "/api/inbox/runs/"), "/vision-evaluations")
-		if runID == "" || strings.Contains(runID, "/") {
-			return notFound("run")
-		}
-		jobs, err := s.engine.VisionEvaluationJobs(ctx, runID)
-		if errors.Is(err, sql.ErrNoRows) {
-			return notFound("run")
-		}
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"jobs": jobs})
+		return s.visionEvaluationJobs(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/vision-evaluations/") && strings.HasSuffix(p, "/retry"):
-		jobID := strings.TrimSuffix(strings.TrimPrefix(p, "/api/vision-evaluations/"), "/retry")
-		if jobID == "" || strings.Contains(jobID, "/") {
-			return notFound("vision evaluation")
-		}
-		if err := s.engine.RetryVisionEvaluation(ctx, jobID); errors.Is(err, sql.ErrNoRows) {
-			return notFound("vision evaluation")
-		} else if err != nil {
-			return conflict(err.Error())
-		}
-		return writeJSON(w, http.StatusAccepted, map[string]any{"accepted": true, "jobId": jobID})
+		return s.retryVisionEvaluation(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/inbox/runs/") && strings.HasSuffix(p, "/selection-corrections"):
 		return s.correctSelection(w, r, p)
 	case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/inbox/runs/") && strings.HasSuffix(p, "/re-evaluate"):
