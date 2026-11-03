@@ -3,7 +3,7 @@
 ## Status synchronization (2026-11-03)
 
 The original audit and its validation below are historical. Current source is
-reviewed through `cf534ec`, including vision-evaluation HTTP adapters, model-usage HTTP adapters, Inbox read HTTP adapters, Inbox selection-review HTTP adapters, AI-feedback HTTP adapters, semantic correction HTTP adapters, development X HTTP controls, capture telemetry rotation/shutdown compatibility, HTTP reload-action separation, capture-owner path normalization, HTTP bootstrap and the router responsibility map, HTTP media-recapture entry points, HTTP update/session lifecycle, Engine passive media evidence, Library removal/Forget, FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
+reviewed through `3cf90b4`, including Timeline composition HTTP adaptation, vision-evaluation HTTP adapters, model-usage HTTP adapters, Inbox read HTTP adapters, Inbox selection-review HTTP adapters, AI-feedback HTTP adapters, semantic correction HTTP adapters, development X HTTP controls, capture telemetry rotation/shutdown compatibility, HTTP reload-action separation, capture-owner path normalization, HTTP bootstrap and the router responsibility map, HTTP media-recapture entry points, HTTP update/session lifecycle, Engine passive media evidence, Library removal/Forget, FullReset, AI feedback, selection corrections, vision-lane routing/coverage, local acquisition policy, capture rounds and the Store privacy-test correction, reasoning results, process recovery, observation contracts, session admission and AI detection/media provenance, Engine/HTTP media-recapture, Engine/HTTP Bridge command, Bridge status and diagnostics feature separation; see the [roadmap status index](roadmap-status.md)
 for commit-to-receipt mappings. Cleanup is not provider qualification.
 
 | Increment | Implemented | Tested | Activated | Acceptance |
@@ -891,13 +891,72 @@ Current router snapshot: 106 top-level arms, not endpoint count; 73 retained
 and 52 central Engine functions/methods remain retained. CL-3.3 and CL-3 remain
 partial. Deferred groups are not an automatic extraction queue.
 
+### Timeline follow-up
+
+The proposed Timeline response extraction is complete as `3cf90b4`; see the
+Timeline composition result below.
+
+## HTTP Timeline composition result (2026-11-03)
+
+One Server adapter is committed as `3cf90b4` in `internal/httpapi/timeline.go`:
+timeline. Its 19 original body lines are unchanged except indentation and a local
+`ctx := r.Context()` binding. Route predicate, dispatch order and router remainder
+are exact. The ordered calls remain Timeline, LatestTimelineCheck,
+TimelineBatchSummaries and AutoUpdateStatus, followed by the original response.
+Engine/Store retain selection, projection, summaries, expiry and state ownership;
+protocol and guards remain unchanged. No new interface, cache, transaction,
+concurrency or production test seam is added.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | `3cf90b4`, one Timeline response-composition adapter; fourteenth bounded HTTP extraction |
+| Tested | Identical characterization payload and pass selection: 46 default/dev parent/subtest results before and after. Matching 14-package regression selection: default 3,025 pass/50 skip; dev 3,869 pass/62 skip; zero failures. Four Windows amd64 tag combinations include the test and produce 16 artifacts |
+| Activated | Not performed for this increment |
+| Acceptance | Scoped source/test review accepted and code committed; whole-package, CL-3.3/CL-3 and operational acceptance remain open |
+
+The isolated SQLite/real-Engine fixture uses the existing Store clock injection.
+It covers the four-part envelope, headers and mode-dependent null/empty item
+arrays; API defaults versus configured Timeline capacity; clamp/invalid/overflow
+and duplicate query behavior; collapsed/hide/show-all pagination and summaries;
+unpaged latest-check/batch scope; bounded personal-memory projection; hidden
+prepared/expired batches; exact and idempotent expiry with Auto Update off;
+errors before and after expiry, queue-vacancy failure, context/deadline/closed
+Store, security/preflight/standard-mux behavior, ignored body and response-write
+failure. Existing Store selection, lifecycle and projection coverage remains.
+
+AutoUpdateStatus remains last and can persist expiry and queue vacancy even
+with Auto Update off. A failed vacancy write leaves expiry committed; a later
+read does not retry that write if no new batch expires. This existing behavior
+is characterized and retained, not repaired by this extraction. Earlier errors
+do not reach expiry; later errors and response-write failures do not roll back
+already committed effects. The new HTTP fixture starts no scheduler or live
+capture and uses only an offline deterministic provider.
+
+Review reverified the committed baseline, exact moved feature, router remainder,
+frozen characterization, pre-existing Go/config identities, raw logs and summaries,
+four test graphs and all 16 PE/amd64 artifact identities. Passing evidence is
+reused without product test/build reruns for review, documentation or publication.
+No new race-detector run, live provider/native/browser trial, activation or
+configuration change is claimed. Evidence:
+[validation](../runtime/qa/http-timeline-20261103/validation.json),
+[extraction proof](../runtime/qa/http-timeline-20261103/extraction-proof.json),
+[review](../runtime/qa/http-timeline-review-20261103/review.json) and
+[commit/publication readback](../runtime/qa/http-timeline-review-20261103/final-readback.json).
+Original receipt fields describe their capture time and remain unchanged.
+
+Current router snapshot: 106 top-level arms, not endpoint count; 74 retained
+(48 feature delegations and 26 thin/control/heartbeat arms) and 32 deferred
+(five native/dev/telemetry and 27 product-domain arms). All 30 server.go functions
+and 52 central Engine functions/methods remain retained. CL-3.3 and CL-3 remain
+partial. Deferred groups are not an automatic extraction queue.
+
 ### Proposed next cleanup analysis
 
-Read-only review of the GET /api/timeline response composition: paged items,
-latest check, batch summaries and AutoUpdateStatus. Trace supported callers,
-query bounds, projection, ordered fallible reads, any durable effects, request
-context and first-error behavior before deciding whether one cohesive feature
-extraction is useful or the current router boundary should remain. Specify
-characterization first; preserve Engine/Store ownership, protocol and guards.
-This proposal authorizes no further implementation, activation,
+Read-only review of three content-context adapters: related-context lookup,
+feedback submission and feedback undo. Inspect the existing content_context.go
+helper/test boundary, supported callers, strict limit/ID parsing, eligibility,
+public projection, context/cancellation, error mapping and durable effect order
+before deciding whether one cohesive feature extraction is useful. Specify
+characterization first; preserve receiver, Engine/Store ownership, protocol and
+guards. This proposal authorizes no further implementation, activation,
 runtime/configuration change or trial.
