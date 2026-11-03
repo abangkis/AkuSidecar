@@ -8,7 +8,8 @@ approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/
 The owner subsequently authorized the automatic remaining HTTP handler run
 recorded below; it is source-complete as `9da6ed8`. Other candidates remain
 proposals or retained contracts. Acquisition execution was separately approved
-and is now implemented as `8027599`; see the result below.
+and is now implemented as `8027599`. Candidate evaluation/completion was
+separately approved and is now implemented as `ed35d82`; see the results below.
 
 ## Dispositions and approval
 
@@ -2340,14 +2341,79 @@ and [commit/publication readback](../runtime/qa/acquisition-execution-review-202
 Original sourceHead/sourceDirty/committed receipt fields describe capture time
 and remain unchanged; the later readback binds the validated payload to commits.
 
+### Candidate evaluation follow-up
+
+The proposed per-run evaluation/completion extraction is now implemented as
+`ed35d82`; see the result below.
+
+## Engine candidate evaluation result (2026-11-03)
+
+The owner approved one candidate-evaluation/run-completion extraction after
+read-only analysis, then authorized review, roadmap synchronization and
+publication. Code `ed35d82` moves 69 original body lines into
+evaluateCandidatesAndCompleteRun in internal/engine/candidate_evaluation.go.
+The moved statements/comments are exact; the helper only adds a terminal nil
+return after the unchanged added timing. The caller delegates at the original
+position and retains startNext and its original error return.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | `ed35d82`: one per-run evaluation/completion helper; session_execution.go is 280 lines with six existing declarations; candidate_evaluation.go is 84 lines with one helper |
+| Tested | Frozen characterization payload and pass names match before/after: 88 default/dev parent/subtest results. Matching 14-package regression (13 tested, Bridge builder compile-only): default 3,159 pass/50 skip; dev 4,003 pass/62 skip; zero failures. Four Windows amd64 tag combinations include the new test and produce 16 artifacts |
+| Activated | Not performed; no runtime restart, provider/browser trial or configuration change |
+| Acceptance | Scoped source/test review accepted and code committed. Broader Engine package, CL-3 and operational acceptance remain open; central HTTP handler separation remains source-complete |
+
+The sequence remains source-local Knowledge (limit 200), evaluation stage,
+configured profile dispatch, background telemetry/evaluated timing, source URL
+binding and evidence validation, preference projection, prior evidence/events,
+continuity exceptions and protected selection, selected timing, Timeline mapping,
+CompleteRun transaction and added timing. startNext stays in process, so the
+existing schedule lock, session finalization and worker/error-recovery owners
+do not move. No new lock, transaction, worker, interface or state owner is added.
+Caller/background contexts, raw error identity/wrapping, Coverage aliases,
+protocol and guards remain unchanged.
+
+The real-SQLite/offline-provider characterization observes stage, telemetry,
+timing, preference, assessment/item writes and completion order. It covers
+Knowledge/stage/provider/validation/preference/lookup/completion failures,
+best-effort telemetry/timing, caller cancellation, source-scoped prior delivery
+and event selection, material updates/contradictions, changed/cooldown resurfacing,
+weak-evidence rejection, routed evaluation profile and the 200-item Knowledge
+cap/order. A held schedule lock proves run completion precedes advancement;
+cancellation and finalization failure after commit preserve run output/timing.
+Existing reasoning-result, continuity/event, preference and progressive/full-wait
+tests remain in the characterization selection.
+
+Preference/cache effects preceding a later failure remain committed. CompleteRun
+write failure rolls back its assessment/item/run transaction while earlier
+telemetry/timing/cache effects survive; no advancement follows that error.
+Advancement failure after successful completion does not roll back completed
+run output. These existing partial-error contracts are characterized, not fixed.
+
+Publication review reverified the committed baseline, exact moved block and
+caller remainder, frozen source/test bytes, raw log counts and matching pass
+names, four tag graphs and all 16 PE/amd64 artifact identities. Passing tests
+and builds were reused for review/publication because inputs were unchanged.
+No new race-detector or live-source qualification is claimed. All other tracked
+Go/config files are preserved. The 52 central Engine declarations and 106
+delegated top-level HTTP arms remain unchanged; this closes only this seam.
+
+Evidence: [validation](../runtime/qa/candidate-evaluation-20261103/validation.json),
+[extraction proof](../runtime/qa/candidate-evaluation-20261103/extraction-proof.json),
+[publication review](../runtime/qa/candidate-evaluation-review-20261103/review.json)
+and [commit/publication readback](../runtime/qa/candidate-evaluation-review-20261103/final-readback.json).
+Original sourceHead/sourceDirty/committed receipt fields describe capture time
+and remain unchanged; the later readback binds the payload to commits.
+
 ### Proposed next cleanup analysis
 
-Read-only review of candidate evaluation and completion orchestration in
-Engine.process: Knowledge, analyzeWithProfile, result binding/validation,
-preference and prior-evidence/event selection, CompleteRun and startNext.
-Determine whether one cohesive extraction is justified, retaining existing
-reasoning_result helpers and Store/selection ownership. Identify required
-characterization for first-error propagation, context/background telemetry,
-completion-before-advance and partial post-commit failures. Preserve locks,
-effect order, error contracts, protocol and guards. No further implementation,
-runtime/configuration change, activation or trial is authorized by this proposal.
+Read-only review of the media-only vision queue handoff in Engine.process:
+splitVisionLaneCandidates, EnqueueVisionEvaluations, VisionEvaluationSummary
+and persistence of the visionEvaluation receipt before text reasoning. Assess
+whether one small Engine helper belongs with the existing vision_lane.go owner,
+rather than creating another queue owner or splitting by line count. Reuse the
+existing media-only/mixed/capacity/enqueue-error/receipt-error tests and identify
+any summary-query, context/cancellation and partial-commit gaps. Preserve queue
+capacity, text/media isolation, map aliases, effect/error order, protocol and
+guards. No further implementation, runtime/configuration change, activation
+or trial is authorized by this proposal.

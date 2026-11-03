@@ -1,15 +1,15 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-03 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `8027599` (acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
+Reviewed local source: AkuSidecar `ed35d82` (per-run candidate evaluation/completion, after acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
-The previous code/roadmap checkpoint was published as `26e567a`, including
-central HTTP handler separation `9da6ed8`. The owner separately approved
-acquisition execution and authorized review, roadmap synchronization, commit
+The previous code/roadmap checkpoint was published as `13c6c48`, including
+acquisition execution `8027599`. The owner separately approved per-run candidate
+evaluation/completion and authorized review, roadmap synchronization, commit
 and publication of this bounded increment to origin/main at
-https://github.com/abangkis/AkuSidecar.git. Code `8027599` and the synchronized
-roadmap are bound to the later commit/publication readback linked below.
+https://github.com/abangkis/AkuSidecar.git. Code `ed35d82` and this synchronized
+roadmap are bound to the commit/publication readback linked below.
 Publication does not establish runtime activation or operational acceptance.
 The Browser worktree contains pre-existing build/cache changes; those changes
 are outside this synchronization and are not evidence of a released tuple.
@@ -1039,17 +1039,83 @@ and [commit/publication readback](../runtime/qa/acquisition-execution-review-202
 Original sourceHead/sourceDirty/committed receipt fields describe capture time
 and remain unchanged; the later readback binds the validated payload to commits.
 
+### Candidate evaluation follow-up
+
+The proposed per-run evaluation/completion extraction is now implemented as
+`ed35d82`; see the result below.
+
+## Engine candidate evaluation result (2026-11-03)
+
+The owner approved one candidate-evaluation/run-completion extraction after
+read-only analysis, then authorized review, roadmap synchronization and
+publication. Code `ed35d82` moves 69 original body lines into
+evaluateCandidatesAndCompleteRun in internal/engine/candidate_evaluation.go.
+The moved statements/comments are exact; the helper only adds a terminal nil
+return after the unchanged added timing. The caller delegates at the original
+position and retains startNext and its original error return.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | `ed35d82`: one per-run evaluation/completion helper; session_execution.go is 280 lines with six existing declarations; candidate_evaluation.go is 84 lines with one helper |
+| Tested | Frozen characterization payload and pass names match before/after: 88 default/dev parent/subtest results. Matching 14-package regression (13 tested, Bridge builder compile-only): default 3,159 pass/50 skip; dev 4,003 pass/62 skip; zero failures. Four Windows amd64 tag combinations include the new test and produce 16 artifacts |
+| Activated | Not performed; no runtime restart, provider/browser trial or configuration change |
+| Acceptance | Scoped source/test review accepted and code committed. Broader Engine package, CL-3 and operational acceptance remain open; central HTTP handler separation remains source-complete |
+
+The sequence remains source-local Knowledge (limit 200), evaluation stage,
+configured profile dispatch, background telemetry/evaluated timing, source URL
+binding and evidence validation, preference projection, prior evidence/events,
+continuity exceptions and protected selection, selected timing, Timeline mapping,
+CompleteRun transaction and added timing. startNext stays in process, so the
+existing schedule lock, session finalization and worker/error-recovery owners
+do not move. No new lock, transaction, worker, interface or state owner is added.
+Caller/background contexts, raw error identity/wrapping, Coverage aliases,
+protocol and guards remain unchanged.
+
+The real-SQLite/offline-provider characterization observes stage, telemetry,
+timing, preference, assessment/item writes and completion order. It covers
+Knowledge/stage/provider/validation/preference/lookup/completion failures,
+best-effort telemetry/timing, caller cancellation, source-scoped prior delivery
+and event selection, material updates/contradictions, changed/cooldown resurfacing,
+weak-evidence rejection, routed evaluation profile and the 200-item Knowledge
+cap/order. A held schedule lock proves run completion precedes advancement;
+cancellation and finalization failure after commit preserve run output/timing.
+Existing reasoning-result, continuity/event, preference and progressive/full-wait
+tests remain in the characterization selection.
+
+Preference/cache effects preceding a later failure remain committed. CompleteRun
+write failure rolls back its assessment/item/run transaction while earlier
+telemetry/timing/cache effects survive; no advancement follows that error.
+Advancement failure after successful completion does not roll back completed
+run output. These existing partial-error contracts are characterized, not fixed.
+
+Publication review reverified the committed baseline, exact moved block and
+caller remainder, frozen source/test bytes, raw log counts and matching pass
+names, four tag graphs and all 16 PE/amd64 artifact identities. Passing tests
+and builds were reused for review/publication because inputs were unchanged.
+No new race-detector or live-source qualification is claimed. All other tracked
+Go/config files are preserved. The 52 central Engine declarations and 106
+delegated top-level HTTP arms remain unchanged; this closes only this seam.
+
+Evidence: [validation](../runtime/qa/candidate-evaluation-20261103/validation.json),
+[extraction proof](../runtime/qa/candidate-evaluation-20261103/extraction-proof.json),
+[publication review](../runtime/qa/candidate-evaluation-review-20261103/review.json)
+and [commit/publication readback](../runtime/qa/candidate-evaluation-review-20261103/final-readback.json).
+Original sourceHead/sourceDirty/committed receipt fields describe capture time
+and remain unchanged; the later readback binds the payload to commits.
+
 ### Proposed next cleanup analysis
 
-Read-only review of candidate evaluation and completion orchestration in
-Engine.process: Knowledge, analyzeWithProfile, result binding/validation,
-preference and prior-evidence/event selection, CompleteRun and startNext.
-Determine whether one cohesive extraction is justified, retaining existing
-reasoning_result helpers and Store/selection ownership. Identify required
-characterization for first-error propagation, context/background telemetry,
-completion-before-advance and partial post-commit failures. Preserve locks,
-effect order, error contracts, protocol and guards. No further implementation,
-runtime/configuration change, activation or trial is authorized by this proposal.
+Read-only review of the media-only vision queue handoff in Engine.process:
+splitVisionLaneCandidates, EnqueueVisionEvaluations, VisionEvaluationSummary
+and persistence of the visionEvaluation receipt before text reasoning. Assess
+whether one small Engine helper belongs with the existing vision_lane.go owner,
+rather than creating another queue owner or splitting by line count. Reuse the
+existing media-only/mixed/capacity/enqueue-error/receipt-error tests and identify
+any summary-query, context/cancellation and partial-commit gaps. Preserve queue
+capacity, text/media isolation, map aliases, effect/error order, protocol and
+guards. No further implementation, runtime/configuration change, activation
+or trial is authorized by this proposal.
+
 
 ## Product and installation roadmaps
 

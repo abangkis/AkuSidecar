@@ -1,9 +1,9 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-03 (Asia/Jakarta), through Sidecar `8027599`.
+Status synchronized: 2026-11-03 (Asia/Jakarta), through Sidecar `ed35d82`.
 Status: execution in progress. Central HTTP handler separation is complete;
-separately approved acquisition orchestration is now recorded below. Other
+separately approved acquisition and candidate evaluation are recorded below. Other
 workstreams and further implementation still require approval.
 No implementation, deletion, dependency upgrade, activation or trial is approved
 by creating this roadmap. Approve one concrete increment, implement it, verify
@@ -109,7 +109,7 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-0: inherited bounded cleanup | Eight increments above complete | Scoped receipts retained | Cleanup activation not recorded | Bounded code reviews complete; no whole-repository completion claim |
 | CL-1: consumer and compatibility inventory | [Entry/consumer map](cl1-consumer-inventory.md) and [32-boundary candidate ledger](cl1-cleanup-candidates.md) delivered | Read-only four-tag metadata, native/package/reference and source-preservation checks; no product test/build | Not applicable to an audit | Ready for review; external-consumer and offline Browser dependency limits explicit; no implementation approved |
 | CL-2: proven obsolete-code retirement | Earlier wrappers plus G10 `DeleteMemoryItem` removal committed with roadmap as `21ac9ad` | G10 exact remainder check, full Store/HTTP regressions and four-mode Windows compilation passed | Not performed for G10 | G10 reviewed/committed; comprehensive retirement remains scoped by the remaining ledger entries |
-| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b` and media recapture `be9fcd2`; Engine media recapture `c614512`; Engine Bridge commands `3e13434`; Engine media provenance `8d7f7b6`; Engine AI detection `b84a62d`; Engine session admission `4bf0731`; observation contracts `d9c3025`; process recovery `5b39fa4`; reasoning result `eb05ac8`; capture rounds and deterministic Store test `683b1e8`; local acquisition policy `f16f11a`; vision-lane routing/coverage `25c3339`; selection corrections `f3d46b8`; AI feedback `6a1ce33`; FullReset `da019dd`; Library removal/Forget `a19bf86`; passive media evidence `2bdc0f1`; HTTP update/session `d32c065`; HTTP media entry `90e3a7f`; HTTP bootstrap `97bbe51`; capture-owner path guard `b482ba2`; HTTP reload actions `6ea303c`; telemetry rotation/shutdown guard `237dbd1`; HTTP development X controls `1814c9b`; HTTP semantic corrections `3c5e61a`; HTTP AI feedback `a3718ff`; HTTP Inbox selection review `3f4a66d`; HTTP Inbox reads `ce57e79`; HTTP model usage `af8d722`; HTTP vision evaluation `cf534ec`; HTTP Timeline composition `3cf90b4`; automatic HTTP handler completion `9da6ed8`; acquisition execution `8027599`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Capture/Collection/Bridge builder/Selection/EventEngine/Reasoning/Domain/Detector/Inspector/Store/Engine/HTTP/config/application scope selects 14 packages (13 with tests, Bridge builder compile-only): default 3,129 pass/50 skip and dev 3,973 pass/62 skip, zero failures; acquisition execution characterization 230 default/dev before/after; remaining HTTP feature characterization retained; Timeline characterization retained; vision-evaluation characterization retained; model-usage characterization retained; Inbox read characterization retained; selection-review characterization retained; AI-feedback characterization retained; semantic correction characterization retained; development X characterization retained; earlier telemetry/reload characterization and concurrency evidence retained; earlier guard/bootstrap receipts retained, four HTTP build-tag graphs and 16 Windows artifacts pass. Earlier acquisition-policy/capture-round/privacy/HTTP/Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Scoped changes reviewed/committed; Engine/HTTP media-recapture, Engine/HTTP command, media-provenance/AI-detection, session admission, observation contracts, process recovery, reasoning-result acceptance/Timeline mapping, capture rounds, local acquisition policy, vision-lane routing/coverage, selection corrections, AI feedback, FullReset, Library removal/Forget, passive media evidence, HTTP update/session, HTTP media entry, HTTP bootstrap/router map, HTTP reload actions, development X controls, semantic corrections, HTTP AI feedback, HTTP Inbox selection review, HTTP Inbox reads, HTTP model usage, HTTP vision evaluation, HTTP Timeline composition, diagnostics/Bridge status and E01 boundaries established; acquisition planning orchestration separated; central HTTP handler separation source-complete; broader Engine/HTTP infrastructure boundaries and operational acceptance remain open. Provider-selection micro-extraction declined; keep Settings cohesive; CL-3 remains partial |
+| CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b` and media recapture `be9fcd2`; Engine media recapture `c614512`; Engine Bridge commands `3e13434`; Engine media provenance `8d7f7b6`; Engine AI detection `b84a62d`; Engine session admission `4bf0731`; observation contracts `d9c3025`; process recovery `5b39fa4`; reasoning result `eb05ac8`; capture rounds and deterministic Store test `683b1e8`; local acquisition policy `f16f11a`; vision-lane routing/coverage `25c3339`; selection corrections `f3d46b8`; AI feedback `6a1ce33`; FullReset `da019dd`; Library removal/Forget `a19bf86`; passive media evidence `2bdc0f1`; HTTP update/session `d32c065`; HTTP media entry `90e3a7f`; HTTP bootstrap `97bbe51`; capture-owner path guard `b482ba2`; HTTP reload actions `6ea303c`; telemetry rotation/shutdown guard `237dbd1`; HTTP development X controls `1814c9b`; HTTP semantic corrections `3c5e61a`; HTTP AI feedback `a3718ff`; HTTP Inbox selection review `3f4a66d`; HTTP Inbox reads `ce57e79`; HTTP model usage `af8d722`; HTTP vision evaluation `cf534ec`; HTTP Timeline composition `3cf90b4`; automatic HTTP handler completion `9da6ed8`; acquisition execution `8027599`; candidate evaluation `ed35d82`; validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Capture/Collection/Bridge builder/Selection/EventEngine/Reasoning/Domain/Detector/Inspector/Store/Engine/HTTP/config/application scope selects 14 packages (13 with tests, Bridge builder compile-only): default 3,159 pass/50 skip and dev 4,003 pass/62 skip, zero failures; candidate evaluation characterization 88 default/dev before/after; acquisition execution characterization retained; remaining HTTP feature characterization retained; Timeline characterization retained; vision-evaluation characterization retained; model-usage characterization retained; Inbox read characterization retained; selection-review characterization retained; AI-feedback characterization retained; semantic correction characterization retained; development X characterization retained; earlier telemetry/reload characterization and concurrency evidence retained; earlier guard/bootstrap receipts retained, four HTTP build-tag graphs and 16 Windows artifacts pass. Earlier acquisition-policy/capture-round/privacy/HTTP/Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Scoped changes reviewed/committed; Engine/HTTP media-recapture, Engine/HTTP command, media-provenance/AI-detection, session admission, observation contracts, process recovery, reasoning-result acceptance/Timeline mapping, capture rounds, local acquisition policy, vision-lane routing/coverage, selection corrections, AI feedback, FullReset, Library removal/Forget, passive media evidence, HTTP update/session, HTTP media entry, HTTP bootstrap/router map, HTTP reload actions, development X controls, semantic corrections, HTTP AI feedback, HTTP Inbox selection review, HTTP Inbox reads, HTTP model usage, HTTP vision evaluation, HTTP Timeline composition, diagnostics/Bridge status and E01 boundaries established; acquisition planning and per-run candidate evaluation/completion orchestration separated; central HTTP handler separation source-complete; broader Engine/HTTP infrastructure boundaries and operational acceptance remain open. Provider-selection micro-extraction declined; keep Settings cohesive; CL-3 remains partial |
 | CL-4: frontend feature ownership | Existing navigation module retained; broader extraction proposed | Existing baseline only | Not recorded | Timeline/Settings/app orchestration pending |
 | CL-5: native runtime and QA boundaries | Factory/shared-helper separation complete; fixture-only timing correction `8dc3f5e` committed; deeper runtime split proposed | 98 Node tests, 200 offline integration iterations and dependency-pinned staging verified for this fixture correction; existing baseline only for remaining seams | Not performed for this correction | Bounded fixture acceptance only; remaining operation/transport/QA separation pending; no universal cross-runtime clock or real-provider qualification claim |
 | CL-6: Bridge responsibility boundaries | Existing source/lifecycle modules retained; further split proposed | Existing baseline only for remaining seams | No new rollout | Background dispatch/surface integration pending |
@@ -214,8 +214,11 @@ Do not delete a consumer merely to make the dependency scan appear clean.
   separated as `d32c065`, without closing broader Engine/runtime or CL-3 work.
   Acquisition planning orchestration now belongs to acquisition_execution.go as
   `8027599`, with 230 before/after characterization results and passing default/dev
-  regression plus four-mode Windows builds. Candidate evaluation/completion,
-  enrichment and read-model boundaries still need evidence. Keep the Engine
+  regression plus four-mode Windows builds. Candidate evaluation/completion now
+  belongs to candidate_evaluation.go as `ed35d82`, with 88 characterization
+  results before/after and passing regression/four-mode Windows builds; startNext
+  stays in process. Vision queue handoff, enrichment and read-model boundaries
+  still need evidence. Keep the Engine
   facade and existing Store authority; do not repeat
   completed lifecycle/session moves or split small blocks merely to reduce size.
 - **CL-3.3 HTTP capture:** separate request/response adaptation from application
@@ -1390,14 +1393,79 @@ and [commit/publication readback](../runtime/qa/acquisition-execution-review-202
 Original sourceHead/sourceDirty/committed receipt fields describe capture time
 and remain unchanged; the later readback binds the validated payload to commits.
 
+### Candidate evaluation follow-up
+
+The proposed per-run evaluation/completion extraction is now implemented as
+`ed35d82`; see the result below.
+
+## Engine candidate evaluation result (2026-11-03)
+
+The owner approved one candidate-evaluation/run-completion extraction after
+read-only analysis, then authorized review, roadmap synchronization and
+publication. Code `ed35d82` moves 69 original body lines into
+evaluateCandidatesAndCompleteRun in internal/engine/candidate_evaluation.go.
+The moved statements/comments are exact; the helper only adds a terminal nil
+return after the unchanged added timing. The caller delegates at the original
+position and retains startNext and its original error return.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | `ed35d82`: one per-run evaluation/completion helper; session_execution.go is 280 lines with six existing declarations; candidate_evaluation.go is 84 lines with one helper |
+| Tested | Frozen characterization payload and pass names match before/after: 88 default/dev parent/subtest results. Matching 14-package regression (13 tested, Bridge builder compile-only): default 3,159 pass/50 skip; dev 4,003 pass/62 skip; zero failures. Four Windows amd64 tag combinations include the new test and produce 16 artifacts |
+| Activated | Not performed; no runtime restart, provider/browser trial or configuration change |
+| Acceptance | Scoped source/test review accepted and code committed. Broader Engine package, CL-3 and operational acceptance remain open; central HTTP handler separation remains source-complete |
+
+The sequence remains source-local Knowledge (limit 200), evaluation stage,
+configured profile dispatch, background telemetry/evaluated timing, source URL
+binding and evidence validation, preference projection, prior evidence/events,
+continuity exceptions and protected selection, selected timing, Timeline mapping,
+CompleteRun transaction and added timing. startNext stays in process, so the
+existing schedule lock, session finalization and worker/error-recovery owners
+do not move. No new lock, transaction, worker, interface or state owner is added.
+Caller/background contexts, raw error identity/wrapping, Coverage aliases,
+protocol and guards remain unchanged.
+
+The real-SQLite/offline-provider characterization observes stage, telemetry,
+timing, preference, assessment/item writes and completion order. It covers
+Knowledge/stage/provider/validation/preference/lookup/completion failures,
+best-effort telemetry/timing, caller cancellation, source-scoped prior delivery
+and event selection, material updates/contradictions, changed/cooldown resurfacing,
+weak-evidence rejection, routed evaluation profile and the 200-item Knowledge
+cap/order. A held schedule lock proves run completion precedes advancement;
+cancellation and finalization failure after commit preserve run output/timing.
+Existing reasoning-result, continuity/event, preference and progressive/full-wait
+tests remain in the characterization selection.
+
+Preference/cache effects preceding a later failure remain committed. CompleteRun
+write failure rolls back its assessment/item/run transaction while earlier
+telemetry/timing/cache effects survive; no advancement follows that error.
+Advancement failure after successful completion does not roll back completed
+run output. These existing partial-error contracts are characterized, not fixed.
+
+Publication review reverified the committed baseline, exact moved block and
+caller remainder, frozen source/test bytes, raw log counts and matching pass
+names, four tag graphs and all 16 PE/amd64 artifact identities. Passing tests
+and builds were reused for review/publication because inputs were unchanged.
+No new race-detector or live-source qualification is claimed. All other tracked
+Go/config files are preserved. The 52 central Engine declarations and 106
+delegated top-level HTTP arms remain unchanged; this closes only this seam.
+
+Evidence: [validation](../runtime/qa/candidate-evaluation-20261103/validation.json),
+[extraction proof](../runtime/qa/candidate-evaluation-20261103/extraction-proof.json),
+[publication review](../runtime/qa/candidate-evaluation-review-20261103/review.json)
+and [commit/publication readback](../runtime/qa/candidate-evaluation-review-20261103/final-readback.json).
+Original sourceHead/sourceDirty/committed receipt fields describe capture time
+and remain unchanged; the later readback binds the payload to commits.
+
 ### Proposed next cleanup analysis
 
-Read-only review of candidate evaluation and completion orchestration in
-Engine.process: Knowledge, analyzeWithProfile, result binding/validation,
-preference and prior-evidence/event selection, CompleteRun and startNext.
-Determine whether one cohesive extraction is justified, retaining existing
-reasoning_result helpers and Store/selection ownership. Identify required
-characterization for first-error propagation, context/background telemetry,
-completion-before-advance and partial post-commit failures. Preserve locks,
-effect order, error contracts, protocol and guards. No further implementation,
-runtime/configuration change, activation or trial is authorized by this proposal.
+Read-only review of the media-only vision queue handoff in Engine.process:
+splitVisionLaneCandidates, EnqueueVisionEvaluations, VisionEvaluationSummary
+and persistence of the visionEvaluation receipt before text reasoning. Assess
+whether one small Engine helper belongs with the existing vision_lane.go owner,
+rather than creating another queue owner or splitting by line count. Reuse the
+existing media-only/mixed/capacity/enqueue-error/receipt-error tests and identify
+any summary-query, context/cancellation and partial-commit gaps. Preserve queue
+capacity, text/media isolation, map aliases, effect/error order, protocol and
+guards. No further implementation, runtime/configuration change, activation
+or trial is authorized by this proposal.
