@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 const index = readFileSync(new URL("../internal/httpapi/web/index.html", import.meta.url), "utf8");
 const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+const timelineFeedback = readFileSync(new URL("../internal/httpapi/web/timeline-feedback.js", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../internal/httpapi/web/styles.css", import.meta.url), "utf8");
 
 test("Library exposes a compact accessible filter disclosure", () => {
@@ -68,7 +69,9 @@ test("Library storage summary and Spring Cleaning remain read-only and review-on
 test("Library storage state invalidates after memory lifecycle success", () => {
   assert.match(app, /function invalidateLibraryStorage\(\) \{\s*resetLibraryStorage\(\);/);
   assert.match(app, /entry\.personalMemory = \{\s*retentionTier: response\.retentionTier,\s*saved: true,\s*permanentKeep: response\.permanentKeep === true,\s*\};\s*invalidateLibraryStorage\(\);/);
-  assert.match(app, /async function sendFeedback\(id, direction, reason, traceId\)[\s\S]*invalidateLibraryStorage\(\);/);
+  assert.match(timelineFeedback, /async function sendFeedback\(id, direction, reason, traceId\)[\s\S]*invalidateLibraryStorage\(\);/);
+  assert.match(app, /const timelineFeedbackUI = createTimelineFeedbackUI\(\{\s*api, feedbackButton, invalidateLibraryStorage, showError, logInteractionTrace,/);
+  assert.match(app, /const feedback = timelineFeedbackUI\.build\(entry\);/);
   assert.match(app, /state\.library\.detailError = null;\s*}\s*reloadLibraryStorage\(\);/);
   assert.match(app, /function refreshLibrary\(\)[\s\S]*reloadLibraryStorage\(\);/);
 });

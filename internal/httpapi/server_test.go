@@ -1153,8 +1153,20 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if strings.Contains(string(appPayload), "source-layout-video-native-link") {
 		t.Fatal("inline X video poster must not render a simultaneous native-post overlay")
 	}
-	if !strings.Contains(string(appPayload), "entry.feedback?.direction") {
+	response, err = client.Get("http://" + address.String() + "/timeline-feedback.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	feedbackPayload, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil || response.StatusCode != http.StatusOK || !strings.Contains(response.Header.Get("Content-Type"), "javascript") {
+		t.Fatal("Timeline feedback module is not served as an embedded JavaScript asset")
+	}
+	if !strings.Contains(string(feedbackPayload), "entry.feedback?.direction") || !strings.Contains(string(feedbackPayload), `setAttribute("aria-pressed"`) {
 		t.Fatal("timeline feedback state is not restored after rendering")
+	}
+	if !strings.Contains(string(appPayload), `import { createTimelineFeedbackUI } from "./timeline-feedback.js"`) || !strings.Contains(string(appPayload), "api, feedbackButton, invalidateLibraryStorage, showError, logInteractionTrace,") || !strings.Contains(string(appPayload), "timelineFeedbackUI.build(entry)") {
+		t.Fatal("Timeline feedback module is not wired to the existing API and UI ports")
 	}
 	if !strings.Contains(string(appPayload), "state.expandedTimelineText.has(expansionKey)") {
 		t.Fatal("expanded Timeline text state is not restored after rendering")
@@ -1170,7 +1182,7 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	if strings.Contains(string(appPayload[pollStart:pollStart+pollEnd]), "renderTimeline(") {
 		t.Fatal("Auto Update telemetry polling must not rebuild interactive Timeline content")
 	}
-	if strings.Contains(string(appPayload), "already_knew") || strings.Contains(string(appPayload), "old_info") {
+	if strings.Contains(string(appPayload)+string(feedbackPayload), "already_knew") || strings.Contains(string(appPayload)+string(feedbackPayload), "old_info") {
 		t.Fatal("retired feedback reasons remain in the active UI")
 	}
 	if strings.Contains(string(appPayload), "Legacy run") || strings.Contains(string(appPayload), "trigger diagnostics unavailable") {

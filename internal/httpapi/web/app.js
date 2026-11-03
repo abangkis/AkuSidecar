@@ -1,3 +1,4 @@
+import { createTimelineFeedbackUI } from "./timeline-feedback.js";
 import { createDirtyStateTracker } from "./settings-dirty-state.js";
 import { normalizePage, renderPageNavigation, focusPageHeading, renderSetupPage } from "./page-navigation.js";
 import { renderSourceCapturePause, confirmSourceCaptureRecovery } from "./source-capture-pause.js";
@@ -332,6 +333,10 @@ const instagramTrialControls = createInstagramTrialControls({
 const postScreenshotUI = createPostScreenshotUI({
   request: (path, options) => api(path, options),
   getOriginalUrl: (entry) => originalPostUrl(entry),
+});
+const timelineFeedbackUI = createTimelineFeedbackUI({
+  api, feedbackButton, invalidateLibraryStorage, showError, logInteractionTrace,
+  document, crypto, performance,
 });
 const timelineScrollIdle = createScrollIdleGate();
 const scrollPerformanceTrace = createScrollPerformanceTrace({ onStop: saveScrollPerformanceTrace });
@@ -8377,42 +8382,7 @@ function buildActions(entry) {
   primary.className = "timeline-primary-actions";
   if (link) primary.append(link);
   primary.append(buildTimelineReadLaterAction(entry));
-  const feedback = document.createElement("div");
-  feedback.className = "feedback-actions";
-  const more = feedbackButton("More like this");
-  const less = feedbackButton("Less like this");
-  const renderDirection = () => {
-    const direction = entry.feedback?.direction;
-    const calibrationChoice = entry.feedback?.origin === "calibration" ? "Chosen during onboarding calibration" : "";
-    more.classList.toggle("selected", direction === "more");
-    less.classList.toggle("selected", direction === "less");
-    more.setAttribute("aria-pressed", String(direction === "more"));
-    less.setAttribute("aria-pressed", String(direction === "less"));
-    more.title = direction === "more" ? calibrationChoice : "";
-    less.title = direction === "less" ? calibrationChoice : "";
-  };
-  renderDirection();
-  more.addEventListener("click", async () => {
-    const traceId = crypto.randomUUID();
-    const started = performance.now();
-    logInteractionTrace("timeline_feedback", traceId, "click", { direction: "more" });
-    const feedback = await sendFeedback(entry.id, "more", null, traceId);
-    if (!feedback) return;
-    entry.feedback = feedback;
-    renderDirection();
-    logInteractionTrace("timeline_feedback", traceId, "rendered", { elapsedMs: Math.round(performance.now() - started) });
-  });
-  less.addEventListener("click", async () => {
-    const traceId = crypto.randomUUID();
-    const started = performance.now();
-    logInteractionTrace("timeline_feedback", traceId, "click", { direction: "less" });
-    const feedback = await sendFeedback(entry.id, "less", "not_interested", traceId);
-    if (!feedback) return;
-    entry.feedback = feedback;
-    renderDirection();
-    logInteractionTrace("timeline_feedback", traceId, "rendered", { elapsedMs: Math.round(performance.now() - started) });
-  });
-  feedback.append(more, less);
+  const feedback = timelineFeedbackUI.build(entry);
   actions.append(primary, feedback);
   if (entry.semanticEvent) actions.append(buildSemanticCorrectionActions(entry));
   return actions;
@@ -9302,27 +9272,6 @@ function logInteractionTrace(action, trace, phase, details = {}) {
 function logNativePostTrace(trace, phase, details = {}) {
   if (window.akuNativePostDiagnostics) window.akuNativePostDiagnostics.record(trace, phase, details);
   else logInteractionTrace("native_post", trace, phase, details);
-}
-
-async function sendFeedback(id, direction, reason, traceId) {
-  const started = performance.now();
-  let outcome = "error";
-  logInteractionTrace("timeline_feedback", traceId, "request_start");
-  try {
-    const response = await api(`/api/timeline/${encodeURIComponent(id)}/feedback`, {
-      method: "POST",
-      body: { direction, reason },
-      feedbackTraceId: traceId,
-    });
-    invalidateLibraryStorage();
-    outcome = "ok";
-    return response.feedback;
-  } catch (error) {
-    showError(error);
-    return null;
-  } finally {
-    logInteractionTrace("timeline_feedback", traceId, "request_end", { outcome, elapsedMs: Math.round(performance.now() - started) });
-  }
 }
 
 function openMedia(media, index) {

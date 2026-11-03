@@ -215,24 +215,58 @@ test("foreground refusal diagnostics retain only fixed focus categories and visi
   assert.doesNotMatch(JSON.stringify(logs),/private window title|x\.com\/private/);
 });
 
-test("development restart registers the staged broker with explicit takeover fencing", () => {
+test("development restart delegates the workflow and refuses native-host takeover", () => {
   const repository = new URL("../", import.meta.url);
   const restart = fs.readFileSync(new URL("scripts/restart-dev.ps1", repository), "utf8");
+  const workflow = fs.readFileSync(new URL("scripts/dev-restart-workflow.ps1", repository), "utf8");
   const register = fs.readFileSync(new URL("scripts/register-reader-broker-dev.ps1", repository), "utf8");
-  assert.match(restart, /register-reader-broker-dev\.ps1/);
-  assert.match(restart, /-Register/);
-  assert.match(restart, /-ReplaceExistingRegistration:\$ReplaceReaderBrokerRegistration/);
+  assert.match(restart, /^& \(Join-Path \$PSScriptRoot 'dev-restart-workflow\.ps1'\) @PSBoundParameters\s*$/m);
+  assert.match(restart, /\[switch\] \$ReplaceReaderBrokerRegistration/);
+  assert.match(workflow, /if \(\$ReplaceReaderBrokerRegistration\) \{ throw 'Native-host migration requires a separate approved handoff; restart-dev never replaces registration\.' \}/);
+  const reject = workflow.indexOf("if ($ReplaceReaderBrokerRegistration)");
+  const build = workflow.indexOf("& (Join-Path $PSScriptRoot 'build-dev.ps1')");
+  assert.ok(reject >= 0 && build > reject, "reject takeover before building or controlling runtime");
+  assert.doesNotMatch(restart + workflow, /register-reader-broker-dev\.ps1|\b(?:New|Set)-Item\b/);
+  assert.match(workflow, /\$expectedHost = Join-Path \$runtimeDir 'com\.akubrowser\.reader_activation\.json'/);
+  assert.match(workflow, /foreach \(\$vendor in @\('Chromium', 'Google\\Chrome'\)\)/);
+  assert.match(workflow, /if \(-not \(Test-Path -LiteralPath \$key\) -or\s*-not \(\[string\]\(Get-Item -LiteralPath \$key\)\.GetValue\(''\)\)\.Equals\(\$expectedHost, \[StringComparison\]::OrdinalIgnoreCase\)\) \{\s*throw 'Native-host handoff required/);
+  // Explicit registration remains a separate operation with its original fences.
   assert.match(register, /Preflight both vendors before any registry write/);
   assert.match(register, /-not \$ReplaceExistingRegistration/);
   assert.match(register, /Google\\Chrome/);
   assert.match(register, /Chromium/);
+  assert.match(register, /if \(\$Candidate -and \$Register\) \{ throw/);
+  const preflight = register.indexOf("if ($current -and -not $current.Equals($manifestPath");
+  const registryWrite = register.indexOf("Set-Item -LiteralPath $key -Value $manifestPath");
+  assert.ok(preflight >= 0 && registryWrite > preflight);
 });
 
 test("development restart inspects the candidate against existing data before stopping Sidecar", () => {
-  const restart = fs.readFileSync(new URL("scripts/restart-dev.ps1", new URL("../", import.meta.url)), "utf8");
-  const inspect = restart.indexOf("--database-inspect");
-  const register = restart.indexOf("'register-reader-broker-dev.ps1'");
-  const stop = restart.indexOf("& $supervisor stop akusidecar");
-  assert.ok(inspect >= 0 && register > inspect && stop > register);
-  assert.match(restart, /inspection\.status -notin @\('absent', 'current', 'migratable'\)/);
+  const workflow = fs.readFileSync(new URL("scripts/dev-restart-workflow.ps1", new URL("../", import.meta.url)), "utf8");
+  const ordered = [
+    "--runtime-candidate-probe --runtime-candidate-probe-schema=2",
+    "$inspectionText = & $candidate @($plan.Arguments) --database-inspect",
+    "if ($LASTEXITCODE -ne 0) { throw \"Development database inspection failed; runtime untouched:",
+    "if ($inspection.status -notin @('absent', 'current', 'migratable')) { throw",
+    "if ($PrepareOnly)",
+    "$expectedHost = Join-Path $runtimeDir 'com.akubrowser.reader_activation.json'",
+    "throw 'Native-host handoff required",
+    "$observedProcesses = Wait-DevRuntimeGracefulShutdown",
+    "if ($remaining.Count -gt 0) { throw",
+    "if ($ownedProcess -and $ownedProcess.CreationDate -eq $observedProcesses[$ownedId]) { throw",
+    "if (@(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).Count -gt 0) { throw",
+    "if ([IO.Directory]::GetFiles($pipeRoot) -contains $readerPipe) { throw",
+    "if ((Get-FileHash -LiteralPath $supervisorConfig -Algorithm SHA256).Hash -ne $configHash) { throw",
+    "if ((Get-FileHash -LiteralPath $plan.ConfigPath -Algorithm SHA256).Hash -ne $applicationConfigHash) { throw 'Application config changed before promotion",
+    "& $supervisor stop akusidecar",
+    "$previousBundle = Invoke-DevRuntimePromotion",
+    "& $supervisor start akusidecar",
+  ];
+  let previous = -1;
+  for (const marker of ordered) {
+    const index = workflow.indexOf(marker);
+    assert.ok(index > previous, `missing or reordered restart fence: ${marker}`);
+    previous = index;
+  }
+  assert.match(workflow, /if \(\$PrepareOnly\) \{ Write-Output '[^']+'; return \}/);
 });
