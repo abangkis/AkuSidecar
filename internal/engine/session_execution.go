@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
@@ -238,33 +237,9 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 		merged = visionObservation
 	}
 	if observationCandidateCount(merged) == 0 {
-		skipped := skippedResurfaceCount(continuity)
-		if _, exists := merged.Coverage["acquisitionPlanning"]; !exists {
-			receipt := map[string]any{
-				"mode":                  "continuity_bypass",
-				"decision":              "finish",
-				"reason":                "All captured candidates were resolved as unchanged native resurfaces before acquisition planning.",
-				"followUpQueued":        false,
-				"followUpNewCandidates": 0,
-			}
-			merged.Coverage["acquisitionPlanning"] = receipt
-			if err := e.store.SetRunCoverageField(ctx, runID, "acquisitionPlanning", receipt); err != nil {
-				return fmt.Errorf("save continuity bypass receipt: %w", err)
-			}
-		}
-		summary := fmt.Sprintf("%d unchanged resurfaced item%s skipped before reasoning inside the configured cooldown.", skipped, map[bool]string{true: "", false: "s"}[skipped == 1])
-		if len(visionInputs) > 0 {
-			summary = fmt.Sprintf("%d Instagram media-only candidate%s held for bounded vision evaluation; no text-bearing candidate entered reasoning.", len(visionInputs), map[bool]string{true: "", false: "s"}[len(visionInputs) == 1])
-		}
-		result := domain.ReasoningResult{
-			Summary: summary,
-			Items:   []domain.ReasonedItem{}, CandidateAssessments: []domain.CandidateAssessment{}, Limitations: []string{},
-		}
-		addedStarted := time.Now()
-		if err = e.store.CompleteRun(ctx, run, result, nil, nil, merged.Coverage); err != nil {
+		if err = e.completeRunWithoutCandidates(ctx, runID, run, merged, continuity, len(visionInputs)); err != nil {
 			return err
 		}
-		_ = e.store.SaveRunStageTiming(context.Background(), runID, "added", time.Since(addedStarted))
 		_, err = e.startNext(ctx, run.SessionID)
 		return err
 	}
