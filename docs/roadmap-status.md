@@ -1,14 +1,15 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-03 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `9da6ed8` (automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
+Reviewed local source: AkuSidecar `8027599` (acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
-The previous code/roadmap checkpoint was published as `397fff1`, including
-Timeline composition `3cf90b4`. The owner then authorized automatic completion
-of the remaining HTTP feature-separation process. Code `9da6ed8` and this
-roadmap synchronization belong to that bounded run. Commit/publication identity
-is recorded in the automatic-completion readback linked below.
+The previous code/roadmap checkpoint was published as `26e567a`, including
+central HTTP handler separation `9da6ed8`. The owner separately approved
+acquisition execution and authorized review, roadmap synchronization, commit
+and publication of this bounded increment to origin/main at
+https://github.com/abangkis/AkuSidecar.git. Code `8027599` and the synchronized
+roadmap are bound to the later commit/publication readback linked below.
 Publication does not establish runtime activation or operational acceptance.
 The Browser worktree contains pre-existing build/cache changes; those changes
 are outside this synchronization and are not evidence of a released tuple.
@@ -985,6 +986,70 @@ not the entire CL-3 or comprehensive cleanup roadmap. A future read-only CL-3
 closure review can classify retained infrastructure and genuinely deferred
 application boundaries before proposing any further implementation. Activation
 and operational qualification still require their own authorized task.
+
+## Engine acquisition execution result (2026-11-03)
+
+The owner separately approved the acquisition-planning orchestration extraction
+after the read-only CL-3 status review. Code `8027599` moves the original
+95-line planning block from session_execution.go into executeAcquisitionPlanning
+in internal/engine/acquisition_execution.go. The caller invokes it at the same
+position, after continuity/vision handling and before Knowledge/candidate
+evaluation. Only return tuples and caller control-flow adaptation change:
+successful follow-up returns true/nil, an error returns false/original error,
+and continuation into evaluation returns false/nil. The bool is used only when
+the error is nil; a committed queue followed by receipt failure remains an error.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | `8027599`: one acquisition orchestration helper; session_execution.go is 347 lines with six existing declarations; acquisition_execution.go is 111 lines with one helper |
+| Tested | Frozen characterization payload and pass names match before/after: 230 default/dev parent/subtest results, comprising the new 14-scenario model-path test plus retained policy/daily-gate/telemetry/fallback suites. Matching 14-package regression (13 tested, Bridge builder compile-only): default 3,129 pass/50 skip; dev 3,973 pass/62 skip; zero failures. Four Windows amd64 tag combinations include the new test and produce 16 artifacts |
+| Activated | Not performed; no runtime restart, provider/browser trial or configuration change |
+| Acceptance | Scoped source/test review accepted and code committed; broader Engine package, CL-3 and operational acceptance remain open. Central HTTP handler separation remains complete |
+
+The daily-source query still executes before the planning gates. Local/model
+decisions, bounded continuation, configured profile dispatch, stage persistence,
+background telemetry, queue insertion and receipt persistence retain their order.
+No lock is introduced or moved. Caller context, original raw error identities
+and wrapping, shared Coverage aliases, protocol and guards remain unchanged.
+Telemetry failure remains nonfatal; cancellation/deadline/authentication errors
+do not become incomplete-response fallback. Partial planner output is
+never used to queue a follow-up. A receipt failure after queue commit preserves
+the queued work and stops evaluation with the original error.
+
+The new characterization test exercises the existing process entry point using
+real isolated SQLite and an offline provider. Disposable triggers observe
+stage/telemetry/queue/receipt/evaluation order and inject stage/queue/receipt/
+telemetry failures. It also covers finish/follow-up, continuation-not-ready,
+incomplete fallback, raw provider error identity, joined cancellation/deadline
+and caller cancellation. Existing policy, daily issuance/forged-coverage,
+planning-disabled/single-round and capture-telemetry tests remain in the selection.
+
+Publication review reverified the committed baseline, reverse-adapted block,
+exact caller remainder, unchanged unrelated Go/config files, raw log counts and
+pass-name selection, four tag graphs, and all 16 PE/amd64 artifact identities.
+No product tests/builds were repeated for review or publication because their
+relevant inputs are unchanged. No new race-detector or live-source result is
+claimed. The 52 central Engine declarations remain intentionally retained;
+this helper does not reopen that facade checkpoint or close the whole package.
+
+Evidence: [validation](../runtime/qa/acquisition-execution-20261103/validation.json),
+[extraction proof](../runtime/qa/acquisition-execution-20261103/extraction-proof.json),
+[publication review](../runtime/qa/acquisition-execution-review-20261103/review.json)
+and [commit/publication readback](../runtime/qa/acquisition-execution-review-20261103/final-readback.json).
+Original sourceHead/sourceDirty/committed receipt fields describe capture time
+and remain unchanged; the later readback binds the validated payload to commits.
+
+### Proposed next cleanup analysis
+
+Read-only review of candidate evaluation and completion orchestration in
+Engine.process: Knowledge, analyzeWithProfile, result binding/validation,
+preference and prior-evidence/event selection, CompleteRun and startNext.
+Determine whether one cohesive extraction is justified, retaining existing
+reasoning_result helpers and Store/selection ownership. Identify required
+characterization for first-error propagation, context/background telemetry,
+completion-before-advance and partial post-commit failures. Preserve locks,
+effect order, error contracts, protocol and guards. No further implementation,
+runtime/configuration change, activation or trial is authorized by this proposal.
 
 ## Product and installation roadmaps
 
