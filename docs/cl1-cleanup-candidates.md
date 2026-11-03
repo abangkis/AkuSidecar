@@ -12,8 +12,10 @@ and is now implemented as `8027599`. Candidate evaluation/completion was
 separately approved and is now implemented as `ed35d82`. Vision handoff was
 reviewed and retained; separately approved persistence characterization is
 committed as `70ea120`. Observation preparation is reviewed and retained;
-empty-candidate completion is separated as `de95c58`. Candidate disposition
-counts are unchanged; see the results below.
+empty-candidate completion is separated as `de95c58`. The scoped Engine
+read-model/enrichment ownership review retains existing owners; separately
+approved Store Timeline read-model separation is `bee6a9f`. Candidate
+disposition counts are unchanged; see the results below.
 
 ## Dispositions and approval
 
@@ -2519,15 +2521,79 @@ These are local ignored QA receipts. Original sourceHead/sourceDirty/committed
 fields describe capture time and remain unchanged; the later readback binds the
 frozen tested payload to commits and the verified publication target.
 
+### Engine read-model and enrichment ownership follow-up completed
+
+The scoped read-only ownership review is complete. Retain Engine read facades
+for Session/ActiveSession/Run, Timeline, Inbox/trace, Library and usage. Store
+continues to own durable query/hydration/projection. VisionEvaluationJobs retains
+its run lookup before source-scoped jobs. AI detection, media provenance,
+selection correction, AI feedback, recapture and Library removal retain their
+existing feature-specific orchestration, locks, effect order and cancellation.
+Do not introduce a generic enrichment service or reopen the 52 retained central
+Engine declarations. This checkpoint does not close all of CL-3.2 or CL-3.
+
+The owner separately approved one backend continuation at the existing Store
+owner: move the complete Timeline read-model group after characterization on
+the original code. This is file separation within Store, not a new Engine owner.
+
+## Store Timeline read-model result (2026-11-03)
+
+The owner approved review, roadmap synchronization, commit and publication of
+this bounded increment to origin/main at https://github.com/abangkis/AkuSidecar.git.
+The preceding published code/roadmap checkpoint is 4c6baf3, including empty-candidate
+completion de95c58. Production/test code is now bee6a9f.
+
+| Dimension | Evidence and scope |
+| --- | --- |
+| Implemented | bee6a9f: six methods and timelinePresentationOrderSQL moved unchanged from store.go to timeline_read_model.go (257 lines). The original declaration block is 245 lines; store.go is now 2,573 lines. All callers retain package symbols and Store receivers |
+| Tested | Frozen characterization test and pass/skip names match before/after: 72 pass/1 skip in each default/dev mode. Six new roots cover 29 scenarios (35 parent/subtest results). Matching 14-package regression (13 tested; Bridge builder compile-only): default 3,222 pass/50 skip; dev 4,066 pass/62 skip; zero failures. Four Windows amd64 tag combinations include the new test and produce 16 PE/amd64 artifacts |
+| Activated | Not performed; no runtime, configuration, restart or live trial change |
+| Acceptance | Scoped source/test review accepted with no findings. Engine read-model/enrichment ownership retained and Store file separation established; CL-3 remains partial. Broader integration, package and operational acceptance remain open |
+
+The moved methods are ListSessionItems, TimelineItem, ListTimeline, listItems,
+attachTimelineMemoryProjections and attachEffectivePreferenceDecision. SQL,
+receiver, context, read/error order and source remainder are unchanged. Evidence
+still resolves from retained snapshot to the first matching accepted observation
+and then to a recapture override. Hydration then attaches semantic, AI/provenance,
+effective preference and bounded memory projections in the original order. Rows
+are closed before nested queries on the single SQLite connection. No interface,
+state owner, migration, lock or transaction redesign was introduced.
+
+Characterization locks empty/nil results and sql.ErrNoRows, rank/GetSession
+hydration, evidence precedence, malformed-data behavior, combined projection
+in show_all/hide/collapse, feedback timestamp/authority/id precedence, memory
+absence/privacy, first-error ordering, caller cancellation and connection waits.
+It verifies that read projection does not mutate durable data. Existing page
+selection, relation, detached-origin, retention, AI and recapture tests remain
+in the focused suite. The one focused skip is TestTimelinePageReadOnlyPerformance,
+which requires an explicit read-only database path; no user database or new
+performance measurement was used. Synthetic provenance rows are fixture data,
+not real-provider or trusted-manifest qualification.
+
+Review independently compares all seven declarations and the source remainder
+against Git source 4c6baf3 and verifies frozen source/test/log/graph/helper/artifact
+hashes. All 1,449 other previously tracked files were unchanged at validation
+and review, including Engine/HTTP, existing tests, protocol, guards and the
+already dirty user config. Only the three approved Store source/test files and
+four roadmap documents are committed by this publication; .tmp/ and experiments/
+remain excluded. No race-detector or broader runtime acceptance is claimed.
+
+Evidence: [validation](../runtime/qa/timeline-read-model-20261103/validation.json),
+[extraction proof](../runtime/qa/timeline-read-model-20261103/extraction-proof.json),
+[scoped review](../runtime/qa/timeline-read-model-review-20261103/review.json),
+and [commit/publication readback](../runtime/qa/timeline-read-model-review-20261103/final-readback.json).
+These are local ignored QA receipts. Original sourceHead/sourceDirty/committed
+fields describe capture time and remain unchanged; the later readback binds the
+frozen tested payload to commits and the verified publication target.
+
 ### Proposed next cleanup analysis
 
-Read-only CL-3.2 closure review of Engine read-model and enrichment ownership:
-trace retained Session, Run, Timeline and Inbox read entry points to Store and
-map enrichment calls to their existing feature owners. Classify actual mixed
-responsibilities versus required facade/delegation, using current consumers and
-tests. Produce an explicit remaining/retained map and at most one justified
-next seam with characterization requirements; a retain-only outcome is valid.
-Do not repeat central-file splitting or the completed process extractions.
-Preserve Store authority, lock/context/cancellation, effect/error order, protocol
-and guards. No implementation, configuration change, activation or trial is
-authorized by this proposal.
+Read-only review of Store.AddFeedback routine More/Less orchestration: authoritative
+Timeline lookup and input normalization, hydration and tombstone preparation,
+then the transaction that records feedback, preference learning and memory
+projection/retraction together. Assess whether one coherent file/feature seam
+is warranted; retain atomicity rather than separating transaction participants.
+Inventory existing regression and identify characterization for failure rollback,
+caller context, error prefixes and FeedbackTiming scopes. A retain-only result
+is valid if the function already has a clear owner. No implementation, schema,
+protocol/guard/configuration change, activation or trial is authorized here.
