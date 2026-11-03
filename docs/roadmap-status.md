@@ -1,15 +1,14 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-03 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `3cf90b4` (Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
+Reviewed local source: AkuSidecar `9da6ed8` (automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
-The previous code/roadmap checkpoint was published as `c550a85`, including
-vision-evaluation HTTP adapters `cf534ec`. The owner has authorized publication
-of the Timeline composition HTTP extraction and this roadmap synchronization to
-origin/main at https://github.com/abangkis/AkuSidecar.git. Validation and the
-later review/commit/publication readback are identified in the Timeline composition
-result below; publication must be verified against the remote SHA.
+The previous code/roadmap checkpoint was published as `397fff1`, including
+Timeline composition `3cf90b4`. The owner then authorized automatic completion
+of the remaining HTTP feature-separation process. Code `9da6ed8` and this
+roadmap synchronization belong to that bounded run. Commit/publication identity
+is recorded in the automatic-completion readback linked below.
 Publication does not establish runtime activation or operational acceptance.
 The Browser worktree contains pre-existing build/cache changes; those changes
 are outside this synchronization and are not evidence of a released tuple.
@@ -919,16 +918,73 @@ Current router snapshot: 106 top-level arms, not endpoint count; 74 retained
 and 52 central Engine functions/methods remain retained. CL-3.3 and CL-3 remain
 partial. Deferred groups are not an automatic extraction queue.
 
-### Proposed next cleanup analysis
+## Automatic HTTP feature separation result (2026-11-03)
 
-Read-only review of three content-context adapters: related-context lookup,
-feedback submission and feedback undo. Inspect the existing content_context.go
-helper/test boundary, supported callers, strict limit/ID parsing, eligibility,
-public projection, context/cancellation, error mapping and durable effect order
-before deciding whether one cohesive feature extraction is useful. Specify
-characterization first; preserve receiver, Engine/Store ownership, protocol and
-guards. This proposal authorizes no further implementation, activation,
-runtime/configuration change or trial.
+The owner expanded the previously incremental approval into an automatic run to
+finish the remaining HTTP feature separation. This supersedes the pending
+content-context-only proposal for this bounded workstream; it does not authorize
+frontend, Engine, Store, runtime, configuration or protocol changes.
+
+Code commit: `9da6ed8`. All 58 remaining inline top-level router adapters move
+into 24 feature file boundaries. The 32 formerly deferred arms and 26 previously
+retained thin/control/heartbeat arms are now delegated. All 106 top-level switch
+arms delegate to Server feature handlers; this is an arm count, not endpoint
+count. The earlier split-capture dispatch remains unchanged. The 935 original
+body lines retain exact statements and comments except indentation and a local
+request-context binding. The exclusive feedbackTraceID helper moves verbatim
+with Timeline feedback.
+
+server.go now has 623 lines and 29 declarations; its composition, HTTP lifecycle,
+dispatch, shared security/authentication and serialization helpers remain. The
+original file had 1,521 lines and 30 declarations. Existing feature declarations
+are unchanged except imports. All other tracked Go files, Engine/Store behavior,
+user configuration and unrelated work remain preserved. No new interface,
+transaction, cache, scheduler, worker, state owner or compatibility change is
+introduced.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | `9da6ed8`: 58 remaining adapters in 24 feature boundaries; central HTTP handler separation is source-complete |
+| Tested | Identical frozen characterization payload and pass names: 89 default/dev parent/subtest results before and after; 14-package regression (13 tested, Bridge builder compile-only): default 3,114 pass/50 skip, development 3,958 pass/62 skip, zero failures; four Windows amd64 tag combinations include the new test and produce 16 artifacts |
+| Activated | Not performed; no restart, provider/browser trial or runtime/configuration change |
+| Acceptance | Scoped source/test review accepted; central-router handler separation complete. Broader HTTP infrastructure, CL-3, repository integration and operational acceptance remain separate/open |
+
+The new isolated SQLite/real-Engine fixture adds validation/guard precedence,
+strict path/query parsing, public read envelopes, development/runtime-control
+gates, request-context forwarding, native-reader/control cancellation, feedback
+trace headers, content-context feedback/append-only undo, diagnostics attachment
+and error behavior, plus effects retained after feedback/full-reset response
+write failure. Existing successful onboarding/calibration/settings/credential,
+Library/Living Topic/retention, Auto Update, Bridge owner/rotation/heartbeat and
+native-reader tests remain included. The new fixture uses an offline provider;
+no live provider or browser trial is claimed.
+
+Reconstruction verifies every moved body, all predicates and dispatch order,
+every pre-existing feature declaration and the entire router remainder, including
+middleware and lifecycle. Heartbeat retains its lock through response, telemetry
+retains authenticated batch serialization and partial effects, runtime shutdown
+is scheduled only after successful response writing, and feedback timing/logging
+order is unchanged. Characterization fixture mistakes were corrected before
+production extraction; they do not represent production fixes or relaxed guards.
+
+Evidence: [validation](../runtime/qa/http-features-20261103/validation.json),
+[exact extraction proof](../runtime/qa/http-features-20261103/extraction-proof.json),
+[scoped review](../runtime/qa/http-features-20261103/review.json), and
+[commit/publication readback](../runtime/qa/http-features-20261103/final-readback.json).
+Original validation fields sourceHead/sourceDirty/committed describe capture
+time and are not overwritten by later commits/publication. No race-detector or
+runtime acceptance result is inferred from ordinary regression/Windows builds.
+
+### Completion boundary and next decision
+
+The automatic HTTP handler separation requested by the owner is complete.
+There is no remaining central inline feature-handler queue. Shared infrastructure
+and existing feature subrouters remain intentional owners rather than deletion
+or mandatory micro-extraction candidates. This closes this HTTP source boundary,
+not the entire CL-3 or comprehensive cleanup roadmap. A future read-only CL-3
+closure review can classify retained infrastructure and genuinely deferred
+application boundaries before proposing any further implementation. Activation
+and operational qualification still require their own authorized task.
 
 ## Product and installation roadmaps
 
