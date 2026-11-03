@@ -1,3 +1,4 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
@@ -30,7 +31,7 @@ test("unknown or starting owners and failed status reads never open a reader", a
   await assert.rejects(route({}), /offline/);
 });
 
-const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+const app = readFrontendAppSource();
 test("live collection lease race does not dispatch a native action", async () => {
   for (const runtime of [{ requested: "headless", effective: "headless", activeLeases: 1 },
     { requested: "headless", effective: "browser", collectionBorrowSource: "facebook" }]) {

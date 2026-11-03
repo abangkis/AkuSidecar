@@ -1,8 +1,9 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-const app = fs.readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+const app = readFrontendAppSource();
 const index = fs.readFileSync(new URL("../internal/httpapi/web/index.html", import.meta.url), "utf8");
 const state = fs.readFileSync(new URL("../internal/httpapi/web/timeline-content-context-state.js", import.meta.url), "utf8");
 const styles = fs.readFileSync(new URL("../internal/httpapi/web/styles.css", import.meta.url), "utf8");
@@ -24,7 +25,6 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
     "contentContextCanExpand",
     "contentContextTabFits",
     "contentContextPostPassedReadingExitLine",
-    "contentContextPostPassedViewportBottom",
     "contentContextShouldCloseOnScroll",
     "selectContentContextViewportID",
     "contentContextUpScrollMode",
@@ -57,6 +57,7 @@ test("Timeline Content Context is explicit, lazy, bounded, and accessible", () =
   assert.match(state, /function contentContextTabFits/);
   assert.match(state, /CONTENT_CONTEXT_READING_EXIT_RATIO = 0\.2/);
   assert.match(state, /function contentContextPostPassedReadingExitLine/);
+  // This retained helper belongs to the state module, not an unused app import.
   assert.match(state, /function contentContextPostPassedViewportBottom/);
   assert.match(state, /function contentContextShouldCloseOnScroll/);
   assert.match(state, /function contentContextDrawerHeightLimits/);

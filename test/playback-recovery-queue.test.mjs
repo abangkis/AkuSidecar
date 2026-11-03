@@ -1,3 +1,4 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -48,7 +49,7 @@ test("a failed attempt unlocks the queue without retrying the same failed URL fo
 });
 
 function uiFixture() {
-  const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+  const app = readFrontendAppSource();
   const entry = { id: "ig", source: "instagram", item: { sourceUrl: "https://www.instagram.com/p/Own/" },
     evidence: { media: [{ kind: "video", playbackMode: "inline", playbackUrl: request("ig").playbackUrl }] } };
   const requests = []; const notices = []; const waits = []; const elements = new Map();

@@ -1,3 +1,4 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createPostScreenshotUI } from "../internal/httpapi/web/post-screenshot-ui.js";
@@ -181,7 +182,7 @@ test("URL clipboard denial or missing API stays visible and permits retry", asyn
 });
 
 test("Copy URL and Open native post share the actual source URL validator and permalink selection",()=>{
-  const app=readFileSync(new URL("../internal/httpapi/web/app.js",import.meta.url),"utf8");
+  const app=readFrontendAppSource();
   const context=vm.createContext({URL,safeMediaUrl:value=>{try {const u=new URL(value);return u.protocol==="https:"?u.href:null;}catch{return null;}},sourceDescriptor:source=>source==="x"?{nativeHosts:["x.com","twitter.com"],nativePathTokens:["/status/"]}:null});
   vm.runInContext(app.slice(app.indexOf("function originalPostUrl("),app.indexOf("function mediaRecaptureReasonForEntry(")),context);
   assert.equal(context.originalPostUrl({source:"x",item:{sourceUrl:"https://twitter.com/author/status/123/photo/1?tracking=1"}}),"https://x.com/author/status/123");

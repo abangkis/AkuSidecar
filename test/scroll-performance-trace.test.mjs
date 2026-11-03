@@ -1,3 +1,4 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -94,7 +95,7 @@ test('long observer records stay below the endpoint byte limit', () => {
 });
 
 test('actual UI trace flow opens Timeline, uploads one object and recovers from save failure', async () => {
-  const app = readFileSync(new URL('../internal/httpapi/web/app.js', import.meta.url), 'utf8');
+  const app = readFrontendAppSource();
   const source = app.slice(app.indexOf('let lastScrollPerformanceReport = null;'), app.indexOf('function exportDiagnostics()'));
   const elements = new Map();
   const element = selector => {

@@ -1,3 +1,4 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -31,7 +32,7 @@ test("manual closure is an explicit user action, including before a failed butto
 });
 
 function actionFixture(api) {
-  const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+  const app = readFrontendAppSource();
   const state = { bootstrap: { autoUpdate: { nativeReaderBlocked: true } }, closingNativeReaders: false };
   const notices = [];
   let polls = 0;

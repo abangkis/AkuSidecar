@@ -58,7 +58,7 @@ func TestSettingsSourcesExposePerSourceAccessFlow(t *testing.T) {
 		"web/app.js":     {"function openSourceAccessSettings", "function onboardingReadinessGate", "sourcePermissionReadyForOnboarding", "sourceAccessReadinessState", "Access: permission required", "Access: capture registration missing", "AKU_BROWSER_OPEN_SOURCE", "data-onboarding-source-readiness", "function configureNativePostLink", "AKU_BROWSER_OPEN_NATIVE_POST", "AKU_BROWSER_NATIVE_POST_OPENED"},
 		"web/styles.css": {".source-settings-group .settings-group-heading-actions { margin-bottom: 12px; }", ".onboarding-source-access", "white-space: nowrap"},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -69,7 +69,7 @@ func TestSettingsSourcesExposePerSourceAccessFlow(t *testing.T) {
 		}
 	}
 	for _, asset := range []string{"web/index.html", "web/app.js"} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -168,7 +168,7 @@ func TestEmbeddedLibrarySurfaceContract(t *testing.T) {
 			"@media (max-width: 760px)",
 		},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -178,14 +178,14 @@ func TestEmbeddedLibrarySurfaceContract(t *testing.T) {
 			}
 		}
 	}
-	appContents, err := embeddedAssets.ReadFile("web/app.js")
+	appContents, err := readFrontendContractAsset("web/app.js")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(appContents), "buildLibraryDeletePath") || strings.Contains(string(appContents), "libraryDeleteConfirmation") || strings.Contains(string(appContents), "deleteLibraryItem") {
 		t.Fatal("Library UI must distinguish local Remove from permanent Forget")
 	}
-	indexContents, err := embeddedAssets.ReadFile("web/index.html")
+	indexContents, err := readFrontendContractAsset("web/index.html")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,11 +205,11 @@ func TestEmbeddedLibrarySurfaceContract(t *testing.T) {
 }
 
 func TestEmbeddedFailureStateMatrixStaysSidecarOwned(t *testing.T) {
-	appPayload, err := embeddedAssets.ReadFile("web/app.js")
+	appPayload, err := readFrontendContractAsset("web/app.js")
 	if err != nil {
 		t.Fatal(err)
 	}
-	indexPayload, err := embeddedAssets.ReadFile("web/index.html")
+	indexPayload, err := readFrontendContractAsset("web/index.html")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +248,7 @@ func TestEmbeddedFailureStateMatrixStaysSidecarOwned(t *testing.T) {
 }
 
 func TestOnboardingSessionObservationIsAdvisory(t *testing.T) {
-	contents, err := embeddedAssets.ReadFile("web/app.js")
+	contents, err := readFrontendContractAsset("web/app.js")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +286,7 @@ func TestOnboardingGatesSourceSetupOnDevelopmentBridgeConnection(t *testing.T) {
 		"web/bridge-recovery-state.js": {`bridge.reasons?.includes("bridge focus policy revision mismatch")`, "heartbeatObservedAt"},
 		"web/styles.css":               {".browser-connection-actions", ".status-recovery-action"},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -391,7 +391,7 @@ func TestOnboardingExposesProviderSelectionDialog(t *testing.T) {
 			"@media (max-height: 820px)",
 		},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -401,7 +401,7 @@ func TestOnboardingExposesProviderSelectionDialog(t *testing.T) {
 			}
 		}
 	}
-	contents, err := embeddedAssets.ReadFile("web/app.js")
+	contents, err := readFrontendContractAsset("web/app.js")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -526,7 +526,7 @@ func TestReasoningCredentialWriteRejectsInvalidGeminiKeyBeforeStorage(t *testing
 }
 
 func TestFullResetReportsBridgeRevocationOutcomeHonestly(t *testing.T) {
-	contents, err := embeddedAssets.ReadFile("web/app.js")
+	contents, err := readFrontendContractAsset("web/app.js")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -564,7 +564,7 @@ func TestSettingsSourcesExposeSessionReadinessAndSignInCTA(t *testing.T) {
 			".source-open-button",
 		},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -577,7 +577,7 @@ func TestSettingsSourcesExposeSessionReadinessAndSignInCTA(t *testing.T) {
 }
 
 func TestEmbeddedAppDoesNotEscapeTemplateLiteralDelimiters(t *testing.T) {
-	contents, err := embeddedAssets.ReadFile("web/app.js")
+	contents, err := readFrontendContractAsset("web/app.js")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -593,7 +593,7 @@ func TestInstagramPostUsesFamiliarLocalSourceIcon(t *testing.T) {
 		"web/app.js":     {`source === "instagram"`, `glyph.className = "instagram-source-glyph"`, `aria-hidden`},
 		"web/styles.css": {".timeline-source-icon-instagram", ".instagram-source-glyph::before", ".instagram-source-glyph::after", "radial-gradient"},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -611,7 +611,7 @@ func TestEmbeddedMediaViewerUsesSnapPresetsAndKeepsManualZoom(t *testing.T) {
 		"web/app.js":     {"function snapMediaZoom", "function adjustMediaZoom", "function applyMediaZoom", "Snap image to fit", "Snap image to actual size", "deltaY"},
 		"web/styles.css": {".media-viewer[open]", ".media-viewer:not([open])", ".media-viewer-canvas", ".media-viewer-surface", "overflow: auto", "max-width: none"},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -629,7 +629,7 @@ func TestEmbeddedSingleImageFitSettingDefaultsToCoverAndSupportsContain(t *testi
 		"web/app.js":     {"function applySingleImageFit", "settings.singleImageFit || \"cover\"", "singleImageFit: $(\"#single-image-fit\").value"},
 		"web/styles.css": {"[data-single-image-fit=\"contain\"] .source-layout-media.media-count-1 > .source-layout-media-item img", "[data-single-image-fit=\"contain\"] .source-layout-media-carousel-viewport .source-layout-media-item img", "object-fit: contain"},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -647,7 +647,7 @@ func TestEmbeddedPostFreshnessCueSupportsConfigurablePresentation(t *testing.T) 
 		"web/app.js":     {"post-freshness.js", "container.dataset.freshness = source.dataset.freshness", "item.dataset.freshness = result.key", "function applyPostFreshness", "function applyPostFreshnessStyle", "settings.postFreshnessStyle || \"header_shade\"", "postFreshnessStyle: $(\"#post-freshness-style\").value"},
 		"web/styles.css": {"data-freshness=\"current\"", "data-freshness=\"older_3d\"", "data-freshness=\"older_6d\"", "data-post-freshness-style=\"header_shade\"", "data-post-freshness-style=\"border_shade\"", "--freshness-card-shell: #2c382b", "--freshness-card-shell: #222323", "--freshness-card-shell: #1f2020", "--freshness-card-shell: #1c1d1d", "--freshness-card-border: #647452", "--freshness-border-rgb: 132, 132, 132", "color: #a3ae9c", "color: #c4d8b2", "source-layout-media-carousel-navigation", "background: #0d1218"},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -661,7 +661,7 @@ func TestEmbeddedPostFreshnessCueSupportsConfigurablePresentation(t *testing.T) 
 
 func TestEmbeddedWebAssetsDoNotContainMojibake(t *testing.T) {
 	for _, asset := range []string{"web/index.html", "web/app.js", "web/styles.css"} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -678,7 +678,7 @@ func TestStartupRecoveryAndIsolatedProfileGuidanceAreEmbedded(t *testing.T) {
 		"web/startup-watchdog.js": {`No ready confirmation arrived within 60 seconds.`, `window.addEventListener("error", onError, true)`},
 		"web/styles.css":          {".startup-recovery[hidden] { display: none; }"},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -696,7 +696,7 @@ func TestEmbeddedContentContextUpScrollModeSettingContract(t *testing.T) {
 		"web/app.js":                            {"settings.contentContextUpScrollMode || \"close_offscreen\"", "contentContextUpScrollMode: $(\"#content-context-up-scroll-mode\").value", "contentContextShouldCloseOnScroll"},
 		"web/timeline-content-context-state.js": {"CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT", "contentContextPostPassedViewportBottom", "contentContextShouldCloseOnScroll"},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -714,7 +714,7 @@ func TestEmbeddedContentContextFeedbackContract(t *testing.T) {
 		"web/styles.css":                        {"is-feedback-not-relevant", "timeline-content-context-feedback-status"},
 		"web/timeline-content-context-state.js": {"buildTimelineContentContextFeedbackPath", "buildContentContextFeedbackUndoPath"},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -732,7 +732,7 @@ func TestEmbeddedTimelineMediaCarouselStartsAtFiveAndPreservesLightboxAccess(t *
 		"web/timeline-media-carousel.js": {"MAX_TIMELINE_MEDIA = 20", "TIMELINE_CAROUSEL_THRESHOLD = 5", "moveTimelineCarouselIndex", "timelineCarouselDotIndexes"},
 		"web/styles.css":                 {".source-layout-media-carousel-stage", ".source-layout-media-carousel-navigation", ".source-layout-media-carousel-dot.is-current", "touch-action: pan-y"},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -763,7 +763,7 @@ func TestEmbeddedTimelineCalibrationBlockerExposesProgress(t *testing.T) {
 			"calibration-preparing",
 		},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -798,7 +798,7 @@ func TestEmbeddedPrimaryViewsShareClearNavigationAndHeaders(t *testing.T) {
 			".settings-row:focus-within",
 		},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -816,7 +816,7 @@ func TestEmbeddedReasoningProviderSelectionContract(t *testing.T) {
 		"web/app.js":     {"state.bootstrap?.reasoningProviders", "function beginSettingsProviderSelection", "function openSettingsProviderDialog", "function activateSettingsReasoningProvider", "AkuBrowser checks any stored credential before asking for a new key", "credential missing", "Provider changed", "$(\"#reasoning-provider\")?.value", "Ollama · Qwen 3.8 27B", "availabilityRequired"},
 		"web/styles.css": {".reasoning-executable-row[hidden]", ".provider-selection-dialog.provider-switch-mode", ".reasoning-provider-control { display: grid; justify-self: end; width: min(100%, 260px); min-width: 0;"},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -826,7 +826,7 @@ func TestEmbeddedReasoningProviderSelectionContract(t *testing.T) {
 			}
 		}
 	}
-	indexContents, err := embeddedAssets.ReadFile("web/index.html")
+	indexContents, err := readFrontendContractAsset("web/index.html")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1092,6 +1092,12 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 		if readErr != nil || response.StatusCode != http.StatusOK {
 			t.Fatalf("asset %s status=%d err=%v", path, response.StatusCode, readErr)
 		}
+		if path == "/app.js" {
+			payload, readErr = frontendContractSource(payload)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+		}
 		for _, marker := range markers {
 			if !strings.Contains(string(payload), marker) {
 				t.Fatalf("asset %s missing %q", path, marker)
@@ -1122,6 +1128,11 @@ func TestHealthAndBootstrapExposeGoBoundary(t *testing.T) {
 	}
 	appPayload, err := io.ReadAll(response.Body)
 	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifyFrontendFeatureAssets(t, &client, "http://"+address.String(), appPayload)
+	appPayload, err = frontendContractSource(appPayload)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1453,7 +1464,7 @@ func TestModelUsageEndpointsAndEmbeddedUI(t *testing.T) {
 		"web/app.js":     {"function buildSessionModelUsage", "function buildModelUsageHelp", "function modelUsageCategoryProfile", "Mixed models", "Configured model pending", "function loadAggregateModelUsage", "Input already includes cached input", "Living Topic routing or understanding", "/api/model-usage?windowDays=", "function buildCaptureCandidateTelemetry", "Capture candidates", "Counts are per snapshot observations", "function snapMediaZoom", "function adjustMediaZoom"},
 		"web/styles.css": {".model-usage-help-button", ".model-usage-totals", ".model-usage-category", ".capture-candidate-telemetry", ".capture-candidate-snapshots"},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1466,7 +1477,7 @@ func TestModelUsageEndpointsAndEmbeddedUI(t *testing.T) {
 }
 
 func TestEmbeddedRelayRetriesAfterCaptureLaneContention(t *testing.T) {
-	payload, err := embeddedAssets.ReadFile("web/app.js")
+	payload, err := readFrontendContractAsset("web/app.js")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1478,7 +1489,7 @@ func TestEmbeddedRelayRetriesAfterCaptureLaneContention(t *testing.T) {
 }
 
 func TestEmbeddedBridgePingAdvertisesBoundedProtocol(t *testing.T) {
-	payload, err := embeddedAssets.ReadFile("web/app.js")
+	payload, err := readFrontendContractAsset("web/app.js")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1494,7 +1505,7 @@ func TestEmbeddedContinuousBackgroundSettingsExposeIntervalConditionally(t *test
 		"web/index.html": {"Continuous background", "continuous-background-interval-row", "Continuous interval", "A skipped tick waits for the next interval.", "15 minutes — recommended", "1 hour", "Adaptive demand learns batch consumption pace"},
 		"web/app.js":     {"function syncAutoUpdateModeSettings", `value !== "fixed"`, "status.cadenceTier", "settings.autoUpdateRefillMinutes || 15"},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1507,7 +1518,7 @@ func TestEmbeddedContinuousBackgroundSettingsExposeIntervalConditionally(t *test
 }
 
 func TestEmbeddedSchedulerStatusUsesScannableSummary(t *testing.T) {
-	indexHTML, err := embeddedAssets.ReadFile("web/index.html")
+	indexHTML, err := readFrontendContractAsset("web/index.html")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1524,7 +1535,7 @@ func TestEmbeddedSchedulerStatusUsesScannableSummary(t *testing.T) {
 		"web/styles.css": {".auto-update-status-row", ".auto-update-mode-pill", ".auto-update-mode-notice", ".auto-update-state-pill", ".auto-update-metrics", ".auto-update-diagnostics", "@media (max-width: 460px)"},
 		"web/app.js":     {"function renderAutoUpdateStatus", "function autoUpdateModeLabel", "function autoUpdateModeDescription", "unsavedModeChange", "applyingModeChange", "function formatSchedulerMoment", "stateBadge.className", "preparedMetric.textContent", "runwayMetric.textContent", "resultMetric.textContent", "pressureMetric.textContent", "allowanceMetric.textContent", "nextMetric.textContent", `diagnostics.join(" · ")`},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1543,7 +1554,7 @@ func TestEmbeddedSettingsDirtyStateContract(t *testing.T) {
 		"web/settings-dirty-state.js": {"export function createDirtyStateTracker", "setBaseline", "isDirty"},
 		"web/styles.css":              {".settings-dirty-indicator"},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1560,7 +1571,7 @@ func TestEmbeddedCaptureSurfaceReleaseBarrierContract(t *testing.T) {
 		"web/app.js":                             {`import { releaseCompletedSourceSurfaces } from "./capture-surface-release-barrier.js"`, "const captureSurfaceBarrier = await releaseCompletedSourceSurfaces", "captureSurfaceBarrier.ready"},
 		"web/capture-surface-release-barrier.js": {"export async function releaseCompletedSourceSurfaces", "await releaseSource(session.id, run.source)", "ready: false", "releasedSources.delete(key)"},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1577,7 +1588,7 @@ func TestEmbeddedUsageLimitPauseRequiresExplicitRestoreConfirmation(t *testing.T
 		"web/index.html": {"confirm-codex-usage-restored", "Confirm Codex usage restored"},
 		"web/app.js":     {"usage_limit_paused", "Auto Update paused by Codex usage limit", "Automatic checks will not retry until you confirm", "/api/auto-update/usage-limit/restore", "function confirmCodexUsageRestored", "function handleAutoUpdateTimelineAction", "Confirm usage restored", "The Codex provider pause is unchanged"},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1590,7 +1601,7 @@ func TestEmbeddedUsageLimitPauseRequiresExplicitRestoreConfirmation(t *testing.T
 }
 
 func TestEmbeddedInboxDistinguishesActiveEvaluationFromFinalZero(t *testing.T) {
-	payload, err := embeddedAssets.ReadFile("web/app.js")
+	payload, err := readFrontendContractAsset("web/app.js")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1607,7 +1618,7 @@ func TestEmbeddedWindowsSecurityFailureOffersManualBundleRecovery(t *testing.T) 
 		"web/app.js":     {"function isWindowsSecurityRuntimeFailure", "function matchingWindowsPortableBundleURL", "WINDOWS SECURITY BLOCKED RUNTIME", "Repeating Update now without restarting AkuSidecar will fail again"},
 		"web/styles.css": {".failure-runtime-recovery", ".failure-download-link"},
 	} {
-		contents, err := embeddedAssets.ReadFile(asset)
+		contents, err := readFrontendContractAsset(asset)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -1,117 +1,63 @@
 import { createTimelineFeedbackUI } from "./timeline-feedback.js";
 import { createDirtyStateTracker } from "./settings-dirty-state.js";
-import { normalizePage, renderPageNavigation, focusPageHeading, renderSetupPage } from "./page-navigation.js";
-import { renderSourceCapturePause, confirmSourceCaptureRecovery } from "./source-capture-pause.js";
-import { captureBehaviorDiagnostics } from "./capture-behavior-status.js";
-import { collectionModeState, browserCollectorProbeAllowed } from "./collection-mode.js";
+import { normalizePage, renderPageNavigation, focusPageHeading } from "./page-navigation.js";
+
+
+
 import { createNativePostRouter } from "./native-post-routing.js";
 import { nativePostWaitReason, syncNativePostAvailability } from "./native-post-availability.js";
-import { nativeReaderNotice, nativeReaderResumeMessage } from "./native-reader-notice.js";
+
 import { setSettingsText, setSettingsClass } from "./settings-render.js";
 import { createXDailyControls } from "./x-daily-controls.js";
 import { createInstagramTrialControls } from "./instagram-trial-controls.js";
-import { createFrameTaskQueue, setInlineStyle } from "./ui-frame.js";
-import { backToTopHorizontalPosition, createScrollIdleGate } from "./timeline-scroll-layout.js";
-import { formatTimelineCheckSummary } from "./timeline-check-summary.js";
-import { planTimelineConversations, decorateTimelineConversation } from "./timeline-conversations.js";
-import { reserveMediaDimensions, renderWithCurrentScroll } from "./timeline-media-layout.js";
+import { createFrameTaskQueue } from "./ui-frame.js";
+import { createScrollIdleGate } from "./timeline-scroll-layout.js";
+
+
+
 import { createScrollPerformanceTrace } from "./scroll-performance-trace.js";
-import { mediaRecaptureTransport, waitForMediaRecapture } from "./media-recapture-transport.js";
+
 import { createPlaybackRecoveryQueue } from "./playback-recovery-queue.js";
-import { videoPlaybackMissing } from "./video-recapture-policy.js";
-import { releaseCompletedSourceSurfaces } from "./capture-surface-release-barrier.js";
-import { sessionUsesBrowserCapture, runUsesBrowserCapture } from "./capture-surface-release-barrier.js";
-import { isVerifiedSurfaceCleanupReceipt } from "./capture-surface-cleanup-receipt.js";
-import { bridgeRecoveryState, bridgeReloadVerified, bridgeCaptureBusy } from "./bridge-recovery-state.js";
-import {
-  boundedTimelineMedia,
-  mediaViewerCanPan,
-  mediaViewerPanPosition,
-  moveTimelineCarouselIndex,
-  normalizeTimelineCarouselIndex,
-  shouldUseTimelineCarousel,
-  timelineCarouselDotIndexes,
-} from "./timeline-media-carousel.js";
-import { classifyPostFreshness, postHeaderContext } from "./post-freshness.js";
-import {
-  failedSourceSessionObservations,
-  sourceAccessReadinessState,
-  sourcePermissionReadyForOnboarding,
-} from "./onboarding-source-readiness.js";
-import { applyReasoningRuntimeResponse } from "./reasoning-runtime-state.js";
-import { settingsStorageView } from "./settings-storage-state.js";
-import { providerCanActivate, providerReadinessFeedback, providerRequiresSecureCredential } from "./onboarding-provider-credential.js";
-import {
-  buildLibraryForgetPath,
-  buildLibraryKeepPath,
-  buildLibraryDonePath,
-  buildLibraryReleasePath,
-  buildLibraryRemovePath,
-  buildLibraryRequestPath,
-  buildSavedLibraryRequestPath,
-  buildLibraryStorageRequestPath,
-  formatLibraryTier,
-  formatLibraryStorageBytes,
-  libraryHasFullContent,
-  libraryForgetConfirmation,
-  libraryKeepConfirmation,
-  libraryDoneConfirmation,
-  libraryReleaseConfirmation,
-  libraryRemoveConfirmation,
-  mergeLibraryPage,
-  LIBRARY_TAB_CLEANING,
-  LIBRARY_TAB_LIBRARY,
-  LIBRARY_TAB_SAVED,
-  normalizeLibraryStorageReport,
-  normalizeLibraryTab,
-  normalizeLibraryFilters,
-} from "./library-state.js";
-import {
-  buildLivingTopicMemberPath,
-  LIVING_TOPIC_MAX_MEMBERS,
-  livingTopicClaimGroups,
-  livingTopicStatementLabel,
-  buildLivingTopicMemberMovePath,
-  buildLivingTopicMembersPath,
-  buildLivingTopicMoveUndoPath,
-  buildLivingTopicActivationPath,
-  buildLivingTopicCandidateActionPath,
-  buildLivingTopicNotificationsPath,
-  buildLivingTopicPath,
-  buildLivingTopicSeenPath,
-  buildLivingTopicsPath,
-  buildLivingTopicSnapshotsPath,
-  LIVING_TOPIC_TAB_EVIDENCE,
-  LIVING_TOPIC_TAB_SNAPSHOT,
-  livingTopicStatusLabel,
-  livingTopicUnderstandingLabel,
-  normalizeLivingTopicNotifications,
-  normalizeLivingTopicName,
-  normalizeLivingTopicTab,
-} from "./living-topics-state.js";
-import { buildTimelineReadLaterPath, timelineReadLaterConfirmation } from "./timeline-memory-state.js";
-import { buildTimelineContentContextTab, renderTimelineDirectContext, syncTimelineContentContextTab } from "./timeline-content-context-ui.js";
+
+
+
+
+
+
+
+
+
+
+
+import { LIBRARY_TAB_CLEANING, LIBRARY_TAB_LIBRARY, LIBRARY_TAB_SAVED, normalizeLibraryFilters } from "./library-state.js";
+import { LIVING_TOPIC_TAB_EVIDENCE, LIVING_TOPIC_TAB_SNAPSHOT, normalizeLivingTopicNotifications } from "./living-topics-state.js";
+
+
 import { createPostScreenshotUI } from "./post-screenshot-ui.js";
-import {
-  backToTopBoundaryBottom,
-  beginTimelineContentContextLookup,
-  buildContentContextFeedbackUndoPath,
-  buildTimelineContentContextPath,
-  buildTimelineContentContextFeedbackPath,
-  contentContextDrawerMode,
-  contentContextRailPlacement,
-  contentContextDrawerHeightLimits,
-  contentContextCanExpand,
-  contentContextTabFits,
-  contentContextPostPassedReadingExitLine,
-  contentContextPostPassedViewportBottom,
-  selectContentContextViewportID,
-  settleTimelineContentContextLookup,
-  contentContextShouldCloseOnScroll,
-  CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT,
-  CONTENT_CONTEXT_MAX_LIMIT,
-  CONTENT_CONTEXT_TAB_DEFAULT_WIDTH,
-} from "./timeline-content-context-state.js";
+
+// Frontend composition imports: begin
+import { createCaptureUi } from "./capture-ui.js";
+import { createAppLifecycle } from "./app-lifecycle.js";
+import { createSettingsStorageUi } from "./settings-storage-ui.js";
+import { createLivingTopicsUi } from "./living-topics-ui.js";
+import { createLibraryUi } from "./library-ui.js";
+import { createInboxUi } from "./inbox-ui.js";
+import { createSettingsFeature } from "./settings-feature.js";
+import { createAutoUpdateUi } from "./auto-update-ui.js";
+import { createTimelineRendering } from "./timeline-rendering.js";
+import { createOnboardingUi } from "./onboarding-ui.js";
+import { createProviderSetupUi } from "./provider-setup-ui.js";
+import { createSettingsOperations } from "./settings-operations.js";
+import { createDiagnosticsUi } from "./diagnostics-ui.js";
+import { createSessionUi } from "./session-ui.js";
+import { createPassiveMediaUi } from "./passive-media-ui.js";
+import { createTimelineContent } from "./timeline-content.js";
+import { createTimelineAiUi } from "./timeline-ai-ui.js";
+import { createTimelineMedia } from "./timeline-media.js";
+import { createTimelineActions } from "./timeline-actions.js";
+import { createTimelineContext } from "./timeline-context.js";
+// Frontend composition imports: end
+
 // The embedded Timeline action is Read later. Existing Library detail keeps
 // its independent full-copy Release/Remove/Forget semantics.
 
@@ -287,6 +233,407 @@ const state = {
   settingsUnloadBypass: false,
   settingsStorage: { usage: null, loading: false, error: null },
 };
+// Frontend composition bindings: begin
+const {
+  recoverInvalidatedBridgeContext, recoverInvalidBridgeToken, pingBridge, refreshBridgeAfterUserReturn, requestSourceSessionReadiness, openSourceFromSettings, syncNativePostLinks, configureNativePostLink, openNativePostInReaderWindow, cancelNativePostBroker, setSourceSessionStatus, renderSourceSessionError, renderSourceSessionReadiness, renderOnboardingSourceReadiness, bridgeActionLoop, renderBridge, configureBackgroundBridge, renderCollectionRuntime, renderBrowserConnection, openChromeExtensions, reloadIncompatibleBridge
+} = createCaptureUi({
+  $: (...args) => $(...args),
+  BRIDGE_CONTEXT_RECOVERY_KEY,
+  BRIDGE_CONTEXT_RECOVERY_WINDOW_MS,
+  BRIDGE_TOKEN_RECOVERY_KEY,
+  NATIVE_POST_OPEN_TIMEOUT_MS,
+  SOURCE_SESSION_PROBE_TIMEOUT_MESSAGE,
+  api,
+  bridgeApi,
+  bridgeSourceReadiness: (...args) => bridgeSourceReadiness(...args),
+  endpoint,
+  logNativePostTrace,
+  getNativePointerTraces: () => nativePointerTraces,
+  getNativePostOpening: () => nativePostOpening,
+  renderSourceSettingsValues: (...args) => renderSourceSettingsValues(...args),
+  getRouteNativePost: () => routeNativePost,
+  schedulePassiveMediaEnrichment: (...args) => schedulePassiveMediaEnrichment(...args),
+  setPill,
+  showError,
+  showNotice,
+  sourceDescriptor,
+  sourceDescriptors,
+  state,
+  syncRunButtons: (...args) => syncRunButtons(...args),
+  updateOnboardingSummary: (...args) => updateOnboardingSummary(...args),
+  setNativePostOpening: (value) => nativePostOpening = value,
+});
+const {
+  installUIActivityTracking, recordUIActivity, bootstrap, renderDeployment, pollAutoUpdate, pollDatabaseHealth, renderDatabaseHealth, cleanDatabase, pollCollectionRuntime, retryBootstrap
+} = createAppLifecycle({
+  $: (...args) => $(...args),
+  BOOTSTRAP_RETRY_MS,
+  BOOTSTRAP_TIMEOUT_MS,
+  api,
+  bridgeActionLoop: (...args) => bridgeActionLoop(...args),
+  clearNotice,
+  getInstagramTrialControls: () => instagramTrialControls,
+  onboardingRequiresSetup,
+  pingBridge: (...args) => pingBridge(...args),
+  refreshLivingTopicNotificationProjection: (...args) => refreshLivingTopicNotificationProjection(...args),
+  renderActiveReasoningProvider: (...args) => renderActiveReasoningProvider(...args),
+  renderAutoUpdateStatus: (...args) => renderAutoUpdateStatus(...args),
+  renderBridge: (...args) => renderBridge(...args),
+  renderCollectionRuntime: (...args) => renderCollectionRuntime(...args),
+  renderLibrary: (...args) => renderLibrary(...args),
+  renderLibrarySourceOptions: (...args) => renderLibrarySourceOptions(...args),
+  renderSession: (...args) => renderSession(...args),
+  renderSettings: (...args) => renderSettings(...args),
+  renderSourceControls: (...args) => renderSourceControls(...args),
+  renderSourceSessionReadiness: (...args) => renderSourceSessionReadiness(...args),
+  renderTimeline: (...args) => renderTimeline(...args),
+  setPill,
+  setView,
+  showCalibration: (...args) => showCalibration(...args),
+  showError,
+  showNotice,
+  showOnboarding: (...args) => showOnboarding(...args),
+  startPolling: (...args) => startPolling(...args),
+  state,
+  syncRunButtons: (...args) => syncRunButtons(...args),
+  getXDailyControls: () => xDailyControls,
+});
+const {
+  settingsStorageDetail, renderSettingsStorage, loadSettingsStorage
+} = createSettingsStorageUi({
+  $: (...args) => $(...args),
+  api,
+  state,
+});
+const {
+  loadLivingTopics, refreshLivingTopicNotificationProjection, updateLivingTopicNotificationFromTopics, renderLivingTopicNotificationBadge, selectLivingTopic, loadLivingTopicDetail, createLivingTopic, renameLivingTopic, searchLivingTopicEvidence, loadLivingTopicCandidates, addLivingTopicMember, removeLivingTopicMember, moveLivingTopicMember, undoLivingTopicMemberMove, requestLivingTopicActivation, reviewLivingTopicCandidate, resetLivingTopicSnapshotStatus, createLivingTopicSnapshot, scheduleLivingTopicUnderstandingPoll, scheduleLivingTopicActivationPoll, refreshLivingTopicListProjection, renderLivingTopics, renderLivingTopicDetail, livingTopicUnderstandingSummary, livingTopicRoutingSummary, setLivingTopicDetailTab, renderLivingTopicDetailTabs, handleLivingTopicDetailTabKeydown, buildLivingTopicEvidenceCard, renderLivingTopicMoveStatus, buildLivingTopicSuggestionCard, buildLivingTopicReviewedCandidateCard, renderLivingTopicSnapshots, buildLivingTopicUnderstandingHistory, buildCurrentLivingTopicUnderstanding, buildLivingTopicHistoryEntry, buildLivingTopicStatementList, livingTopicSourceOrigin
+} = createLivingTopicsUi({
+  $: (...args) => $(...args),
+  api,
+  formatDate,
+  humanize,
+  sourceLabel,
+  state,
+});
+const {
+  setLibraryTab, renderLibraryTabs, maybeLoadLibraryStorage, handleLibraryTabKeydown, renderLibrarySourceOptions, toggleLibraryFilters, syncLibraryFilterToggle, readLibraryFilters, resetLibraryList, resetLibraryStorage, invalidateLibraryStorage, reloadLibraryStorage, submitLibrarySearch, clearLibrarySearch, refreshLibrary, loadMoreLibrary, loadLibrary, loadLibraryStorage, libraryErrorMessage, libraryStorageErrorMessage, libraryMutationErrorMessage, renderLibrary, renderLibraryTopicKnowledge, buildLibraryTopicKnowledgeCard, renderLibraryStorage, buildLibrarySavedPressure, buildLibraryStorageUsage, formatLibraryStorageCount, libraryStorageMetric, buildLibraryStorageRecommendation, reviewLibraryStorageRecommendation, buildLibrarySavedRecommendation, reviewSavedRecommendation, libraryStateMessage, buildLibraryCard, libraryMetaChip, selectLibraryItem, closeLibraryDetail, renderLibraryDetail, buildLibraryDetail, removeLibraryItem, releaseLibraryItem, forgetLibraryItem, keepSavedItem, doneSavedItem, mutateLibraryItem, appendLibraryDetailField, appendLibraryLabels, appendLibraryMediaMetadata
+} = createLibraryUi({
+  $: (...args) => $(...args),
+  api,
+  buildSourceIcon,
+  configureNativePostLink: (...args) => configureNativePostLink(...args),
+  formatDate,
+  safeMediaUrl,
+  safeSourceUrl,
+  sourceDescriptors,
+  sourceLabel,
+  state,
+});
+const {
+  syncInboxSubView, setInboxSubView, loadInbox, renderInbox, buildInboxSession, buildSessionModelUsage, modelUsageMessage, buildModelUsageHelp, renderModelUsageReport, buildModelUsageCategory, modelUsageCategoryProfile, buildModelUsageEntry, modelUsageInvocationCount, modelUsageSummary, formatTokenCount, loadAggregateModelUsage, buildInboxPreferenceDecisions, buildInboxPreferenceDecision, buildAIDetectionDiagnostic, buildAIDetectorYield, buildEventResolutionDiagnostic, buildInboxRun, buildVisionEvaluationTelemetry, inboxRunCaptureReliabilityNotice, buildCaptureCandidateTelemetry, buildMediaAcquisitionTelemetry, buildCaptureSurfaceTelemetry, buildAcquisitionIdentityTelemetry, inboxSessionFlowText, inboxRunMetricText, buildInboxFlowInspector, buildInboxFlowItem, inboxFlowOutcomeLabel, inboxContinuityLabel, inboxStatusTone
+} = createInboxUi({
+  $: (...args) => $(...args),
+  api,
+  configureNativePostLink: (...args) => configureNativePostLink(...args),
+  feedbackButton,
+  formatDate,
+  formatDuration,
+  formatDurationBetween,
+  formatReasoningEffort: (...args) => formatReasoningEffort(...args),
+  formatReasoningModel: (...args) => formatReasoningModel(...args),
+  formatReasoningProvider: (...args) => formatReasoningProvider(...args),
+  humanize,
+  invalidateLibraryStorage: (...args) => invalidateLibraryStorage(...args),
+  refreshTimeline: (...args) => refreshTimeline(...args),
+  safeSourceUrl,
+  scheduleBackToTop: (...args) => scheduleBackToTop(...args),
+  showError,
+  sourceLabel,
+  state,
+  updatePolicyBadge: (...args) => updatePolicyBadge(...args),
+});
+const {
+  renderSettings, syncReasoningProviderSelection, beginSettingsProviderSelection, renderSourceSettingsValues, renderReasoningProcesses, formatReasoningProvider, formatReasoningModel, formatReasoningEffort, readSettingsDraft, refreshSettingsDirtyState, renderSettingsDirtyState, saveSettings, reasoningProfileValue, persistSettings, renderReasoningProviderControl, detectReasoningExecutable, syncLoadProfileSettings, syncSemanticEventSettings, syncAIDetectionSettings, resetSemanticEventMergeThreshold
+} = createSettingsFeature({
+  $: (...args) => $(...args),
+  DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD,
+  DEFAULT_TIMELINE_BATCH_GAP_PX,
+  DEFAULT_TIMELINE_BOUNDARY_RETURN_MS,
+  LOAD_PROFILE_PRESETS,
+  RELEASE_REASONING_DEFAULTS,
+  api,
+  applyPostFreshnessStyle: (...args) => applyPostFreshnessStyle(...args),
+  applySingleImageFit: (...args) => applySingleImageFit(...args),
+  applyStreamWidth: (...args) => applyStreamWidth(...args),
+  applyTimelineBatchGap: (...args) => applyTimelineBatchGap(...args),
+  applyTimelineBoundaryReturnDuration: (...args) => applyTimelineBoundaryReturnDuration(...args),
+  bridgeSourceReadiness: (...args) => bridgeSourceReadiness(...args),
+  openResetDialog: (...args) => openResetDialog(...args),
+  openSettingsProviderDialog: (...args) => openSettingsProviderDialog(...args),
+  refreshTimeline: (...args) => refreshTimeline(...args),
+  releaseBackToTopBoundary: (...args) => releaseBackToTopBoundary(...args),
+  renderActiveReasoningProvider: (...args) => renderActiveReasoningProvider(...args),
+  renderAutoUpdateStatus: (...args) => renderAutoUpdateStatus(...args),
+  renderCollectionRuntime: (...args) => renderCollectionRuntime(...args),
+  getSettingsDirty: () => settingsDirty,
+  shouldShowOnboardingLearning: (...args) => shouldShowOnboardingLearning(...args),
+  showError,
+  sourceDescriptors,
+  state,
+  syncAutoUpdateModeSettings: (...args) => syncAutoUpdateModeSettings(...args),
+  syncOnboardingLearning: (...args) => syncOnboardingLearning(...args),
+});
+const {
+  renderAutoUpdateStatus, autoUpdateModeLabel, autoUpdateModeDescription, syncAutoUpdateModeSettings, prepareBatchNow, openAutoUpdateSettings, handleAutoUpdateTimelineAction, resetAutoUpdateBudget, confirmXCaptureRecovery, confirmCodexUsageRestored
+} = createAutoUpdateUi({
+  $: (...args) => $(...args),
+  api,
+  formatDate,
+  formatSchedulerMoment,
+  formatTokenCount: (...args) => formatTokenCount(...args),
+  humanize,
+  renderNativeReaderNotice: (...args) => renderNativeReaderNotice(...args),
+  renderSession: (...args) => renderSession(...args),
+  renderTimelineActions: (...args) => renderTimelineActions(...args),
+  setNoticeText,
+  setView,
+  showError,
+  sourceLabel,
+  startPolling: (...args) => startPolling(...args),
+  state,
+});
+const {
+  applyStreamWidth, applySingleImageFit, applyPostFreshnessStyle, scheduleTimelineSidePanePosition, syncTimelineSidePanePosition, applyTimelineBatchGap, resetTimelineBatchGap, applyTimelineBoundaryReturnDuration, resetTimelineBoundaryReturnDuration, scheduleBackToTop, syncBackToTopNow, timelineContentContextObstacles, syncBackToTopPosition, syncBackToTopBoundaryPosition, releaseBackToTopBoundary, returnToTop, refreshTimeline, orderTimelineForRevealedBatch, handleFinishLineAction, revealPreparedBatch, routeAIDetectedItems, renderTimeline, renderTimelineNow, renderTimelineActions, observeTimelineItem, scheduleAIDeepRefresh, timelineInteractionActive, queueBackgroundTimelineRefresh, flushBackgroundTimelineRefresh, renderTimelineSidePane, timelineSidePaneAvailable, syncTimelineSidePaneVisibility, openTimelineSidePane, closeTimelineSidePane, populateTimelineSidePane
+} = createTimelineRendering({
+  $: (...args) => $(...args),
+  AI_DEEP_POLL_INTERVAL_MS,
+  BACK_TO_TOP_THRESHOLD_PX,
+  DEFAULT_TIMELINE_BATCH_GAP_PX,
+  DEFAULT_TIMELINE_BOUNDARY_RETURN_MS,
+  api,
+  buildTimelineItem: (...args) => buildTimelineItem(...args),
+  closeTimelineContentContextDrawer: (...args) => closeTimelineContentContextDrawer(...args),
+  formatDate,
+  measureTimelineContentContextTabs: (...args) => measureTimelineContentContextTabs(...args),
+  renderAutoUpdateStatus: (...args) => renderAutoUpdateStatus(...args),
+  schedulePassiveMediaEnrichment: (...args) => schedulePassiveMediaEnrichment(...args),
+  scheduleTimelineContentContextPosition: (...args) => scheduleTimelineContentContextPosition(...args),
+  getScrollPerformanceTrace: () => scrollPerformanceTrace,
+  getScrollUIFrames: () => scrollUIFrames,
+  showError,
+  showNotice,
+  sourceIdentity,
+  startVisibleUpdate: (...args) => startVisibleUpdate(...args),
+  state,
+  stopObservingInlineVideoVisibilityWithin: (...args) => stopObservingInlineVideoVisibilityWithin(...args),
+  syncRunButtons: (...args) => syncRunButtons(...args),
+  syncTimelineContentContextTabs: (...args) => syncTimelineContentContextTabs(...args),
+  getTimelineScrollIdle: () => timelineScrollIdle,
+});
+const {
+  showOnboarding, updateOnboardingSummary, renderActiveReasoningProvider, sourceReadyForOnboarding, onboardingReadinessGate, saveOnboarding, completeOnboarding, shouldShowOnboardingLearning, syncOnboardingLearning, moveOnboardingLearning, showOnboardingLearningSlide, renderOnboardingLearningSlide, pauseOnboardingLearning, toggleOnboardingLearningPlayback, syncOnboardingLearningTimer, restartOnboardingLearningTimer, stopOnboardingLearningTimer, startPendingFirstCalibration, showCalibration, renderCalibration, buildCalibrationCard, showPreviousCalibrationSample, decideCalibration, renderSourceControls
+} = createOnboardingUi({
+  $: (...args) => $(...args),
+  ONBOARDING_LEARNING_INTERVAL_MS,
+  api,
+  bridgeSourceReadiness: (...args) => bridgeSourceReadiness(...args),
+  buildSourceCard: (...args) => buildSourceCard(...args),
+  clearNotice,
+  configureNativePostLink: (...args) => configureNativePostLink(...args),
+  firstRunCalibrationPending: (...args) => firstRunCalibrationPending(...args),
+  hideFailure: (...args) => hideFailure(...args),
+  humanize,
+  onboardingRequiresSetup,
+  openOnboardingProviderDialog: (...args) => openOnboardingProviderDialog(...args),
+  openSourceFromSettings: (...args) => openSourceFromSettings(...args),
+  refreshTimeline: (...args) => refreshTimeline(...args),
+  renderBrowserConnection: (...args) => renderBrowserConnection(...args),
+  renderOnboardingSourceReadiness: (...args) => renderOnboardingSourceReadiness(...args),
+  renderSettings: (...args) => renderSettings(...args),
+  renderSourceSessionReadiness: (...args) => renderSourceSessionReadiness(...args),
+  requestSourceSessionReadiness: (...args) => requestSourceSessionReadiness(...args),
+  safeSourceUrl,
+  scheduleBackToTop: (...args) => scheduleBackToTop(...args),
+  setPill,
+  setView,
+  showCalibrationRetry: (...args) => showCalibrationRetry(...args),
+  showError,
+  sourceDescriptors,
+  sourceLabel,
+  startVisibleUpdate: (...args) => startVisibleUpdate(...args),
+  state,
+  syncTimelineSidePaneVisibility: (...args) => syncTimelineSidePaneVisibility(...args),
+  terminalStatuses,
+});
+const {
+  onboardingProviderEntries, renderOnboardingProviderOptions, refreshReasoningProviderReadiness, syncProviderReadinessFeedback, openOnboardingProviderDialog, openSettingsProviderDialog, recheckOnboardingProviders, saveOnboardingProviderCredential, confirmOnboardingProvider, activateSettingsReasoningProvider, skipOnboardingProvider
+} = createProviderSetupUi({
+  $: (...args) => $(...args),
+  getONBOARDING_PROVIDER_COPY: () => ONBOARDING_PROVIDER_COPY,
+  api,
+  completeOnboarding: (...args) => completeOnboarding(...args),
+  renderActiveReasoningProvider: (...args) => renderActiveReasoningProvider(...args),
+  renderReasoningProcesses: (...args) => renderReasoningProcesses(...args),
+  renderReasoningProviderControl: (...args) => renderReasoningProviderControl(...args),
+  getSettingsDirty: () => settingsDirty,
+  state,
+});
+const {
+  revokeSourceAccessViaBridge, openResetDialog, closeResetDialog, syncResetConfirmation, submitReset
+} = createSettingsOperations({
+  $: (...args) => $(...args),
+  AI_HIDE_CONFIRMATION_PHRASE,
+  getREVOKE_SOURCE_ACCESS_TIMEOUT_MS: () => REVOKE_SOURCE_ACCESS_TIMEOUT_MS,
+  api,
+  persistSettings: (...args) => persistSettings(...args),
+  refreshSettingsDirtyState: (...args) => refreshSettingsDirtyState(...args),
+  state,
+  syncAIDetectionSettings: (...args) => syncAIDetectionSettings(...args),
+});
+const {
+  startScrollPerformanceTrace, saveScrollPerformanceTrace, downloadScrollPerformanceTrace, exportDiagnostics
+} = createDiagnosticsUi({
+  $: (...args) => $(...args),
+  api,
+  getScrollPerformanceTrace: () => scrollPerformanceTrace,
+  setView,
+});
+const {
+  handleTimelinePrimaryAction, startVisibleUpdate, cancelSession, startPolling, stopPolling, pollSession, releaseCaptureSurface, releaseCaptureSurfaceOnce, dispatch, renderSession, updatePolicyBadge, describeSessionProgress, renderNativeReaderNotice, closeNativeReadersAndResume, syncRunButtons, renderTimelineCalibrationProgress, preparedBatchDisabledReason, runDisabledReason, bridgeUnavailableReason, sourceAccessNeedsAttention, bridgeSourceReadiness, openSourceAccessSettings, showSessionFailure, isWindowsSecurityRuntimeFailure, matchingWindowsPortableBundleURL, firstRunCalibrationPending, showCalibrationRetry, showSessionOutcome, hideFailure
+} = createSessionUi({
+  $: (...args) => $(...args),
+  CAPTURE_CLEANUP_PENDING_DETAIL,
+  CAPTURE_CLEANUP_PENDING_MESSAGE,
+  api,
+  clearNotice,
+  defaultIntent,
+  drainPlaybackRecovery: (...args) => drainPlaybackRecovery(...args),
+  endpoint,
+  humanize,
+  getNativePostOpening: () => nativePostOpening,
+  pollCollectionRuntime: (...args) => pollCollectionRuntime(...args),
+  refreshTimeline: (...args) => refreshTimeline(...args),
+  renderAutoUpdateStatus: (...args) => renderAutoUpdateStatus(...args),
+  requestSourceSessionReadiness: (...args) => requestSourceSessionReadiness(...args),
+  retryBootstrap: (...args) => retryBootstrap(...args),
+  schedulePassiveMediaEnrichment: (...args) => schedulePassiveMediaEnrichment(...args),
+  setNoticeText,
+  setPill,
+  setView,
+  shouldShowOnboardingLearning: (...args) => shouldShowOnboardingLearning(...args),
+  showCalibration: (...args) => showCalibration(...args),
+  showError,
+  showNotice,
+  sourceLabel,
+  startPendingFirstCalibration: (...args) => startPendingFirstCalibration(...args),
+  state,
+  syncNativePostLinks: (...args) => syncNativePostLinks(...args),
+  syncOnboardingLearning: (...args) => syncOnboardingLearning(...args),
+  terminalStatuses,
+});
+const {
+  schedulePassiveMediaEnrichment, passiveMediaCandidates, enrichPassiveXMedia, lookupPassiveXMediaEvidence, xMediaCandidateId
+} = createPassiveMediaUi({
+  PASSIVE_MEDIA_LOOKUP_COOLDOWN_MS,
+  PASSIVE_MEDIA_LOOKUP_TIMEOUT_MS,
+  bridgeApi,
+  endpoint,
+  queueBackgroundTimelineRefresh: (...args) => queueBackgroundTimelineRefresh(...args),
+  sourceDescriptor,
+  state,
+});
+const {
+  buildTimelineItem, buildCollapsedDuplicate, buildExpandedTimelineItem, buildBrief, buildSourceCard, applyPostFreshness, refreshVisiblePostFreshness, buildAvatar, buildQuotedPost, buildExpandableText, buildAttachments, buildEngagement
+} = createTimelineContent({
+  QUOTE_TEXT_COLLAPSE_CHARACTERS,
+  QUOTE_TEXT_COLLAPSE_LINES,
+  SOURCE_TEXT_COLLAPSE_CHARACTERS,
+  SOURCE_TEXT_COLLAPSE_LINES,
+  buildAIDetectionControls: (...args) => buildAIDetectionControls(...args),
+  buildActions: (...args) => buildActions(...args),
+  buildForegroundRecaptureOffer: (...args) => buildForegroundRecaptureOffer(...args),
+  buildMedia: (...args) => buildMedia(...args),
+  buildMediaRecaptureButton: (...args) => buildMediaRecaptureButton(...args),
+  buildSourceIcon,
+  buildTimelineContentContextAnchor: (...args) => buildTimelineContentContextAnchor(...args),
+  closeTimelineContentContextDrawer: (...args) => closeTimelineContentContextDrawer(...args),
+  formatDate,
+  humanize,
+  initials,
+  mediaRecaptureReasonForEntry: (...args) => mediaRecaptureReasonForEntry(...args),
+  getPostScreenshotUI: () => postScreenshotUI,
+  safeMediaUrl,
+  safeSourceUrl,
+  sourceDescriptor,
+  sourceIdentity,
+  sourceLabel,
+  state,
+  syncTimelineContentContextTabs: (...args) => syncTimelineContentContextTabs(...args),
+});
+const {
+  buildAIDetectionControls, applyAIFeedback, loadAIFeedbackHistory
+} = createTimelineAiUi({
+  api,
+  formatDate,
+  humanize,
+  refreshTimeline: (...args) => refreshTimeline(...args),
+  showError,
+  sourceLabel,
+  state,
+});
+const {
+  buildMedia, buildTimelineMediaCarousel, buildImageMediaControl, buildVideoMedia, buildVideoPosterControl, activateInlineVideo, queueInlinePlaybackRecovery, playbackRecoveryReady, drainPlaybackRecovery, pauseOtherInlineVideos, observeInlineVideoVisibility, stopObservingInlineVideoVisibility, stopObservingInlineVideoVisibilityWithin, openMedia, moveMedia, renderMedia, mediaZoomMetrics, applyMediaZoom, syncMediaPanAffordance, mediaPanStartedOnScrollbar, beginMediaPan, moveMediaPan, endMediaPan, syncMediaZoomPresetControl, snapMediaZoom, adjustMediaZoom
+} = createTimelineMedia({
+  $: (...args) => $(...args),
+  configureNativePostLink: (...args) => configureNativePostLink(...args),
+  getPlaybackRecovery: () => playbackRecovery,
+  recordUIActivity: (...args) => recordUIActivity(...args),
+  safeMediaUrl,
+  safePlaybackUrl,
+  safeSourceUrl,
+  showNotice,
+  sourceDescriptor,
+  sourceLabel,
+  state,
+});
+const {
+  buildActions, buildTimelineReadLaterAction, buildSemanticCorrectionActions, showEventSuggestions, applySemanticCorrection, showCorrectionNotice, buildSourceLink, mediaRecaptureReasonForEntry, buildMediaRecaptureButton, buildForegroundRecaptureOffer, recaptureMedia, dispatchMediaRecapture
+} = createTimelineActions({
+  $: (...args) => $(...args),
+  api,
+  clearNotice,
+  configureNativePostLink: (...args) => configureNativePostLink(...args),
+  createNoticeDismissButton,
+  endpoint,
+  humanize,
+  invalidateLibraryStorage: (...args) => invalidateLibraryStorage(...args),
+  originalPostUrl,
+  refreshTimeline: (...args) => refreshTimeline(...args),
+  safePlaybackUrl,
+  safeSourceUrl,
+  setNoticeText,
+  showError,
+  sourceDescriptor,
+  state,
+  syncRunButtons: (...args) => syncRunButtons(...args),
+  getTimelineFeedbackUI: () => timelineFeedbackUI,
+});
+const {
+  timelineContentContextAnchor, timelineContentContextTrigger, measureTimelineContentContextTabs, syncTimelineContentContextTabs, timelineContentContextFeedbackKey, submitTimelineContentContextFeedback, renderTimelineContentContextMatch, renderTimelineContentContextTopicInsight, renderDirectContext, renderTimelineContentContextDrawer, contentContextDrawerMotionDuration, revealTimelineContentContextDrawer, closeTimelineContentContextDrawer, timelineContentContextFocusIsInsideDrawer, openTimelineContentContext, toggleTimelineContentContext, observeTimelineContentContextAnchor, syncTimelineContentContextExpandAction, syncTimelineContentContextPosition, scheduleTimelineContentContextPosition, handleTimelineContentContextScroll, buildTimelineContentContextAnchor
+} = createTimelineContext({
+  $: (...args) => $(...args),
+  api,
+  configureNativePostLink: (...args) => configureNativePostLink(...args),
+  formatDate,
+  safeSourceUrl,
+  scheduleBackToTop: (...args) => scheduleBackToTop(...args),
+  showError,
+  sourceLabel,
+  state,
+  syncBackToTopNow: (...args) => syncBackToTopNow(...args),
+  getTimelineContentContextAnchorResizeObserver: () => timelineContentContextAnchorResizeObserver,
+});
+// Frontend composition bindings: end
 const settingsDirty = createDirtyStateTracker({
   readSnapshot: () => readSettingsDraft(state.bootstrap?.settings ?? {}),
   onChange: renderSettingsDirtyState,
@@ -452,30 +799,9 @@ window.addEventListener("message", (event) => {
   }
 });
 
-function recoverInvalidatedBridgeContext(message) {
-  if (!/Extension context invalidated/i.test(String(message ?? ""))) return false;
-  const now = Date.now();
-  const lastAttempt = Number(sessionStorage.getItem(BRIDGE_CONTEXT_RECOVERY_KEY) || 0);
-  if (Number.isFinite(lastAttempt) && now - lastAttempt < BRIDGE_CONTEXT_RECOVERY_WINDOW_MS) {
-    showError(new Error("AkuBridge reloaded, but this page could not reconnect automatically. Refresh AkuBrowser once to continue the queued update."));
-    return true;
-  }
-  sessionStorage.setItem(BRIDGE_CONTEXT_RECOVERY_KEY, String(now));
-  state.settingsUnloadBypass = true;
-  location.reload();
-  return true;
-}
+// Frontend feature: capture-ui.js#recoverInvalidatedBridgeContext
 
-function recoverInvalidBridgeToken(code) {
-  if (code !== "invalid_bridge_token") return false;
-  const now = Date.now();
-  const lastAttempt = Number(sessionStorage.getItem(BRIDGE_TOKEN_RECOVERY_KEY) || 0);
-  if (Number.isFinite(lastAttempt) && now - lastAttempt < BRIDGE_CONTEXT_RECOVERY_WINDOW_MS) return false;
-  sessionStorage.setItem(BRIDGE_TOKEN_RECOVERY_KEY, String(now));
-  state.settingsUnloadBypass = true;
-  location.reload();
-  return true;
-}
+// Frontend feature: capture-ui.js#recoverInvalidBridgeToken
 
 $("#session-view-button").addEventListener("click", () => setView("timeline"));
 $("#library-view-button").addEventListener("click", () => setView("library"));
@@ -697,209 +1023,26 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("focus", refreshBridgeAfterUserReturn);
 
-function installUIActivityTracking() {
-  if (state.uiActivityTrackingInstalled) return;
-  state.uiActivityTrackingInstalled = true;
-  for (const eventName of ["pointerdown", "keydown", "touchstart", "wheel"]) {
-    window.addEventListener(eventName, () => recordUIActivity(false), { passive: true });
-  }
-}
+// Frontend feature: app-lifecycle.js#installUIActivityTracking
 
-function recordUIActivity(force) {
-  if (!state.bootstrap || document.visibilityState !== "visible") return;
-  const now = Date.now();
-  if (!force && now - state.lastUIActivitySentAt < 60_000) return;
-  state.lastUIActivitySentAt = now;
-  api("/api/ui/activity", { method: "POST" })
-    .then(({ autoUpdate }) => {
-      if (!autoUpdate || !state.bootstrap) return;
-      state.bootstrap.autoUpdate = autoUpdate;
-      renderAutoUpdateStatus(autoUpdate);
-    })
-    .catch((error) => {
-      console.warn("Recent user activity could not be recorded.", error);
-    });
-}
+// Frontend feature: app-lifecycle.js#recordUIActivity
 
-async function bootstrap(options = {}) {
-  window.dispatchEvent(new CustomEvent("aku-startup-stage", { detail: "restoring" }));
-  clearTimeout(state.bootstrapRetryTimer);
-  state.bootstrapRetryTimer = null;
-  state.bootstrapController?.abort();
-  const attempt = state.bootstrapAttempt + 1;
-  const controller = new AbortController();
-  state.bootstrapAttempt = attempt;
-  state.bootstrapController = controller;
-  state.bootstrapLoading = true;
-  if (options.userInitiated) state.bootstrapError = null;
-  syncRunButtons();
-  const timeout = setTimeout(() => controller.abort(), BOOTSTRAP_TIMEOUT_MS);
-  try {
-    const restored = await api("/api/bootstrap", { signal: controller.signal });
-    if (attempt !== state.bootstrapAttempt) return;
-    if (!["not_started", "completed"].includes(restored?.onboarding?.status)) {
-      throw new Error("AkuBrowser could not restore the authoritative onboarding state. Waiting for AkuSidecar to recover.");
-    }
-    clearNotice();
-    window.dispatchEvent(new CustomEvent("aku-startup-stage", { detail: "rendering" }));
-    state.bootstrap = restored;
-    xDailyControls.reset(restored.xCapture);
-    instagramTrialControls.reset(restored.instagramCapture);
-    state.bootstrapError = null;
-    state.releasedCaptureSources.clear();
-    state.lastUIActivitySentAt = 0;
-    installUIActivityTracking();
-    recordUIActivity(true);
-    state.session = state.bootstrap.activeSession;
-    state.bootstrapLoading = false;
-    renderSourceControls();
-    renderLibrarySourceOptions();
-    renderLibrary();
-    $("#runtime-version").textContent = `${state.bootstrap.version} · ${state.bootstrap.runtime}`;
-    $("#bridge-contract").textContent = state.bootstrap.bridgeContractVersion;
-    renderActiveReasoningProvider();
-    $("#database-status").textContent = state.bootstrap.database?.status ?? "healthy";
-    renderDatabaseHealth(state.bootstrap.databaseHealth);
-    renderDeployment(state.bootstrap.deployment);
-    setPill("#sidecar-status", "AkuSidecar ready", "ok");
-    renderBridge(state.bootstrap.bridge);
-    renderSettings(state.bootstrap.settings);
-    state.timelineBatches = state.bootstrap.timelineBatches ?? [];
-    renderTimeline(state.bootstrap.timeline ?? [], state.bootstrap.latestCheck ?? null, state.timelineBatches);
-    renderSession();
-    if (onboardingRequiresSetup()) {
-      showOnboarding(false);
-    } else if (state.bootstrap.calibration?.active) {
-      showCalibration(state.bootstrap.calibration.active);
-    } else {
-      setView(state.currentView);
-    }
-    $("#startup-recovery").hidden = true;
-    window.dispatchEvent(new CustomEvent("aku-startup-stage", { detail: "ready" }));
-    pingBridge();
-    bridgeActionLoop();
-    setInterval(pingBridge, 30_000);
-    state.collectionPoller ??= setInterval(pollCollectionRuntime, 2000);
-    setInterval(pollAutoUpdate, 15_000);
-    databaseHealthPoller ??= setInterval(pollDatabaseHealth, 60_000);
-    void refreshLivingTopicNotificationProjection();
-    if (state.session) startPolling();
-  } catch (error) {
-    if (attempt !== state.bootstrapAttempt) return;
-    const failure = error?.name === "AbortError"
-      ? new Error("AkuSidecar did not finish restoring within 45 seconds. Retry the connection while the active check continues in the background.")
-      : error;
-    state.bootstrapError = failure;
-    $("#startup-recovery-heading").textContent = "AkuBrowser is still connecting";
-    $("#startup-recovery-detail").textContent = "The interface is retrying automatically. You can reload this page if it remains here; you do not need to download Chrome.";
-    showError(failure);
-    syncRunButtons();
-    state.bootstrapRetryTimer = setTimeout(() => bootstrap(), BOOTSTRAP_RETRY_MS);
-  } finally {
-    clearTimeout(timeout);
-    if (attempt === state.bootstrapAttempt) state.bootstrapController = null;
-  }
-}
+// Frontend feature: app-lifecycle.js#bootstrap
 
-function renderDeployment(deployment) {
-  const mode = deployment?.mode ?? "unknown";
-  const installKind = deployment?.runtimeInstallKind;
-  const labels = {
-    development: "Development",
-    acceptance: "Stable candidate · 3B",
-    "production-store": "Production · Web Store",
-    "production-offline": "Production · Offline bundle",
-    "production-installed-app": "Production · Installed app",
-    unknown: "Mode unknown",
-  };
-  const suffix = installKind && !["workspace", "installed"].includes(installKind)
-    ? ` · ${installKind}`
-    : "";
-  setPill("#deployment-status", `${labels[mode] ?? "Mode invalid"}${suffix}`, mode === "unknown" ? "warning" : "neutral");
-  $("#scroll-trace-controls").classList.toggle("hidden", mode !== "development");
-}
+// Frontend feature: app-lifecycle.js#renderDeployment
 
-async function pollAutoUpdate() {
-  if (!state.bootstrap || state.pollInFlight) return;
-  try {
-    const [{ autoUpdate }, { session }] = await Promise.all([
-      api("/api/auto-update/status"),
-      api("/api/sessions/active"),
-    ]);
-    state.bootstrap.autoUpdate = autoUpdate;
-    renderAutoUpdateStatus(autoUpdate);
-    if (!state.session && session) {
-      state.session = session;
-      renderSession();
-      startPolling();
-    }
-  } catch (error) {
-    console.warn("Auto Update status refresh deferred.", error);
-  }
-  void refreshLivingTopicNotificationProjection();
-}
+// Frontend feature: app-lifecycle.js#pollAutoUpdate
 
-const shownDatabaseIssues = new Set();
-let databaseCleanupBusy = false;
-let databaseHealthPoller = null;
-let databaseHealthPollInFlight = false;
+// Frontend feature: app-lifecycle.js#shownDatabaseIssues
+// Frontend feature: app-lifecycle.js#databaseCleanupBusy
+// Frontend feature: app-lifecycle.js#databaseHealthPoller
+// Frontend feature: app-lifecycle.js#databaseHealthPollInFlight
 
-async function pollDatabaseHealth() {
-  if (!state.bootstrap || document.visibilityState !== "visible" || databaseCleanupBusy || databaseHealthPollInFlight) return;
-  databaseHealthPollInFlight = true;
-  try {
-    const { databaseHealth } = await api("/api/database/health");
-    renderDatabaseHealth(databaseHealth);
-  } catch (error) {
-    console.warn("Database health refresh deferred.", error);
-  } finally {
-    databaseHealthPollInFlight = false;
-  }
-}
+// Frontend feature: app-lifecycle.js#pollDatabaseHealth
 
-function renderDatabaseHealth(health, force = false) {
-  if (!health || !state.bootstrap) return;
-  state.bootstrap.databaseHealth = health;
-  const attention = health.status !== "healthy";
-  const status = $("#database-status");
-  status.textContent = attention ? "Cleanup required · review" : health.storagePressure ? "Storage pressure · young history retained" : "healthy";
-  status.title = attention ? "Review local database cleanup" : health.storagePressure ? "Database exceeds its storage boundary. Only expired history may be trimmed." : "Local database is healthy";
-  const dialog = $("#database-maintenance-dialog");
-  if (!attention) { if (dialog.open) dialog.close(); return; }
-  if (databaseCleanupBusy) return;
-  $("#database-maintenance-summary").textContent = `${health.orphanRows} disconnected rows across ${health.affectedTables.length} affected relationships.`;
-  $("#database-maintenance-status").textContent = health.repairable ? "Choose whether to keep a verified local backup before cleanup." : "This issue needs manual repair. Automatic cleanup is unavailable; your data has been left in place.";
-  $("#database-maintenance-clean").disabled = !health.repairable;
-  $("#database-maintenance-backup").disabled = !health.repairable;
-  const key = `aku-database-maintenance:${health.fingerprint}`;
-  let seen = shownDatabaseIssues.has(key);
-  try { seen ||= localStorage.getItem(key) === "seen"; } catch { /* In-memory deduplication remains available. */ }
-  if (force || !seen) {
-    shownDatabaseIssues.add(key);
-    try { localStorage.setItem(key, "seen"); } catch { /* Storage can be unavailable. */ }
-    if (!dialog.open) dialog.showModal();
-  }
-}
+// Frontend feature: app-lifecycle.js#renderDatabaseHealth
 
-async function cleanDatabase(backup) {
-  const health = state.bootstrap?.databaseHealth;
-  if (databaseCleanupBusy || !health?.repairable) return;
-  databaseCleanupBusy = true;
-  for (const id of ["clean", "backup", "later"]) $(`#database-maintenance-${id}`).disabled = true;
-  $("#database-maintenance-status").textContent = backup ? "Verifying backup and cleaning…" : "Cleaning disconnected data…";
-  try {
-    const result = await api("/api/database/cleanup", { method: "POST", body: { confirmed: true, fingerprint: health.fingerprint, backup } });
-    $("#database-maintenance-dialog").close();
-    await bootstrap();
-    if (result.backupPath) showNotice(`Cleanup complete. Backup: ${result.backupPath}`);
-    else showNotice(`Cleanup complete. Removed ${result.removedRows} rows without a backup.`);
-  } catch (error) {
-    $("#database-maintenance-status").textContent = error.message;
-  } finally {
-    databaseCleanupBusy = false;
-    for (const id of ["clean", "backup", "later"]) $(`#database-maintenance-${id}`).disabled = false;
-  }
-}
+// Frontend feature: app-lifecycle.js#cleanDatabase
 
 function setView(view) {
   view = normalizePage(view);
@@ -945,2149 +1088,206 @@ function setView(view) {
   scheduleBackToTop();
 }
 
-function settingsStorageDetail(label, value) {
-  const row = document.createElement("div");
-  const term = document.createElement("dt");
-  const definition = document.createElement("dd");
-  term.textContent = label;
-  definition.textContent = value;
-  row.append(term, definition);
-  return row;
-}
+// Frontend feature: settings-storage-ui.js#settingsStorageDetail
 
-function renderSettingsStorage() {
-  const { usage, loading, error } = state.settingsStorage;
-  const status = $("#settings-storage-status");
-  const database = $("#settings-storage-database");
-  const protection = $("#settings-storage-protection");
-  const details = $("#settings-storage-detail-list");
-  const setMeter = (name, percent, label) => {
-    const meter = $(`#settings-storage-${name}-meter`);
-    meter.querySelector("span").style.width = `${percent ?? 0}%`;
-    if (percent === null) meter.removeAttribute("aria-valuenow");
-    else meter.setAttribute("aria-valuenow", String(Math.round(percent)));
-    meter.setAttribute("aria-valuetext", label);
-  };
-  if (!usage) {
-    $("#settings-storage-mode").textContent = loading ? "Loading…" : "Unavailable";
-    status.textContent = loading ? "Loading storage usage…" : "Storage usage unavailable";
-    status.classList.remove("settings-storage-pressure");
-    database.textContent = "Database size: unavailable";
-    $("#settings-storage-items").textContent = "—";
-    $("#settings-storage-bytes").textContent = "—";
-    setMeter("items", null, "Unavailable");
-    setMeter("bytes", null, "Unavailable");
-    protection.textContent = error ? "Could not load storage usage." : "Storage usage is unavailable.";
-    details.replaceChildren();
-    return;
-  }
-  status.textContent = error ? `${usage.status} · last known; refresh failed` : loading ? `${usage.status} · refreshing…` : usage.status;
-  status.classList.toggle("settings-storage-pressure", usage.pressure);
-  database.textContent = `Database used: ${formatLibraryStorageBytes(usage.databaseEffectiveBytes)} (whole SQLite database)`;
-  $("#settings-storage-items").textContent = `${usage.totalItems.toLocaleString()} / ${usage.maxItems.toLocaleString()}`;
-  $("#settings-storage-bytes").textContent = `${formatLibraryStorageBytes(usage.logicalBytes)} / ${formatLibraryStorageBytes(usage.maxLogicalBytes)}`;
-  setMeter("items", usage.itemPercent, `${usage.totalItems} of ${usage.maxItems} cards`);
-  setMeter("bytes", usage.bytePercent, `${formatLibraryStorageBytes(usage.logicalBytes)} of ${formatLibraryStorageBytes(usage.maxLogicalBytes)}`);
-  const eligible = usage.eligible === null ? "unknown" : usage.eligible.toLocaleString();
-  const count = (value) => Number.isSafeInteger(value) && value >= 0 ? value.toLocaleString() : "Unknown";
-  protection.textContent = usage.active
-    ? `${count(usage.protectedItems)} protected · ${eligible} eligible. Eligible cards are trimmed during retention maintenance.`
-    : `${count(usage.protectedItems)} protected · ${eligible} eligible. Preview only; no Timeline cards are removed.`;
-  $("#settings-storage-mode").textContent = usage.active ? "Active retention" : "Preview only";
-  const evaluated = usage.evaluatedAt ? new Date(usage.evaluatedAt) : null;
-  details.replaceChildren(
-    settingsStorageDetail("Policy", `${usage.policy?.protectionDays ?? "Unknown"} days protected · ${usage.policy?.routineExpiryDays ?? "Unknown"} days routine expiry`),
-    settingsStorageDetail("Routine-expired", count(usage.routineExpiredItems)),
-    settingsStorageDetail("Hidden", count(usage.hiddenItems)),
-    settingsStorageDetail("Missing presentation time", count(usage.missingPresentationItems)),
-    settingsStorageDetail("Processing cards protected", count(usage.processingProtectedItems)),
-    settingsStorageDetail("Needs attention", usage.needsAttention === true ? "Yes" : usage.needsAttention === false ? "No" : "Unknown"),
-    settingsStorageDetail("Potential reclaim", `${count(usage.reclaimableItems)} cards · ${formatLibraryStorageBytes(usage.reclaimableBytes)}`),
-    settingsStorageDetail("Database allocated", formatLibraryStorageBytes(usage.databaseAllocatedBytes)),
-    settingsStorageDetail("Evaluated", evaluated && !Number.isNaN(evaluated.getTime()) ? evaluated.toLocaleString() : "Unknown"),
-  );
-}
+// Frontend feature: settings-storage-ui.js#renderSettingsStorage
 
-async function loadSettingsStorage() {
-  if (state.settingsStorage.loading) return;
-  state.settingsStorage.loading = true;
-  state.settingsStorage.error = null;
-  renderSettingsStorage();
-  try {
-    const usage = settingsStorageView(await api("/api/timeline/storage"));
-    if (!usage) throw new Error("Incomplete storage usage response");
-    state.settingsStorage.usage = usage;
-  } catch (error) {
-    state.settingsStorage.error = error;
-  } finally {
-    state.settingsStorage.loading = false;
-    renderSettingsStorage();
-  }
-}
+// Frontend feature: settings-storage-ui.js#loadSettingsStorage
 
 function onboardingRequiresSetup() {
   return state.bootstrap?.onboarding?.status === "not_started";
 }
 
-async function loadLivingTopics(force = false) {
-  const topicsState = state.livingTopics;
-  if (topicsState.loading || (!force && topicsState.topics.length && topicsState.detail)) return;
-  topicsState.loading = true;
-  topicsState.error = null;
-  renderLivingTopics();
-  try {
-    const response = await api(buildLivingTopicsPath());
-    topicsState.topics = Array.isArray(response?.topics) ? response.topics : [];
-    updateLivingTopicNotificationFromTopics(topicsState.topics);
-    if (topicsState.selectedId && !topicsState.topics.some((topic) => topic.id === topicsState.selectedId)) {
-      topicsState.selectedId = "";
-      topicsState.detail = null;
-      resetLivingTopicSnapshotStatus();
-    }
-    const target = topicsState.selectedId || topicsState.topics[0]?.id || "";
-    if (target) await loadLivingTopicDetail(target, { skipListRender: true });
-  } catch (error) {
-    topicsState.error = error;
-  } finally {
-    topicsState.loading = false;
-    renderLivingTopics();
-  }
-}
-
-async function refreshLivingTopicNotificationProjection() {
-  const topicsState = state.livingTopics;
-  if (!state.bootstrap || topicsState.notificationLoading) return;
-  topicsState.notificationLoading = true;
-  try {
-    const response = await api(buildLivingTopicNotificationsPath());
-    state.livingTopicNotifications = normalizeLivingTopicNotifications(response?.notifications);
-    renderLivingTopicNotificationBadge();
-  } catch (error) {
-    console.warn("Living Topics notification refresh deferred.", error);
-  } finally {
-    topicsState.notificationLoading = false;
-  }
-}
-
-function updateLivingTopicNotificationFromTopics(topics) {
-  const values = Array.isArray(topics) ? topics : [];
-  const active = values.filter((topic) => Number(topic?.newEvidenceCount) > 0);
-  state.livingTopicNotifications = normalizeLivingTopicNotifications({
-    newEvidenceCount: active.reduce((total, topic) => total + Number(topic.newEvidenceCount || 0), 0),
-    topicsWithNewEvidence: active.length,
-    latestEvidenceAt: active.map((topic) => topic.newEvidenceAt || "").sort().at(-1) || "",
-  });
-  renderLivingTopicNotificationBadge();
-}
-
-function renderLivingTopicNotificationBadge() {
-  const summary = normalizeLivingTopicNotifications(state.livingTopicNotifications);
-  const badge = $("#living-topics-nav-badge");
-  const button = $("#topics-view-button");
-  const count = summary.newEvidenceCount;
-  badge.classList.toggle("hidden", count === 0);
-  badge.textContent = count > 99 ? "99+" : String(count);
-  badge.setAttribute("aria-label", count ? `${count} new Living Topics evidence item${count === 1 ? "" : "s"}` : "No new Living Topics evidence");
-  button.setAttribute("aria-label", count ? `Living Topics, ${count} new evidence item${count === 1 ? "" : "s"}` : "Living Topics");
-}
-
-async function selectLivingTopic(id) {
-  const topicsState = state.livingTopics;
-  await loadLivingTopicDetail(id);
-  const topic = topicsState.topics.find((value) => value.id === id);
-  if (topicsState.error || !topic?.newEvidenceCount || topicsState.detail?.topic?.id !== id || topicsState.acknowledgingTopicId) return;
-  topicsState.acknowledgingTopicId = id;
-  try {
-    const response = await api(buildLivingTopicSeenPath(id), { method: "POST", body: { seenThrough: topic.newEvidenceAt } });
-    if (!response?.topic?.id) throw new Error("AkuSidecar returned an incomplete Living Topic acknowledgment.");
-    topicsState.topics = topicsState.topics.map((value) => value.id === id ? response.topic : value);
-    if (topicsState.detail?.topic?.id === id) topicsState.detail.topic = response.topic;
-    updateLivingTopicNotificationFromTopics(topicsState.topics);
-  } catch (error) {
-    topicsState.error = error;
-  } finally {
-    topicsState.acknowledgingTopicId = "";
-    renderLivingTopics();
-  }
-}
-
-async function loadLivingTopicDetail(id, options = {}) {
-  const topicsState = state.livingTopics;
-  const path = buildLivingTopicPath(id);
-  if (!path || topicsState.detailLoading) return;
-  if (topicsState.selectedId !== id) {
-    resetLivingTopicSnapshotStatus();
-    topicsState.activeTab = LIVING_TOPIC_TAB_SNAPSHOT;
-    topicsState.candidates = [];
-    topicsState.candidatesLoaded = false;
-  }
-  topicsState.selectedId = id;
-  topicsState.detailLoading = true;
-  topicsState.error = null;
-  renderLivingTopics();
-  try {
-    topicsState.detail = await api(path);
-    if (["pending", "running"].includes(topicsState.detail?.topic?.understandingStatus)) {
-      scheduleLivingTopicUnderstandingPoll(id);
-    }
-    if (["pending", "running"].includes(topicsState.detail?.topic?.routingStatus)) {
-      scheduleLivingTopicActivationPoll(id);
-    }
-    if (topicsState.activeTab === LIVING_TOPIC_TAB_EVIDENCE) {
-      await loadLivingTopicCandidates($("#living-topic-evidence-query")?.value || "");
-    }
-  } catch (error) {
-    topicsState.error = error;
-  } finally {
-    topicsState.detailLoading = false;
-    if (!options.skipListRender) renderLivingTopics();
-  }
-}
-
-async function createLivingTopic(event) {
-  event.preventDefault();
-  const topicsState = state.livingTopics;
-  const name = normalizeLivingTopicName($("#living-topic-create-name").value);
-  if (!name || topicsState.mutationLoading) return;
-  topicsState.mutationLoading = true;
-  topicsState.error = null;
-  renderLivingTopics();
-  try {
-    const response = await api(buildLivingTopicsPath(), { method: "POST", body: { name } });
-    $("#living-topic-create-name").value = "";
-    resetLivingTopicSnapshotStatus();
-    topicsState.activeTab = LIVING_TOPIC_TAB_SNAPSHOT;
-    topicsState.candidates = [];
-    topicsState.candidatesLoaded = false;
-    topicsState.selectedId = response.topic.id;
-    topicsState.detail = null;
-    await loadLivingTopics(true);
-  } catch (error) {
-    topicsState.error = error;
-  } finally {
-    topicsState.mutationLoading = false;
-    renderLivingTopics();
-  }
-}
-
-async function renameLivingTopic(event) {
-  event.preventDefault();
-  const topicsState = state.livingTopics;
-  const name = normalizeLivingTopicName($("#living-topic-rename-name").value);
-  const description = $("#living-topic-description").value.trim();
-  const aliases = $("#living-topic-aliases").value.split(",").map((value) => value.trim()).filter(Boolean);
-  const includeCriteria = $("#living-topic-includes").value.trim();
-  const excludeCriteria = $("#living-topic-excludes").value.trim();
-  const path = buildLivingTopicPath(topicsState.selectedId);
-  if (!name || !path || topicsState.mutationLoading) return;
-  topicsState.mutationLoading = true;
-  topicsState.error = null;
-  renderLivingTopics();
-  try {
-    await api(path, { method: "PATCH", body: { name, description, aliases, includeCriteria, excludeCriteria } });
-    await loadLivingTopics(true);
-  } catch (error) {
-    topicsState.error = error;
-  } finally {
-    topicsState.mutationLoading = false;
-    renderLivingTopics();
-  }
-}
-
-async function searchLivingTopicEvidence(event) {
-  event?.preventDefault?.();
-  await loadLivingTopicCandidates($("#living-topic-evidence-query")?.value || "");
-}
-
-async function loadLivingTopicCandidates(query = "") {
-  const topicsState = state.livingTopics;
-  if (!topicsState.selectedId || topicsState.candidatesLoading) return;
-  topicsState.candidatesLoading = true;
-  renderLivingTopics();
-  try {
-    const path = buildLibraryRequestPath({ query, limit: 12 });
-    const response = await api(path);
-    topicsState.candidates = Array.isArray(response?.items) ? response.items : [];
-    topicsState.candidatesLoaded = true;
-  } catch (error) {
-    topicsState.error = error;
-  } finally {
-    topicsState.candidatesLoading = false;
-    renderLivingTopics();
-  }
-}
-
-async function addLivingTopicMember(memoryItemId) {
-  const topicsState = state.livingTopics;
-  const path = buildLivingTopicMembersPath(topicsState.selectedId);
-  if (!path || topicsState.mutationLoading) return;
-  topicsState.mutationLoading = true;
-  topicsState.error = null;
-  resetLivingTopicSnapshotStatus();
-  renderLivingTopics();
-  try {
-    topicsState.detail = await api(path, { method: "POST", body: { memoryItemId } });
-    await refreshLivingTopicListProjection();
-    if (["pending", "running"].includes(topicsState.detail?.topic?.understandingStatus)) scheduleLivingTopicUnderstandingPoll(topicsState.selectedId);
-  } catch (error) {
-    topicsState.error = error;
-  } finally {
-    topicsState.mutationLoading = false;
-    renderLivingTopics();
-  }
-}
-
-async function removeLivingTopicMember(memoryItemId) {
-  const topicsState = state.livingTopics;
-  const path = buildLivingTopicMemberPath(topicsState.selectedId, memoryItemId);
-  if (!path || topicsState.mutationLoading) return;
-  topicsState.mutationLoading = true;
-  topicsState.error = null;
-  resetLivingTopicSnapshotStatus();
-  renderLivingTopics();
-  try {
-    topicsState.detail = await api(path, { method: "DELETE" });
-    await refreshLivingTopicListProjection();
-    if (["pending", "running"].includes(topicsState.detail?.topic?.understandingStatus)) scheduleLivingTopicUnderstandingPoll(topicsState.selectedId);
-  } catch (error) {
-    topicsState.error = error;
-  } finally {
-    topicsState.mutationLoading = false;
-    renderLivingTopics();
-  }
-}
-
-async function moveLivingTopicMember(memoryItemId, toTopicId) {
-  const topicsState = state.livingTopics;
-  const fromTopicId = topicsState.selectedId;
-  const path = buildLivingTopicMemberMovePath(fromTopicId, memoryItemId);
-  if (!path || !toTopicId || topicsState.mutationLoading) return;
-  const fromName = topicsState.topics.find((topic) => topic.id === fromTopicId)?.name || "the source topic";
-  const toName = topicsState.topics.find((topic) => topic.id === toTopicId)?.name || "the destination topic";
-  topicsState.mutationLoading = true;
-  topicsState.error = null;
-  resetLivingTopicSnapshotStatus();
-  renderLivingTopics();
-  try {
-    const response = await api(path, { method: "POST", body: { toTopicId } });
-    topicsState.lastMove = { ...response.move, fromName, toName };
-    topicsState.detail = await api(buildLivingTopicPath(fromTopicId));
-    await refreshLivingTopicListProjection();
-    scheduleLivingTopicUnderstandingPoll(fromTopicId);
-  } catch (error) {
-    topicsState.error = error;
-  } finally {
-    topicsState.mutationLoading = false;
-    renderLivingTopics();
-  }
-}
-
-async function undoLivingTopicMemberMove() {
-  const topicsState = state.livingTopics;
-  const move = topicsState.lastMove;
-  const path = buildLivingTopicMoveUndoPath(move?.id);
-  if (!path || topicsState.mutationLoading) return;
-  topicsState.mutationLoading = true;
-  topicsState.error = null;
-  renderLivingTopics();
-  try {
-    await api(path, { method: "POST" });
-    topicsState.lastMove = null;
-    topicsState.detail = await api(buildLivingTopicPath(topicsState.selectedId));
-    await refreshLivingTopicListProjection();
-    scheduleLivingTopicUnderstandingPoll(topicsState.selectedId);
-  } catch (error) {
-    topicsState.error = error;
-  } finally {
-    topicsState.mutationLoading = false;
-    renderLivingTopics();
-  }
-}
-
-async function requestLivingTopicActivation() {
-  const topicsState = state.livingTopics;
-  const path = buildLivingTopicActivationPath(topicsState.selectedId);
-  if (!path || topicsState.mutationLoading) return;
-  topicsState.mutationLoading = true;
-  topicsState.error = null;
-  renderLivingTopics();
-  try {
-    const response = await api(path, { method: "POST" });
-    topicsState.detail = response.detail;
-    await refreshLivingTopicListProjection();
-    scheduleLivingTopicActivationPoll(topicsState.selectedId);
-  } catch (error) {
-    topicsState.error = error;
-  } finally {
-    topicsState.mutationLoading = false;
-    renderLivingTopics();
-  }
-}
-
-async function reviewLivingTopicCandidate(memoryItemId, action) {
-  const topicsState = state.livingTopics;
-  const path = buildLivingTopicCandidateActionPath(topicsState.selectedId, memoryItemId, action);
-  if (!path || topicsState.mutationLoading) return;
-  topicsState.mutationLoading = true;
-  topicsState.error = null;
-  resetLivingTopicSnapshotStatus();
-  renderLivingTopics();
-  try {
-    topicsState.detail = await api(path, { method: "POST" });
-    await refreshLivingTopicListProjection();
-    if (["pending", "running"].includes(topicsState.detail?.topic?.understandingStatus)) scheduleLivingTopicUnderstandingPoll(topicsState.selectedId);
-  } catch (error) {
-    topicsState.error = error;
-  } finally {
-    topicsState.mutationLoading = false;
-    renderLivingTopics();
-  }
-}
-
-function resetLivingTopicSnapshotStatus() {
-  state.livingTopics.snapshotStatus = { kind: "idle", message: "", snapshotId: "" };
-}
-
-async function createLivingTopicSnapshot(event) {
-  event?.preventDefault?.();
-  const topicsState = state.livingTopics;
-  const path = buildLivingTopicSnapshotsPath(topicsState.selectedId);
-  if (topicsState.mutationLoading) return;
-  if (!path) {
-    topicsState.snapshotStatus = { kind: "error", message: "Select a topic before refreshing its understanding.", snapshotId: "" };
-    renderLivingTopics();
-    return;
-  }
-  topicsState.mutationLoading = true;
-  topicsState.error = null;
-  topicsState.snapshotStatus = { kind: "working", message: "Queuing a source-backed refresh…", snapshotId: "" };
-  renderLivingTopics();
-  try {
-    const response = await api(path, { method: "POST" });
-    if (!response?.detail?.topic?.id) throw new Error("AkuSidecar returned an incomplete refresh result.");
-    topicsState.detail = response.detail;
-    await refreshLivingTopicListProjection();
-    topicsState.snapshotStatus = {
-      kind: "working",
-      message: "Refreshing current understanding in the background…",
-      snapshotId: "",
-    };
-    scheduleLivingTopicUnderstandingPoll(topicsState.selectedId, true);
-  } catch (error) {
-    topicsState.snapshotStatus = {
-      kind: "error",
-      message: `Understanding could not be refreshed: ${error?.message || "Unknown error"}`,
-      snapshotId: "",
-    };
-  } finally {
-    topicsState.mutationLoading = false;
-    renderLivingTopics();
-  }
-}
-
-function scheduleLivingTopicUnderstandingPoll(topicId, announce = false) {
-  const topicsState = state.livingTopics;
-  if (!topicId || topicsState.understandingPollTopicId === topicId) return;
-  topicsState.understandingPollTopicId = topicId;
-  let attempts = 0;
-  const poll = async () => {
-    if (topicsState.selectedId !== topicId || attempts >= 60) {
-      topicsState.understandingPollTopicId = "";
-      return;
-    }
-    attempts += 1;
-    try {
-      const detail = await api(buildLivingTopicPath(topicId));
-      if (topicsState.selectedId !== topicId) return;
-      topicsState.detail = detail;
-      await refreshLivingTopicListProjection();
-      const understanding = detail?.topic?.understandingStatus || "idle";
-      if (!["pending", "running"].includes(understanding)) {
-        topicsState.understandingPollTopicId = "";
-        if (announce) {
-          topicsState.snapshotStatus = understanding === "failed"
-            ? { kind: "error", message: detail.topic.understandingLastError || "Automatic understanding refresh failed.", snapshotId: "" }
-            : { kind: "success", message: understanding === "insufficient_evidence" ? "More evidence is needed to build a useful understanding." : "Available topic evidence has been evaluated.", snapshotId: detail.topic.latestSnapshot?.id || "" };
-        }
-        renderLivingTopics();
-        return;
-      }
-      renderLivingTopics();
-    } catch (error) {
-      topicsState.understandingPollTopicId = "";
-      if (announce) topicsState.snapshotStatus = { kind: "error", message: error?.message || "Understanding refresh status could not be loaded.", snapshotId: "" };
-      renderLivingTopics();
-      return;
-    }
-    window.setTimeout(poll, 1000);
-  };
-  window.setTimeout(poll, 500);
-}
-
-function scheduleLivingTopicActivationPoll(topicId) {
-  const topicsState = state.livingTopics;
-  if (!topicId || topicsState.activationPollTopicId === topicId) return;
-  topicsState.activationPollTopicId = topicId;
-  let attempts = 0;
-  const poll = async () => {
-    if (topicsState.selectedId !== topicId || attempts >= 120) {
-      topicsState.activationPollTopicId = "";
-      return;
-    }
-    attempts += 1;
-    try {
-      const detail = await api(buildLivingTopicPath(topicId));
-      if (topicsState.selectedId !== topicId) return;
-      topicsState.detail = detail;
-      await refreshLivingTopicListProjection();
-      if (!["pending", "running"].includes(detail?.topic?.routingStatus)) {
-        topicsState.activationPollTopicId = "";
-        renderLivingTopics();
-        return;
-      }
-      renderLivingTopics();
-    } catch (error) {
-      topicsState.activationPollTopicId = "";
-      topicsState.error = error;
-      renderLivingTopics();
-      return;
-    }
-    window.setTimeout(poll, 1000);
-  };
-  window.setTimeout(poll, 500);
-}
-
-async function refreshLivingTopicListProjection() {
-  const response = await api(buildLivingTopicsPath());
-  state.livingTopics.topics = Array.isArray(response?.topics) ? response.topics : [];
-  updateLivingTopicNotificationFromTopics(state.livingTopics.topics);
-}
-
-function renderLivingTopics() {
-  const topicsState = state.livingTopics;
-  const status = $("#living-topics-status");
-  if (topicsState.error) status.textContent = topicsState.error.message || "Living Topics could not be loaded.";
-  else if (topicsState.loading) status.textContent = "Loading local topics…";
-  else if (topicsState.detailLoading) status.textContent = "Loading selected topic…";
-  else if (topicsState.mutationLoading) status.textContent = "Applying explicit topic action…";
-  else status.textContent = topicsState.topics.length ? `${topicsState.topics.length} local topic${topicsState.topics.length === 1 ? "" : "s"}` : "No topics yet. Create one to begin.";
-
-  $("#living-topic-create-form").querySelector("button").disabled = topicsState.mutationLoading;
-  const list = $("#living-topics-list");
-  if (!topicsState.topics.length) {
-    const empty = document.createElement("p");
-    empty.className = "library-state";
-    empty.textContent = "Create a Living Topic and describe what belongs. New final Timeline posts can then be routed automatically.";
-    list.replaceChildren(empty);
-  } else {
-    list.replaceChildren(...topicsState.topics.map((topic) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "living-topic-list-item";
-      button.classList.toggle("selected", topic.id === topicsState.selectedId);
-      button.setAttribute("aria-current", topic.id === topicsState.selectedId ? "true" : "false");
-      const name = document.createElement("strong");
-      name.textContent = topic.name;
-      const fresh = document.createElement("span");
-      fresh.className = "living-topic-new-badge";
-      fresh.textContent = topic.newEvidenceCount > 1 ? `New ${topic.newEvidenceCount}` : "New";
-      fresh.classList.toggle("hidden", !topic.newEvidenceCount);
-      const meta = document.createElement("small");
-      meta.textContent = `${topic.memberCount || 0} evidence${topic.suggestedCount ? ` · ${topic.suggestedCount} suggested` : ""} · ${livingTopicUnderstandingLabel(topic.understandingStatus)}`;
-      button.append(name, fresh, meta);
-      button.addEventListener("click", () => selectLivingTopic(topic.id));
-      return button;
-    }));
-  }
-  renderLivingTopicDetail();
-}
-
-function renderLivingTopicDetail() {
-  const topicsState = state.livingTopics;
-  const panel = $("#living-topic-detail");
-  const detail = topicsState.detail;
-  panel.classList.toggle("hidden", !detail);
-  if (!detail) return;
-  const topic = detail.topic;
-  renderLivingTopicDetailTabs();
-  $("#living-topic-detail-heading").textContent = topic.name;
-  $("#living-topic-rename-name").value = topic.name;
-  $("#living-topic-description").value = topic.description || "";
-  $("#living-topic-aliases").value = (topic.aliases || []).join(", ");
-  $("#living-topic-includes").value = topic.includeCriteria || "";
-  $("#living-topic-excludes").value = topic.excludeCriteria || "";
-  $("#living-topic-rename-form").querySelector("button").disabled = topicsState.mutationLoading;
-  $("#living-topic-member-count").textContent = `${detail.members.length} / ${LIVING_TOPIC_MAX_MEMBERS}`;
-  const snapshotButton = $("#living-topic-snapshot-button");
-  const understandingBusy = ["pending", "running"].includes(topic.understandingStatus);
-  snapshotButton.disabled = topicsState.mutationLoading || understandingBusy;
-  snapshotButton.textContent = understandingBusy ? "Refreshing…" : "Refresh now";
-  snapshotButton.setAttribute("aria-busy", understandingBusy ? "true" : "false");
-  const snapshotStatus = $("#living-topic-snapshot-status");
-  snapshotStatus.textContent = topicsState.snapshotStatus.message || livingTopicUnderstandingSummary(topic);
-  snapshotStatus.dataset.kind = topicsState.snapshotStatus.kind !== "idle" ? topicsState.snapshotStatus.kind : (topic.understandingStatus === "failed" ? "error" : understandingBusy ? "working" : "success");
-
-  const activationButton = $("#living-topic-activation-button");
-  const activationBusy = ["pending", "running"].includes(topic.routingStatus);
-  activationButton.disabled = topicsState.mutationLoading || activationBusy;
-  activationButton.textContent = activationBusy ? "Scanning…" : "Scan again";
-  activationButton.setAttribute("aria-busy", activationBusy ? "true" : "false");
-  const routingStatus = $("#living-topic-routing-status");
-  routingStatus.textContent = livingTopicRoutingSummary(topic);
-  routingStatus.dataset.kind = topic.routingStatus === "failed" ? "error" : activationBusy ? "working" : "success";
-  const suggestions = $("#living-topic-suggestions");
-  const memberIDs = new Set(detail.members.map((item) => item.id));
-  const suggested = (detail.candidates || []).filter((candidate) => candidate.status === "suggested" && !memberIDs.has(candidate.memoryItemId));
-  const reviewed = (detail.candidates || []).filter((candidate) => candidate.status === "accepted" || candidate.status === "rejected");
-  if (activationBusy && !suggested.length && !reviewed.length) {
-    const loading = document.createElement("p");
-    loading.className = "library-state";
-    loading.textContent = "Scanning recent local evidence without changing topic membership…";
-    suggestions.replaceChildren(loading);
-  } else if (!suggested.length && !reviewed.length) {
-    const empty = document.createElement("p");
-    empty.className = "library-state";
-    empty.textContent = "No local suggestions for the current criteria revision.";
-    suggestions.replaceChildren(empty);
-  } else {
-    suggestions.replaceChildren(...suggested.map(buildLivingTopicSuggestionCard), ...reviewed.map(buildLivingTopicReviewedCandidateCard));
-  }
-
-  const members = $("#living-topic-members");
-  if (!detail.members.length) {
-    const empty = document.createElement("p");
-    empty.className = "library-state";
-    empty.textContent = "No evidence attached. Search the local Library below.";
-    members.replaceChildren(empty);
-  } else {
-    const membershipByID = new Map((detail.memberships || []).map((membership) => [membership.memoryItemId, membership]));
-    members.replaceChildren(...detail.members.map((item) => buildLivingTopicEvidenceCard(item, "Remove", () => removeLivingTopicMember(item.id), false, membershipByID.get(item.id))));
-  }
-  renderLivingTopicMoveStatus();
-
-  const available = topicsState.candidates.filter((item) => !memberIDs.has(item.id));
-  const candidates = $("#living-topic-candidates");
-  if (topicsState.candidatesLoading) {
-    const loading = document.createElement("p");
-    loading.className = "library-state";
-    loading.textContent = "Searching local Memory…";
-    candidates.replaceChildren(loading);
-  } else if (!available.length) {
-    const empty = document.createElement("p");
-    empty.className = "library-state";
-    empty.textContent = "No additional local Memory evidence matches this search.";
-    candidates.replaceChildren(empty);
-  } else {
-    candidates.replaceChildren(...available.map((item) => buildLivingTopicEvidenceCard(item, "Add", () => addLivingTopicMember(item.id), detail.members.length >= LIVING_TOPIC_MAX_MEMBERS)));
-  }
-  renderLivingTopicSnapshots(detail);
-}
-
-function livingTopicUnderstandingSummary(topic) {
-  if (topic.understandingStatus === "pending") return "Evidence changed. An automatic understanding refresh is queued.";
-  if (topic.understandingStatus === "running") return "Evaluating current evidence without blocking the Timeline…";
-  if (topic.understandingStatus === "failed") return topic.understandingLastError || "The last automatic refresh failed. Refresh now to retry.";
-  if (topic.understandingStatus === "insufficient_evidence") return "More evidence is needed before a useful understanding can be published.";
-  if (topic.understandingStatus === "current" && topic.understandingCheckedAt) return `Evidence last evaluated ${formatDate(topic.understandingCheckedAt)}.`;
-  return "Understanding will build automatically when evidence enters this topic.";
-}
-
-function livingTopicRoutingSummary(topic) {
-  if (topic.routingStatus === "pending") return `Criteria revision ${topic.criteriaRevision || 1} is queued for a bounded local scan.`;
-  if (topic.routingStatus === "running") return "Evaluating a bounded shortlist of recent local evidence…";
-  if (topic.routingStatus === "failed") return topic.routingLastError || "The last local activation scan failed. Scan again to retry.";
-  if (topic.routingStatus === "current" && topic.routingCheckedAt) return `Local evidence last evaluated ${formatDate(topic.routingCheckedAt)} · criteria revision ${topic.criteriaRevision || 1}.`;
-  return "A bounded local scan starts when the topic is created or its criteria change.";
-}
-
-function setLivingTopicDetailTab(tab, focus = false) {
-  const topicsState = state.livingTopics;
-  topicsState.activeTab = normalizeLivingTopicTab(tab);
-  renderLivingTopicDetailTabs();
-  if (topicsState.activeTab === LIVING_TOPIC_TAB_EVIDENCE && !topicsState.candidatesLoaded && !topicsState.candidatesLoading) {
-    void loadLivingTopicCandidates($("#living-topic-evidence-query")?.value || "");
-  }
-  if (focus) {
-    (topicsState.activeTab === LIVING_TOPIC_TAB_EVIDENCE ? $("#living-topic-evidence-tab") : $("#living-topic-snapshot-tab"))?.focus();
-  }
-}
-
-function renderLivingTopicDetailTabs() {
-  const activeTab = normalizeLivingTopicTab(state.livingTopics.activeTab);
-  state.livingTopics.activeTab = activeTab;
-  const evidence = activeTab === LIVING_TOPIC_TAB_EVIDENCE;
-  const tabs = [
-    [$("#living-topic-snapshot-tab"), !evidence],
-    [$("#living-topic-evidence-tab"), evidence],
-  ];
-  for (const [tab, selected] of tabs) {
-    tab.setAttribute("aria-selected", String(selected));
-    tab.tabIndex = selected ? 0 : -1;
-  }
-  const panels = [
-    [$("#living-topic-snapshot-panel"), !evidence],
-    [$("#living-topic-evidence-panel"), evidence],
-  ];
-  for (const [panel, selected] of panels) {
-    panel.classList.toggle("hidden", !selected);
-    panel.hidden = !selected;
-  }
-}
-
-function handleLivingTopicDetailTabKeydown(event) {
-  if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) return;
-  event.preventDefault();
-  const evidence = event.key === "End"
-    || ((event.key === "ArrowRight" || event.key === "ArrowLeft") && event.currentTarget.id === "living-topic-snapshot-tab");
-  setLivingTopicDetailTab(evidence ? LIVING_TOPIC_TAB_EVIDENCE : LIVING_TOPIC_TAB_SNAPSHOT, true);
-}
-
-function buildLivingTopicEvidenceCard(item, actionLabel, action, disabled = false, membership = null) {
-  const card = document.createElement("article");
-  card.className = "living-topic-evidence-card";
-  card.setAttribute("role", "listitem");
-  const copy = document.createElement("div");
-  const title = document.createElement("strong");
-  title.textContent = item.title || item.summary || "Untitled Memory";
-  const meta = document.createElement("small");
-  meta.textContent = [sourceLabel(item.source), item.author, item.publishedAt ? formatDate(item.publishedAt) : null].filter(Boolean).join(" · ");
-  copy.append(title, meta);
-  if (membership) {
-    const routing = document.createElement("small");
-    routing.className = "living-topic-routing-meta";
-    routing.textContent = membership.origin === "automatic"
-      ? `Auto · ${Math.round((membership.confidence || 0) * 100)}% · ${membership.matchMode || "hybrid"}${membership.reason ? ` · ${membership.reason}` : ""}`
-      : "Added by you · positive routing example";
-    copy.append(routing);
-  }
-  const actions = document.createElement("div");
-  actions.className = "living-topic-evidence-actions";
-  if (membership) {
-    const destinations = state.livingTopics.topics.filter((topic) => topic.id !== state.livingTopics.selectedId);
-    const select = document.createElement("select");
-    select.className = "living-topic-move-select";
-    select.setAttribute("aria-label", `Move ${title.textContent} to another Living Topic`);
-    const placeholder = document.createElement("option");
-    placeholder.value = "";
-    placeholder.textContent = destinations.length ? "Move to…" : "No other topic";
-    select.append(placeholder, ...destinations.map((topic) => {
-      const option = document.createElement("option");
-      option.value = topic.id;
-      option.textContent = topic.name;
-      return option;
-    }));
-    select.disabled = disabled || state.livingTopics.mutationLoading || !destinations.length;
-    const move = document.createElement("button");
-    move.type = "button";
-    move.className = "secondary-button living-topic-move-button";
-    move.textContent = "Move";
-    move.disabled = true;
-    select.addEventListener("change", () => { move.disabled = !select.value || state.livingTopics.mutationLoading; });
-    move.addEventListener("click", () => void moveLivingTopicMember(item.id, select.value));
-    actions.append(select, move);
-  }
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "text-button";
-  button.textContent = actionLabel;
-  button.disabled = disabled || state.livingTopics.mutationLoading;
-  button.addEventListener("click", action);
-  actions.append(button);
-  card.append(copy, actions);
-  return card;
-}
-
-function renderLivingTopicMoveStatus() {
-  const status = $("#living-topic-move-status");
-  const move = state.livingTopics.lastMove;
-  if (!status) return;
-  const appliesToSelectedTopic = move
-    && [move.fromTopicId, move.toTopicId].includes(state.livingTopics.selectedId);
-  status.replaceChildren();
-  status.classList.toggle("hidden", !appliesToSelectedTopic);
-  if (!appliesToSelectedTopic) return;
-  const copy = document.createElement("span");
-  copy.textContent = `Moved evidence from ${move.fromName} to ${move.toName}. Both topic understandings are refreshing.`;
-  const undo = document.createElement("button");
-  undo.type = "button";
-  undo.className = "text-button";
-  undo.textContent = state.livingTopics.mutationLoading ? "Undoing…" : "Undo";
-  undo.disabled = state.livingTopics.mutationLoading;
-  undo.addEventListener("click", () => void undoLivingTopicMemberMove());
-  status.append(copy, undo);
-}
-
-function buildLivingTopicSuggestionCard(candidate) {
-  const card = document.createElement("article");
-  card.className = "living-topic-evidence-card living-topic-suggestion-card";
-  card.setAttribute("role", "listitem");
-  const copy = document.createElement("div");
-  const title = document.createElement("strong");
-  title.textContent = candidate.item?.title || candidate.item?.summary || "Untitled Memory";
-  const meta = document.createElement("small");
-  meta.textContent = [sourceLabel(candidate.item?.source), candidate.item?.author, candidate.item?.publishedAt ? formatDate(candidate.item.publishedAt) : null].filter(Boolean).join(" · ");
-  const reason = document.createElement("small");
-  reason.className = "living-topic-routing-meta";
-  reason.textContent = `${candidate.matchMode === "llm" ? "Semantic" : "Local"} suggestion · ${Math.round((candidate.confidence || 0) * 100)}%${candidate.reason ? ` · ${candidate.reason}` : ""}`;
-  copy.append(title, meta, reason);
-  const actions = document.createElement("div");
-  actions.className = "living-topic-candidate-actions";
-  for (const [label, action] of [["Accept", "accept"], ["Reject", "reject"]]) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = action === "accept" ? "secondary-button" : "text-button";
-    button.textContent = label;
-    button.disabled = state.livingTopics.mutationLoading;
-    button.addEventListener("click", () => reviewLivingTopicCandidate(candidate.memoryItemId, action));
-    actions.append(button);
-  }
-  card.append(copy, actions);
-  return card;
-}
-
-function buildLivingTopicReviewedCandidateCard(candidate) {
-  const card = document.createElement("article");
-  card.className = "living-topic-evidence-card living-topic-suggestion-card reviewed";
-  card.setAttribute("role", "listitem");
-  const copy = document.createElement("div");
-  const title = document.createElement("strong");
-  title.textContent = candidate.item?.title || candidate.item?.summary || "Untitled Memory";
-  const meta = document.createElement("small");
-  meta.textContent = candidate.status === "accepted" ? "Accepted into this topic" : "Rejected from this topic";
-  copy.append(title, meta);
-  const undo = document.createElement("button");
-  undo.type = "button";
-  undo.className = "text-button";
-  undo.textContent = "Undo";
-  undo.disabled = state.livingTopics.mutationLoading;
-  undo.addEventListener("click", () => reviewLivingTopicCandidate(candidate.memoryItemId, "undo"));
-  card.append(copy, undo);
-  return card;
-}
-
-function renderLivingTopicSnapshots(detail) {
-  const container = $("#living-topic-snapshots");
-  const evidenceByID = new Map(detail.members.map((item) => [item.id, item]));
-  if (!detail.snapshots.length) {
-    const empty = document.createElement("p");
-    empty.className = "library-state";
-    empty.textContent = detail.members.length
-      ? "Current evidence is waiting for its first automatic understanding refresh."
-      : "Add or route evidence to begin building this topic understanding.";
-    container.replaceChildren(empty);
-    return;
-  }
-  const current = detail.snapshots[0];
-  if (!current?.isCurrent) {
-    const empty = document.createElement("p");
-    empty.className = "library-state";
-    if (["pending", "running"].includes(detail.topic?.understandingStatus)) {
-      empty.textContent = "Current evidence changed. A new supported understanding is being prepared; earlier versions are historical only.";
-    } else if (detail.topic?.understandingStatus === "insufficient_evidence") {
-      empty.textContent = "There is not enough current evidence to publish an understanding. Earlier versions remain available for audit only.";
-    } else {
-      empty.textContent = "No snapshot is fully supported by the current topic evidence. Earlier versions remain available for audit only.";
-    }
-    container.replaceChildren(empty, buildLivingTopicUnderstandingHistory(detail.snapshots, evidenceByID, "Historical understanding"));
-    return;
-  }
-  const nodes = [buildCurrentLivingTopicUnderstanding(current, detail, evidenceByID)];
-  if (detail.snapshots.length > 1) {
-    nodes.push(buildLivingTopicUnderstandingHistory(detail.snapshots.slice(1), evidenceByID, "Understanding history"));
-  }
-  container.replaceChildren(...nodes);
-}
-
-function buildLivingTopicUnderstandingHistory(snapshots, evidenceByID, label) {
-  const history = document.createElement("details");
-  history.className = "living-topic-understanding-history";
-  const summary = document.createElement("summary");
-  summary.textContent = `${label} · ${snapshots.length} version${snapshots.length === 1 ? "" : "s"}`;
-  const body = document.createElement("div");
-  body.replaceChildren(...snapshots.map((snapshot) => buildLivingTopicHistoryEntry(snapshot, evidenceByID)));
-  history.append(summary, body);
-  return history;
-}
-
-function buildCurrentLivingTopicUnderstanding(snapshot, detail, evidenceByID) {
-  const card = document.createElement("article");
-  card.className = "living-topic-snapshot-card living-topic-current-understanding";
-  card.dataset.snapshotId = snapshot.id;
-  const header = document.createElement("header");
-  const identity = document.createElement("div");
-  const label = document.createElement("strong");
-  label.textContent = "Latest understanding";
-  const meta = document.createElement("small");
-  const independentSources = Number(snapshot.independentSourceCount) || new Set(detail.members.map(livingTopicSourceOrigin).filter(Boolean)).size;
-  const coverage = snapshot.coverageState ? `${humanize(snapshot.coverageState)} topic coverage` : "Topic coverage unknown";
-  const diversity = snapshot.sourceDiversityState ? humanize(snapshot.sourceDiversityState) : "source diversity unknown";
-  const platformDetail = snapshot.sourceDiversityState === "single_platform" ? ` · ${snapshot.sourcePlatformCount || 1} platform only` : "";
-  meta.textContent = `${detail.members.length} evidence · ${independentSources} independent source${independentSources === 1 ? "" : "s"} · ${coverage} · ${diversity}${platformDetail}`;
-  identity.append(label, meta);
-  const badge = document.createElement("span");
-  badge.className = "living-topic-understanding-badge";
-  badge.textContent = livingTopicStatusLabel(snapshot.status);
-  header.append(identity, badge);
-  const overview = document.createElement("p");
-  overview.className = "living-topic-understanding-overview";
-  overview.textContent = snapshot.overview || "No overview was produced.";
-  card.append(header, overview);
-
-  const timing = document.createElement("p");
-  timing.className = "library-state";
-  timing.textContent = `Evaluated ${formatDate(snapshot.createdAt)} · Latest dated source in this snapshot: ${snapshot.evidenceAsOf ? formatDate(snapshot.evidenceAsOf) : "unknown"}. Newer developments may be missing from local evidence.`;
-  card.append(timing);
-
-  const { current: supported, secondary, uncertain, historical } = livingTopicClaimGroups(snapshot.claims);
-  if (supported.length) {
-    const heading = document.createElement("h5");
-    heading.textContent = "Latest known state";
-    card.append(heading, buildLivingTopicStatementList(supported, evidenceByID, "assessment"));
-  }
-  if (secondary.length) {
-    const heading = document.createElement("h5");
-    heading.textContent = "Supporting and peripheral observations";
-    card.append(heading, buildLivingTopicStatementList(secondary, evidenceByID, "centrality"));
-  }
-  if (uncertain.length) {
-    const heading = document.createElement("h5");
-    heading.textContent = "Uncertainty, conflicts, and unknown applicability";
-    card.append(heading, buildLivingTopicStatementList(uncertain, evidenceByID, "assessment"));
-  }
-  if (snapshot.previousSnapshotId && snapshot.deltas?.length) {
-    const heading = document.createElement("h5");
-    heading.textContent = "What changed since the previous understanding";
-    card.append(heading, buildLivingTopicStatementList(snapshot.deltas, evidenceByID, "kind"));
-  }
-  if (historical.length) {
-    const heading = document.createElement("h5");
-    heading.textContent = "Historical context";
-    card.append(heading, buildLivingTopicStatementList(historical, evidenceByID, "assessment"));
-  }
-  const technical = document.createElement("details");
-  technical.className = "living-topic-generation-details";
-  const technicalSummary = document.createElement("summary");
-  technicalSummary.textContent = "Generation details";
-  const technicalMeta = document.createElement("small");
-  technicalMeta.textContent = [snapshot.provider || "provider unavailable", snapshot.model || "model unavailable", snapshot.effort || null].filter(Boolean).join(" · ");
-  technical.append(technicalSummary, technicalMeta);
-  card.append(technical);
-  return card;
-}
-
-function buildLivingTopicHistoryEntry(snapshot, evidenceByID) {
-  const entry = document.createElement("details");
-  entry.className = "living-topic-history-entry";
-  const summary = document.createElement("summary");
-  const label = document.createElement("strong");
-  label.textContent = `Understanding from ${formatDate(snapshot.createdAt)}`;
-  const delta = document.createElement("small");
-  const availability = snapshot.evidenceAvailability === "available"
-    ? `${snapshot.activeEvidenceCount || 0} evidence still active`
-    : snapshot.evidenceAvailability === "partial"
-      ? `${snapshot.activeEvidenceCount || 0} evidence still active · partial`
-      : "source evidence no longer active in this topic";
-  delta.textContent = `${snapshot.deltas?.length || 0} material change${snapshot.deltas?.length === 1 ? "" : "s"} · ${availability}`;
-  summary.append(label, delta);
-  const body = document.createElement("div");
-  const overview = document.createElement("p");
-  overview.textContent = snapshot.overview || "No overview was produced.";
-  body.append(overview);
-  if (snapshot.claims?.length) body.append(buildLivingTopicStatementList(snapshot.claims, evidenceByID, "assessment"));
-  entry.append(summary, body);
-  return entry;
-}
-
-function buildLivingTopicStatementList(values, evidenceByID, labelField) {
-  const list = document.createElement("ul");
-  list.className = "living-topic-statements";
-  for (const value of values) {
-    const item = document.createElement("li");
-    const label = document.createElement("span");
-    label.className = "living-topic-statement-label";
-    label.textContent = livingTopicStatementLabel(value, labelField);
-    const text = document.createElement("p");
-    text.textContent = value.text;
-    const evidence = (value.evidenceIds || []).map((id) => evidenceByID.get(id)).filter(Boolean);
-    const sourceCount = new Set(evidence.map(livingTopicSourceOrigin).filter(Boolean)).size;
-    const corroborated = evidence.map((entry) => entry.publishedAt).filter(Boolean).sort().at(-1);
-    const evidenceHealth = document.createElement("small");
-    evidenceHealth.className = "living-topic-evidence-health";
-    evidenceHealth.textContent = [
-      `${value.evidenceIds?.length || 0} evidence`,
-      sourceCount ? `${sourceCount} source${sourceCount === 1 ? "" : "s"}` : null,
-      corroborated ? `latest ${formatDate(corroborated)}` : null,
-    ].filter(Boolean).join(" · ");
-    const citations = document.createElement("details");
-    citations.className = "living-topic-citations";
-    const citationsSummary = document.createElement("summary");
-    citationsSummary.textContent = "View supporting evidence";
-    const citationList = document.createElement("ul");
-    for (const id of value.evidenceIds || []) {
-      const cited = evidenceByID.get(id);
-      const citation = document.createElement("li");
-      citation.textContent = cited ? [cited.title || cited.summary || "Untitled evidence", sourceLabel(cited.source)].filter(Boolean).join(" · ") : "Evidence no longer belongs to the current topic";
-      citationList.append(citation);
-    }
-    citations.append(citationsSummary, citationList);
-    item.append(label, text, evidenceHealth, citations);
-    list.append(item);
-  }
-  return list;
-}
-
-function livingTopicSourceOrigin(item) {
-  if (!item) return "";
-  return [item.source, item.author || item.id].filter(Boolean).join(":");
-}
-
-function setLibraryTab(tab, focus = false) {
-  state.library.activeTab = normalizeLibraryTab(tab);
-  if (state.currentView === "library") {
-    resetLibraryList();
-    void loadLibrary();
-  }
-  renderLibraryTabs();
-  maybeLoadLibraryStorage();
-  if (focus) {
-    const activeTab = state.library.activeTab === LIBRARY_TAB_CLEANING
-      ? $("#library-cleaning-tab")
-      : state.library.activeTab === LIBRARY_TAB_LIBRARY
-        ? $("#library-library-tab")
-        : $("#library-saved-tab");
-    activeTab?.focus();
-  }
-}
-
-function renderLibraryTabs() {
-  const activeTab = normalizeLibraryTab(state.library.activeTab);
-  state.library.activeTab = activeTab;
-  const cleaning = activeTab === LIBRARY_TAB_CLEANING;
-  const tabs = [
-    [$("#library-saved-tab"), activeTab === LIBRARY_TAB_SAVED],
-    [$("#library-library-tab"), activeTab === LIBRARY_TAB_LIBRARY],
-    [$("#library-cleaning-tab"), cleaning],
-  ];
-  for (const [tab, selected] of tabs) {
-    if (!tab) continue;
-    tab.setAttribute("aria-selected", String(selected));
-    tab.tabIndex = selected ? 0 : -1;
-    tab.classList.toggle("selected", selected);
-  }
-  const panels = [
-    [$("#library-saved-view"), !cleaning],
-    [$("#library-cleaning-view"), cleaning],
-  ];
-  for (const [panel, selected] of panels) {
-    if (!panel) continue;
-    panel.classList.toggle("hidden", !selected);
-    panel.hidden = !selected;
-  }
-  $("#library-saved-view")?.setAttribute(
-    "aria-labelledby",
-    activeTab === LIBRARY_TAB_LIBRARY ? "library-library-tab" : "library-saved-tab",
-  );
-}
-
-function maybeLoadLibraryStorage() {
-  if (state.currentView !== "library" || state.library.activeTab !== LIBRARY_TAB_CLEANING) return;
-  const storage = state.library.storage;
-  if (!storage.loading && !storage.usage) void loadLibraryStorage();
-}
-
-function handleLibraryTabKeydown(event) {
-  const keys = ["ArrowRight", "ArrowLeft", "Home", "End"];
-  if (!keys.includes(event.key)) return;
-  const tabs = [...document.querySelectorAll("#library-tabs [role=\"tab\"]")];
-  const currentIndex = tabs.indexOf(event.currentTarget);
-  if (currentIndex < 0 || !tabs.length) return;
-  event.preventDefault();
-  const nextIndex = event.key === "Home"
-    ? 0
-    : event.key === "End"
-      ? tabs.length - 1
-      : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
-  const next = tabs[nextIndex];
-  setLibraryTab(next.id === "library-cleaning-tab"
-    ? LIBRARY_TAB_CLEANING
-    : next.id === "library-library-tab" ? LIBRARY_TAB_LIBRARY : LIBRARY_TAB_SAVED, true);
-}
-
-function syncInboxSubView() {
-  const usage = state.inboxSubView === "usage";
-  $("#inbox-ledger-view").classList.toggle("hidden", usage);
-  $("#model-usage-view").classList.toggle("hidden", !usage);
-}
-
-function setInboxSubView(view) {
-  state.inboxSubView = view === "usage" ? "usage" : "checks";
-  syncInboxSubView();
-  if (state.inboxSubView === "usage") {
-    loadAggregateModelUsage();
-    $("#model-usage-heading")?.focus();
-  } else {
-    loadInbox();
-    $("#inbox-heading")?.focus();
-  }
-  scheduleBackToTop();
-}
-
-function renderLibrarySourceOptions() {
-  const select = $("#library-source");
-  if (!select) return;
-  const current = state.library.filters.source || select.value;
-  select.replaceChildren(new Option("All sources", ""));
-  for (const descriptor of sourceDescriptors()) {
-    const option = new Option(descriptor.displayName, descriptor.id);
-    select.append(option);
-  }
-  select.value = [...select.options].some((option) => option.value === current) ? current : "";
-  syncLibraryFilterToggle();
-}
-
-function toggleLibraryFilters() {
-  const toggle = $("#library-filters-toggle");
-  const fields = $("#library-filter-fields");
-  if (!toggle || !fields) return;
-  const expanded = toggle.getAttribute("aria-expanded") !== "true";
-  fields.classList.toggle("hidden", !expanded);
-  toggle.setAttribute("aria-expanded", String(expanded));
-  syncLibraryFilterToggle();
-}
-
-function syncLibraryFilterToggle() {
-  const toggle = $("#library-filters-toggle");
-  const fields = $("#library-filter-fields");
-  if (!toggle || !fields) return;
-  const activeCount = [
-    $("#library-source")?.value,
-    $("#library-tier")?.value,
-    $("#library-published-from")?.value,
-    $("#library-published-to")?.value,
-  ].filter(Boolean).length;
-  toggle.textContent = activeCount ? `Filters (${activeCount})` : "Filters";
-  toggle.classList.toggle("has-active-filters", activeCount > 0);
-  toggle.setAttribute("aria-expanded", String(!fields.classList.contains("hidden")));
-}
-
-function readLibraryFilters() {
-  return normalizeLibraryFilters({
-    query: $("#library-query").value,
-    source: $("#library-source").value,
-    tier: $("#library-tier").value,
-    publishedFrom: $("#library-published-from").value,
-    publishedTo: $("#library-published-to").value,
-  });
-}
-
-function resetLibraryList() {
-  state.library.controller?.abort();
-  state.library.controller = null;
-  state.library.requestID += 1;
-  state.library.loading = false;
-  state.library.loadingMore = false;
-  state.library.items = [];
-  state.library.topicKnowledge = [];
-  state.library.nextCursor = "";
-  state.library.error = null;
-  state.library.detailRequestID += 1;
-  state.library.detailLoading = false;
-  state.library.detailError = null;
-  state.library.mutationLoading = false;
-  state.library.mutationError = null;
-  state.library.mutationAction = "";
-  state.library.mutationErrorAction = "";
-  state.library.notice = "";
-  state.library.selectedId = "";
-  state.library.selectedItem = null;
-  state.library.detailFocusTarget = null;
-  renderLibraryDetail();
-}
-
-function resetLibraryStorage() {
-  const storage = state.library.storage;
-  storage.controller?.abort();
-  storage.controller = null;
-  storage.requestID += 1;
-  storage.loading = false;
-  storage.error = null;
-  storage.usage = null;
-  storage.recommendations = [];
-  storage.savedPressure = null;
-  storage.savedRecommendations = [];
-}
-
-function invalidateLibraryStorage() {
-  resetLibraryStorage();
-  maybeLoadLibraryStorage();
-}
-
-function reloadLibraryStorage() {
-  invalidateLibraryStorage();
-}
-
-function submitLibrarySearch(event) {
-  event?.preventDefault();
-  state.library.filters = readLibraryFilters();
-  resetLibraryList();
-  void loadLibrary();
-}
-
-function clearLibrarySearch() {
-  $("#library-query").value = "";
-  $("#library-source").value = "";
-  $("#library-tier").value = "";
-  $("#library-published-from").value = "";
-  $("#library-published-to").value = "";
-  syncLibraryFilterToggle();
-  submitLibrarySearch();
-}
-
-function refreshLibrary() {
-  resetLibraryList();
-  reloadLibraryStorage();
-  void loadLibrary();
-}
-
-function loadMoreLibrary() {
-  if (state.library.loading || !state.library.nextCursor) return;
-  void loadLibrary({ append: true });
-}
-
-async function loadLibrary({ append = false } = {}) {
-  if (append && (state.library.loading || !state.library.nextCursor)) return;
-  if (!append && state.library.loading) state.library.controller?.abort();
-  const requestID = state.library.requestID + 1;
-  state.library.requestID = requestID;
-  const controller = new AbortController();
-  state.library.controller = controller;
-  state.library.loading = true;
-  state.library.loadingMore = append;
-  state.library.error = null;
-  renderLibrary();
-  try {
-    const requestPath = state.library.activeTab === LIBRARY_TAB_SAVED
-      ? buildSavedLibraryRequestPath(state.library.filters, append ? state.library.nextCursor : "")
-      : buildLibraryRequestPath(
-        state.library.filters,
-        append ? state.library.nextCursor : "",
-        false,
-        true,
-      );
-    const response = await api(requestPath, { signal: controller.signal });
-    if (requestID !== state.library.requestID) return;
-    const merged = mergeLibraryPage(state.library.items, response, append);
-    state.library.items = merged.items;
-    state.library.nextCursor = merged.nextCursor;
-    if (!append) {
-      state.library.topicKnowledge = state.library.activeTab === LIBRARY_TAB_LIBRARY && Array.isArray(response?.topicKnowledge)
-        ? response.topicKnowledge.slice(0, 3)
-        : [];
-    }
-    if (state.library.selectedId) {
-      const selected = state.library.items.find((item) => item.id === state.library.selectedId);
-      if (!selected) closeLibraryDetail();
-    }
-  } catch (error) {
-    if (requestID !== state.library.requestID || error?.name === "AbortError") return;
-    state.library.error = error;
-  } finally {
-    if (requestID !== state.library.requestID) return;
-    state.library.loading = false;
-    state.library.loadingMore = false;
-    state.library.controller = null;
-    renderLibrary();
-  }
-}
-
-async function loadLibraryStorage() {
-  const storage = state.library.storage;
-  if (storage.loading) return;
-  const requestID = storage.requestID + 1;
-  storage.requestID = requestID;
-  const controller = new AbortController();
-  storage.controller = controller;
-  storage.loading = true;
-  storage.error = null;
-  renderLibraryStorage();
-  try {
-    const response = await api(buildLibraryStorageRequestPath(), { signal: controller.signal });
-    if (requestID !== storage.requestID) return;
-    const report = normalizeLibraryStorageReport(response);
-    storage.usage = report.usage;
-    storage.recommendations = report.recommendations;
-    storage.savedPressure = report.savedPressure;
-    storage.savedRecommendations = report.savedRecommendations;
-  } catch (error) {
-    if (requestID !== storage.requestID || error?.name === "AbortError") return;
-    storage.error = error;
-  } finally {
-    if (requestID !== storage.requestID) return;
-    storage.loading = false;
-    storage.controller = null;
-    renderLibraryStorage();
-  }
-}
-
-function libraryErrorMessage(error) {
-  if (error?.code === "sidecar_unavailable" || error?.name === "SidecarUnavailableError") {
-    return "AkuSidecar is offline. Start the local runtime, then refresh Library.";
-  }
-  if (error?.code === "invalid_memory_library_query") {
-    return "Those Library filters are not valid. Clear the filters and try again.";
-  }
-    return state.library.activeTab === LIBRARY_TAB_SAVED
-      ? "Saved could not be loaded. Refresh and try again."
-      : "Library could not be loaded. Refresh and try again.";
-}
-
-function libraryStorageErrorMessage(error) {
-  if (error?.code === "sidecar_unavailable" || error?.name === "SidecarUnavailableError") {
-    return "Local storage summary is unavailable while AkuSidecar is offline.";
-  }
-  return "Local storage summary could not be loaded. Library search still works; refresh to try again.";
-}
-
-function libraryMutationErrorMessage(error, action) {
-  if (error?.code === "sidecar_unavailable" || error?.name === "SidecarUnavailableError") {
-    return "AkuSidecar is offline. Start the local runtime, then try this Library action again.";
-  }
-  if (action === "forget") return "Library could not forget this memory permanently. Try again.";
-  if (action === "release") return "Library could not release the full copy. Try again.";
-  if (action === "keep") return "This item could not be kept in Library. A local full copy may be unavailable.";
-  if (action === "done") return "This Saved item could not be marked Done. Try again.";
-  return "Library could not remove this local memory. Try again.";
-}
-
-function renderLibrary() {
-  renderLibraryTabs();
-  renderLibraryStorage();
-  const results = $("#library-results");
-  const loadMore = $("#library-load-more");
-  const status = $("#library-status");
-  const meta = $("#library-meta");
-  const layout = $("#library-layout");
-  if (!results || !loadMore || !status || !meta) return;
-  renderLibraryTopicKnowledge();
-
-  layout?.classList.toggle("has-selection", Boolean(state.library.selectedId));
-
-  results.replaceChildren();
-  status.className = "library-status";
-  if (state.library.loading && !state.library.loadingMore) {
-    status.textContent = "Loading local memories…";
-  } else if (state.library.loadingMore) {
-    status.textContent = "Loading more local memories…";
-  } else if (state.library.error) {
-    status.classList.add("library-status-error");
-    status.textContent = libraryErrorMessage(state.library.error);
-  } else if (state.library.notice) {
-    status.textContent = state.library.notice;
-  } else if (state.library.items.length || state.library.topicKnowledge.length) {
-    const parts = [];
-    if (state.library.topicKnowledge.length) parts.push(`${state.library.topicKnowledge.length} topic understanding${state.library.topicKnowledge.length === 1 ? "" : "s"}`);
-    if (state.library.items.length) parts.push(`${state.library.items.length} memor${state.library.items.length === 1 ? "y" : "ies"}${state.library.nextCursor ? " · more available" : ""}`);
-    status.textContent = parts.join(" · ");
-  } else {
-    status.textContent = "";
-  }
-  meta.textContent = state.library.error && !state.library.items.length
-    ? "This local view is read-only. No provider was contacted."
-    : state.library.activeTab === LIBRARY_TAB_SAVED
-      ? "Items currently Saved for later. Saved reads never call a provider."
-      : "Search local memories and current Living Topic knowledge. Library reads never call a provider.";
-
-  if (state.library.loading && !state.library.items.length) {
-    results.append(libraryStateMessage("Loading local memories…"));
-  } else if (state.library.error && !state.library.items.length) {
-    results.append(libraryStateMessage(libraryErrorMessage(state.library.error), true));
-  } else if (!state.library.items.length) {
-    results.append(libraryStateMessage(state.library.activeTab === LIBRARY_TAB_SAVED
-      ? "Nothing is currently Saved for later. Choose Read later on a Timeline item to add one."
-      : state.library.topicKnowledge.length
-        ? "No individual Memory items match these filters. Current Living Topic knowledge is shown above."
-        : "No local memories or current topic knowledge match these filters. Try a broader search or run a Timeline check first."));
-  } else {
-    results.append(...state.library.items.map(buildLibraryCard));
-  }
-  loadMore.classList.toggle("hidden", !state.library.nextCursor);
-  loadMore.disabled = state.library.loading;
-  loadMore.textContent = state.library.loadingMore ? "Loading…" : "Load more";
-}
-
-function renderLibraryTopicKnowledge() {
-  const section = $("#library-topic-knowledge");
-  const results = $("#library-topic-knowledge-results");
-  if (!section || !results) return;
-  const visible = state.library.activeTab === LIBRARY_TAB_LIBRARY
-    && Boolean(state.library.filters.query)
-    && state.library.topicKnowledge.length > 0;
-  section.classList.toggle("hidden", !visible);
-  if (!visible) {
-    results.replaceChildren();
-    return;
-  }
-  results.replaceChildren(...state.library.topicKnowledge.map(buildLibraryTopicKnowledgeCard));
-}
-
-function buildLibraryTopicKnowledgeCard(knowledge) {
-  const card = document.createElement("article");
-  card.className = "library-topic-knowledge-card";
-  card.setAttribute("role", "listitem");
-  const header = document.createElement("header");
-  const title = document.createElement("strong");
-  title.textContent = knowledge?.topicName || "Living Topic";
-  const current = document.createElement("span");
-  current.textContent = "Current supported";
-  header.append(title, current);
-  const overview = document.createElement("p");
-  overview.textContent = knowledge?.overview || "Current supported understanding.";
-  const claims = document.createElement("ul");
-  const topicClaims = (Array.isArray(knowledge?.claims) ? knowledge.claims : [])
-    .filter((claim) => claim?.assessment === "supported" && claim?.temporalStatus === "current")
-    .slice(0, 3);
-  for (const claim of topicClaims) {
-    const item = document.createElement("li");
-    item.textContent = claim?.text || "";
-    if (item.textContent) claims.append(item);
-  }
-  const meta = document.createElement("small");
-  meta.className = "library-topic-knowledge-meta";
-  meta.textContent = [
-    `${Number(knowledge?.evidenceCount || 0)} active evidence`,
-    knowledge?.snapshotVersion ? `snapshot ${knowledge.snapshotVersion}` : null,
-    knowledge?.evidenceAsOf ? `evidence through ${formatDate(knowledge.evidenceAsOf)}` : "evidence date unknown",
-    knowledge?.updatedAt ? `regenerated ${formatDate(knowledge.updatedAt)}` : null,
-  ].filter(Boolean).join(" · ");
-  const reason = document.createElement("small");
-  reason.className = "library-topic-knowledge-reason";
-  reason.textContent = knowledge?.matchReason || "Matched current Living Topic understanding.";
-  card.append(header, overview);
-  if (claims.children.length) card.append(claims);
-  card.append(meta, reason);
-  return card;
-}
-
-function renderLibraryStorage() {
-  const summary = $("#library-storage-summary");
-  const recommendations = $("#library-storage-recommendations");
-  if (!summary || !recommendations) return;
-  const savedSummary = $("#library-saved-pressure-summary");
-  const savedRecommendations = $("#library-saved-recommendations");
-  const storage = state.library.storage;
-  summary.replaceChildren();
-  recommendations.replaceChildren();
-  savedSummary?.replaceChildren();
-  savedRecommendations?.replaceChildren();
-  if (storage.loading && !storage.usage) {
-    summary.append(libraryStateMessage("Loading local storage summary…"));
-  } else if (storage.error && !storage.usage) {
-    const error = libraryStateMessage(libraryStorageErrorMessage(storage.error), true);
-    summary.append(error);
-  } else if (storage.usage) {
-    summary.append(buildLibraryStorageUsage(storage.usage));
-  } else {
-    summary.append(libraryStateMessage("Local storage summary is not available yet."));
-  }
-  if (storage.error && storage.usage) {
-    const error = document.createElement("p");
-    error.className = "library-storage-error";
-    error.setAttribute("role", "alert");
-    error.textContent = libraryStorageErrorMessage(storage.error);
-    summary.append(error);
-  }
-  if (storage.loading && storage.usage) {
-    const loading = document.createElement("p");
-    loading.className = "library-storage-loading";
-    loading.textContent = "Refreshing local storage summary…";
-    summary.append(loading);
-  }
-  if (!storage.recommendations.length) {
-    const empty = document.createElement("p");
-    empty.className = "library-storage-empty";
-    empty.textContent = storage.usage
-      ? "No full copies with positive content bytes are queued for review."
-      : "Recommendations will appear when the local storage summary loads.";
-    recommendations.append(empty);
-  } else {
-    recommendations.append(...storage.recommendations.map(buildLibraryStorageRecommendation));
-  }
-  if (savedSummary && savedRecommendations) {
-    if (storage.loading && !storage.savedPressure) {
-      savedSummary.append(libraryStateMessage("Loading Saved backlog snapshot…"));
-    } else if (storage.error && !storage.savedPressure) {
-      savedSummary.append(libraryStateMessage("Saved backlog snapshot is unavailable while storage summary is offline.", true));
-    } else if (storage.savedPressure) {
-      savedSummary.append(buildLibrarySavedPressure(storage.savedPressure));
-    } else {
-      savedSummary.append(libraryStateMessage("Saved backlog snapshot is not available yet."));
-    }
-    if (!storage.savedRecommendations.length) {
-      const empty = document.createElement("p");
-      empty.className = "library-storage-empty";
-      empty.textContent = storage.savedPressure
-        ? "No active Saved items need review."
-        : "Saved review recommendations will appear when the backlog snapshot loads.";
-      savedRecommendations.append(empty);
-    } else {
-      savedRecommendations.append(...storage.savedRecommendations.map(buildLibrarySavedRecommendation));
-    }
-  }
-}
-
-function buildLibrarySavedPressure(pressure) {
-  const fragment = document.createDocumentFragment();
-  const metrics = document.createElement("div");
-  metrics.className = "library-saved-pressure-breakdown";
-  for (const [label, value] of [
-    ["Saved items", formatLibraryStorageCount(pressure.activeItems)],
-    ["Local-copy Saved", formatLibraryStorageCount(pressure.localCopyItems)],
-    ["Source-dependent Saved", formatLibraryStorageCount(pressure.sourceDependentItems)],
-    ["Saved content", formatLibraryStorageBytes(pressure.contentBytes)],
-  ]) {
-    metrics.append(libraryStorageMetric(label, value));
-  }
-  const oldest = document.createElement("p");
-  oldest.className = "library-storage-counts";
-  const oldestAt = String(pressure.oldestClaimedAt ?? "").trim();
-  oldest.textContent = oldestAt
-    ? `Oldest Saved: ${formatDate(oldestAt) || oldestAt}`
-    : "Oldest Saved: none";
-  fragment.append(metrics, oldest);
-  return fragment;
-}
-
-function buildLibraryStorageUsage(usage) {
-  const fragment = document.createDocumentFragment();
-  const total = document.createElement("div");
-  total.className = "library-storage-total";
-  const totalLabel = document.createElement("span");
-  totalLabel.textContent = "Logical storage";
-  const totalValue = document.createElement("strong");
-  totalValue.textContent = formatLibraryStorageBytes(usage.logicalBytes);
-  total.append(totalLabel, totalValue);
-  const note = document.createElement("p");
-  note.className = "library-storage-note";
-  note.textContent = "Estimate of local content and metadata; this is not the physical SQLite or WAL file size. Nothing is removed automatically.";
-  const breakdown = document.createElement("div");
-  breakdown.className = "library-storage-breakdown";
-  for (const [label, value] of [
-    ["Content", usage.contentBytes],
-    ["Metadata", usage.metadataBytes],
-    ["Provenance", usage.provenanceBytes],
-    ["Actions", usage.actionBytes],
-  ]) {
-    breakdown.append(libraryStorageMetric(label, formatLibraryStorageBytes(value)));
-  }
-  const counts = document.createElement("p");
-  counts.className = "library-storage-counts";
-  counts.textContent = `Items: ${formatLibraryStorageCount(usage.activeItems)} active · ${formatLibraryStorageCount(usage.recallItems)} recall stubs · ${formatLibraryStorageCount(usage.fullCopyItems)} full copies · ${formatLibraryStorageCount(usage.tombstones)} tombstones`;
-  fragment.append(total, note, breakdown, counts);
-  return fragment;
-}
-
-function formatLibraryStorageCount(value) {
-  const count = Number(value);
-  return Number.isInteger(count) && count >= 0 ? String(count) : "unknown";
-}
-
-function libraryStorageMetric(label, value) {
-  const metric = document.createElement("span");
-  metric.className = "library-storage-metric";
-  const metricLabel = document.createElement("small");
-  metricLabel.textContent = label;
-  const metricValue = document.createElement("strong");
-  metricValue.textContent = value;
-  metric.append(metricLabel, metricValue);
-  return metric;
-}
-
-function buildLibraryStorageRecommendation(recommendation) {
-  const article = document.createElement("article");
-  article.className = "library-storage-recommendation";
-  article.setAttribute("role", "listitem");
-  const identity = document.createElement("div");
-  identity.className = "library-storage-recommendation-identity";
-  const title = document.createElement("strong");
-  title.textContent = recommendation.title || "Untitled memory";
-  const source = document.createElement("span");
-  source.textContent = sourceLabel(recommendation.source);
-  identity.append(title, source);
-  const detail = document.createElement("p");
-  detail.textContent = `Full copy · ${formatLibraryStorageBytes(recommendation.reclaimableBytes)} reclaimable content · updated ${formatDate(recommendation.updatedAt) || recommendation.updatedAt || "unknown"}`;
-  const reason = document.createElement("p");
-  reason.className = "library-storage-recommendation-reason";
-  reason.textContent = "Largest retained full-copy payload. Review it before deciding what to keep.";
-  const review = document.createElement("button");
-  review.type = "button";
-  review.className = "secondary-button library-storage-review";
-  review.dataset.reviewAction = recommendation.reviewAction || "review_full_copy";
-  review.textContent = "Review";
-  review.addEventListener("click", () => reviewLibraryStorageRecommendation(recommendation));
-  article.append(identity, detail, reason, review);
-  return article;
-}
-
-function reviewLibraryStorageRecommendation(recommendation) {
-  setLibraryTab(LIBRARY_TAB_LIBRARY);
-  selectLibraryItem(recommendation.id, {
-    id: recommendation.id,
-    source: recommendation.source,
-    title: recommendation.title,
-    author: recommendation.author,
-    retentionTier: "full_copy",
-    updatedAt: recommendation.updatedAt,
-  });
-  window.requestAnimationFrame(() => $("#library-detail-heading")?.focus());
-}
-
-function buildLibrarySavedRecommendation(recommendation) {
-  const article = document.createElement("article");
-  article.className = "library-saved-recommendation";
-  article.setAttribute("role", "listitem");
-  const identity = document.createElement("div");
-  identity.className = "library-storage-recommendation-identity";
-  const title = document.createElement("strong");
-  title.textContent = recommendation.title || "Untitled memory";
-  const source = document.createElement("span");
-  source.textContent = sourceLabel(recommendation.source);
-  identity.append(title, source);
-  const detail = document.createElement("p");
-  const savedAt = String(recommendation.savedAt ?? "").trim();
-  const tier = recommendation.sourceDependent ? "Source-dependent Saved" : "Local-copy Saved";
-  detail.textContent = `${tier} · Saved ${formatDate(savedAt) || savedAt || "unknown"} · ${formatLibraryStorageBytes(recommendation.contentBytes)} retained`;
-  const reason = document.createElement("p");
-  reason.className = "library-storage-recommendation-reason";
-  reason.textContent = "Oldest active Saved item. Review it in Saved.";
-  const review = document.createElement("button");
-  review.type = "button";
-  review.className = "secondary-button library-storage-review";
-  review.dataset.reviewAction = recommendation.reviewAction || "review_saved";
-  review.textContent = "Review";
-  review.addEventListener("click", () => reviewSavedRecommendation(recommendation));
-  article.append(identity, detail, reason, review);
-  return article;
-}
-
-function reviewSavedRecommendation(recommendation) {
-  setLibraryTab(LIBRARY_TAB_SAVED);
-  selectLibraryItem(recommendation.id, {
-    id: recommendation.id,
-    source: recommendation.source,
-    title: recommendation.title,
-    author: recommendation.author,
-    saved: true,
-    retentionTier: recommendation.retentionTier,
-    permanentKeep: false,
-    updatedAt: recommendation.savedAt,
-  });
-  window.requestAnimationFrame(() => $("#library-detail-heading")?.focus());
-}
-
-function libraryStateMessage(message, error = false) {
-  const element = document.createElement("p");
-  element.className = `library-state${error ? " library-state-error" : ""}`;
-  if (error) element.setAttribute("role", "alert");
-  element.textContent = message;
-  return element;
-}
-
-function buildLibraryCard(item) {
-  const article = document.createElement("article");
-  article.className = "library-card-shell";
-  article.setAttribute("role", "listitem");
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "library-card";
-  button.classList.toggle("selected", state.library.selectedId === item.id);
-  button.setAttribute("aria-pressed", String(state.library.selectedId === item.id));
-  button.setAttribute("aria-label", `Open memory: ${item.title || "Untitled memory"}`);
-  button.addEventListener("click", () => selectLibraryItem(item.id));
-
-  const header = document.createElement("div");
-  header.className = "library-card-header";
-  header.append(buildSourceIcon(item.source));
-  const identity = document.createElement("span");
-  identity.className = "library-card-identity";
-  const title = document.createElement("strong");
-  title.textContent = item.title || "Untitled memory";
-  const source = document.createElement("span");
-  source.textContent = sourceLabel(item.source);
-  identity.append(title, source);
-  const tier = document.createElement("span");
-  tier.className = "library-tier-badge";
-  tier.textContent = formatLibraryTier(item.retentionTier);
-  header.append(identity, tier);
-
-  const summary = document.createElement("p");
-  summary.className = "library-card-summary";
-  summary.textContent = item.summary || "No summary was captured for this recall stub.";
-
-  const metadata = document.createElement("div");
-  metadata.className = "library-card-metadata";
-  if (item.author) metadata.append(libraryMetaChip("Author", item.author));
-  const date = formatDate(item.publishedAt || item.updatedAt);
-  if (date) metadata.append(libraryMetaChip("Published", date));
-  if (Array.isArray(item.tags)) {
-    for (const tag of item.tags.slice(0, 6)) metadata.append(libraryMetaChip("Tag", tag));
-  }
-  button.append(header, summary, metadata);
-  article.append(button);
-  return article;
-}
-
-function libraryMetaChip(label, value) {
-  const chip = document.createElement("span");
-  chip.className = "library-meta-chip";
-  chip.textContent = `${label}: ${value}`;
-  return chip;
-}
-
-function selectLibraryItem(id, fallbackItem = null) {
-  const item = state.library.items.find((entry) => entry.id === id)
-    || (fallbackItem?.id === id ? fallbackItem : null);
-  if (!item) return;
-  if (document.activeElement?.closest?.(".library-card")) state.library.detailFocusTarget = document.activeElement;
-  state.library.selectedId = id;
-  state.library.selectedItem = item;
-  state.library.detailRequestID += 1;
-  const detailRequestID = state.library.detailRequestID;
-  state.library.detailLoading = true;
-  state.library.detailError = null;
-  renderLibrary();
-  renderLibraryDetail();
-  void (async () => {
-    try {
-      const response = await api(`/api/library/items/${encodeURIComponent(id)}`);
-      if (detailRequestID !== state.library.detailRequestID || state.library.selectedId !== id) return;
-      if (!response?.item || response.item.id !== id) throw new Error("Library detail was unavailable.");
-      state.library.selectedItem = response.item;
-    } catch (error) {
-      if (detailRequestID !== state.library.detailRequestID || state.library.selectedId !== id) return;
-      state.library.detailError = error;
-    } finally {
-      if (detailRequestID !== state.library.detailRequestID || state.library.selectedId !== id) return;
-      state.library.detailLoading = false;
-      renderLibraryDetail();
-    }
-  })();
-}
-
-function closeLibraryDetail() {
-  const target = state.library.detailFocusTarget;
-  state.library.detailRequestID += 1;
-  state.library.selectedId = "";
-  state.library.selectedItem = null;
-  state.library.detailLoading = false;
-  state.library.detailError = null;
-  state.library.detailFocusTarget = null;
-  renderLibraryDetail();
-  target?.focus?.();
-  renderLibrary();
-}
-
-function renderLibraryDetail() {
-  const detail = $("#library-detail");
-  const heading = $("#library-detail-heading");
-  const content = $("#library-detail-content");
-  if (!detail || !heading || !content) return;
-  const item = state.library.selectedItem;
-  detail.classList.toggle("hidden", !item || !state.library.selectedId);
-  detail.setAttribute("aria-busy", String(Boolean(state.library.mutationLoading)));
-  if (!item || !state.library.selectedId) {
-    heading.textContent = "Choose a memory";
-    content.replaceChildren();
-    return;
-  }
-  heading.textContent = item.title || "Untitled memory";
-  content.replaceChildren();
-  if (state.library.detailLoading) {
-    content.append(libraryStateMessage("Loading memory details…"));
-    return;
-  }
-  if (state.library.detailError) {
-    content.append(libraryStateMessage("This memory detail could not be loaded. Try selecting it again.", true));
-    const retry = document.createElement("button");
-    retry.type = "button";
-    retry.className = "secondary-button library-detail-retry";
-    retry.textContent = "Retry details";
-    retry.addEventListener("click", () => selectLibraryItem(item.id));
-    content.append(retry);
-    return;
-  }
-  content.append(buildLibraryDetail(item));
-}
-
-function buildLibraryDetail(item) {
-  const fragment = document.createDocumentFragment();
-  const metadata = document.createElement("dl");
-  metadata.className = "library-detail-metadata";
-  appendLibraryDetailField(metadata, "Source", sourceLabel(item.source));
-  appendLibraryDetailField(metadata, "Tier", formatLibraryTier(item.retentionTier));
-  if (item.author) appendLibraryDetailField(metadata, "Author", item.author);
-  if (item.publishedAt) appendLibraryDetailField(metadata, "Published", formatDate(item.publishedAt) || item.publishedAt);
-  if (item.updatedAt) appendLibraryDetailField(metadata, "Updated", formatDate(item.updatedAt) || item.updatedAt);
-  fragment.append(metadata);
-
-  if (item.summary) {
-    const summary = document.createElement("p");
-    summary.className = "library-detail-summary";
-    summary.textContent = item.summary;
-    fragment.append(summary);
-  }
-
-  const sourceURL = safeSourceUrl(item.canonicalPermalink, item.source);
-  if (sourceURL) {
-    const source = document.createElement("p");
-    source.className = "library-detail-source";
-    const link = document.createElement("a");
-    link.className = "source-link";
-    configureNativePostLink(link, sourceURL, item.source);
-    link.textContent = "Open source entry";
-    source.append(link);
-    fragment.append(source);
-  }
-
-  appendLibraryLabels(fragment, "Tags", item.tags);
-  appendLibraryLabels(fragment, "Facets", item.facets);
-  appendLibraryMediaMetadata(fragment, item.media);
-
-  if (item.saved) {
-    const savedActions = document.createElement("section");
-    savedActions.className = "library-saved-actions";
-    const savedHeading = document.createElement("h4");
-    savedHeading.textContent = "Saved for later";
-    const savedNote = document.createElement("p");
-    savedNote.className = "library-detail-action-note";
-    savedNote.textContent = "Choose what happens after reading: keep the local copy in Library, or mark it Done.";
-    const keep = document.createElement("button");
-    keep.type = "button";
-    keep.className = "primary-button library-detail-keep";
-    keep.textContent = state.library.mutationLoading && state.library.mutationAction === "keep"
-      ? "Keeping…" : "Keep in Library";
-    keep.disabled = state.library.mutationLoading;
-    keep.addEventListener("click", () => keepSavedItem(item));
-    const done = document.createElement("button");
-    done.type = "button";
-    done.className = "secondary-button library-detail-done";
-    done.textContent = state.library.mutationLoading && state.library.mutationAction === "done"
-      ? "Finishing…" : "Done";
-    done.disabled = state.library.mutationLoading;
-    done.addEventListener("click", () => doneSavedItem(item));
-    savedActions.append(savedHeading, savedNote, keep, done);
-    fragment.append(savedActions);
-  }
-
-  const fullCopy = document.createElement("section");
-  fullCopy.className = "library-detail-copy";
-  const copyHeading = document.createElement("h4");
-  copyHeading.textContent = libraryHasFullContent(item) ? "Kept full text" : "Recall stub only";
-  fullCopy.append(copyHeading);
-  const copy = document.createElement("pre");
-  copy.className = "library-detail-full-content";
-  copy.textContent = libraryHasFullContent(item)
-    ? item.fullContent
-    : "Only the bounded recall metadata is stored for this item.";
-  fullCopy.append(copy);
-  fragment.append(fullCopy);
-
-  const actions = document.createElement("section");
-  actions.className = "library-detail-actions";
-  const actionHeading = document.createElement("h4");
-  actionHeading.textContent = "Memory actions";
-  const releaseNote = document.createElement("p");
-  releaseNote.className = "library-detail-action-note";
-  releaseNote.id = "library-release-note";
-  releaseNote.textContent = item.saved
-    ? "Choose Keep in Library or Done before changing the stored copy for this Saved item."
-    : "Release removes only the stored full text. The searchable recall metadata and identity stay in Library.";
-  const release = document.createElement("button");
-  release.type = "button";
-  release.className = "secondary-button library-detail-release";
-  release.textContent = state.library.mutationLoading && state.library.mutationAction === "release" ? "Releasing…" : "Release full copy";
-  release.disabled = state.library.mutationLoading || item.retentionTier !== "full_copy" || item.saved;
-  release.setAttribute("aria-describedby", releaseNote.id);
-  release.addEventListener("click", () => releaseLibraryItem(item));
-  const removeNote = document.createElement("p");
-  removeNote.className = "library-detail-action-note";
-  removeNote.id = "library-remove-note";
-  removeNote.textContent = "Remove deletes only this local Library copy. A later More may add the source item again.";
-  const remove = document.createElement("button");
-  remove.type = "button";
-  remove.className = "secondary-button";
-  remove.textContent = state.library.mutationLoading && state.library.mutationAction === "remove" ? "Removing…" : "Remove from Library";
-  remove.disabled = state.library.mutationLoading;
-  remove.setAttribute("aria-describedby", removeNote.id);
-  remove.addEventListener("click", () => removeLibraryItem(item));
-  const forgetNote = document.createElement("p");
-  forgetNote.className = "library-detail-action-note library-detail-action-note-danger";
-  forgetNote.id = "library-forget-note";
-  forgetNote.textContent = "Forget permanently also blocks automatic recapture of the same source item until a reset.";
-  const forget = document.createElement("button");
-  forget.type = "button";
-  forget.className = "danger-button library-detail-forget";
-  forget.textContent = state.library.mutationLoading && state.library.mutationAction === "forget" ? "Forgetting…" : "Forget permanently";
-  forget.disabled = state.library.mutationLoading;
-  forget.setAttribute("aria-describedby", forgetNote.id);
-  forget.addEventListener("click", () => forgetLibraryItem(item));
-  actions.append(actionHeading);
-  if (item.retentionTier === "full_copy") actions.append(releaseNote, release);
-  actions.append(removeNote, remove, forgetNote, forget);
-  if (state.library.mutationError) {
-    const error = document.createElement("p");
-    error.className = "library-detail-action-error";
-    error.setAttribute("role", "alert");
-    error.textContent = libraryMutationErrorMessage(state.library.mutationError, state.library.mutationErrorAction);
-    actions.append(error);
-  }
-  fragment.append(actions);
-  return fragment;
-}
-
-function removeLibraryItem(item) {
-  return mutateLibraryItem(item, "remove");
-}
-
-function releaseLibraryItem(item) {
-  return mutateLibraryItem(item, "release");
-}
-
-function forgetLibraryItem(item) {
-  return mutateLibraryItem(item, "forget");
-}
-
-function keepSavedItem(item) {
-  return mutateLibraryItem(item, "keep");
-}
-
-function doneSavedItem(item) {
-  return mutateLibraryItem(item, "done");
-}
-
-async function mutateLibraryItem(item, action) {
-  if (!item?.id || state.library.mutationLoading) return;
-  const config = action === "keep"
-    ? {
-      method: "POST",
-      path: buildLibraryKeepPath,
-      confirm: libraryKeepConfirmation,
-      acknowledged: (response) => response?.kept === true && response?.saved === false && response?.permanentKeep === true,
-      failure: "Library did not confirm keeping this item.",
-      notice: "Kept in Library. It is no longer in Saved.",
-    }
-    : action === "done"
-      ? {
-        method: "POST",
-        path: buildLibraryDonePath,
-        confirm: libraryDoneConfirmation,
-        acknowledged: (response) => response?.done === true && response?.saved === false,
-        failure: "Library did not confirm that this item is Done.",
-        notice: "Done. The item is no longer in Saved.",
-      }
-    : action === "forget"
-    ? {
-      method: "POST",
-      path: buildLibraryForgetPath,
-      confirm: libraryForgetConfirmation,
-      acknowledged: (response) => response?.forgotten === true,
-      failure: "Library did not confirm the permanent forget.",
-      notice: "Memory forgotten permanently. Automatic recapture for this source item is suppressed.",
-    }
-    : action === "release"
-      ? {
-        method: "POST",
-        path: buildLibraryReleasePath,
-        confirm: libraryReleaseConfirmation,
-        acknowledged: (response) => response?.released === true && response?.retentionTier === "recall",
-        failure: "Library did not confirm the full-copy release.",
-        notice: "Full copy released. Recall metadata remains in Library.",
-      }
-    : {
-      method: "DELETE",
-      path: buildLibraryRemovePath,
-      confirm: libraryRemoveConfirmation,
-      acknowledged: (response) => response?.removed === true,
-      failure: "Library did not confirm the local removal.",
-      notice: "Memory removed locally. A future More can add it again.",
-    };
-  if (config.confirm && !window.confirm(config.confirm(item))) return;
-  state.library.mutationLoading = true;
-  state.library.mutationAction = action;
-  state.library.mutationError = null;
-  state.library.mutationErrorAction = action;
-  state.library.notice = "";
-  renderLibraryDetail();
-  try {
-    const response = await api(config.path(item.id), { method: config.method });
-    if (!config.acknowledged(response) || response.id !== item.id) throw new Error(config.failure);
-    state.library.notice = config.notice;
-    if (action === "release") {
-      state.library.items = state.library.items.map((entry) => entry.id === item.id
-        ? { ...entry, retentionTier: response.retentionTier, permanentKeep: false }
-        : entry);
-      if (state.library.selectedItem?.id === item.id) {
-        const { fullContent: _releasedContent, ...withoutFullContent } = state.library.selectedItem;
-        state.library.selectedItem = { ...withoutFullContent, retentionTier: response.retentionTier, permanentKeep: false };
-      }
-    } else if (action === "keep" || action === "done") {
-      if (state.library.activeTab === LIBRARY_TAB_SAVED) {
-        state.library.items = state.library.items.filter((entry) => entry.id !== item.id);
-        state.library.selectedId = "";
-        state.library.selectedItem = null;
-        state.library.detailRequestID += 1;
-        state.library.detailLoading = false;
-        state.library.detailError = null;
-      } else {
-        state.library.items = state.library.items.map((entry) => entry.id === item.id
-          ? { ...entry, saved: false, permanentKeep: response.permanentKeep, retentionTier: response.retentionTier }
-          : entry);
-        if (state.library.selectedItem?.id === item.id) {
-          const { fullContent: _staleContent, ...withoutFullContent } = state.library.selectedItem;
-          state.library.selectedItem = {
-            ...withoutFullContent,
-            saved: false,
-            permanentKeep: response.permanentKeep,
-            retentionTier: response.retentionTier,
-          };
-          if (action === "keep" && libraryHasFullContent(item)) state.library.selectedItem.fullContent = item.fullContent;
-        }
-      }
-    } else {
-      state.library.items = state.library.items.filter((entry) => entry.id !== item.id);
-      state.library.selectedId = "";
-      state.library.selectedItem = null;
-      state.library.detailRequestID += 1;
-      state.library.detailLoading = false;
-      state.library.detailError = null;
-    }
-    reloadLibraryStorage();
-  } catch (error) {
-    state.library.mutationError = error;
-  } finally {
-    state.library.mutationLoading = false;
-    state.library.mutationAction = "";
-    renderLibraryDetail();
-    renderLibrary();
-  }
-}
-
-function appendLibraryDetailField(list, label, value) {
-  const wrapper = document.createElement("div");
-  const term = document.createElement("dt");
-  term.textContent = label;
-  const description = document.createElement("dd");
-  description.textContent = value;
-  wrapper.append(term, description);
-  list.append(wrapper);
-}
-
-function appendLibraryLabels(fragment, label, values) {
-  if (!Array.isArray(values) || !values.length) return;
-  const section = document.createElement("section");
-  section.className = "library-detail-labels";
-  const heading = document.createElement("h4");
-  heading.textContent = label;
-  const list = document.createElement("div");
-  list.className = "library-label-list";
-  for (const value of values.slice(0, 12)) {
-    const chip = document.createElement("span");
-    chip.textContent = String(value);
-    list.append(chip);
-  }
-  section.append(heading, list);
-  fragment.append(section);
-}
-
-function appendLibraryMediaMetadata(fragment, values) {
-  if (!Array.isArray(values) || !values.length) return;
-  const section = document.createElement("section");
-  section.className = "library-detail-media";
-  const heading = document.createElement("h4");
-  heading.textContent = "Media metadata";
-  const note = document.createElement("p");
-  note.textContent = "Metadata references only; no binary media is stored or loaded here.";
-  const list = document.createElement("ul");
-  for (const value of values.slice(0, 16)) {
-    const entry = document.createElement("li");
-    const kind = document.createElement("strong");
-    kind.textContent = value.kind || "Media";
-    entry.append(kind);
-    const copy = [value.title, value.altText].filter(Boolean).join(" · ");
-    if (copy) entry.append(document.createTextNode(` · ${copy}`));
-    const href = safeMediaUrl(value.url);
-    if (href) {
-      const link = document.createElement("a");
-      link.href = href;
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      link.textContent = "Open reference";
-      link.setAttribute("aria-label", `Open ${value.kind || "media"} metadata reference`);
-      entry.append(document.createTextNode(" · "), link);
-    }
-    list.append(entry);
-  }
-  section.append(heading, note, list);
-  fragment.append(section);
-}
-
-function pingBridge() {
-  if (!browserCollectorProbeAllowed(state.bootstrap?.collectionRuntime)) return;
-  window.postMessage({
-    type: "AKU_BROWSER_BRIDGE_PING",
-    protocolMajor: 2,
-    protocolMinor: 0,
-  }, endpoint);
-}
-
-let lastBridgeReturnRefreshAt = 0;
-function refreshBridgeAfterUserReturn() {
-  if (!state.bootstrap?.bridgeToken || document.visibilityState !== "visible") return;
-  const now = Date.now();
-  if (now - lastBridgeReturnRefreshAt < 1_000) return;
-  lastBridgeReturnRefreshAt = now;
-  pingBridge();
-  requestSourceSessionReadiness();
-}
-
-function requestSourceSessionReadiness() {
-	if (!browserCollectorProbeAllowed(state.bootstrap?.collectionRuntime)) return;
-  if (!state.bootstrap?.bridge?.compatible || state.sourceSessionProbeInFlight) return;
-  state.sourceSessionProbeInFlight = true;
-  state.sourceSessionProbeTimer = window.setTimeout(() => {
-    state.sourceSessionProbeInFlight = false;
-    state.sourceSessionProbeTimer = null;
-    if (!$("#onboarding-panel").classList.contains("hidden")) $("#onboarding-error").textContent = SOURCE_SESSION_PROBE_TIMEOUT_MESSAGE;
-    renderSourceSessionError(SOURCE_SESSION_PROBE_TIMEOUT_MESSAGE);
-    updateOnboardingSummary();
-  }, 8_000);
-  renderSourceSessionReadiness();
-  window.postMessage({
-    type: "AKU_BROWSER_PROBE_SOURCE_SESSIONS",
-  }, endpoint);
-}
-
-function openSourceFromSettings(source) {
-  const descriptor = sourceDescriptor(source);
-  if (!descriptor || (!state.bootstrap?.bridge?.compatible && !state.bootstrap?.collectionRuntime?.available)) return;
-  setSourceSessionStatus(source, {
-    source,
-    state: "loading",
-    observedAt: new Date().toISOString(),
-    tabCount: 1,
-  });
-  renderSourceSessionReadiness();
-  window.postMessage({
-    type: "AKU_BROWSER_OPEN_SOURCE",
-    source,
-  }, endpoint);
-}
+// Frontend feature: living-topics-ui.js#loadLivingTopics
+
+// Frontend feature: living-topics-ui.js#refreshLivingTopicNotificationProjection
+
+// Frontend feature: living-topics-ui.js#updateLivingTopicNotificationFromTopics
+
+// Frontend feature: living-topics-ui.js#renderLivingTopicNotificationBadge
+
+// Frontend feature: living-topics-ui.js#selectLivingTopic
+
+// Frontend feature: living-topics-ui.js#loadLivingTopicDetail
+
+// Frontend feature: living-topics-ui.js#createLivingTopic
+
+// Frontend feature: living-topics-ui.js#renameLivingTopic
+
+// Frontend feature: living-topics-ui.js#searchLivingTopicEvidence
+
+// Frontend feature: living-topics-ui.js#loadLivingTopicCandidates
+
+// Frontend feature: living-topics-ui.js#addLivingTopicMember
+
+// Frontend feature: living-topics-ui.js#removeLivingTopicMember
+
+// Frontend feature: living-topics-ui.js#moveLivingTopicMember
+
+// Frontend feature: living-topics-ui.js#undoLivingTopicMemberMove
+
+// Frontend feature: living-topics-ui.js#requestLivingTopicActivation
+
+// Frontend feature: living-topics-ui.js#reviewLivingTopicCandidate
+
+// Frontend feature: living-topics-ui.js#resetLivingTopicSnapshotStatus
+
+// Frontend feature: living-topics-ui.js#createLivingTopicSnapshot
+
+// Frontend feature: living-topics-ui.js#scheduleLivingTopicUnderstandingPoll
+
+// Frontend feature: living-topics-ui.js#scheduleLivingTopicActivationPoll
+
+// Frontend feature: living-topics-ui.js#refreshLivingTopicListProjection
+
+// Frontend feature: living-topics-ui.js#renderLivingTopics
+
+// Frontend feature: living-topics-ui.js#renderLivingTopicDetail
+
+// Frontend feature: living-topics-ui.js#livingTopicUnderstandingSummary
+
+// Frontend feature: living-topics-ui.js#livingTopicRoutingSummary
+
+// Frontend feature: living-topics-ui.js#setLivingTopicDetailTab
+
+// Frontend feature: living-topics-ui.js#renderLivingTopicDetailTabs
+
+// Frontend feature: living-topics-ui.js#handleLivingTopicDetailTabKeydown
+
+// Frontend feature: living-topics-ui.js#buildLivingTopicEvidenceCard
+
+// Frontend feature: living-topics-ui.js#renderLivingTopicMoveStatus
+
+// Frontend feature: living-topics-ui.js#buildLivingTopicSuggestionCard
+
+// Frontend feature: living-topics-ui.js#buildLivingTopicReviewedCandidateCard
+
+// Frontend feature: living-topics-ui.js#renderLivingTopicSnapshots
+
+// Frontend feature: living-topics-ui.js#buildLivingTopicUnderstandingHistory
+
+// Frontend feature: living-topics-ui.js#buildCurrentLivingTopicUnderstanding
+
+// Frontend feature: living-topics-ui.js#buildLivingTopicHistoryEntry
+
+// Frontend feature: living-topics-ui.js#buildLivingTopicStatementList
+
+// Frontend feature: living-topics-ui.js#livingTopicSourceOrigin
+
+// Frontend feature: library-ui.js#setLibraryTab
+
+// Frontend feature: library-ui.js#renderLibraryTabs
+
+// Frontend feature: library-ui.js#maybeLoadLibraryStorage
+
+// Frontend feature: library-ui.js#handleLibraryTabKeydown
+
+// Frontend feature: inbox-ui.js#syncInboxSubView
+
+// Frontend feature: inbox-ui.js#setInboxSubView
+
+// Frontend feature: library-ui.js#renderLibrarySourceOptions
+
+// Frontend feature: library-ui.js#toggleLibraryFilters
+
+// Frontend feature: library-ui.js#syncLibraryFilterToggle
+
+// Frontend feature: library-ui.js#readLibraryFilters
+
+// Frontend feature: library-ui.js#resetLibraryList
+
+// Frontend feature: library-ui.js#resetLibraryStorage
+
+// Frontend feature: library-ui.js#invalidateLibraryStorage
+
+// Frontend feature: library-ui.js#reloadLibraryStorage
+
+// Frontend feature: library-ui.js#submitLibrarySearch
+
+// Frontend feature: library-ui.js#clearLibrarySearch
+
+// Frontend feature: library-ui.js#refreshLibrary
+
+// Frontend feature: library-ui.js#loadMoreLibrary
+
+// Frontend feature: library-ui.js#loadLibrary
+
+// Frontend feature: library-ui.js#loadLibraryStorage
+
+// Frontend feature: library-ui.js#libraryErrorMessage
+
+// Frontend feature: library-ui.js#libraryStorageErrorMessage
+
+// Frontend feature: library-ui.js#libraryMutationErrorMessage
+
+// Frontend feature: library-ui.js#renderLibrary
+
+// Frontend feature: library-ui.js#renderLibraryTopicKnowledge
+
+// Frontend feature: library-ui.js#buildLibraryTopicKnowledgeCard
+
+// Frontend feature: library-ui.js#renderLibraryStorage
+
+// Frontend feature: library-ui.js#buildLibrarySavedPressure
+
+// Frontend feature: library-ui.js#buildLibraryStorageUsage
+
+// Frontend feature: library-ui.js#formatLibraryStorageCount
+
+// Frontend feature: library-ui.js#libraryStorageMetric
+
+// Frontend feature: library-ui.js#buildLibraryStorageRecommendation
+
+// Frontend feature: library-ui.js#reviewLibraryStorageRecommendation
+
+// Frontend feature: library-ui.js#buildLibrarySavedRecommendation
+
+// Frontend feature: library-ui.js#reviewSavedRecommendation
+
+// Frontend feature: library-ui.js#libraryStateMessage
+
+// Frontend feature: library-ui.js#buildLibraryCard
+
+// Frontend feature: library-ui.js#libraryMetaChip
+
+// Frontend feature: library-ui.js#selectLibraryItem
+
+// Frontend feature: library-ui.js#closeLibraryDetail
+
+// Frontend feature: library-ui.js#renderLibraryDetail
+
+// Frontend feature: library-ui.js#buildLibraryDetail
+
+// Frontend feature: library-ui.js#removeLibraryItem
+
+// Frontend feature: library-ui.js#releaseLibraryItem
+
+// Frontend feature: library-ui.js#forgetLibraryItem
+
+// Frontend feature: library-ui.js#keepSavedItem
+
+// Frontend feature: library-ui.js#doneSavedItem
+
+// Frontend feature: library-ui.js#mutateLibraryItem
+
+// Frontend feature: library-ui.js#appendLibraryDetailField
+
+// Frontend feature: library-ui.js#appendLibraryLabels
+
+// Frontend feature: library-ui.js#appendLibraryMediaMetadata
+
+// Frontend feature: capture-ui.js#pingBridge
+
+// Frontend feature: capture-ui.js#lastBridgeReturnRefreshAt
+// Frontend feature: capture-ui.js#refreshBridgeAfterUserReturn
+
+// Frontend feature: capture-ui.js#requestSourceSessionReadiness
+
+// Frontend feature: capture-ui.js#openSourceFromSettings
 
 const nativePointerTraces = new WeakMap();
 let nativePostOpening = false;
-function syncNativePostLinks() {
-  for (const link of document.querySelectorAll("[data-aku-native-post]")) syncNativePostAvailability(link,
-    nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening || state.closingNativeReaders, link.dataset.akuNativePost));
-}
+// Frontend feature: capture-ui.js#syncNativePostLinks
 document.addEventListener("pointerdown", (event) => {
   if (!event.isTrusted || event.button !== 0) return;
   const link = event.target?.closest?.("a[data-aku-native-post]");
@@ -3099,39 +1299,7 @@ document.addEventListener("pointerdown", (event) => {
   logNativePostTrace(pointerTrace, "pointerdown");
 }, true);
 
-function configureNativePostLink(link, href, source) {
-  link.href = href;
-  link.dataset.akuNativePost = source;
-  link.rel = "noopener noreferrer";
-  syncNativePostAvailability(link, nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening || state.closingNativeReaders, source));
-  link.addEventListener("click", (event) => {
-    const pointer = nativePointerTraces.get(link);
-    nativePointerTraces.delete(link);
-    const gesture = pointer && Date.now() - pointer.at <= 5000 ? pointer.trace : null;
-    if (!event.isTrusted || event.defaultPrevented || event.button !== 0) {
-      if (gesture) logNativePostTrace(gesture, "click_ignored", { outcome: "ignored" });
-      return;
-    }
-    event.preventDefault();
-    const waitReason = nativePostWaitReason(state.bootstrap?.collectionRuntime, state.session, nativePostOpening || state.closingNativeReaders, source);
-    syncNativePostAvailability(link, waitReason);
-    if (waitReason) return;
-    const brokerRequestId = link.dataset.akuReaderRequest;
-    if (/^broker_[a-f0-9]{32}$/.test(brokerRequestId ?? "")) {
-      const consumed = (link.dataset.akuReaderRequestsConsumed ?? "").split(",")
-        .filter((id) => /^broker_[a-f0-9]{32}$/.test(id));
-      consumed.push(brokerRequestId);
-      link.dataset.akuReaderRequestsConsumed = consumed.join(",");
-    }
-    delete link.dataset.akuReaderRequest;
-    nativePostOpening = true;
-    syncNativePostLinks();
-    openNativePostInReaderWindow(href, source, brokerRequestId, gesture).catch(showError).finally(() => {
-      nativePostOpening = false;
-      syncNativePostLinks();
-    });
-  });
-}
+// Frontend feature: capture-ui.js#configureNativePostLink
 
 const routeNativePost = createNativePostRouter({
   readRuntime: async () => {
@@ -3151,1159 +1319,117 @@ const routeNativePost = createNativePostRouter({
   },
 });
 
-function openNativePostInReaderWindow(url, source, brokerRequestId = null, gesture = null) {
-  const requestId = brokerRequestId || `native_post_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-  const started = performance.now();
-  logNativePostTrace(requestId, "click", { gesture });
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const routing = new AbortController();
-    const timeout = window.setTimeout(() => finish(
-      reject,
-      new Error("AkuBridge timed out while opening the native post."),
-      "timeout",
-    ), NATIVE_POST_OPEN_TIMEOUT_MS);
-    function finish(callback, value, outcome) {
-      if (settled) return;
-      settled = true;
-      routing.abort();
-      window.clearTimeout(timeout);
-      window.removeEventListener("message", onResult);
-      if (callback === reject && brokerRequestId) {
-        cancelNativePostBroker(brokerRequestId, source, url);
-      }
-      logNativePostTrace(requestId, "terminal", {
-        outcome,
-        elapsedMs: Math.round(performance.now() - started),
-        ...(outcome === "rejected" ? { errorKind: window.akuNativePostDiagnostics?.errorKind(value) ?? "other" } : {}),
-      });
-      callback(value);
-    }
-    function onResult(event) {
-      if (event.source !== window || event.origin !== endpoint || event.data?.requestId !== requestId) return;
-      if (event.data.type === "AKU_BROWSER_NATIVE_POST_OPENED") {
-        if (event.data.foreground === "manual_required") {
-          showNotice(event.data.message || "The post opened in your Native Reader tab, but Windows did not bring that window to the foreground. Switch to the Native Reader window manually.");
-        }
-        finish(resolve, event.data, "opened");
-      } else if (event.data.type === "AKU_BROWSER_NATIVE_POST_OPEN_FAILED") {
-        finish(reject, new Error(event.data.message || "AkuBridge could not open the native post."), "rejected");
-      }
-    }
-    window.addEventListener("message", onResult);
-    // Subscribe before reading mode so an early broker rejection is not lost.
-    routeNativePost({
-      type: "AKU_BROWSER_OPEN_NATIVE_POST",
-      requestId,
-      source,
-      url,
-    }, { signal: routing.signal }).then(() => {
-      if (!settled) {
-        logNativePostTrace(requestId, "dispatch");
-      }
-    }).catch((error) => finish(reject, error, "rejected"));
-  });
-}
+// Frontend feature: capture-ui.js#openNativePostInReaderWindow
 
-function cancelNativePostBroker(requestId, source, url) {
-  if (!/^broker_[a-f0-9]{32}$/.test(requestId || "")) return;
-  window.postMessage({
-    type: "AKU_BROWSER_CANCEL_NATIVE_POST_BROKER",
-    requestId,
-    source,
-    url,
-  }, endpoint);
-}
+// Frontend feature: capture-ui.js#cancelNativePostBroker
 
-function setSourceSessionStatus(source, observation) {
-  state.sourceSessionReadiness = {
-    ...(state.sourceSessionReadiness ?? {}),
-    [source]: observation,
-  };
-}
+// Frontend feature: capture-ui.js#setSourceSessionStatus
 
-function renderSourceSessionError(message, source = null) {
-  const detail = String(message || "Source session status is unavailable.").slice(0, 160);
-  const observedAt = new Date().toISOString();
-  if (source) {
-    setSourceSessionStatus(source, {
-      source,
-      state: "unknown",
-      observedAt,
-      detail,
-    });
-  } else {
-    state.sourceSessionReadiness = failedSourceSessionObservations(
-      sourceDescriptors().map((descriptor) => descriptor.id), detail, observedAt,
-    );
-  }
-  renderSourceSessionReadiness();
-}
+// Frontend feature: capture-ui.js#renderSourceSessionError
 
-function renderSourceSessionReadiness() {
-  for (const descriptor of sourceDescriptors()) {
-    const observation = state.sourceSessionReadiness?.[descriptor.id] ?? null;
-    const status = document.querySelector(`[data-source-session-readiness="${descriptor.id}"]`);
-    const button = document.querySelector(`[data-source-open="${descriptor.id}"]`);
-    if (!status || !button) continue;
-    setSettingsClass(status, "source-session-status" +
-      (observation?.state === "ready" ? " source-session-ready" :
-       ["login_required", "permission_required", "challenge_required"].includes(observation?.state) ? " source-session-warning" : ""));
-    if (state.sourceSessionProbeInFlight && !observation) {
-      setSettingsText(status, "Session: checking existing tabs");
-      setSettingsText(button, "Open source");
-      button.disabled = false;
-      continue;
-    }
-    const stateValue = observation?.state ?? "unknown";
-    const labels = {
-      ready: "Session: feed available",
-      login_required: "Session: sign-in required",
-      challenge_required: "Session: human verification required",
-      permission_required: "Access: permission required",
-      not_observed: "Session: source not open",
-      loading: "Session: loading",
-      unavailable: "Session: temporarily unavailable",
-      unknown: "Session: not confirmed",
-    };
-    setSettingsText(status, labels[stateValue] ?? labels.unknown);
-    status.title = observation?.detail || "";
-    setSettingsText(button, stateValue === "permission_required"
-      ? "Grant access"
-      : stateValue === "login_required" ? "Sign in" : "Open source");
-    button.disabled = !state.bootstrap?.bridge?.compatible && !state.bootstrap?.collectionRuntime?.available;
-  }
-  renderOnboardingSourceReadiness();
-}
+// Frontend feature: capture-ui.js#renderSourceSessionReadiness
 
-function renderOnboardingSourceReadiness() {
-  const accessBySource = new Map(bridgeSourceReadiness().map((entry) => [entry.source, entry]));
-  for (const descriptor of sourceDescriptors()) {
-    const accessStatus = document.querySelector(`[data-onboarding-source-readiness="${descriptor.id}"]`);
-    const sessionStatus = document.querySelector(`[data-onboarding-source-session-readiness="${descriptor.id}"]`);
-    const button = document.querySelector(`[data-onboarding-source-open="${descriptor.id}"]`);
-    if (!accessStatus || !sessionStatus || !button) continue;
-    const access = accessBySource.get(descriptor.id);
-    const accessState = sourceAccessReadinessState(access);
-    setSettingsClass(accessStatus, "source-readiness-status" +
-      (accessState === "ready" ? " source-readiness-ready" :
-       ["permission_not_granted", "registration_missing", "capture_not_ready"].includes(accessState) ? " source-readiness-warning" : ""));
-    if (accessState === "checking") {
-      setSettingsText(accessStatus, "Access: checking");
-    } else if (accessState === "permission_not_granted") {
-      setSettingsText(accessStatus, "Access: permission required");
-    } else if (accessState === "registration_missing") {
-      setSettingsText(accessStatus, "Access: capture registration missing");
-    } else if (accessState === "capture_not_ready") {
-      setSettingsText(accessStatus, "Access: capture not ready");
-    } else {
-      setSettingsText(accessStatus, "Access: ready");
-    }
-    const observation = state.sourceSessionReadiness?.[descriptor.id] ?? null;
-    const stateValue = observation?.state ?? "unknown";
-    const labels = {
-      ready: "Session: feed available",
-      login_required: "Session: sign-in required",
-      challenge_required: "Session: human verification required",
-      permission_required: "Session: permission required",
-      not_observed: "Session: source not open",
-      loading: "Session: loading",
-      unavailable: "Session: temporarily unavailable",
-      unknown: "Session: not confirmed",
-    };
-    setSettingsClass(sessionStatus, "source-session-status" +
-      (stateValue === "ready" ? " source-session-ready" :
-       ["login_required", "permission_required", "challenge_required"].includes(stateValue) ? " source-session-warning" : ""));
-    setSettingsText(sessionStatus, labels[stateValue] ?? labels.unknown);
-    sessionStatus.title = observation?.detail || "";
-    setSettingsText(button, !access?.permissionGranted || stateValue === "permission_required"
-      ? "Grant access"
-      : stateValue === "login_required" ? "Sign in" : "Open source");
-    button.disabled = !state.bootstrap?.bridge?.compatible && !state.bootstrap?.collectionRuntime?.available;
-  }
-}
+// Frontend feature: capture-ui.js#renderOnboardingSourceReadiness
 
-async function bridgeActionLoop() {
-  while (true) {
-    try {
-      const response = await bridgeApi("/api/operations/bridge/actions/next?waitMs=25000");
-      if (response?.action) {
-        window.postMessage({
-          type: "AKU_BROWSER_BRIDGE_RELOAD_SELF",
-          actionId: response.action.id,
-          endpoint,
-          token: state.bootstrap.bridgeToken,
-        }, endpoint);
-      }
-    } catch (error) {
-      console.warn("Bridge action relay paused", error);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-  }
-}
+// Frontend feature: capture-ui.js#bridgeActionLoop
 
-function renderBridge(bridge) {
-  if (state.bootstrap) state.bootstrap.bridge = bridge;
-  if (state.bootstrap?.collectionRuntime?.effective === "headless") {
-    setPill("#bridge-status", "Headless collection ready", "ok");
-    $("#bridge-reload").classList.add("hidden");
-    syncRunButtons();
-    return;
-  }
-  const bridgeRecoveryButton = $("#bridge-reload");
-  const development = state.bootstrap?.deployment?.mode === "development";
-  const recovery = bridgeRecoveryState(bridge, development);
-  bridgeRecoveryButton.classList.toggle("hidden", !recovery.showReload);
-  bridgeRecoveryButton.title = recovery.detail || "Reload AkuBridge";
-  bridgeRecoveryButton.disabled = state.bridgeReloadInFlight === true || bridgeCaptureBusy(state.session);
-  if (bridgeCaptureBusy(state.session)) bridgeRecoveryButton.title = "Wait for the active capture to finish before reloading AkuBridge.";
-  if (bridge?.compatible) {
-    const readiness = bridgeSourceReadiness();
-    const activeSources = state.bootstrap?.settings?.activeSources ?? [];
-    const readySources = new Set(readiness.filter((source) => source.ready).map((source) => source.source));
-    const readyActiveCount = activeSources.filter((source) => readySources.has(source)).length;
-    if (!readiness.length) {
-      setPill("#bridge-status", "AkuBridge source access checking", "warning");
-    } else if (readyActiveCount === 0) {
-      setPill("#bridge-status", "AkuBridge source access needed", "warning");
-    } else if (readyActiveCount < activeSources.length) {
-      setPill("#bridge-status", `AkuBridge partial · ${readyActiveCount}/${activeSources.length} sources ready`, "warning");
-    } else {
-      setPill("#bridge-status", `AkuBridge ${bridge.actual?.extensionVersion} ready`, "ok");
-    }
-    configureBackgroundBridge();
-  } else if (bridge?.state === "incompatible") {
-    const reasons = bridge.reasons?.join(", ");
-    setPill("#bridge-status", reasons ? `AkuBridge incompatible · ${reasons}` : "AkuBridge incompatible", "danger");
-  } else {
-    setPill("#bridge-status", "AkuBridge reconnecting", "warning");
-  }
-  if (recovery.label) setPill("#bridge-status", recovery.label, "warning");
-  $("#bridge-status").title = recovery.detail;
-  renderBrowserConnection();
-  syncRunButtons();
-  renderSourceSettingsValues(state.bootstrap?.settings);
-  updateOnboardingSummary();
-  if (bridge?.compatible) schedulePassiveMediaEnrichment();
-}
+// Frontend feature: capture-ui.js#renderBridge
 
-function configureBackgroundBridge() {
-  if (!state.bootstrap?.bridgeToken) return;
-  window.postMessage({
-    type: "AKU_BROWSER_CONFIGURE_BACKGROUND_DISPATCH",
-    endpoint,
-    token: state.bootstrap.bridgeToken,
-  }, endpoint);
-}
+// Frontend feature: capture-ui.js#configureBackgroundBridge
 
-function renderCollectionRuntime() {
-  syncNativePostLinks();
-  const runtime = state.bootstrap?.collectionRuntime;
-  const view = collectionModeState(runtime,state.bootstrap?.bridge?.compatible);
-  const select = $("#collection-mode");
-  if (!select) return;
-  select.querySelector('[value="headless"]').disabled = !view.canSelectHeadless;
-  const visibility = $("#capture-visibility-policy");
-  // Facebook's Browser exception still follows the selected visibility policy.
-  visibility.disabled = false;
-  const hybrid = select.value === "headless";
-  const hiddenQuiet = !hybrid && runtime?.quietAvailable === true;
-  setSettingsText(visibility.querySelector('[value="quiet"]'), hybrid
-    ? "Facebook: single window" : hiddenQuiet
-    ? "Quiet capture — hidden X/Facebook — recommended" : "Quiet capture — single window — recommended");
-  setSettingsText(visibility.querySelector('[value="quiet_multi_window"]'), hybrid
-    ? "Facebook: multiple windows" : hiddenQuiet
-    ? "Quiet capture — hidden X/Facebook, separate windows for other sources" : "Quiet capture — multiple windows (trial)");
-  setSettingsText($("#capture-visibility-description"), hybrid
-    ? "Visibility applies to Facebook Browser collection. X, Instagram and LinkedIn use headless. If Facebook content is unavailable, try Adaptive fidelity; its collection window can become visible." : hiddenQuiet
-    ? "Quiet keeps X and Facebook collection hidden. Login and native posts still open an interactive window. Other sources retain the selected background-window policy; Adaptive uses a normal Chrome tab."
-    : "Single-window Quiet shares one background window; multi-window Quiet remains available for trial; Adaptive uses a canonical tab in your normal Chrome window.");
-  setSettingsText($("#collection-runtime-status"), view.detail);
-}
-async function pollCollectionRuntime() {
-  if (!state.bootstrap || state.collectionPollInFlight) return;
-  state.collectionPollInFlight = true;
-  const xDailyRead = xDailyControls.beginRead();
-  const instagramRead = instagramTrialControls.beginRead();
-  try {
-    const response = await api("/api/collection/runtime");
-    state.bootstrap.collectionRuntime = response.collectionRuntime;
-    xDailyControls.applyRead(xDailyRead, response.xCapture);
-    instagramTrialControls.applyRead(instagramRead, response.instagramCapture);
-    renderCollectionRuntime();
-    renderSourceSessionReadiness();
-    syncRunButtons();
-    if (response.collectionRuntime.effective === "headless") setPill("#bridge-status", "Headless collection ready", "ok");
-  } catch {
-    xDailyControls.rejectRead(xDailyRead);
-    instagramTrialControls.rejectRead(instagramRead);
-    // Existing connection recovery owns transient failures.
-  }
-  finally { state.collectionPollInFlight = false; }
-}
-function renderSettings(settings) {
-  if (!settings) return;
-  renderReasoningProcesses(state.bootstrap?.reasoningProcesses ?? []);
-  const reasoningRuntime = state.bootstrap?.reasoningRuntime;
-  renderReasoningProviderControl(settings);
-  $("#reasoning-executable-label").textContent = reasoningRuntime?.label || "Inference executable";
-  $("#reasoning-executable-path").value = reasoningRuntime?.executablePath || settings.reasoningExecutablePath || "";
-  $("#reasoning-executable-path").disabled = reasoningRuntime?.editable === false;
-  $("#detect-reasoning-executable").disabled = reasoningRuntime?.editable === false;
-  $("#bounded-load-profile").value = settings.loadProfile;
-  $("#capture-visibility-policy").value = settings.captureVisibility;
-  $("#collection-mode").value = settings.collectionMode || "browser";
-  renderCollectionRuntime();
-  $("#source-wait-mode").value = settings.sourceWaitMode || "progressive_wait";
-  $("#preference-eligibility-mode").value = settings.preferenceEligibilityMode;
-  $("#calibration-enabled").checked = settings.calibrationEnabled;
-  $("#calibration-batch-size").value = settings.calibrationBatchSize;
-  $("#show-learning-panel").checked = settings.showLearningPanel === true;
-  $("#open-missing-source").checked = settings.openMissingSource;
-  $("#timeline-capacity").value = settings.timelineCapacity;
-  $("#max-items-per-source").value = settings.maxItemsPerSource;
-  $("#max-scrolls").value = settings.maxScrolls;
-  $("#default-presentation").value = settings.defaultPresentation || "source";
-  $("#stream-width").value = settings.streamWidth || "social";
-  $("#single-image-fit").value = settings.singleImageFit || "cover";
-  $("#post-freshness-style").value = settings.postFreshnessStyle || "header_shade";
-  $("#content-context-up-scroll-mode").value = settings.contentContextUpScrollMode || "close_offscreen";
-  $("#timeline-batch-gap").value = settings.timelineBatchGapPx || DEFAULT_TIMELINE_BATCH_GAP_PX;
-  $("#timeline-boundary-follow").checked = settings.timelineBoundaryCueMode !== "static";
-  $("#timeline-boundary-return-ms").value = settings.timelineBoundaryReturnMs || DEFAULT_TIMELINE_BOUNDARY_RETURN_MS;
-  $("#semantic-event-mode").value = settings.semanticEventMode || "collapse";
-  $("#semantic-event-shortlist").value = String(settings.semanticEventShortlist || 10);
-  $("#semantic-event-merge-threshold").value = Number(settings.semanticEventMergeThreshold || DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD).toFixed(2);
-  $("#knowledge-retention-days").value = String(settings.knowledgeRetentionDays || 30);
-  $("#knowledge-storage-limit").value = String(settings.knowledgeStorageLimitMb || 100);
-  $("#ai-detection-enabled").checked = settings.aiDetectionEnabled !== false;
-  $("#ai-detection-presentation").value = settings.aiDetectionPresentation || "drawer";
-  const mediaRuntime = state.bootstrap?.mediaProvenanceRuntime;
-  $("#c2pa-runtime-status").textContent = mediaRuntime?.available
-    ? `${mediaRuntime.provider} ready · ${mediaRuntime.version}`
-    : `${mediaRuntime?.provider || "c2patool"} unavailable`;
-  $("#resurface-mode").value = settings.resurfaceMode || "smart";
-  $("#resurface-cooldown-days").value = String(settings.resurfaceCooldownDays || 7);
-  $("#auto-update-enabled").checked = settings.autoUpdateEnabled !== false;
-  $("#auto-update-mode").value = settings.autoUpdateMode || "adaptive";
-  $("#auto-update-refill").value = String(settings.autoUpdateRefillMinutes || 15);
-  syncAutoUpdateModeSettings();
-  $("#prepared-batch-limit").value = String(settings.preparedBatchLimit || 2);
-  $("#auto-update-token-budget").value = String(settings.autoUpdateDailyTokenBudget || 2000000);
-  $("#auto-update-manual-reserve").value = String(settings.autoUpdateManualReservePct || 25);
-  $("#prepared-batch-max-age").value = String(settings.preparedBatchMaxAgeHours || 24);
-  $("#next-batch-behavior").value = settings.nextBatchBehavior || "require_action";
-  renderSourceSettingsValues(settings);
-  for (const input of document.querySelectorAll("#settings-source-options input[type='checkbox']")) {
-    input.checked = settings.activeSources?.includes(input.value) ?? false;
-  }
-  applyStreamWidth(settings.streamWidth || "social");
-  applySingleImageFit(settings.singleImageFit || "cover");
-  applyPostFreshnessStyle(settings.postFreshnessStyle || "header_shade");
-  applyTimelineBatchGap(settings.timelineBatchGapPx || DEFAULT_TIMELINE_BATCH_GAP_PX);
-  applyTimelineBoundaryReturnDuration(settings.timelineBoundaryReturnMs || DEFAULT_TIMELINE_BOUNDARY_RETURN_MS);
-  if (settings.timelineBoundaryCueMode === "static") releaseBackToTopBoundary();
-  syncLoadProfileSettings(false);
-  syncSemanticEventSettings();
-  syncAIDetectionSettings();
-  renderAutoUpdateStatus(state.bootstrap?.autoUpdate);
-  const now = new Date();
-  const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const until = new Date();
-  $("#diagnostics-since").value = since.toISOString().slice(0, 16);
-  $("#diagnostics-until").value = until.toISOString().slice(0, 16);
-  settingsDirty.setBaseline(readSettingsDraft(settings));
-}
+// Frontend feature: capture-ui.js#renderCollectionRuntime
+// Frontend feature: app-lifecycle.js#pollCollectionRuntime
+// Frontend feature: settings-feature.js#renderSettings
 
-function renderAutoUpdateStatus(status) {
-	const capturePause = status?.sourceCapturePause;
-	renderSourceCapturePause({ panel: $("#x-capture-pause"), detail: $("#x-capture-pause-detail") }, capturePause);
-  renderNativeReaderNotice(status);
-  const detail = $("#auto-update-status");
-  const queue = $("#auto-update-queue-status");
-  const modeBadge = $("#auto-update-mode-badge");
-  const modeNotice = $("#auto-update-mode-notice");
-  const stateBadge = $("#auto-update-state-badge");
-  const preparedMetric = $("#auto-update-prepared-metric");
-  const runwayLabel = $("#auto-update-runway-label");
-  const runwayMetric = $("#auto-update-runway-metric");
-  const resultMetric = $("#auto-update-result-metric");
-  const pressureLabel = $("#auto-update-pressure-label");
-  const pressureMetric = $("#auto-update-pressure-metric");
-  const allowanceLabel = $("#auto-update-allowance-label");
-  const allowanceMetric = $("#auto-update-allowance-metric");
-  const nextMetric = $("#auto-update-next-metric");
-  const budget = $("#auto-update-budget-status");
-  const budgetDetail = $("#auto-update-budget-detail");
-  const reset = $("#reset-auto-update-budget");
-  const confirmRestored = $("#confirm-codex-usage-restored");
-  const runNow = $("#prepare-batch-now");
-  const timeline = $("#auto-update-timeline-status");
-  const timelineAction = $("#auto-update-timeline-settings");
-  if (!detail || !queue || !modeBadge || !modeNotice || !stateBadge || !preparedMetric || !runwayLabel || !runwayMetric || !resultMetric || !pressureLabel || !pressureMetric || !allowanceLabel || !allowanceMetric || !nextMetric || !budget || !budgetDetail || !timeline) return;
-  if (state.bootstrap && status) state.bootstrap.autoUpdate = status;
-  if (!status) {
-    detail.textContent = "Local scheduler telemetry is not available yet.";
-    queue.textContent = "—";
-    modeBadge.textContent = "Unknown";
-    modeNotice.textContent = "";
-    modeNotice.classList.add("hidden");
-    stateBadge.textContent = "Unavailable";
-    stateBadge.className = "auto-update-state-pill auto-update-state-neutral";
-    for (const metric of [preparedMetric, runwayMetric, resultMetric, pressureMetric, allowanceMetric, nextMetric]) metric.textContent = "—";
-    budget.textContent = "Daily token telemetry is not available yet.";
-    budgetDetail.textContent = "—";
-    timeline.classList.add("hidden");
-    renderTimelineActions();
-    return;
-  }
-  const used = status.dailyTokensUsed || 0;
-  const quotaUsed = status.quotaTokensUsed ?? used;
-  const dailyBudget = status.dailyTokenBudget || 0;
-  const dailyRemaining = status.dailyTokensRemaining || 0;
-  const automaticRemaining = status.automaticTokensRemaining || 0;
-  const reserve = status.manualReserveTokens || 0;
-  const estimate = status.estimatedNextRunTokens || 0;
-  const adaptive = status.mode === "adaptive";
-  const liveMode = adaptive ? "adaptive" : "fixed";
-  const configuredMode = state.bootstrap?.settings?.autoUpdateMode || liveMode;
-  const selectedMode = $("#auto-update-mode")?.value || configuredMode;
-  const unsavedModeChange = selectedMode !== configuredMode;
-  const applyingModeChange = !unsavedModeChange && configuredMode !== liveMode;
-  modeBadge.textContent = autoUpdateModeLabel(liveMode);
-  modeNotice.classList.toggle("hidden", !unsavedModeChange && !applyingModeChange);
-  if (unsavedModeChange) {
-    modeNotice.textContent = `Unsaved change: ${autoUpdateModeDescription(selectedMode)}. Status below still reflects the current ${autoUpdateModeDescription(liveMode)} scheduler.`;
-  } else if (applyingModeChange) {
-    modeNotice.textContent = `Applying ${autoUpdateModeDescription(configuredMode)}. Status below will switch after the scheduler confirms the new policy.`;
-  } else {
-    modeNotice.textContent = "";
-  }
-  const stateTone = status.state === "running"
-    ? "active"
-    : ["paused", "budget_paused"].includes(status.state)
-      ? "warning"
-      : status.state === "usage_limit_paused" ? "danger" : "neutral";
-  stateBadge.textContent = humanize(status.state || "idle");
-  stateBadge.className = `auto-update-state-pill auto-update-state-${stateTone}`;
-  detail.textContent = status.reason || (status.enabled ? "Automatic checks are ready." : "Automatic checks are off.");
+// Frontend feature: auto-update-ui.js#renderAutoUpdateStatus
 
-  const prepared = status.preparedBatches?.length || 0;
-  const limit = status.preparedBatchLimit || prepared;
-  const available = status.availablePreparedSlots ?? Math.max(0, limit - prepared);
-  preparedMetric.textContent = `${prepared} / ${limit} batches`;
-  runwayLabel.textContent = adaptive ? "Ready posts" : "Open slots";
-  runwayMetric.textContent = adaptive
-    ? `${status.adaptiveReadyItems || 0} / ${status.adaptiveReadyItemTarget || 1} posts`
-    : `${available} available`;
+// Frontend feature: auto-update-ui.js#autoUpdateModeLabel
 
-  const latestReceipt = status.schedulerReceipts?.[0];
-  const outcomeSources = (status.lastAdaptiveOutcomeCompletedSources || 0)
-    + (status.lastAdaptiveOutcomeFailedSources || 0)
-    + (status.lastAdaptiveOutcomeCancelledSources || 0);
-  const failedOutcomeSources = status.lastAdaptiveOutcomeFailedSources || 0;
-  const cancelledOutcomeSources = status.lastAdaptiveOutcomeCancelledSources || 0;
-  const outcomeSourceDetail = outcomeSources > 0
-    ? `${status.lastAdaptiveOutcomeCompletedSources || 0}/${outcomeSources} source${outcomeSources === 1 ? "" : "s"} completed${failedOutcomeSources ? `, ${failedOutcomeSources} failed` : ""}${cancelledOutcomeSources ? `, ${cancelledOutcomeSources} cancelled` : ""}`
-    : "source counts unavailable";
-  resultMetric.textContent = status.lastAdaptiveOutcome
-    ? `${humanize(status.lastAdaptiveOutcome)} · ${status.lastAdaptiveOutcomeItems || 0} post${status.lastAdaptiveOutcomeItems === 1 ? "" : "s"}`
-    : latestReceipt ? humanize(latestReceipt.outcome) : "No result yet";
-  pressureLabel.textContent = adaptive ? "Pressure" : "Cadence";
-  pressureMetric.textContent = adaptive
-    ? `${humanize(status.replenishmentPressureTier || "low")} · ${status.replenishmentPressure || 0}/100`
-    : `${status.cadenceMinutes || status.refillIntervalMinutes || 0} min`;
-  allowanceLabel.textContent = adaptive ? `Attempts (${status.generationWindowMinutes || 30}m)` : "Policy";
-  allowanceMetric.textContent = adaptive
-    ? `${status.generationAllowanceUsed || 0} / ${status.generationAllowanceLimit || limit}`
-    : "Continuous";
-  nextMetric.textContent = status.state === "usage_limit_paused"
-    ? "Needs confirmation"
-    : status.state === "budget_paused"
-      ? "Waiting for budget"
-      : status.state === "disabled"
-        ? "Off"
-        : status.nextCheckAt ? formatSchedulerMoment(status.nextCheckAt) : "Ready when needed";
+// Frontend feature: auto-update-ui.js#autoUpdateModeDescription
 
-  const diagnostics = [];
-  if (adaptive) {
-    const baseTarget = status.adaptiveBaseTargetBatches || status.adaptiveTargetBatches || 1;
-    diagnostics.push(`Target ${status.adaptiveTargetBatches || 1}${baseTarget > status.adaptiveTargetBatches ? ` of learned ${baseTarget}` : ""} batch${baseTarget === 1 ? "" : "es"}`);
-    diagnostics.push(status.consumptionPaceMinutes ? `Pace ~${status.consumptionPaceMinutes}m/batch` : "Learning consumption pace");
-    if (status.pressureAdditionalDelayMinutes) diagnostics.push(`Pressure adds ${status.pressureAdditionalDelayMinutes}m spacing`);
-  } else {
-    diagnostics.push(`${humanize(status.cadenceTier || "continuous")} cadence ${status.cadenceMinutes || status.refillIntervalMinutes || 0}m`);
-  }
-  if (latestReceipt) diagnostics.push(`Last tick ${humanize(latestReceipt.outcome)}${latestReceipt.reason ? `: ${latestReceipt.reason}` : ""}`);
-  if (status.lastAdaptiveOutcome) diagnostics.push(`Last outcome: ${outcomeSourceDetail}`);
-  diagnostics.push(`Next estimate ${formatTokenCount(estimate)}`);
-  if (status.pressureRefillNotBefore && Date.parse(status.pressureRefillNotBefore) > Date.now()) diagnostics.push(`Pressure spacing until ${formatDate(status.pressureRefillNotBefore)}`);
-  if (adaptive && status.adaptiveReadingGraceUntil && Date.parse(status.adaptiveReadingGraceUntil) > Date.now()) diagnostics.push(`Reading grace until ${formatDate(status.adaptiveReadingGraceUntil)}`);
-  if (status.supplyBackoffUntil && Date.parse(status.supplyBackoffUntil) > Date.now()) diagnostics.push(`Supply cooldown until ${formatDate(status.supplyBackoffUntil)}`);
-  if (status.technicalBackoffUntil && Date.parse(status.technicalBackoffUntil) > Date.now()) diagnostics.push(`Retry cooldown until ${formatDate(status.technicalBackoffUntil)}`);
-  diagnostics.push(...captureBehaviorDiagnostics(status.captureBehavior, { sourceLabel, formatMoment: formatDate }));
-  queue.textContent = diagnostics.join(" · ");
-  const actual = quotaUsed === used ? "" : ` · ${formatTokenCount(used)} actual today`;
-  const manualReset = status.lastManualBudgetResetAt ? ` · quota reset ${formatDate(status.lastManualBudgetResetAt)}` : "";
-  budget.textContent = `${formatTokenCount(quotaUsed)} of ${formatTokenCount(dailyBudget)} quota used${actual}${manualReset} · ${formatTokenCount(dailyRemaining)} remaining · resets ${formatDate(status.budgetResetAt)}`;
-  budgetDetail.textContent = `${formatTokenCount(automaticRemaining)} automatic · ${formatTokenCount(reserve)} user reserve`;
-  const usageLimitPaused = status.state === "usage_limit_paused";
-  if (timelineAction) timelineAction.textContent = usageLimitPaused ? "Confirm usage restored" : "Review Auto Update";
-  if (reset) reset.disabled = Boolean(state.session);
-  if (confirmRestored) {
-    confirmRestored.classList.toggle("hidden", !usageLimitPaused);
-    confirmRestored.disabled = Boolean(state.session);
-  }
-  if (runNow) runNow.disabled = Boolean(state.session) || !status.enabled || status.state === "running" || usageLimitPaused;
-  renderTimelineActions();
-  const paused = status.enabled && ["paused", "budget_paused", "usage_limit_paused"].includes(status.state);
-  timeline.classList.toggle("hidden", !paused);
-  if (paused) {
-    $("#auto-update-timeline-title").textContent = usageLimitPaused
-      ? "Auto Update paused by Codex usage limit"
-      : status.state === "budget_paused" ? "Auto Update paused by today’s budget" : "Auto Update paused";
-    $("#auto-update-timeline-detail").textContent = usageLimitPaused
-      ? `Codex reported a usage limit${status.usageLimitPausedAt ? ` at ${formatDate(status.usageLimitPausedAt)}` : ""}. Automatic checks will not retry until you confirm in Settings that usage is restored.`
-      : status.state === "budget_paused"
-        ? `${formatTokenCount(dailyRemaining)} quota remains; the next run is estimated at ${formatTokenCount(estimate)}. Increase or reset today’s local quota in Settings, or wait until ${formatDate(status.budgetResetAt)}.`
-        : status.reason || "Automatic work is waiting for an available boundary.";
-  }
-}
+// Frontend feature: auto-update-ui.js#syncAutoUpdateModeSettings
 
-function autoUpdateModeLabel(mode) {
-  return mode === "fixed" ? "Continuous" : "Adaptive";
-}
+// Frontend feature: auto-update-ui.js#prepareBatchNow
 
-function autoUpdateModeDescription(mode) {
-  return mode === "fixed" ? "Continuous background" : "Adaptive demand";
-}
+// Frontend feature: auto-update-ui.js#openAutoUpdateSettings
 
-function syncAutoUpdateModeSettings() {
-  const intervalRow = $("#continuous-background-interval-row");
-  if (!intervalRow) return;
-  intervalRow.classList.toggle("hidden", $("#auto-update-mode").value !== "fixed");
-  renderAutoUpdateStatus(state.bootstrap?.autoUpdate);
-}
+// Frontend feature: settings-feature.js#syncReasoningProviderSelection
 
-async function prepareBatchNow() {
-  if (state.session) {
-    showError(new Error("Finish or cancel the active check before starting another update."));
-    return;
-  }
-  const button = $("#prepare-batch-now");
-  button.disabled = true;
-  try {
-    const { session } = await api("/api/auto-update/prepare", { method: "POST" });
-    state.session = session;
-    setView("timeline");
-    renderSession();
-    startPolling();
-  } catch (error) {
-    showError(error);
-    button.disabled = false;
-  }
-}
+// Frontend feature: settings-feature.js#beginSettingsProviderSelection
 
-function openAutoUpdateSettings() {
-  setView("settings");
-  requestAnimationFrame(() => document.querySelector("#auto-update-enabled")?.closest("fieldset")?.scrollIntoView({ block: "start", behavior: "smooth" }));
-}
+// Frontend feature: auto-update-ui.js#handleAutoUpdateTimelineAction
 
-function syncReasoningProviderSelection() {
-  const active = state.bootstrap?.settings?.reasoningProvider || state.bootstrap?.provider;
-  const provider = (state.bootstrap?.reasoningProviders || []).find((entry) => entry.name === active);
-  const status = $("#reasoning-provider-status");
-  const executableRow = document.querySelector(".reasoning-executable-row");
-  if (executableRow) executableRow.hidden = provider?.runtimeKind !== "executable";
-  if (!status) return;
-  status.classList.remove("is-warning");
-  if (!provider) {
-    status.textContent = "No active reasoning provider is available.";
-  } else {
-    status.textContent = `Active · ${provider.label}`;
-  }
-}
+// Frontend feature: auto-update-ui.js#resetAutoUpdateBudget
 
-function beginSettingsProviderSelection() {
-  const select = $("#reasoning-provider");
-  const target = select?.value;
-  const active = state.bootstrap?.settings?.reasoningProvider || state.bootstrap?.provider;
-  if (select && active) select.value = active;
-  syncReasoningProviderSelection();
-  if (!target || target === active) return;
-  if (state.session) {
-    $("#runtime-settings-status").textContent = "Reasoning provider cannot be changed while an update is running.";
-    return;
-  }
-  openSettingsProviderDialog(target);
-}
+// Frontend feature: auto-update-ui.js#confirmXCaptureRecovery
 
-function handleAutoUpdateTimelineAction() {
-  if (state.bootstrap?.autoUpdate?.state === "usage_limit_paused") {
-    confirmCodexUsageRestored();
-    return;
-  }
-  openAutoUpdateSettings();
-}
+// Frontend feature: auto-update-ui.js#confirmCodexUsageRestored
 
-async function resetAutoUpdateBudget() {
-  if (state.session) {
-    showError(new Error("Finish or cancel the active check before resetting today’s Auto Update quota."));
-    return;
-  }
-  if (!window.confirm("Reset today’s local Auto Update quota? Usage history remains intact, but automatic work may start again and spend more model tokens today.")) return;
-  const button = $("#reset-auto-update-budget");
-  button.disabled = true;
-  try {
-    const { autoUpdate } = await api("/api/auto-update/budget/reset", { method: "POST" });
-    if (state.bootstrap) state.bootstrap.autoUpdate = autoUpdate;
-    renderAutoUpdateStatus(autoUpdate);
-    const notice = $("#provider-notice");
-    notice.className = "notice notice-complete";
-    notice.setAttribute("role", "status");
-    const providerPause = autoUpdate.state === "usage_limit_paused" ? " The Codex provider pause is unchanged; confirm restored usage separately." : "";
-    setNoticeText(notice, `Today’s local Auto Update quota was reset. Recorded model usage was preserved.${providerPause}`);
-  } catch (error) {
-    showError(error);
-  } finally {
-    button.disabled = Boolean(state.session);
-  }
-}
+// Frontend feature: settings-feature.js#renderSourceSettingsValues
 
-async function confirmXCaptureRecovery() {
-  const pause = state.bootstrap?.autoUpdate?.sourceCapturePause;
-  if (!pause) return;
-  if (!window.confirm("Have you completed verification manually in X? This allows another capture attempt; it does not verify X automatically or turn Auto Update on.")) return;
-  const button = $("#confirm-x-capture-recovery");
-  button.disabled = true;
-  try {
-    const { autoUpdate } = await confirmSourceCaptureRecovery(api, pause, true);
-    state.bootstrap.autoUpdate = autoUpdate;
-    renderAutoUpdateStatus(autoUpdate);
-  } catch (error) { showError(error); }
-  finally { button.disabled = false; }
-}
+// Frontend feature: settings-feature.js#renderReasoningProcesses
 
-async function confirmCodexUsageRestored() {
-  if (state.session) {
-    showError(new Error("Finish or cancel the active check before confirming restored Codex usage."));
-    return;
-  }
-  if (!window.confirm("Confirm that your Codex usage limit has been restored? Auto Update may resume immediately.")) return;
-  const buttons = [$("#confirm-codex-usage-restored"), $("#auto-update-timeline-settings")].filter(Boolean);
-  for (const button of buttons) button.disabled = true;
-  try {
-    const { autoUpdate } = await api("/api/auto-update/usage-limit/restore", { method: "POST" });
-    if (state.bootstrap) state.bootstrap.autoUpdate = autoUpdate;
-    renderAutoUpdateStatus(autoUpdate);
-    const notice = $("#provider-notice");
-    notice.className = "notice notice-complete";
-    notice.setAttribute("role", "status");
-    setNoticeText(notice, "Codex usage restoration confirmed. Auto Update may resume at the next eligible scheduler boundary.");
-  } catch (error) {
-    showError(error);
-  } finally {
-    for (const button of buttons) button.disabled = Boolean(state.session);
-  }
-}
+// Frontend feature: settings-feature.js#formatReasoningProvider
 
-function renderSourceSettingsValues(settings) {
-  if (!settings) return;
-  const readiness = new Map(bridgeSourceReadiness().map((source) => [source.source, source]));
-  for (const source of sourceDescriptors()) {
-    const defaultMS = source.hydrationTimeoutDefaultMs;
-    const input = document.querySelector(`[data-source-hydration="${source.id}"]`);
-    if (input && defaultMS) {
-      input.value = String((settings.sourceHydrationTimeoutMs?.[source.id] || defaultMS) / 1000);
-    }
-    const status = document.querySelector(`[data-source-readiness="${source.id}"]`);
-    if (status) {
-      const current = readiness.get(source.id);
-      status.className = "source-readiness-status";
-      const accessState = sourceAccessReadinessState(current);
-      if (accessState === "checking") {
-        status.textContent = "Checking access";
-      } else if (accessState === "ready") {
-        status.textContent = "Ready";
-        status.classList.add("source-readiness-ready");
-      } else if (accessState === "permission_not_granted") {
-        status.textContent = "Chrome permission needed";
-        status.classList.add("source-readiness-warning");
-      } else if (accessState === "registration_missing") {
-        status.textContent = "Capture registration missing";
-        status.classList.add("source-readiness-warning");
-      } else {
-        status.textContent = "Capture script not ready";
-        status.classList.add("source-readiness-warning");
-      }
-    }
-  }
-}
+// Frontend feature: settings-feature.js#formatReasoningModel
 
-function renderReasoningProcesses(processes) {
-  const host = $("#reasoning-processes");
-  if (!host) return;
-  host.replaceChildren();
-  for (const process of processes) {
-    const row = document.createElement("div");
-    row.className = "settings-row reasoning-process-profile";
-    const copy = document.createElement("span");
-    copy.className = "settings-copy";
-    const label = document.createElement("strong");
-    label.textContent = process.label;
-    const description = document.createElement("small");
-    description.textContent = process.description;
-    copy.append(label, description);
+// Frontend feature: settings-feature.js#formatReasoningEffort
 
-    const route = document.createElement("span");
-    route.className = "reasoning-process-route";
-    const provider = document.createElement("small");
-    provider.className = "reasoning-process-provider";
-    provider.textContent = formatReasoningProvider(process.provider);
-    route.append(provider);
-    if (process.options?.length) {
-      const select = document.createElement("select");
-      select.id = `reasoning-profile-${process.id.replaceAll("_", "-")}`;
-      select.className = "reasoning-profile-select";
-      select.dataset.processId = process.id;
-      select.setAttribute("aria-label", `${process.label} model profile`);
-      for (const available of process.options) {
-        const option = document.createElement("option");
-        option.value = available.id;
-        option.textContent = available.label;
-        select.append(option);
-      }
-      select.value = process.profileId;
-      route.append(select);
-    } else {
-      const model = document.createElement("strong");
-      model.textContent = formatReasoningModel(process.model);
-      route.append(model);
-    }
-    const detail = document.createElement("small");
-    detail.textContent = `${process.execution === "async" ? "Async" : "In run"} · ${formatReasoningModel(process.model)} · ${formatReasoningEffort(process.effort)} thinking`;
-    route.append(detail);
-    row.append(copy, route);
-    host.append(row);
-  }
-}
+// Frontend feature: settings-feature.js#readSettingsDraft
 
-function formatReasoningProvider(value) {
-  if (value === "codex-app-server") return "Codex App Server";
-  if (value === "deterministic") return "Local deterministic";
-  if (value === "ollama-nemotron") return "Ollama · Nemotron 3.5 Lightning";
-  if (value === "ollama-qwen") return "Ollama · Qwen 3.8 27B";
-  if (String(value).startsWith("ollama-")) return `Ollama · ${String(value).replace("ollama-", "")}`;
-  return String(value || "Custom backend").replaceAll("-", " ");
-}
+// Frontend feature: settings-feature.js#refreshSettingsDirtyState
 
-function formatReasoningModel(value) {
-  if (value === "gpt-5.6-luna") return "GPT-5.6 Luna";
-  if (value === "local-deterministic") return "No model";
-  return value || "Backend default";
-}
+// Frontend feature: settings-feature.js#renderSettingsDirtyState
 
-function formatReasoningEffort(value) {
-  if (value === "xhigh") return "XHigh";
-  if (value === "none") return "No";
-  const text = String(value || "default");
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
+// Frontend feature: settings-feature.js#saveSettings
 
-function readSettingsDraft(current = state.bootstrap?.settings ?? {}) {
-  const activeSources = [...document.querySelectorAll("#settings-source-options input[type='checkbox']:checked")]
-    .map((input) => input.value)
-    .sort();
-  const loadProfile = $("#bounded-load-profile").value;
-  const preset = LOAD_PROFILE_PRESETS[loadProfile];
-  const perSource = Number.parseInt($("#max-items-per-source").value, 10);
-  const sourceHydrationTimeoutMs = Object.fromEntries(
-    [...document.querySelectorAll("[data-source-hydration]")]
-      .map((input) => [input.dataset.sourceHydration, Number.parseInt(input.value, 10) * 1000])
-      .sort(([left], [right]) => left.localeCompare(right)),
-  );
-  return {
-    loadProfile,
-    captureVisibility: $("#capture-visibility-policy").value,
-    collectionMode: $("#collection-mode").value,
-    sourceWaitMode: $("#source-wait-mode").value,
-    preferenceEligibilityMode: $("#preference-eligibility-mode").value,
-    calibrationEnabled: $("#calibration-enabled").checked,
-    calibrationBatchSize: Number.parseInt($("#calibration-batch-size").value, 10),
-    showLearningPanel: $("#show-learning-panel").checked,
-    openMissingSource: $("#open-missing-source").checked,
-    activeSources,
-    sourceHydrationTimeoutMs,
-    timelineCapacity: Number.parseInt($("#timeline-capacity").value, 10),
-    maxItemsPerSource: perSource,
-    maxItemsTotal: preset?.maxItemsTotal ?? Math.min(30, Math.max(1, perSource * activeSources.length)),
-    maxScrolls: Number.parseInt($("#max-scrolls").value, 10),
-    defaultPresentation: $("#default-presentation").value,
-    streamWidth: $("#stream-width").value,
-    singleImageFit: $("#single-image-fit").value,
-    postFreshnessStyle: $("#post-freshness-style").value,
-    contentContextUpScrollMode: $("#content-context-up-scroll-mode").value || "close_offscreen",
-    timelineBatchGapPx: Number.parseInt($("#timeline-batch-gap").value, 10),
-    timelineBoundaryCueMode: $("#timeline-boundary-follow").checked ? "follow" : "static",
-    timelineBoundaryReturnMs: Number.parseInt($("#timeline-boundary-return-ms").value, 10),
-    semanticEventMode: $("#semantic-event-mode").value,
-    semanticEventShortlist: Number.parseInt($("#semantic-event-shortlist").value, 10),
-    semanticEventMergeThreshold: Number.parseFloat($("#semantic-event-merge-threshold").value),
-    knowledgeRetentionDays: Number.parseInt($("#knowledge-retention-days").value, 10),
-    knowledgeStorageLimitMb: Number.parseInt($("#knowledge-storage-limit").value, 10),
-    aiDetectionEnabled: $("#ai-detection-enabled").checked,
-    aiDetectionPresentation: $("#ai-detection-presentation").value,
-    resurfaceMode: $("#resurface-mode").value,
-    resurfaceCooldownDays: Number.parseInt($("#resurface-cooldown-days").value, 10),
-    autoUpdateEnabled: $("#auto-update-enabled").checked,
-    autoUpdateMode: $("#auto-update-mode").value,
-    autoUpdateRefillMinutes: Number.parseInt($("#auto-update-refill").value, 10),
-    preparedBatchLimit: Number.parseInt($("#prepared-batch-limit").value, 10),
-    autoUpdateDailyTokenBudget: Number.parseInt($("#auto-update-token-budget").value, 10),
-    autoUpdateManualReservePct: Number.parseInt($("#auto-update-manual-reserve").value, 10),
-    preparedBatchMaxAgeHours: Number.parseInt($("#prepared-batch-max-age").value, 10),
-    nextBatchBehavior: $("#next-batch-behavior").value,
-    reasoningExecutablePath: $("#reasoning-executable-path").value.trim(),
-    reasoningProvider: $("#reasoning-provider")?.value || current.reasoningProvider,
-    reasoningAcquisitionProfile: reasoningProfileValue("acquisition_planning", current.reasoningAcquisitionProfile),
-    reasoningEvaluationProfile: reasoningProfileValue("candidate_evaluation", current.reasoningEvaluationProfile),
-    reasoningSemanticProfile: reasoningProfileValue("semantic_event_resolution", current.reasoningSemanticProfile),
-    reasoningAiDeepProfile: reasoningProfileValue("ai_deep_detection", current.reasoningAiDeepProfile),
-  };
-}
+// Frontend feature: settings-feature.js#reasoningProfileValue
 
-function refreshSettingsDirtyState() {
-  settingsDirty.refresh();
-}
+// Frontend feature: settings-feature.js#persistSettings
 
-function renderSettingsDirtyState(dirty) {
-  const indicator = $("#settings-dirty-indicator");
-  const save = $("#save-runtime-settings");
-  if (!indicator || !save) return;
-  indicator.classList.toggle("hidden", !dirty);
-  save.disabled = !dirty;
-  save.setAttribute("aria-disabled", String(!dirty));
-}
+// Frontend feature: settings-feature.js#renderReasoningProviderControl
 
-async function saveSettings(event) {
-  event.preventDefault();
-  const current = state.bootstrap.settings;
-  const draft = readSettingsDraft(current);
-  if (!draft.activeSources.length) {
-    $("#runtime-settings-status").textContent = "Choose at least one active source.";
-    return;
-  }
-  const settings = { ...current, ...draft };
-  if (settings.aiDetectionEnabled && settings.aiDetectionPresentation === "hide" && current.aiDetectionPresentation !== "hide") {
-    state.pendingSettings = settings;
-    openResetDialog("ai-hide");
-    return;
-  }
-  await persistSettings(settings);
-}
+// Frontend feature: settings-feature.js#detectReasoningExecutable
 
-function reasoningProfileValue(processId, fallback) {
-  return document.querySelector(`[data-process-id="${processId}"]`)?.value
-    || fallback
-    || RELEASE_REASONING_DEFAULTS[processId]
-    || "luna_high";
-}
+// Frontend feature: settings-feature.js#syncLoadProfileSettings
 
-async function persistSettings(settings, confirmationPhrase = "") {
-  const status = $("#runtime-settings-status");
-  const saveButton = $("#save-runtime-settings");
-  status.textContent = "Saving…";
-  if (saveButton) saveButton.disabled = true;
-  try {
-    const previousProvider = state.bootstrap.settings?.reasoningProvider || state.bootstrap.provider;
-    const response = await api("/api/settings", { method: "PUT", body: { settings, confirmationPhrase } });
-    state.bootstrap.collectionRuntime = response.collectionRuntime ?? state.bootstrap.collectionRuntime;
-    applyReasoningRuntimeResponse(state.bootstrap, response);
-    renderActiveReasoningProvider();
-    renderSettings(response.settings);
-    syncOnboardingLearning(shouldShowOnboardingLearning(state.session));
-    status.textContent = response.settings.reasoningProvider !== previousProvider
-      ? "Saved · the selected reasoning provider is now active."
-      : `Saved · ${response.settings.maxScrolls} scrolls · ${response.settings.maxItemsPerSource} items/source`;
-    await refreshTimeline();
-    return response.settings;
-  } catch (error) {
-    status.textContent = error.message;
-    showError(error);
-    return null;
-  } finally {
-    renderSettingsDirtyState(settingsDirty.isDirty());
-  }
-}
+// Frontend feature: settings-feature.js#syncSemanticEventSettings
 
-function renderReasoningProviderControl(settings) {
-  const reasoningProviders = state.bootstrap?.reasoningProviders || [];
-  const reasoningProviderSelect = $("#reasoning-provider");
-  if (!reasoningProviderSelect) return;
-  const activeProvider = settings?.reasoningProvider || state.bootstrap?.provider;
-  reasoningProviderSelect.replaceChildren(...reasoningProviders.map((entry) => {
-    const option = document.createElement("option");
-    option.value = entry.name;
-    if (entry.configured === false) {
-      option.textContent = `${entry.label} · credential missing`;
-    } else if (entry.availabilityRequired && entry.availabilityChecked && !entry.available) {
-      option.textContent = `${entry.label} · unavailable`;
-    } else {
-      option.textContent = entry.label;
-    }
-    return option;
-  }));
-  if (reasoningProviders.some((entry) => entry.name === activeProvider)) reasoningProviderSelect.value = activeProvider;
-  syncReasoningProviderSelection();
-}
+// Frontend feature: settings-feature.js#syncAIDetectionSettings
 
-async function detectReasoningExecutable() {
-  const status = $("#runtime-settings-status");
-  status.textContent = "Detecting reasoning runtime…";
-  try {
-    const response = await api("/api/reasoning/runtime/discover", { method: "POST" });
-    const runtime = response.reasoningRuntime;
-    state.bootstrap.reasoningRuntime = runtime;
-    if (runtime.autoRepaired && state.bootstrap.settings) {
-      state.bootstrap.settings.reasoningExecutablePath = runtime.executablePath;
-    }
-    $("#reasoning-executable-label").textContent = runtime.label || "Inference executable";
-    $("#reasoning-executable-path").value = runtime.executablePath || "";
-    refreshSettingsDirtyState();
-    status.textContent = runtime.autoRepaired
-      ? "Detected and refreshed · ready to use"
-      : "Detected · save settings to use this executable";
-  } catch (error) {
-    status.textContent = error.message;
-    showError(error);
-  }
-}
+// Frontend feature: settings-feature.js#resetSemanticEventMergeThreshold
 
-function syncLoadProfileSettings(applyPreset) {
-  const loadProfile = $("#bounded-load-profile").value;
-  const preset = LOAD_PROFILE_PRESETS[loadProfile];
-  if (applyPreset && preset) {
-    $("#timeline-capacity").value = preset.timelineCapacity;
-    $("#max-items-per-source").value = preset.maxItemsPerSource;
-    $("#max-scrolls").value = preset.maxScrolls;
-  }
-  const custom = loadProfile === "custom";
-  $("#timeline-capacity").disabled = !custom;
-  $("#max-items-per-source").disabled = !custom;
-  $("#max-scrolls").disabled = !custom;
-}
+// Frontend feature: timeline-rendering.js#applyStreamWidth
 
-function syncSemanticEventSettings() {
-  const disabled = $("#semantic-event-mode").value === "show_all";
-  $("#semantic-event-shortlist").disabled = disabled;
-  $("#semantic-event-shortlist").closest(".settings-row")?.classList.toggle("settings-row-disabled", disabled);
-  $("#semantic-event-merge-threshold").disabled = disabled;
-  $("#reset-semantic-event-merge-threshold").disabled = disabled;
-  $("#semantic-event-merge-threshold").closest(".settings-row")?.classList.toggle("settings-row-disabled", disabled);
-}
+// Frontend feature: timeline-rendering.js#applySingleImageFit
 
-function syncAIDetectionSettings() {
-  const enabled = $("#ai-detection-enabled").checked;
-  $("#ai-detection-presentation").disabled = !enabled;
-  $("#ai-detection-presentation").closest(".settings-row")?.classList.toggle("settings-row-disabled", !enabled);
-  const deepProfile = document.querySelector('[data-process-id="ai_deep_detection"]');
-  if (deepProfile) deepProfile.disabled = !enabled;
-  const hide = enabled && $("#ai-detection-presentation").value === "hide";
-  $("#ai-hide-warning").classList.toggle("hidden", !hide);
-  const active = state.bootstrap?.settings?.aiDetectionPresentation === "hide";
-  $("#ai-hide-status").textContent = active
-    ? "Hide is active. Reviewable posts remain stored locally."
-    : "Hide requires typed confirmation when saved.";
-}
+// Frontend feature: timeline-rendering.js#applyPostFreshnessStyle
 
-function resetSemanticEventMergeThreshold() {
-  $("#semantic-event-merge-threshold").value = DEFAULT_SEMANTIC_EVENT_MERGE_THRESHOLD.toFixed(2);
-  $("#runtime-settings-status").textContent = "Default restored · save settings to keep it.";
-}
+// Frontend feature: timeline-rendering.js#scheduleTimelineSidePanePosition
 
-function applyStreamWidth(value) {
-  document.body.dataset.streamWidth = ["compact", "social", "comfortable", "wide"].includes(value) ? value : "social";
-  scheduleBackToTop();
-  scheduleTimelineSidePanePosition();
-}
+// Frontend feature: timeline-rendering.js#syncTimelineSidePanePosition
 
-function applySingleImageFit(value) {
-  document.body.dataset.singleImageFit = value === "contain" ? "contain" : "cover";
-}
+// Frontend feature: timeline-rendering.js#applyTimelineBatchGap
 
-function applyPostFreshnessStyle(value) {
-  document.body.dataset.postFreshnessStyle = ["header_shade", "border_shade", "off"].includes(value) ? value : "header_shade";
-}
+// Frontend feature: timeline-rendering.js#resetTimelineBatchGap
 
-function scheduleTimelineSidePanePosition() {
-  if (state.currentView !== "timeline") return;
-  scrollUIFrames.schedule("side-pane");
-}
+// Frontend feature: timeline-rendering.js#applyTimelineBoundaryReturnDuration
 
-function syncTimelineSidePanePosition() {
-  if (state.currentView !== "timeline") return;
-  const stream = document.querySelector(".timeline-heading-row");
-  if (!stream) return;
-  const rect = stream.getBoundingClientRect();
-  const firstTimelineItem = document.querySelector("#result-items > [data-timeline-id]");
-  const verticalAnchor = firstTimelineItem?.getBoundingClientRect() ?? rect;
-  const attachmentInset = firstTimelineItem
-    ? Number.parseFloat(window.getComputedStyle(firstTimelineItem).borderTopLeftRadius) || 0
-    : 0;
-  const attachmentTop = verticalAnchor.top + attachmentInset;
-  const viewportPadding = 16;
-  const minimumTop = 18;
-  const availableWidth = Math.max(0, rect.left - viewportPadding);
-  const paneWidth = Math.min(420, Math.max(280, availableWidth));
-  const paneLeft = Math.max(viewportPadding, rect.left - paneWidth);
-  const paneTop = Math.max(minimumTop, attachmentTop);
-  const toggleLeft = Math.max(12, rect.left - 56);
-  const toggle = $("#timeline-side-pane-toggle");
-  const toggleHeight = toggle?.getBoundingClientRect().height || 72;
-  const toggleHalfHeight = toggleHeight / 2;
-  const toggleTop = Math.min(
-    window.innerHeight - minimumTop - toggleHalfHeight,
-    Math.max(minimumTop + toggleHalfHeight, attachmentTop + toggleHalfHeight),
-  );
-  const pane = $("#timeline-side-pane");
-  setInlineStyle(pane, "--timeline-side-pane-left", `${Math.round(paneLeft)}px`);
-  setInlineStyle(pane, "--timeline-side-pane-width", `${Math.round(paneWidth)}px`);
-  setInlineStyle(pane, "--timeline-side-pane-top", `${Math.round(paneTop)}px`);
-  setInlineStyle(toggle, "--timeline-side-pane-toggle-left", `${Math.round(toggleLeft)}px`);
-  setInlineStyle(toggle, "--timeline-side-pane-toggle-top", `${Math.round(toggleTop)}px`);
-}
+// Frontend feature: timeline-rendering.js#resetTimelineBoundaryReturnDuration
 
-function applyTimelineBatchGap(value) {
-  const parsed = Number.parseInt(value, 10);
-  const bounded = Number.isFinite(parsed) ? Math.min(80, Math.max(16, parsed)) : DEFAULT_TIMELINE_BATCH_GAP_PX;
-  document.documentElement.style.setProperty("--timeline-batch-gap", `${bounded}px`);
-}
+// Frontend feature: onboarding-ui.js#showOnboarding
 
-function resetTimelineBatchGap() {
-  $("#timeline-batch-gap").value = DEFAULT_TIMELINE_BATCH_GAP_PX;
-  applyTimelineBatchGap(DEFAULT_TIMELINE_BATCH_GAP_PX);
-  $("#runtime-settings-status").textContent = "Default restored · save settings to keep it.";
-}
+// Frontend feature: onboarding-ui.js#updateOnboardingSummary
 
-function applyTimelineBoundaryReturnDuration(value) {
-  const parsed = Number.parseInt(value, 10);
-  const bounded = Number.isFinite(parsed) ? Math.min(1000, Math.max(100, parsed)) : DEFAULT_TIMELINE_BOUNDARY_RETURN_MS;
-  document.documentElement.style.setProperty("--back-to-top-return-duration", `${bounded}ms`);
-}
+// Frontend feature: onboarding-ui.js#renderActiveReasoningProvider
 
-function resetTimelineBoundaryReturnDuration() {
-  $("#timeline-boundary-return-ms").value = DEFAULT_TIMELINE_BOUNDARY_RETURN_MS;
-  applyTimelineBoundaryReturnDuration(DEFAULT_TIMELINE_BOUNDARY_RETURN_MS);
-  $("#runtime-settings-status").textContent = "Default restored · save settings to keep it.";
-}
+// Frontend feature: onboarding-ui.js#sourceReadyForOnboarding
 
-function showOnboarding(editing) {
-  state.onboardingEditing = editing;
-  const completingFirstOnboarding = onboardingRequiresSetup();
-  const sources = completingFirstOnboarding
-    ? sourceDescriptors().filter((source) => source.defaultActive).map((source) => source.id)
-    : (state.bootstrap?.settings?.activeSources ?? sourceDescriptors().filter((source) => source.defaultActive).map((source) => source.id));
-  for (const input of document.querySelectorAll("#onboarding-source-options input[type='checkbox']")) {
-    input.checked = sources.includes(input.value);
-  }
-  $("#onboarding-cancel").classList.toggle("hidden", !editing);
-  $("#onboarding-finish").textContent = editing ? "Save profile" : "Continue when ready";
-  $("#onboarding-error").textContent = "";
-  renderSetupPage(document, "onboarding");
-  syncTimelineSidePaneVisibility();
-  renderBrowserConnection();
-  updateOnboardingSummary();
-  if (state.bootstrap?.bridge?.compatible) requestSourceSessionReadiness();
-  (state.bootstrap?.bridge?.compatible ? $("#onboarding-heading") : $("#onboarding-browser-heading")).focus();
-  window.scrollTo({ top: 0, behavior: editing ? "smooth" : "auto" });
-  scheduleBackToTop();
-}
+// Frontend feature: onboarding-ui.js#onboardingReadinessGate
 
-function updateOnboardingSummary() {
-  const activeSources = [...document.querySelectorAll("#onboarding-form input[type='checkbox']:checked")].map((input) => input.value);
-  if (!activeSources.length) {
-    $("#onboarding-summary").textContent = "Choose at least one source feed, then make one selected source ready.";
-    return;
-  }
-  const readyCount = activeSources.filter((source) => sourceReadyForOnboarding(source)).length;
-  const selectedLabel = activeSources.length + " source feed" + (activeSources.length === 1 ? "" : "s") + " selected";
-  $("#onboarding-summary").textContent = readyCount
-    ? selectedLabel + " · " + readyCount + " access-ready · continue to your first Timeline"
-    : selectedLabel + " · grant access to at least one selected source; sign-in is checked when the update opens it";
-}
+// Frontend feature: onboarding-ui.js#saveOnboarding
 
-function renderActiveReasoningProvider() {
-  const provider = state.bootstrap?.provider || state.bootstrap?.settings?.reasoningProvider || "unknown";
-  $("#provider-value").textContent = provider;
-  setPill("#reasoning-status", provider, "neutral");
-}
-
-function sourceReadyForOnboarding(source) {
-  const access = bridgeSourceReadiness().find((entry) => entry.source === source);
-  const session = state.sourceSessionReadiness?.[source];
-  return sourcePermissionReadyForOnboarding({ access, session });
-}
-
-function onboardingReadinessGate(activeSources) {
-  if (!state.bootstrap?.bridge?.compatible) {
-    return { ready: false, message: "AkuBridge is still connecting. Keep this page open while source access is checked." };
-  }
-  if (!bridgeSourceReadiness().length) {
-    return { ready: false, message: "AkuBrowser is still checking per-source access. Try Continue when ready again in a moment." };
-  }
-  if (activeSources.some((source) => sourceReadyForOnboarding(source))) return { ready: true };
-  const selected = activeSources.map((source) => {
-    const access = bridgeSourceReadiness().find((entry) => entry.source === source);
-    if (!access || !access.permissionGranted) return sourceLabel(source) + " needs access permission";
-    if (!access.scriptRegistered || !access.ready) return sourceLabel(source) + " capture is not ready";
-    return sourceLabel(source) + " access is ready";
-  });
-  return { ready: false, message: "Grant access to at least one selected source before continuing: " + selected.join("; ") + ". Sign-in will be checked when the update opens the source." };
-}
-
-async function saveOnboarding(event) {
-  event.preventDefault();
-  const activeSources = [...document.querySelectorAll("#onboarding-form input[type='checkbox']:checked")].map((input) => input.value);
-  if (!activeSources.length) {
-    $("#onboarding-error").textContent = "Choose at least one active source.";
-    return;
-  }
-  const firstCompletion = onboardingRequiresSetup();
-  if (firstCompletion) {
-    const gate = onboardingReadinessGate(activeSources);
-    if (!gate.ready) {
-      $("#onboarding-error").textContent = gate.message;
-      requestSourceSessionReadiness();
-      renderSourceSessionReadiness();
-      return;
-    }
-    state.pendingOnboardingSources = activeSources;
-    openOnboardingProviderDialog();
-    return;
-  }
-  await completeOnboarding(activeSources, false);
-}
-
-async function completeOnboarding(activeSources, firstCompletion) {
-  const button = $("#onboarding-finish");
-  button.disabled = true;
-  $("#onboarding-error").textContent = "Saving source profile…";
-  try {
-    const response = await api("/api/onboarding", { method: "PUT", body: { activeSources } });
-    state.bootstrap.onboarding = response.onboarding;
-    state.bootstrap.settings = response.settings;
-    state.bootstrap.calibration = response.calibration;
-    renderSettings(response.settings);
-    $("#onboarding-error").textContent = "";
-    state.pendingOnboardingSources = null;
-    setView(firstCompletion ? "timeline" : "settings");
-    if (firstCompletion) await startVisibleUpdate();
-  } catch (error) {
-    $("#onboarding-error").textContent = error.message;
-  } finally {
-    button.disabled = false;
-  }
-}
+// Frontend feature: onboarding-ui.js#completeOnboarding
 
 const ONBOARDING_PROVIDER_COPY = {
   "codex-app-server": {
@@ -4335,405 +1461,33 @@ const ONBOARDING_PROVIDER_COPY = {
   },
 };
 
-function onboardingProviderEntries() {
-  return (state.bootstrap?.reasoningProviders || []).slice().sort((a, b) => {
-    const order = { "codex-app-server": 0, "gemini-flash-lite": 1, "ollama-nemotron": 2, "ollama-qwen": 3 };
-    return (order[a.name] ?? 9) - (order[b.name] ?? 9);
-  });
-}
+// Frontend feature: provider-setup-ui.js#onboardingProviderEntries
 
-function renderOnboardingProviderOptions() {
-  const container = $("#onboarding-provider-options");
-  const selected = state.onboardingProviderChoice;
-  container.replaceChildren(...onboardingProviderEntries().map((entry) => {
-    const copy = ONBOARDING_PROVIDER_COPY[entry.name] || { tag: entry.runtimeKind, description: "" };
-    const label = document.createElement("label");
-    label.className = "onboarding-provider-option";
-    const input = document.createElement("input");
-    input.type = "radio";
-    input.name = "onboarding-reasoning-provider";
-    input.value = entry.name;
-    input.checked = entry.name === selected;
-    input.addEventListener("change", () => {
-      $("#onboarding-provider-secret").value = "";
-      state.onboardingProviderChoice = entry.name;
-      renderOnboardingProviderOptions();
-    });
-    const card = document.createElement("span");
-    card.className = "onboarding-provider-card";
-    const heading = document.createElement("span");
-    heading.className = "onboarding-provider-heading";
-    const strong = document.createElement("strong");
-    strong.textContent = entry.label;
-    const tag = document.createElement("small");
-    tag.textContent = copy.tag || "";
-    heading.append(strong, tag);
-    const description = document.createElement("small");
-    description.className = "onboarding-provider-description";
-    description.textContent = copy.description || "";
-    const status = document.createElement("small");
-    status.className = "onboarding-provider-status";
-    if (entry.configurationStatus === "development_fallback") {
-      status.textContent = "Secure setup required — development fallback detected";
-    } else if (entry.configured === false) {
-      status.textContent = "Setup required — " + (entry.credentialName || "credential") + " missing";
-    } else if (entry.availabilityRequired && !entry.availabilityChecked) {
-      status.textContent = "Availability check required";
-    } else if (entry.availabilityRequired && !entry.available) {
-      status.textContent = `Unavailable — ${entry.availabilityMessage || "local runtime not ready"}`;
-    } else if (entry.availabilityRequired) {
-      status.textContent = entry.availabilityMessage || "Available";
-    } else if (entry.credentialName) {
-      status.textContent = "Key saved securely";
-    } else {
-      status.textContent = "Ready";
-    }
-    card.append(heading, description, status);
-    label.append(input, card);
-    return label;
-  }));
-  const choice = onboardingProviderEntries().find((entry) => entry.name === selected);
-  const setup = $("#onboarding-provider-setup");
-  const credentialSetup = $("#onboarding-provider-credential");
-  const requiresSecureCredential = providerRequiresSecureCredential(choice);
-  const showCredentialSetup = Boolean(choice) && (choice.configured === false || requiresSecureCredential);
-  const copy = ONBOARDING_PROVIDER_COPY[choice?.name] || {};
-  const settingsMode = state.providerDialogMode === "settings";
-  $("#onboarding-provider-dialog").classList.toggle("has-provider-context", Boolean(choice));
-  $("#onboarding-provider-dialog").classList.toggle("provider-switch-mode", settingsMode);
-  if (choice) {
-    const panelLabel = showCredentialSetup
-      ? "SECURE KEY SETUP"
-      : choice.credentialName
-        ? "SECURE KEY READY"
-        : copy.panelLabel || "PROVIDER DETAILS";
-    $("#onboarding-provider-panel-label").textContent = panelLabel;
-    let panelText = choice.configurationStatus === "development_fallback"
-      ? "A development-only key was detected, but it is not stored securely for AkuBrowser. Paste the key below to save it in this operating system's credential store."
-      : showCredentialSetup
-        ? copy.setup || "Configure the provider credential, then refresh its status."
-        : copy.ready || copy.setup || "This provider is ready to use.";
-    $("#onboarding-provider-setup-text").textContent = panelText;
-    setup.classList.remove("hidden");
-    credentialSetup.classList.toggle("hidden", !showCredentialSetup || !choice.credentialName);
-    $("#onboarding-provider-credential-label").textContent = `${choice.label} API key`;
-    const credentialLink = $("#onboarding-provider-credential-link");
-    const credentialURL = copy.credentialURL;
-    credentialLink.classList.toggle("hidden", !showCredentialSetup || !credentialURL);
-    if (credentialURL) credentialLink.href = credentialURL;
-    const quotaLink = $("#onboarding-provider-quota-link");
-    const quotaURL = copy.quotaURL;
-    quotaLink.classList.toggle("hidden", !choice || !quotaURL);
-    if (quotaURL) quotaLink.href = quotaURL;
-    const pricingLink = $("#onboarding-provider-pricing-link");
-    const pricingURL = copy.pricingURL;
-    pricingLink.classList.toggle("hidden", !choice || !pricingURL);
-    if (pricingURL) pricingLink.href = pricingURL;
-    const recheck = $("#onboarding-provider-recheck");
-    recheck.classList.toggle("hidden", !showCredentialSetup && !choice.availabilityRequired);
-    syncProviderReadinessFeedback(choice);
-  } else {
-    setup.classList.add("hidden");
-    credentialSetup.classList.add("hidden");
-    $("#onboarding-provider-quota-link").classList.add("hidden");
-    $("#onboarding-provider-pricing-link").classList.add("hidden");
-    $("#onboarding-provider-secret").value = "";
-  }
-  const confirm = $("#onboarding-provider-confirm");
-  confirm.textContent = settingsMode && choice ? `Switch to ${choice.label}` : "Use selected provider";
-  confirm.disabled = !providerCanActivate(choice);
-  const codex = onboardingProviderEntries().find((entry) => entry.name === "codex-app-server");
-  const skip = $("#onboarding-provider-skip");
-  skip.textContent = settingsMode ? "Cancel" : "Keep Codex App Server";
-  skip.disabled = settingsMode ? false : !providerCanActivate(codex);
-}
+// Frontend feature: provider-setup-ui.js#renderOnboardingProviderOptions
 
-function renderBrowserConnection() {
-  const connection = $("#onboarding-browser-connection");
-  const sourceSetup = $("#onboarding-source-setup");
-  if (!connection || !sourceSetup) return;
-  const connected = state.bootstrap?.bridge?.compatible === true;
-  connection.classList.toggle("hidden", connected);
-  sourceSetup.classList.toggle("hidden", !connected);
-  $("#onboarding-panel").setAttribute("aria-labelledby", connected ? "onboarding-heading" : "onboarding-browser-heading");
-  if (connected) {
-    $("#onboarding-browser-status").textContent = "";
-    return;
-  }
-  const development = state.bootstrap?.deployment?.mode === "development";
-  $("#onboarding-browser-development-actions").classList.toggle("hidden", !development);
-  $("#onboarding-browser-copy").textContent = development
-    ? "AkuBridge is not connected to this dedicated development profile. Open Chrome Extensions and load it once before choosing source access."
-    : "AkuBridge is missing or incompatible. This installed AkuBrowser runtime needs repair before source setup can continue.";
-  $("#onboarding-browser-status").textContent = development
-    ? "Waiting for AkuBridge to connect…"
-    : "Close AkuBrowser and run the installer repair flow.";
-}
+// Frontend feature: capture-ui.js#renderBrowserConnection
 
-async function openChromeExtensions() {
-  const button = $("#open-chrome-extensions");
-  const status = $("#onboarding-browser-status");
-  button.disabled = true;
-  status.textContent = "Opening Chrome Extensions in the AkuBrowser development profile…";
-  try {
-    await api("/api/app-shell/open-extensions", { method: "POST" });
-    status.textContent = "Chrome Extensions opened. Load AkuBridge there; this page will continue automatically when it connects.";
-  } catch (error) {
-    status.textContent = error.message;
-  } finally {
-    button.disabled = false;
-  }
-}
+// Frontend feature: capture-ui.js#openChromeExtensions
 
-async function reloadIncompatibleBridge() {
-  if (state.bridgeReloadInFlight) return;
-  state.bridgeReloadInFlight = true;
-  const button = $("#bridge-reload");
-  const idleLabel = "Reload AkuBridge";
-  button.disabled = true;
-  button.title = "Reload AkuBridge and verify the expected runtime revision";
-  button.textContent = "Reloading…";
-  try {
-    if (bridgeCaptureBusy(state.session)) throw new Error("Wait for the active capture to finish before reloading AkuBridge.");
-    const request = await bridgeApi("/api/operations/bridge/actions/reload-self", {
-      method: "POST",
-      body: {
-        requestId: `bridge_recovery_${Date.now()}_${Math.random().toString(16).slice(2)}`,
-        actor: { actorType: "user", actorId: "bridge-recovery-ui" },
-        reason: "user requested reload of mismatched AkuBridge from the contextual recovery control",
-      },
-    });
-    const actionId = request?.action?.id;
-    if (!actionId) throw new Error("AkuSidecar did not return a Bridge reload action.");
-    const deadline = Date.now() + 20_000;
-    while (Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      const result = await bridgeApi(`/api/operations/bridge/actions/${encodeURIComponent(actionId)}`);
-      if (result?.action?.status === "failed") {
-        throw new Error(result.action.message || "AkuBridge reload failed.");
-      }
-      if (result?.action?.status !== "completed") continue;
-      const health = await api("/api/bridge/health");
-      renderBridge(health.bridge);
-      if (!bridgeReloadVerified(health.bridge, result.action)) {
-        throw new Error("AkuBridge reloaded without the expected compatible runtime revision.");
-      }
-      button.textContent = "AkuBridge reloaded";
-      return;
-    }
-    throw new Error("AkuBridge reload timed out. Keep this AkuBrowser page open and try again.");
-  } catch (error) {
-    button.classList.remove("hidden");
-    button.textContent = "Reload failed";
-    button.title = error.message;
-  } finally {
-    window.setTimeout(() => {
-      state.bridgeReloadInFlight = false;
-      button.disabled = bridgeCaptureBusy(state.session);
-      button.textContent = idleLabel;
-    }, 1800);
-  }
-}
+// Frontend feature: capture-ui.js#reloadIncompatibleBridge
 
-async function refreshReasoningProviderReadiness() {
-  if (!state.bootstrap) return false;
-  if (state.providerReadinessInFlight) {
-    syncProviderReadinessFeedback();
-    return false;
-  }
-  state.providerReadinessInFlight = true;
-  state.providerReadinessCheckError = "";
-  syncProviderReadinessFeedback();
-  try {
-    const response = await api("/api/reasoning/providers/readiness");
-    state.bootstrap.reasoningProviders = response.reasoningProviders ?? state.bootstrap.reasoningProviders;
-    state.providerReadinessCheckedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    renderReasoningProviderControl(state.bootstrap.settings);
-    if ($("#onboarding-provider-dialog")?.open) renderOnboardingProviderOptions();
-    return true;
-  } catch (error) {
-    state.providerReadinessCheckError = error.message;
-    if ($("#onboarding-provider-dialog")?.open) {
-      $("#onboarding-provider-error").textContent = error.message;
-    } else {
-      $("#runtime-settings-status").textContent = error.message;
-    }
-    return false;
-  } finally {
-    state.providerReadinessInFlight = false;
-    syncProviderReadinessFeedback();
-  }
-}
+// Frontend feature: provider-setup-ui.js#refreshReasoningProviderReadiness
 
-function syncProviderReadinessFeedback(choice) {
-  const selected = choice || onboardingProviderEntries().find((entry) => entry.name === state.onboardingProviderChoice);
-  const onboardingButton = $("#onboarding-provider-recheck");
-  if (onboardingButton) {
-    onboardingButton.disabled = state.providerReadinessInFlight;
-    onboardingButton.textContent = state.providerReadinessInFlight
-      ? "Checking…"
-      : selected?.availabilityRequired
-        ? "Check availability"
-        : "Refresh credential status";
-  }
-  const status = $("#onboarding-provider-check-status");
-  if (!status) return;
-  status.classList.remove("is-ready", "is-unavailable", "is-checking", "is-error");
-  status.removeAttribute("title");
-  if (state.providerReadinessInFlight) {
-    status.textContent = "Checking";
-    status.classList.add("is-checking");
-  } else if (state.providerReadinessCheckError) {
-    status.textContent = "Check failed";
-    status.title = state.providerReadinessCheckError;
-    status.classList.add("is-error");
-  } else {
-    const checkedSuffix = state.providerReadinessCheckedAt ? ` · ${state.providerReadinessCheckedAt}` : "";
-    const feedback = providerReadinessFeedback(selected);
-    status.textContent = `${feedback.label}${checkedSuffix}`;
-    if (feedback.className) status.classList.add(feedback.className);
-  }
-}
+// Frontend feature: provider-setup-ui.js#syncProviderReadinessFeedback
 
-function openOnboardingProviderDialog() {
-  state.providerDialogMode = "onboarding";
-  state.onboardingProviderChoice = state.bootstrap?.settings?.reasoningProvider || state.bootstrap?.provider || "codex-app-server";
-  $("#onboarding-provider-title").textContent = "Choose how AkuBrowser reasons";
-  $("#onboarding-provider-explanation").textContent = "Updates, semantic comparisons, and AI review all use this backend. You can change it later in Settings; the switch applies when no update is running.";
-  renderOnboardingProviderOptions();
-  $("#onboarding-provider-error").textContent = "";
-  $("#onboarding-provider-dialog").showModal();
-  $("#onboarding-provider-title").focus();
-  void recheckOnboardingProviders();
-}
+// Frontend feature: provider-setup-ui.js#openOnboardingProviderDialog
 
-function openSettingsProviderDialog(target) {
-  const choice = onboardingProviderEntries().find((entry) => entry.name === target);
-  if (!choice) return;
-  state.providerDialogMode = "settings";
-  state.onboardingProviderChoice = target;
-  state.providerReadinessCheckError = "";
-  $("#onboarding-provider-title").textContent = `Switch to ${choice.label}`;
-  $("#onboarding-provider-explanation").textContent = "Your current provider remains active until this setup is complete. AkuBrowser checks any stored credential before asking for a new key.";
-  $("#onboarding-provider-error").textContent = "";
-  renderOnboardingProviderOptions();
-  $("#onboarding-provider-dialog").showModal();
-  $("#onboarding-provider-title").focus();
-  void recheckOnboardingProviders();
-}
+// Frontend feature: provider-setup-ui.js#openSettingsProviderDialog
 
-async function recheckOnboardingProviders() {
-  await refreshReasoningProviderReadiness();
-  renderOnboardingProviderOptions();
-}
+// Frontend feature: provider-setup-ui.js#recheckOnboardingProviders
 
-async function saveOnboardingProviderCredential() {
-  const choice = onboardingProviderEntries().find((entry) => entry.name === state.onboardingProviderChoice);
-  const input = $("#onboarding-provider-secret");
-  const button = $("#onboarding-provider-save-credential");
-  const secret = input.value.trim();
-  if (!choice?.credentialName || !secret) {
-    $("#onboarding-provider-error").textContent = "Paste the API key before saving.";
-    return;
-  }
-  button.disabled = true;
-  button.textContent = "Saving…";
-  $("#onboarding-provider-error").textContent = "Saving the key securely on this device…";
-  try {
-    const response = await api("/api/reasoning/credentials", {
-      method: "PUT",
-      body: { provider: choice.name, secret },
-    });
-    state.bootstrap.reasoningProviders = response.reasoningProviders ?? state.bootstrap.reasoningProviders;
-    const validation = response.validation;
-    $("#onboarding-provider-error").textContent = validation?.status === "valid"
-      ? `Gemini accepted the key for ${validation.model || choice.label} metadata; it is saved securely. Actual generation and quota are checked when used.`
-      : "API key saved securely. Check provider availability before continuing.";
-    state.providerReadinessCheckedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    renderOnboardingProviderOptions();
-  } catch (error) {
-    $("#onboarding-provider-error").textContent = error.message;
-  } finally {
-    input.value = "";
-    button.disabled = false;
-    button.textContent = "Save key";
-  }
-}
+// Frontend feature: provider-setup-ui.js#saveOnboardingProviderCredential
 
-async function confirmOnboardingProvider() {
-  const choice = state.onboardingProviderChoice;
-  if (!choice) return;
-  const sources = state.pendingOnboardingSources;
-  if (state.providerDialogMode === "settings") {
-    await activateSettingsReasoningProvider(choice);
-    return;
-  }
-  if (!sources) {
-    $("#onboarding-provider-dialog").close();
-    return;
-  }
-  const button = $("#onboarding-provider-confirm");
-  const activeProvider = state.bootstrap?.settings?.reasoningProvider || state.bootstrap?.provider;
-  if (choice !== activeProvider) {
-    button.disabled = true;
-    $("#onboarding-provider-error").textContent = "Activating the selected provider…";
-    try {
-      const response = await api("/api/settings", { method: "PUT", body: { settings: { ...state.bootstrap.settings, reasoningProvider: choice } } });
-      applyReasoningRuntimeResponse(state.bootstrap, response);
-      renderActiveReasoningProvider();
-    } catch (error) {
-      $("#onboarding-provider-error").textContent = error.message;
-      button.disabled = false;
-      return;
-    }
-  }
-  state.pendingOnboardingSources = null;
-  $("#onboarding-provider-dialog").close();
-  await completeOnboarding(sources, true);
-}
+// Frontend feature: provider-setup-ui.js#confirmOnboardingProvider
 
-async function activateSettingsReasoningProvider(choice) {
-  const button = $("#onboarding-provider-confirm");
-  const provider = onboardingProviderEntries().find((entry) => entry.name === choice);
-  if (!providerCanActivate(provider)) return;
-  button.disabled = true;
-  $("#onboarding-provider-error").textContent = "Activating the selected provider…";
-  try {
-    const response = await api("/api/settings", {
-      method: "PUT",
-      body: { settings: { ...state.bootstrap.settings, reasoningProvider: choice } },
-    });
-    applyReasoningRuntimeResponse(state.bootstrap, response);
-    renderActiveReasoningProvider();
-    renderReasoningProviderControl(response.settings);
-    renderReasoningProcesses(response.reasoningProcesses ?? []);
-    const baseline = JSON.parse(settingsDirty.getBaselineKey() || "{}");
-    settingsDirty.setBaseline({ ...baseline, reasoningProvider: choice });
-    settingsDirty.refresh();
-    $("#runtime-settings-status").textContent = `Provider changed · ${provider.label} is now active.`;
-    $("#onboarding-provider-dialog").close();
-  } catch (error) {
-    $("#onboarding-provider-error").textContent = error.message;
-    button.disabled = false;
-  }
-}
+// Frontend feature: provider-setup-ui.js#activateSettingsReasoningProvider
 
-function skipOnboardingProvider() {
-  if (state.providerDialogMode === "settings") {
-    $("#onboarding-provider-dialog").close();
-    return;
-  }
-  const sources = state.pendingOnboardingSources;
-  const codex = onboardingProviderEntries().find((entry) => entry.name === "codex-app-server");
-  if (!providerCanActivate(codex)) {
-    $("#onboarding-provider-error").textContent = codex?.availabilityMessage || "Codex App Server is not ready. Check its availability or choose another provider.";
-    return;
-  }
-  state.pendingOnboardingSources = null;
-  $("#onboarding-provider-secret").value = "";
-  $("#onboarding-provider-dialog").close();
-  void completeOnboarding(sources || [], true);
-}
+// Frontend feature: provider-setup-ui.js#skipOnboardingProvider
 
 const REVOKE_SOURCE_ACCESS_TIMEOUT_MS = 5000;
 
@@ -4741,3523 +1495,281 @@ const REVOKE_SOURCE_ACCESS_TIMEOUT_MS = 5000;
 // source host permission and unregister its capture scripts before a full
 // reset persists. Full reset fails closed when the Bridge cannot confirm it;
 // the browser profile and the Bridge installation are always preserved.
-async function revokeSourceAccessViaBridge() {
-  if (state.bootstrap?.collectionRuntime?.effective === "headless") {
-    await api("/api/collection/interactive", { method:"POST", body:{} });
-  }
-  return new Promise((resolve) => {
-    const requestId = `revoke-${Date.now()}`;
-    let settled = false;
-    const finish = (value) => {
-      if (settled) return;
-      settled = true;
-      window.removeEventListener("message", listener);
-      window.clearTimeout(timer);
-      resolve(value);
-    };
-    const listener = (event) => {
-      if (event.source !== window) return;
-      const data = event.data;
-      if (data?.type === "AKU_BROWSER_REVOKE_SOURCE_ACCESS_RESULT" && data.requestId === requestId) return finish(true);
-      if (data?.type === "AKU_BROWSER_REVOKE_SOURCE_ACCESS_FAILED" && data.requestId === requestId) return finish(false);
-    };
-    const timer = window.setTimeout(() => finish(false), REVOKE_SOURCE_ACCESS_TIMEOUT_MS);
-    window.addEventListener("message", listener);
-    window.postMessage({ type: "AKU_BROWSER_REVOKE_SOURCE_ACCESS", requestId }, window.location.origin);
-  });
-}
-
-function openResetDialog(operation) {
-  if (state.session) {
-    $("#runtime-settings-status").textContent = operation === "ai-hide"
-      ? "Hide cannot be activated while an update is running."
-      : "Reset is unavailable while an update is running.";
-    if (operation === "ai-hide" && state.bootstrap?.settings) {
-      state.pendingSettings = null;
-      $("#ai-detection-presentation").value = state.bootstrap.settings.aiDetectionPresentation || "drawer";
-      syncAIDetectionSettings();
-      refreshSettingsDirtyState();
-    }
-    return;
-  }
-  state.resetOperation = operation;
-  const full = operation === "full";
-  const aiHide = operation === "ai-hide";
-  $("#confirmation-operation-label").textContent = aiHide ? "HIGH-RISK PRESENTATION POLICY" : "DESTRUCTIVE OPERATION";
-  $("#reset-confirmation-title").textContent = aiHide ? "Hide strong AI-origin signals" : full ? "Full reset and onboard again" : "Reset learning";
-  $("#reset-confirmation-impact").textContent = aiHide
-    ? "AI detection can be wrong. Only direct evidence and Deep-confirmed strong signals will be hidden. Posts remain stored locally and can be restored by disabling Hide."
-    : full
-      ? "AkuBrowser will first revoke all optional source permissions, then create and verify a local SQLite backup before erasing Timeline, runs, learning data, onboarding, and local settings. The browser profile, AkuBridge installation, and existing website sign-ins are preserved."
-      : "AkuBrowser will erase calibration, More/Less feedback, and the fitted preference model. Timeline, source setup, and runtime settings remain.";
-  $("#reset-confirmation-phrase").textContent = aiHide ? AI_HIDE_CONFIRMATION_PHRASE : full ? "RESET AKUBROWSER" : "RESET LEARNING";
-  $("#reset-confirmation-submit").textContent = aiHide ? "Activate Hide" : full ? "Confirm full reset" : "Confirm reset";
-  $("#reset-confirmation-input").value = "";
-  $("#reset-confirmation-status").textContent = "";
-  $("#reset-confirmation-submit").disabled = true;
-  $("#reset-confirmation-dialog").showModal();
-  $("#reset-confirmation-input").focus();
-}
-
-function closeResetDialog() {
-  if (state.resetOperation === "ai-hide" && state.bootstrap?.settings) {
-    $("#ai-detection-presentation").value = state.bootstrap.settings.aiDetectionPresentation || "drawer";
-    syncAIDetectionSettings();
-    refreshSettingsDirtyState();
-  }
-  state.resetOperation = null;
-  state.pendingSettings = null;
-  $("#reset-confirmation-dialog").close();
-}
-
-let lastScrollPerformanceReport = null;
-
-function startScrollPerformanceTrace() {
-  if (scrollPerformanceTrace.active) return;
-  setView("timeline");
-  $("#start-scroll-trace").disabled = true;
-  $("#scroll-trace-status").textContent = "Recording timing for 30 seconds. Scroll the Timeline now.";
-  $("#scroll-trace-banner").classList.remove("hidden");
-  scrollPerformanceTrace.start(30000);
-}
-
-async function saveScrollPerformanceTrace(report) {
-  lastScrollPerformanceReport = report;
-  $("#scroll-trace-banner").classList.add("hidden");
-  $("#download-scroll-trace").disabled = false;
-  $("#scroll-trace-status").textContent = "Saving timing trace…";
-  try {
-    await api("/api/diagnostics/ui-performance", { method: "POST", body: report });
-    $("#scroll-trace-status").textContent = "Trace saved in runtime memory. You can download it or ask Codex to inspect it.";
-  } catch {
-    $("#scroll-trace-status").textContent = "Trace could not be saved to the runtime. Download last trace to keep the timing report.";
-  } finally {
-    $("#start-scroll-trace").disabled = false;
-  }
-}
-
-function downloadScrollPerformanceTrace() {
-  if (!lastScrollPerformanceReport) return;
-  const url = URL.createObjectURL(new Blob([JSON.stringify(lastScrollPerformanceReport, null, 2)], { type: "application/json" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "aku-scroll-trace.json";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function exportDiagnostics() {
-  const since = $("#diagnostics-since").value ? new Date($("#diagnostics-since").value).toISOString() : "";
-  const until = $("#diagnostics-until").value ? new Date($("#diagnostics-until").value).toISOString() : "";
-  const button = $("#export-diagnostics");
-  const originalText = button.textContent;
-  button.disabled = true;
-  button.textContent = "Exporting…";
-  const params = new URLSearchParams();
-  if (since) params.set("since", since);
-  if (until) params.set("until", until);
-  api("/api/diagnostics/export?" + params.toString(), { method: "GET", responseType: "blob" })
-    .then((blob) => {
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "aku-diagnostics-" + new Date().toISOString().slice(0, 19).replace(/[:-]/g, "") + ".json";
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      a.remove();
-    })
-    .catch((err) => {
-      $("#runtime-settings-status").textContent = "Export failed: " + (err.message || err);
-    })
-    .finally(() => {
-      button.disabled = false;
-      button.textContent = "Export diagnostics…";
-    });
-}
-
-function syncResetConfirmation() {
-  const phrase = $("#reset-confirmation-phrase").textContent;
-  $("#reset-confirmation-submit").disabled = $("#reset-confirmation-input").value !== phrase;
-}
-
-async function submitReset() {
-  const operation = state.resetOperation;
-  if (!operation) return;
-  const phrase = $("#reset-confirmation-phrase").textContent;
-  const button = $("#reset-confirmation-submit");
-  button.disabled = true;
-  $("#reset-confirmation-status").textContent = operation === "full" ? "Creating and verifying backup…" : "Resetting learning…";
-  try {
-    if (operation === "ai-hide") {
-      $("#reset-confirmation-status").textContent = "Activating Hide…";
-      const pending = state.pendingSettings;
-      if (!pending) throw new Error("Pending AI Detector settings are unavailable.");
-      const saved = await persistSettings(pending, phrase);
-      if (!saved) {
-        syncResetConfirmation();
-        return;
-      }
-      state.resetOperation = null;
-      state.pendingSettings = null;
-      $("#reset-confirmation-dialog").close();
-      $("#runtime-settings-status").textContent = "Hide activated · direct and Deep-confirmed signals only.";
-      return;
-    }
-    const path = operation === "full" ? "/api/operations/full-reset" : "/api/operations/reset-learning";
-    let sourceAccessRevoked = false;
-    if (operation === "full") {
-      $("#reset-confirmation-status").textContent = "Revoking source access…";
-      sourceAccessRevoked = await revokeSourceAccessViaBridge();
-      if (!sourceAccessRevoked) {
-        throw new Error("Full reset stopped because AkuBridge did not confirm source-access revocation. The browser profile and application data were left unchanged.");
-      }
-    }
-    const response = await api(path, { method: "POST", body: { confirmation: phrase } });
-    if (operation === "full") {
-      $("#reset-confirmation-status").textContent = `Verified backup ${response.reset?.backupFile || "created"}. Source access revoked; browser profile preserved. Returning to onboarding…`;
-      state.settingsUnloadBypass = true;
-      window.setTimeout(() => window.location.reload(), 350);
-      return;
-    }
-    state.bootstrap.calibration = response.calibration;
-    $("#reset-confirmation-status").textContent = "Learning reset complete.";
-    window.setTimeout(() => {
-      closeResetDialog();
-      $("#runtime-settings-status").textContent = "Learning reset complete.";
-    }, 350);
-  } catch (error) {
-    $("#reset-confirmation-status").textContent = error.message;
-    syncResetConfirmation();
-  }
-}
-
-function scheduleBackToTop() {
-  scrollUIFrames.schedule("back-to-top");
-}
-
-function syncBackToTopNow() {
-  const top = document.scrollingElement?.scrollTop ?? window.scrollY ?? 0;
-  const measurements = state.currentView === "timeline" ? measureTimelineContentContextTabs() : [];
-  $("#back-to-top").classList.toggle("hidden", top < BACK_TO_TOP_THRESHOLD_PX);
-  if (top >= BACK_TO_TOP_THRESHOLD_PX) syncBackToTopPosition(top, measurements);
-  syncTimelineContentContextTabs(measurements);
-}
-
-function timelineContentContextObstacles(measurements) {
-  if (state.currentView !== "timeline") return [];
-  const obstacles = [];
-  for (const { rect: anchorRect, width, height, eligible } of measurements) {
-    if (!eligible) continue;
-    if (!anchorRect || anchorRect.bottom < 0 || anchorRect.top > window.innerHeight) continue;
-    if (width <= 0 || height <= 0) continue;
-    const left = anchorRect.right - 1;
-    obstacles.push({ left, right: left + width, top: anchorRect.top, bottom: anchorRect.top + height });
-  }
-  const drawer = state.timelineContentContextDrawerOpen && $("#timeline-content-context-drawer");
-  if (drawer && !drawer.classList.contains("hidden")) obstacles.push(drawer.getBoundingClientRect());
-  return obstacles;
-}
-
-function syncBackToTopPosition(top, measurements) {
-  const anchorsByView = {
-    timeline: [$("#result-panel"), document.querySelector(".timeline-heading-row")],
-    inbox: [$("#inbox-panel")],
-    library: [$("#library-panel")],
-    topics: [$("#topics-panel")],
-    settings: [$("#settings-panel")],
-  };
-  const candidates = anchorsByView[state.currentView] ?? [$("#timeline-panel")];
-  let anchorRect;
-  for (const element of candidates) {
-    if (!element || element.classList.contains("hidden")) continue;
-    const rect = element.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) { anchorRect = rect; break; }
-  }
-  const button = $("#back-to-top");
-  const measured = button.getBoundingClientRect();
-  const obstacles = timelineContentContextObstacles(measurements);
-  const bottom = syncBackToTopBoundaryPosition(top, measured.height || 48);
-  const buttonRect = Number.isFinite(bottom)
-    ? { width: measured.width, top: window.innerHeight - bottom - measured.height, bottom: window.innerHeight - bottom }
-    : measured;
-  const position = backToTopHorizontalPosition({ anchor: anchorRect, button: buttonRect, viewportWidth: window.innerWidth, obstacles });
-  setInlineStyle(button, "left", position.left);
-  setInlineStyle(button, "right", position.right);
-}
-
-function syncBackToTopBoundaryPosition(top, buttonHeight) {
-  const button = $("#back-to-top");
-  const delta = top - state.backToTopLastScrollY;
-  state.backToTopLastScrollY = top;
-  const cueEnabled = state.bootstrap?.settings?.timelineBoundaryCueMode !== "static";
-  if (!cueEnabled || state.currentView !== "timeline" || delta < -1 || top < BACK_TO_TOP_THRESHOLD_PX) {
-    releaseBackToTopBoundary();
-    return;
-  }
-
-  const restBottom = window.innerWidth <= 700 ? 14 : 20;
-  const safeTop = 16 + buttonHeight / 2;
-  const acquisitionBottom = window.innerHeight;
-  const linePosition = (marker) => marker?.isConnected ? marker.getBoundingClientRect().bottom : Number.NaN;
-  let marker = state.backToTopBoundary;
-  let lineY = linePosition(marker);
-  const markerVisible = Number.isFinite(lineY) && lineY >= safeTop && lineY <= acquisitionBottom;
-
-  if (marker && !markerVisible) {
-    marker = null;
-  }
-  if (!marker && delta > 1) {
-    marker = [...document.querySelectorAll(".timeline-older-batch-marker")].find((candidate) => {
-      const candidateY = linePosition(candidate);
-      return Number.isFinite(candidateY) && candidateY >= safeTop && candidateY <= acquisitionBottom;
-    }) ?? null;
-    lineY = linePosition(marker);
-  }
-  if (!marker || !Number.isFinite(lineY)) { releaseBackToTopBoundary(); return; }
-
-  state.backToTopBoundary = marker;
-  button.classList.add("is-following-boundary");
-  const bottom = backToTopBoundaryBottom({ lineY, viewportHeight: window.innerHeight, restBottom });
-  setInlineStyle(button, "--back-to-top-bottom", `${Math.round(bottom)}px`);
-  return Math.round(bottom);
-}
-
-function releaseBackToTopBoundary() {
-  state.backToTopBoundary = null;
-  const button = $("#back-to-top");
-  button.classList.remove("is-following-boundary");
-  setInlineStyle(button, "--back-to-top-bottom", "");
-}
-
-function returnToTop() {
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  window.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
-  $("#app-heading").focus({ preventScroll: true });
-}
-
-async function handleTimelinePrimaryAction() {
-  if (state.bootstrapLoading || !state.bootstrap) {
-    await retryBootstrap();
-    return;
-  }
-  await startVisibleUpdate();
-}
-
-async function retryBootstrap() {
-  await bootstrap({ userInitiated: true });
-}
-
-async function startVisibleUpdate() {
-  if (state.captureCleanupPending || state.session || state.bootstrap?.calibration?.active || state.bootstrap?.onboarding?.status !== "completed" || !collectionModeState(state.bootstrap?.collectionRuntime,state.bootstrap?.bridge?.compatible).canCollect) return;
-  hideFailure();
-  clearNotice();
-  setPill("#sidecar-status", "AkuSidecar ready", "ok");
-  setView("timeline");
-  try {
-    const { session } = await api("/api/updates", {
-      method: "POST",
-      body: { intent: defaultIntent },
-    });
-    state.session = session;
-    state.sessionProgress = { sessionId: session.id, value: 0 };
-    state.dispatchRetryAfter.clear();
-    renderSession();
-    startPolling();
-  } catch (error) {
-    showError(error);
-  }
-}
-
-async function cancelSession() {
-  if (!state.session) return;
-  const leaseId = state.session.id;
-  try {
-    const { session } = await api(`/api/sessions/${encodeURIComponent(state.session.id)}/cancel`, { method: "POST" });
-    state.session = session;
-    renderSession();
-    stopPolling();
-    state.dispatchKey = null;
-    state.dispatchRetryAfter.clear();
-    try {
-      await releaseCaptureSurface(leaseId);
-    } catch (error) {
-      state.captureCleanupPending = leaseId;
-      console.warn("Capture-surface cleanup after cancellation failed", error);
-      renderSession();
-      startPolling();
-      return;
-    }
-    if (state.captureCleanupPending === leaseId) state.captureCleanupPending = null;
-    state.session = null;
-    renderSession();
-  } catch (error) {
-    showError(error);
-  }
-}
-
-function startPolling() {
-  if (state.poller) return;
-  state.poller = setInterval(pollSession, 650);
-  pollSession();
-}
-
-function stopPolling() {
-  clearInterval(state.poller);
-  state.poller = null;
-}
-
-async function pollSession() {
-  if (!state.session || state.pollInFlight) return;
-  const sessionId = state.session.id;
-  state.pollInFlight = true;
-  try {
-    const { session } = await api(`/api/sessions/${encodeURIComponent(sessionId)}`);
-    if (!state.session || state.session.id !== sessionId) return;
-    state.session = session;
-    const captureSurfaceBarrier = await releaseCompletedSourceSurfaces({
-      session,
-      releasedSources: state.releasedCaptureSources,
-      releaseSource: releaseCaptureSurface,
-    });
-    if (!captureSurfaceBarrier.ready) {
-      console.warn("Capture-surface cleanup deferred before the next source.", captureSurfaceBarrier.error);
-    }
-    renderSession();
-    const captureActive = session.runs?.some((run) => run.status === "waiting_for_bridge" && run.bridgeCommandStatus === "claimed");
-    const captureRun = session.runs?.find((run) => runUsesBrowserCapture(run) && run.status === "waiting_for_bridge" && (!run.bridgeCommandStatus || run.bridgeCommandStatus === "queued"));
-    if (!captureActive && captureRun && captureSurfaceBarrier.ready) dispatch(captureRun);
-    if (terminalStatuses.has(session.status)) {
-      state.dispatchKey = null;
-      state.dispatchRetryAfter.clear();
-      try {
-        await releaseCaptureSurface(session.id);
-      } catch (error) {
-        state.captureCleanupPending = session.id;
-        console.warn("Capture-surface cleanup after session completion failed", error);
-        renderSession();
-        return;
-      }
-      if (state.captureCleanupPending === session.id) state.captureCleanupPending = null;
-      stopPolling();
-      if (session.delivery === "prepared") {
-        const { autoUpdate } = await api("/api/auto-update/status");
-        renderAutoUpdateStatus(autoUpdate);
-      } else {
-        await refreshTimeline();
-        if (session.trigger === "user") {
-          requestAnimationFrame(() => $("#timeline-heading")?.scrollIntoView({ block: "start", behavior: "smooth" }));
-        }
-      }
-      showSessionOutcome(session);
-      if (["failed", "partial"].includes(session.status)) showSessionFailure(session);
-      state.session = null;
-      renderSession();
-      schedulePassiveMediaEnrichment();
-      if (["completed", "partial"].includes(session.status)) {
-        const calibration = await startPendingFirstCalibration(session);
-        if (calibration) showCalibration(calibration);
-      }
-    }
-  } catch (error) {
-    if (/not found/i.test(error.message)) {
-      try {
-        await releaseCaptureSurface(sessionId);
-      } catch (cleanupError) {
-        state.captureCleanupPending = sessionId;
-        console.warn("Capture-surface cleanup for a missing session is still pending.", cleanupError);
-        renderSession();
-        return;
-      }
-      if (state.captureCleanupPending === sessionId) state.captureCleanupPending = null;
-      stopPolling();
-      state.dispatchKey = null;
-      state.dispatchRetryAfter.clear();
-      state.session = null;
-      renderSession();
-      await refreshTimeline();
-      return;
-    }
-    showError(error);
-  } finally {
-    state.pollInFlight = false;
-  }
-}
-
-async function releaseCaptureSurface(leaseId, source = null) {
-  if (state.session?.id === leaseId && !sessionUsesBrowserCapture(state.session)) return;
-  let lastError = null;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    try {
-      return await releaseCaptureSurfaceOnce(leaseId, source);
-    } catch (error) {
-      lastError = error;
-      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
-    }
-  }
-  throw lastError ?? new Error("AkuBridge did not confirm capture-surface cleanup.");
-}
-
-function releaseCaptureSurfaceOnce(leaseId, source = null) {
-  return new Promise((resolve, reject) => {
-    const timeout = window.setTimeout(() => {
-      window.removeEventListener("message", onReleaseResult);
-      reject(new Error("AkuBridge capture-surface cleanup acknowledgement timed out."));
-    }, 1500);
-    function finish(callback, value) {
-      window.clearTimeout(timeout);
-      window.removeEventListener("message", onReleaseResult);
-      callback(value);
-    }
-    function onReleaseResult(event) {
-      if (event.source !== window || event.origin !== endpoint || event.data?.leaseId !== leaseId || (event.data?.source ?? null) !== source) return;
-      if (event.data.type === "AKU_BROWSER_CAPTURE_SURFACE_RELEASED") {
-        if (event.data.outcome?.reason === "lease_mismatch") {
-          finish(reject, new Error("AkuBridge rejected cleanup because the capture lease changed."));
-          return;
-        }
-        if (!isVerifiedSurfaceCleanupReceipt(event.data.outcome, leaseId, source)) {
-          finish(reject, new Error("AkuBridge did not provide a verified capture-surface cleanup receipt."));
-          return;
-        }
-        finish(resolve, event.data.outcome);
-      } else if (event.data.type === "AKU_BROWSER_CAPTURE_SURFACE_RELEASE_FAILED") {
-        finish(reject, new Error(event.data.message || "AkuBridge capture-surface cleanup failed."));
-      }
-    }
-    window.addEventListener("message", onReleaseResult);
-    window.postMessage({ type: "AKU_BROWSER_RELEASE_CAPTURE_SURFACE", leaseId, source }, endpoint);
-  });
-}
-
-function dispatch(run) {
-  if (!runUsesBrowserCapture(run)) return;
-  const key = `${run.id}:${run.stage}`;
-  if (state.dispatchKey === key) return;
-  if ((state.dispatchRetryAfter.get(run.id) || 0) > Date.now()) return;
-  state.dispatchRetryAfter.delete(run.id);
-  state.dispatchKey = key;
-  window.postMessage({
-    type: "AKU_BROWSER_DISPATCH",
-    endpoint,
-    token: state.bootstrap.bridgeToken,
-    runId: run.id,
-  }, endpoint);
-}
-
-function renderSession() {
-  syncNativePostLinks();
-  const session = state.session;
-  const cleanupPending = Boolean(state.captureCleanupPending);
-  $("#processing-panel").classList.toggle("hidden", !cleanupPending && (!session || terminalStatuses.has(session.status)));
-  const modeBadge = $("#processing-mode-badge");
-  const badge = updatePolicyBadge(session);
-  modeBadge.classList.toggle("hidden", !badge);
-  modeBadge.textContent = badge?.text || "";
-  modeBadge.setAttribute("aria-label", badge?.label || "");
-  syncOnboardingLearning(shouldShowOnboardingLearning(session));
-  syncRunButtons();
-  if (cleanupPending) {
-    $("#processing-title").textContent = "Capture cleanup pending";
-    $("#processing-detail").textContent = CAPTURE_CLEANUP_PENDING_DETAIL;
-    return;
-  }
-  if (!session || terminalStatuses.has(session.status)) return;
-  const progress = describeSessionProgress(session);
-  if (state.sessionProgress.sessionId !== session.id) {
-    state.sessionProgress = { sessionId: session.id, value: 0 };
-  }
-  if (session.delivery === "prepared") {
-    progress.detail = `Preparing a background batch · ${progress.detail}`;
-  }
-  state.sessionProgress.value = Math.max(state.sessionProgress.value, progress.value);
-  const value = Math.min(97, state.sessionProgress.value);
-  $("#progress-bar").style.width = `${value}%`;
-  $("#progress-bar").parentElement.setAttribute("aria-valuenow", String(Math.round(value)));
-  $("#processing-title").textContent = progress.title;
-  $("#processing-detail").textContent = progress.detail;
-}
-
-function updatePolicyBadge(session) {
-  if (!session) return null;
-  if (session.trigger === "scheduler") return { text: "↻ AUTO", label: "Scheduled prepared update", className: "status-auto-update" };
-  if (session.trigger === "onboarding") return { text: "FIRST RUN", label: "Onboarding update", className: "status-neutral" };
-  if (session.delivery === "prepared") return { text: "PREPARE", label: "User-requested prepared batch", className: "status-neutral" };
-  return { text: "UPDATE", label: "User-visible update", className: "status-neutral" };
-}
-
-function shouldShowOnboardingLearning(session) {
-  if (firstRunCalibrationPending()) {
-    return Boolean(session && !terminalStatuses.has(session.status));
-  }
-  return state.bootstrap?.settings?.showLearningPanel === true;
-}
-
-function syncOnboardingLearning(visible) {
-  const panel = $("#onboarding-learning-panel");
-  panel.classList.toggle("hidden", !visible);
-  if (!visible) {
-    stopOnboardingLearningTimer();
-    return;
-  }
-  renderOnboardingLearningSlide();
-  syncOnboardingLearningTimer();
-}
-
-function moveOnboardingLearning(delta, manual = false) {
-  const slides = document.querySelectorAll(".onboarding-learning-slide");
-  if (!slides.length) return;
-  showOnboardingLearningSlide((state.onboardingLearningIndex + delta + slides.length) % slides.length, manual);
-}
-
-function showOnboardingLearningSlide(index, manual = false) {
-  const slides = document.querySelectorAll(".onboarding-learning-slide");
-  if (!slides.length) return;
-  state.onboardingLearningIndex = Math.max(0, Math.min(index, slides.length - 1));
-  renderOnboardingLearningSlide();
-  if (manual) restartOnboardingLearningTimer();
-}
-
-function renderOnboardingLearningSlide() {
-  const slides = document.querySelectorAll(".onboarding-learning-slide");
-  if (!slides.length) return;
-  $("#onboarding-learning-track").style.transform = `translateX(-${state.onboardingLearningIndex * 100}%)`;
-  $("#onboarding-learning-count").textContent = `${state.onboardingLearningIndex + 1} of ${slides.length}`;
-  for (const [index, slide] of [...slides].entries()) slide.setAttribute("aria-hidden", String(index !== state.onboardingLearningIndex));
-  for (const dot of document.querySelectorAll("[data-onboarding-slide]")) {
-    const active = Number(dot.dataset.onboardingSlide) === state.onboardingLearningIndex;
-    if (active) dot.setAttribute("aria-current", "true");
-    else dot.removeAttribute("aria-current");
-  }
-}
-
-function pauseOnboardingLearning(paused) {
-  state.onboardingLearningPaused = paused;
-  syncOnboardingLearningTimer();
-}
-
-function toggleOnboardingLearningPlayback() {
-  state.onboardingLearningUserPaused = !state.onboardingLearningUserPaused;
-  const button = $("#onboarding-learning-toggle");
-  button.textContent = state.onboardingLearningUserPaused ? "Play" : "Pause";
-  button.setAttribute("aria-pressed", String(state.onboardingLearningUserPaused));
-  syncOnboardingLearningTimer();
-}
-
-function syncOnboardingLearningTimer() {
-  const panelVisible = !$("#onboarding-learning-panel").classList.contains("hidden");
-  if (!panelVisible || state.onboardingLearningPaused || state.onboardingLearningUserPaused || document.visibilityState !== "visible") {
-    stopOnboardingLearningTimer();
-    return;
-  }
-  if (state.onboardingLearningTimer) return;
-  state.onboardingLearningTimer = setInterval(() => moveOnboardingLearning(1), ONBOARDING_LEARNING_INTERVAL_MS);
-}
-
-function restartOnboardingLearningTimer() {
-  stopOnboardingLearningTimer();
-  syncOnboardingLearningTimer();
-}
-
-function stopOnboardingLearningTimer() {
-  if (!state.onboardingLearningTimer) return;
-  clearInterval(state.onboardingLearningTimer);
-  state.onboardingLearningTimer = null;
-}
-
-function describeSessionProgress(session) {
-  const pipelineStage = session.coverage?.pipelineStage;
-  if (pipelineStage === "semantic_event_resolution" && firstRunCalibrationPending()) {
-    return { value: 76, title: "Preparing calibration examples", detail: "Indexing the first clean sample locally - no semantic model turn" };
-  }
-  if (pipelineStage === "finalizing" && firstRunCalibrationPending()) {
-    return { value: 97, title: "Finishing your first Timeline", detail: "Publishing calibration examples - AI Detection is skipped during onboarding" };
-  }
-  const pipelineStages = {
-    semantic_event_resolution: { value: 76, title: "Resolving repeated events", detail: "Cross-source semantic event resolution" },
-    timeline_composition: { value: 84, title: "Composing your Timeline", detail: "Applying global personalized order and finite capacity" },
-    ai_fast_detection: { value: 91, title: "Checking AI-origin signals", detail: "AI Fast Detection · local and deterministic" },
-    finalizing: { value: 97, title: "Finishing this update", detail: "Publishing Timeline · AI Deep Detection continues asynchronously" },
-  };
-  if (pipelineStages[pipelineStage]) return pipelineStages[pipelineStage];
-
-  const runs = session.runs ?? [];
-  const run = runs.find((candidate) => candidate.status === "waiting_for_bridge" && candidate.bridgeCommandStatus === "claimed")
-    ?? runs.find((candidate) => candidate.status === "waiting_for_bridge")
-    ?? runs.find((candidate) => candidate.status === "reasoning")
-    ?? runs.find((candidate) => candidate.status === "queued");
-  const runCount = Math.max(1, session.runs?.length ?? 1);
-  const source = sourceLabel(run?.source);
-  const stage = run?.stage ?? session.status;
-  const stageProgressByName = {
-    queued: 0.05,
-    capture: 0.18,
-    acquisition_planning: 0.38,
-    follow_up_capture: 0.52,
-    candidate_evaluation: 0.78,
-    reasoning: 0.7,
-    completed: 1,
-    failed: 1,
-    cancelled: 1,
-  };
-  const sourceProgress = runs.reduce((total, candidate) => {
-    const candidateStage = candidate.stage ?? candidate.status;
-    const progress = stageProgressByName[candidateStage] ?? (candidate.status === "reasoning" ? 0.7 : 0.18);
-    return total + (candidate.status === "waiting_for_bridge" && candidate.bridgeCommandStatus === "queued" ? Math.min(progress, 0.12) : progress);
-  }, 0) / runCount;
-  const descriptions = {
-    acquisition_planning: [`Planning ${source} follow-up`, "Deciding whether another bounded observation is useful"],
-    follow_up_capture: [`Reading more ${source} evidence`, "Collecting the requested bounded follow-up"],
-    candidate_evaluation: [`Evaluating ${source} evidence`, "Applying evidence and your personal preference profile"],
-  };
-  const queuedForCapture = run?.status === "waiting_for_bridge" && run.bridgeCommandStatus === "queued";
-  const [title, stageDetail] = queuedForCapture
-    ? [`Waiting for ${source} capture lane`, "Queued behind the active bounded browser capture"]
-    : (descriptions[stage] ?? [`Reading ${source}`, humanize(stage)]);
-  const activeStageDetails = runs
-    .filter((candidate) => ["waiting_for_bridge", "reasoning"].includes(candidate.status))
-    .slice(0, 3)
-    .map((candidate) => {
-      const labels = {
-        capture: "capture",
-        acquisition_planning: "planning",
-        follow_up_capture: "follow-up capture",
-        candidate_evaluation: "evaluation",
-        reasoning: "reasoning",
-      };
-      const captureState = candidate.status === "waiting_for_bridge" && candidate.bridgeCommandStatus === "queued" ? "capture queued" : null;
-      return `${sourceLabel(candidate.source)} ${captureState || labels[candidate.stage] || humanize(candidate.stage)}`;
-    });
-  const finished = runs.filter((candidate) => ["completed", "failed", "cancelled"].includes(candidate.status)).length;
-  return {
-    value: 4 + sourceProgress * 68,
-    title,
-    detail: `${activeStageDetails.join(" · ") || stageDetail} · ${finished} of ${runCount} sources finished`,
-  };
-}
-
-function renderNativeReaderNotice(status) {
-  const panel = $("#native-reader-update-notice");
-  if (!panel) return;
-  const notice = nativeReaderNotice(status, {
-    busy: state.closingNativeReaders,
-    feedback: state.nativeReaderResumeFeedback,
-    runtimeFailure: state.bootstrap?.collectionRuntime?.failure,
-  });
-  panel.classList.toggle("hidden", !notice.visible);
-  panel.setAttribute("aria-busy", String(state.closingNativeReaders));
-  setSettingsText($("#native-reader-update-title"), notice.title);
-  setSettingsText($("#native-reader-update-detail"), notice.detail);
-  setSettingsText($("#native-reader-update-feedback"), notice.feedback);
-  const manualAction = $("#native-reader-manual-action");
-  setSettingsText(manualAction, notice.manualAction);
-  manualAction.classList.toggle("hidden", !notice.manualAction);
-  const button = $("#native-reader-close-resume");
-  button.disabled = notice.disabled || nativePostOpening;
-  setSettingsText(button, notice.button);
-}
-
-async function closeNativeReadersAndResume() {
-  if (state.closingNativeReaders || nativePostOpening || !state.bootstrap?.autoUpdate?.nativeReaderBlocked) return;
-  state.closingNativeReaders = true;
-  state.nativeReaderResumeFeedback = "";
-  syncRunButtons();
-  syncNativePostLinks();
-  try {
-    const response = await api("/api/collection/native-reader/close-and-resume", { method: "POST" });
-    if (!response.autoUpdate && response.closed === true) {
-      if (response.collectionRuntime) state.bootstrap.collectionRuntime = response.collectionRuntime;
-      throw new Error("Jendela post ditutup, tetapi status update belum tersedia. Refresh Timeline untuk memeriksa pemulihan.");
-    }
-    if (response.closed === false && response.resumeOutcome === "no_reader" && !response.session) {
-      state.bootstrap.autoUpdate = response.autoUpdate;
-      if (response.collectionRuntime) state.bootstrap.collectionRuntime = response.collectionRuntime;
-      renderAutoUpdateStatus(response.autoUpdate);
-      await pollCollectionRuntime();
-      showNotice("Jendela post sudah tidak terbuka. Status Auto Update diperbarui.");
-      return;
-    }
-    if (response.closed !== true) throw new Error("Penutupan jendela post belum terverifikasi. Coba lagi.");
-    state.bootstrap.autoUpdate = response.autoUpdate;
-    if (response.collectionRuntime) state.bootstrap.collectionRuntime = response.collectionRuntime;
-    if (response.session) {
-      state.session = response.session;
-      renderSession();
-      startPolling();
-    }
-    renderAutoUpdateStatus(response.autoUpdate);
-    await pollCollectionRuntime();
-    showNotice(nativeReaderResumeMessage(response));
-  } catch (error) {
-    state.nativeReaderResumeFeedback = error.message || "Jendela post belum bisa ditutup. Coba lagi.";
-  } finally {
-    state.closingNativeReaders = false;
-    syncRunButtons();
-    syncNativePostLinks();
-  }
-}
-
-function syncRunButtons() {
-  drainPlaybackRecovery();
-  renderNativeReaderNotice(state.bootstrap?.autoUpdate);
-  const reason = state.captureCleanupPending ? CAPTURE_CLEANUP_PENDING_MESSAGE : runDisabledReason();
-  const canRetryBootstrap = state.bootstrapLoading && Boolean(state.bootstrapError) && !state.captureCleanupPending;
-  const disabled = Boolean(reason);
-  const prepared = state.bootstrap?.autoUpdate?.preparedBatches?.length ?? 0;
-  const preparedReason = state.captureCleanupPending ? CAPTURE_CLEANUP_PENDING_MESSAGE : preparedBatchDisabledReason(prepared);
-  $("#timeline-runner-button").disabled = disabled && !canRetryBootstrap;
-  $("#timeline-prepared-button").disabled = Boolean(preparedReason);
-  $("#done-button").disabled = prepared > 0 ? Boolean(preparedReason) : disabled;
-  setSettingsText($("#timeline-runner-button"), canRetryBootstrap ? "Retry connection" : "Update now");
-  $("#timeline-runner-button").title = canRetryBootstrap ? "Retry restoring the Timeline and active check." : reason;
-  $("#timeline-prepared-button").title = preparedReason;
-  $("#done-button").title = prepared > 0 ? preparedReason : reason;
-  const showCalibrationProgress = renderTimelineCalibrationProgress();
-  const showGuidance = Boolean(reason) && !showCalibrationProgress && !Boolean(state.session && !terminalStatuses.has(state.session.status));
-  setSettingsText($("#timeline-runner-status"), reason);
-  $("#timeline-runner-guidance").classList.toggle("hidden", !showGuidance);
-  $("#source-access-setup-button").classList.toggle("hidden", !showGuidance || state.bootstrap?.collectionRuntime?.nativeReaderOnly || !sourceAccessNeedsAttention());
-  for (const button of document.querySelectorAll(".recapture-button")) button.disabled = disabled || (button.classList.contains("foreground-recapture-button") && state.bootstrap?.collectionRuntime?.effective === "headless");
-  $("#open-reset-learning").disabled = Boolean(state.session);
-  $("#open-full-reset").disabled = Boolean(state.session);
-}
-
-function renderTimelineCalibrationProgress() {
-  const calibration = state.bootstrap?.calibration?.active;
-  const panel = $("#timeline-calibration-progress");
-  if (!calibration) {
-    panel.classList.add("hidden");
-    return false;
-  }
-  const samples = Array.isArray(calibration.samples) ? calibration.samples : [];
-  const total = samples.length;
-  const resolved = samples.filter((sample) => sample.label || sample.issueCode).length;
-  const remaining = Math.max(0, total - resolved);
-  const progress = total ? Math.round((resolved / total) * 100) : 0;
-  const track = $("#timeline-calibration-progress-track");
-  panel.classList.remove("hidden");
-  panel.classList.toggle("is-preparing", total === 0);
-  $("#timeline-calibration-progress-label").textContent = total
-    ? `${resolved} of ${total} reviewed · ${remaining} left`
-    : "Preparing calibration samples";
-  $("#timeline-calibration-progress-bar").style.width = `${progress}%`;
-  track.setAttribute("aria-valuenow", String(progress));
-  track.setAttribute("aria-valuetext", total ? `${resolved} of ${total} calibration samples reviewed` : "Preparing calibration samples");
-  return true;
-}
-
-function preparedBatchDisabledReason(prepared) {
-  if (state.captureCleanupPending) return CAPTURE_CLEANUP_PENDING_MESSAGE;
-  if (prepared < 1) return "No prepared batch is available.";
-  if (state.bootstrapLoading || !state.bootstrap) return "Restoring prepared batches…";
-  if (state.revealingPreparedBatch) return "Loading the prepared batch…";
-  return "";
-}
-
-function runDisabledReason() {
-  if (state.captureCleanupPending) return CAPTURE_CLEANUP_PENDING_MESSAGE;
-  if (state.closingNativeReaders) return "Closing native post windows and restoring collection…";
-  if (state.bootstrapLoading && state.bootstrapError) return "Timeline restore was interrupted. Retry now or wait for automatic recovery.";
-  if (state.bootstrapLoading) return "Restoring your Timeline and active check…";
-  if (state.session) {
-    return terminalStatuses.has(state.session.status) ? "Finishing capture cleanup…" : "A check for updates is already running.";
-  }
-  if (state.mediaRecaptureActive) return "Finishing media recapture…";
-  if (state.bootstrap?.calibration?.active) return "Finish calibration before starting another check.";
-  if (state.bootstrap?.onboarding?.status !== "completed") return "Complete source setup before checking for updates.";
-  const bridgeUnavailable = bridgeUnavailableReason(state.bootstrap?.bridge);
-  if (bridgeUnavailable) return bridgeUnavailable;
-  const grantedSources = state.bootstrap?.bridge?.actual?.sourceAccess?.grantedSources;
-  if (state.bootstrap?.collectionRuntime?.effective === "headless") {
-    const allowed = new Set(state.bootstrap.collectionRuntime.authorizedSources ?? []);
-    return (state.bootstrap.settings.activeSources ?? []).some(source => allowed.has(source)) ? "" : "Source access is not confirmed. Open the source to grant access in Browser mode.";
-  }
-  if (!Array.isArray(grantedSources)) return "Waiting for AkuBridge source permission status…";
-  if (sourceAccessNeedsAttention()) {
-    return "No active source is ready. Open Settings, then use each source's Grant access or Sign in action before updating.";
-  }
-  return "";
-}
-
-function bridgeUnavailableReason(bridge) {
-  const runtime = state.bootstrap?.collectionRuntime;
-  if (runtime?.nativeReaderOnly) return "Close the native post windows to resume headless collection.";
-  if (runtime?.available && runtime.pending) return "Waiting for the collection mode transition. Finish capture or close open source windows.";
-  if (collectionModeState(runtime,bridge?.compatible).canCollect) return "";
-  if (bridge?.compatible) return "";
-  if (bridge?.state === "incompatible") {
-    const reasons = Array.isArray(bridge.reasons)
-      ? bridge.reasons.map((reason) => String(reason ?? "").trim()).filter(Boolean)
-      : [];
-    return reasons.length
-      ? `AkuBridge update or reload required: ${reasons.join(", ")}.`
-      : "AkuBridge update or reload required because its capabilities are incompatible.";
-  }
-  return "Waiting for AkuBridge to reconnect…";
-}
-
-function sourceAccessNeedsAttention() {
-  const activeSources = state.bootstrap?.settings?.activeSources ?? [];
-  const readySources = new Set(bridgeSourceReadiness().filter((source) => source.ready).map((source) => source.source));
-  return readySources.size === 0 || !activeSources.some((source) => readySources.has(source));
-}
-
-function bridgeSourceReadiness() {
-  const access = state.bootstrap?.bridge?.actual?.sourceAccess;
-  if (Array.isArray(access?.sources) && access.sources.length) return access.sources;
-  return [];
-}
-
-function openSourceAccessSettings() {
-  setView("settings");
-  requestSourceSessionReadiness();
-}
-
-async function startPendingFirstCalibration(session) {
-  if (state.bootstrap?.calibration?.firstRunStatus !== "pending") return null;
-  try {
-    const { calibration } = await api("/api/calibration/sessions", {
-      method: "POST",
-      body: { unifiedSessionId: session.id, triggerKind: "first_run" },
-    });
-    if (calibration.status === "completed") {
-      state.bootstrap.calibration = { ...state.bootstrap.calibration, firstRunStatus: "completed", active: null };
-      return null;
-    }
-    state.bootstrap.calibration.active = calibration;
-    return calibration;
-  } catch (error) {
-    if (error.code === "calibration_sample_unavailable" || /no validated calibration entry|requires at least one validated candidate/i.test(error.message)) {
-      showCalibrationRetry(session);
-      return null;
-    }
-    showError(new Error(`Calibration could not start: ${error.message}`));
-    return null;
-  }
-}
-
-function showCalibration(calibration) {
-  clearNotice();
-  hideFailure();
-  setPill("#sidecar-status", "AkuSidecar ready", "ok");
-  state.calibration = calibration;
-  state.bootstrap.calibration.active = calibration;
-  const unresolved = calibration.samples.findIndex((sample) => !sample.label && !sample.issueCode);
-  state.calibrationOrdinal = unresolved >= 0 ? unresolved : Math.max(0, calibration.samples.length - 1);
-  renderSetupPage(document, "calibration");
-  syncTimelineSidePaneVisibility();
-  $("#calibration-heading").focus();
-  window.scrollTo({ top: 0, behavior: "auto" });
-  renderCalibration();
-}
-
-function renderCalibration() {
-  const calibration = state.calibration;
-  if (!calibration) return;
-  const total = calibration.samples.length;
-  const resolved = calibration.samples.filter((sample) => sample.label || sample.issueCode).length;
-  const sample = calibration.samples[state.calibrationOrdinal];
-  const progress = total ? Math.round((resolved / total) * 100) : 0;
-  $("#calibration-progress").textContent = `${resolved} of ${total}`;
-  $("#calibration-progress-bar").style.width = `${progress}%`;
-  $("#calibration-progress-bar").parentElement?.setAttribute("aria-valuenow", String(progress));
-  $("#calibration-previous").disabled = state.calibrationOrdinal === 0;
-  const labels = { more_like_this: "More like this", neutral: "Neutral", less_like_this: "Less like this" };
-  $("#calibration-status").textContent = sample?.label
-    ? `Current decision: ${labels[sample.label] || humanize(sample.label)}`
-    : sample?.issueCode
-      ? `Reported capture problem: ${humanize(sample.issueCode)}`
-      : "Choose Less, Neutral, or More for this real source entry.";
-  $("#calibration-card").replaceChildren(buildCalibrationCard(sample));
-}
-
-function buildCalibrationCard(sample) {
-  const card = document.createElement("article");
-  card.className = "calibration-entry";
-  if (!sample) {
-    card.textContent = "No calibration entry is available.";
-    return card;
-  }
-  const candidate = sample.candidate ?? {};
-  const header = document.createElement("div");
-  header.className = "calibration-entry-header";
-  const source = document.createElement("strong");
-  source.textContent = sourceLabel(sample.source);
-  const position = document.createElement("span");
-  position.textContent = `Source position ${candidate.feedPosition || state.calibrationOrdinal + 1}`;
-  header.append(source, position);
-  const sourceCard = buildSourceCard({
-    source: sample.source,
-    evidence: { ...candidate, permalink: candidate.sourceUrl },
-    item: {
-      source: sample.source,
-      sourceUrl: candidate.sourceUrl,
-      sourceUrlKind: "native_post",
-      author: candidate.author,
-      publishedAt: candidate.publishedAt,
-      whatChanged: candidate.text || candidate.assessment?.rationale || "No readable text was captured.",
-    },
-  });
-  card.append(header, sourceCard);
-  const calibrationSourceUrl = safeSourceUrl(candidate.sourceUrl, sample.source);
-  if (calibrationSourceUrl) {
-    const link = document.createElement("a");
-    configureNativePostLink(link, calibrationSourceUrl, sample.source);
-    link.textContent = "Open source entry";
-    card.append(link);
-  }
-  return card;
-}
-
-function showPreviousCalibrationSample() {
-  state.calibrationOrdinal = Math.max(0, state.calibrationOrdinal - 1);
-  renderCalibration();
-}
-
-async function decideCalibration(decision) {
-  if (!state.calibration) return;
-  const buttons = [$("#calibration-less"), $("#calibration-neutral"), $("#calibration-more"), ...document.querySelectorAll("[data-calibration-issue]")];
-  for (const button of buttons) button.disabled = true;
-  try {
-    const { calibration } = await api(
-      `/api/calibration/sessions/${encodeURIComponent(state.calibration.id)}/samples/${state.calibrationOrdinal}`,
-      { method: "PUT", body: decision },
-    );
-    state.calibration = calibration;
-    if (calibration.status === "completed") {
-      state.bootstrap.calibration = { ...state.bootstrap.calibration, firstRunStatus: "completed", active: null, liveInfluence: calibration.snapshot?.liveInfluence ?? false };
-      if (calibration.triggerKind === "first_run") state.bootstrap.settings.showLearningPanel = false;
-      state.calibration = null;
-      $("#calibration-panel").classList.add("hidden");
-      await refreshTimeline();
-      setView("timeline");
-      return;
-    }
-    state.bootstrap.calibration.active = calibration;
-    const next = calibration.samples.findIndex((sample, index) => index > state.calibrationOrdinal && !sample.label && !sample.issueCode);
-    state.calibrationOrdinal = next >= 0 ? next : Math.min(state.calibrationOrdinal + 1, calibration.samples.length - 1);
-    renderCalibration();
-  } catch (error) {
-    $("#calibration-status").textContent = error.message;
-  } finally {
-    for (const button of buttons) button.disabled = false;
-  }
-}
-
-async function refreshTimeline(options = {}) {
-  try {
-    const configuredLimit = state.bootstrap?.settings?.timelineCapacity ?? 24;
-    const limit = Math.min(50, configuredLimit + Math.max(0, options.extraItems || 0));
-    const { items, timelineBatches, latestCheck, autoUpdate } = await api(`/api/timeline?limit=${limit}&offset=0`);
-    if (options.background) {
-      // Scrolling may have started while the request was in flight.
-      await timelineScrollIdle.wait();
-      if (timelineInteractionActive()) { state.backgroundTimelineRefreshPending = true; return; }
-    }
-    if (state.bootstrap) state.bootstrap.latestCheck = latestCheck ?? null;
-    if (state.bootstrap) state.bootstrap.timelineBatches = timelineBatches ?? state.bootstrap.timelineBatches ?? [];
-    if (state.bootstrap) state.bootstrap.autoUpdate = autoUpdate ?? state.bootstrap.autoUpdate;
-    state.timelineBatches = timelineBatches ?? state.timelineBatches;
-    renderAutoUpdateStatus(autoUpdate);
-    const timelineItems = options.revealedSessionID
-      ? orderTimelineForRevealedBatch(
-          items ?? [],
-          options.previousItems ?? [],
-          options.revealedSessionID,
-          options.revealPlacement ?? "append",
-        )
-      : items ?? [];
-    const render = () => renderTimeline(timelineItems, latestCheck ?? null, state.timelineBatches, options.highlightSessionID || "");
-    if (options.preserveScroll || options.background) renderWithCurrentScroll(render);
-    else render();
-  } catch (error) {
-    showError(error);
-  }
-}
-
-function orderTimelineForRevealedBatch(items, previousItems, revealedSessionID, placement = "append") {
-  const byID = new Map(items.map((entry) => [entry.id, entry]));
-  const previousIDs = new Set(previousItems.map((entry) => entry.id));
-  const previous = previousItems.map((entry) => byID.get(entry.id)).filter(Boolean);
-  const revealed = items.filter((entry) => entry.sessionId === revealedSessionID && !previousIDs.has(entry.id));
-  const included = new Set([...previous, ...revealed].map((entry) => entry.id));
-  const remaining = items.filter((entry) => !included.has(entry.id));
-  if (placement === "prepend") return [...revealed, ...previous, ...remaining];
-  return [...previous, ...revealed, ...remaining];
-}
-
-async function handleFinishLineAction() {
-  const revealed = await revealPreparedBatch("continue");
-  if (!revealed) await startVisibleUpdate();
-}
-
-async function revealPreparedBatch(presentation) {
-  if (state.revealingPreparedBatch) return false;
-  state.revealingPreparedBatch = true;
-  syncRunButtons();
-  let sessionID = "";
-  try {
-    const { autoUpdate } = await api("/api/auto-update/status");
-    if (state.bootstrap) state.bootstrap.autoUpdate = autoUpdate;
-    renderAutoUpdateStatus(autoUpdate);
-    sessionID = autoUpdate?.preparedBatches?.[0]?.sessionId || "";
-    if (!sessionID) return false;
-    const previousItems = [...state.timelineItems];
-    const revealPlacement = presentation === "latest" ? "prepend" : "append";
-    const { batch } = await api(`/api/auto-update/batches/${encodeURIComponent(sessionID)}/reveal`, {
-      method: "POST",
-      body: { presentation: revealPlacement },
-    });
-    if (presentation === "latest") {
-      await refreshTimeline({
-        revealedSessionID: sessionID,
-        revealPlacement,
-        previousItems,
-        extraItems: batch?.itemCount || 0,
-      });
-      showNotice(`Loaded ${batch?.itemCount || 0} item${batch?.itemCount === 1 ? "" : "s"} from the next prepared batch.`);
-      requestAnimationFrame(() => {
-        $("#timeline-heading")?.scrollIntoView({ block: "start", behavior: "smooth" });
-        $("#timeline-heading")?.focus({ preventScroll: true });
-      });
-    } else {
-      await refreshTimeline({
-        revealedSessionID: sessionID,
-        revealPlacement,
-        previousItems,
-        extraItems: batch?.itemCount || 0,
-        preserveScroll: true,
-        highlightSessionID: sessionID,
-      });
-    }
-    return true;
-  } catch (error) {
-    showError(error);
-    return false;
-  } finally {
-    state.revealingPreparedBatch = false;
-    syncRunButtons();
-  }
-}
-
-async function loadInbox() {
-  const meta = $("#inbox-meta");
-  const refresh = $("#inbox-refresh-button");
-  meta.textContent = "Loading recent checks...";
-  refresh.disabled = true;
-  try {
-    const response = await api("/api/inbox?limit=12&offset=0");
-    renderInbox(response.sessions ?? [], response.total ?? 0);
-  } catch (error) {
-    meta.textContent = error.message;
-    $("#inbox-sessions").replaceChildren();
-  } finally {
-    refresh.disabled = false;
-  }
-}
-
-function renderInbox(sessions, total) {
-  const container = $("#inbox-sessions");
-  $("#inbox-meta").textContent = total
-    ? `${Math.min(sessions.length, total)} of ${total} recent checks \u00b7 newest first`
-    : "No update checks have been recorded yet.";
-  if (!sessions.length) {
-    const empty = document.createElement("p");
-    empty.className = "inbox-empty";
-    empty.textContent = "Run Update now, or let Auto Update prepare a batch, to create the first diagnostic entry.";
-    container.replaceChildren(empty);
-    return;
-  }
-  container.replaceChildren(...sessions.map((session, index) => buildInboxSession(session, index === 0)));
-  scheduleBackToTop();
-}
-
-function buildInboxSession(session, expanded) {
-  const details = document.createElement("details");
-  details.className = "inbox-session";
-  details.open = expanded;
-  const summary = document.createElement("summary");
-  const identity = document.createElement("div");
-  identity.className = "inbox-session-identity";
-  const title = document.createElement("strong");
-  const labels = {
-    onboarding: "Onboarding check",
-    scheduler: "Checked",
-  };
-  title.textContent = `${labels[session.trigger] || (session.delivery === "prepared" ? "Prepared check" : "User update")} ${formatDate(session.createdAt)}`;
-  const policyBadge = updatePolicyBadge(session);
-  if (policyBadge) {
-    const badge = document.createElement("span");
-    badge.className = `status-pill ${policyBadge.className}`;
-    badge.textContent = policyBadge.text;
-    badge.setAttribute("aria-label", policyBadge.label);
-    identity.append(badge);
-  }
-  const status = document.createElement("span");
-  status.className = `status-pill status-${inboxStatusTone(session.status)}`;
-  status.textContent = humanize(session.status);
-  identity.append(title, status);
-  if (session.delivery === "prepared" && session.deliveryState) {
-    const delivery = document.createElement("span");
-    delivery.className = "status-pill status-neutral";
-    delivery.textContent = humanize(session.deliveryState);
-    identity.append(delivery);
-  }
-  const flow = document.createElement("span");
-  flow.className = "inbox-flow-summary";
-  flow.textContent = inboxSessionFlowText(session);
-  summary.append(identity, flow);
-  const body = document.createElement("div");
-  body.className = "inbox-session-body";
-  const duration = document.createElement("p");
-  duration.className = "inbox-session-meta";
-  duration.textContent = [formatDurationBetween(session.startedAt, session.completedAt), session.intent].filter(Boolean).join(" \u00b7 ");
-  const runs = document.createElement("div");
-  runs.className = "inbox-runs";
-  runs.append(...(session.runs ?? []).map((run) => buildInboxRun(run, session.status)));
-  body.append(duration, buildSessionModelUsage(session));
-  if (session.eventResolution) body.append(buildEventResolutionDiagnostic(session.eventResolution));
-  if (session.aiDetection) body.append(buildAIDetectionDiagnostic(session.aiDetection));
-  if (session.aiDetectorYield) body.append(buildAIDetectorYield(session.aiDetectorYield));
-  if (session.preferenceDecisions?.length) {
-    body.append(buildInboxPreferenceDecisions(session.preferenceDecisions));
-  }
-  body.append(runs);
-  details.append(summary, body);
-  return details;
-}
-
-function buildSessionModelUsage(session) {
-  const details = document.createElement("details");
-  details.className = "model-usage-section";
-  const summary = document.createElement("summary");
-  const label = document.createElement("strong");
-  label.textContent = "Model usage";
-  const value = document.createElement("span");
-  value.textContent = "Open to inspect this check";
-  summary.append(label, value);
-  const body = document.createElement("div");
-  body.className = "model-usage-body";
-  details.append(summary, body);
-  let loaded = false;
-  let loading = false;
-  details.addEventListener("toggle", async () => {
-    if (!details.open || loaded || loading) return;
-    loading = true;
-    body.replaceChildren(modelUsageMessage("Loading model usage..."));
-    try {
-      const response = await api(`/api/inbox/sessions/${encodeURIComponent(session.id)}/model-usage`);
-      renderModelUsageReport(body, response.usage, true);
-      value.textContent = modelUsageSummary(response.usage);
-      loaded = true;
-    } catch (error) {
-      body.replaceChildren(modelUsageMessage(error.message, "error"));
-    } finally {
-      loading = false;
-    }
-  });
-  return details;
-}
-
-function modelUsageMessage(message, tone = "") {
-  const element = document.createElement("p");
-  element.className = `model-usage-message${tone ? ` model-usage-message-${tone}` : ""}`;
-  element.textContent = message;
-  return element;
-}
-
-function buildModelUsageHelp() {
-  const wrapper = document.createElement("span");
-  wrapper.className = "model-usage-help";
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "model-usage-help-button";
-  button.textContent = "?";
-  button.title = "How model usage is counted";
-  button.setAttribute("aria-label", "How model usage is counted");
-  button.setAttribute("aria-expanded", "false");
-  const popover = document.createElement("span");
-  popover.className = "model-usage-help-popover";
-  popover.id = `model-usage-help-${++state.modelUsageHelpSequence}`;
-  popover.setAttribute("role", "tooltip");
-  popover.textContent = "Input already includes cached input, so cached input is shown as a breakout and is not added again. Reasoning output is also a breakout. Failed invocations may still use tokens. Unavailable means the provider did not report usage, not zero. AI Deep Detection and Living Topic routing or understanding may update asynchronously. Library search, Memory storage, and deterministic related context do not invoke a provider.";
-  button.setAttribute("aria-controls", popover.id);
-  button.setAttribute("aria-describedby", popover.id);
-  button.addEventListener("click", () => {
-    const open = !wrapper.classList.contains("is-open");
-    wrapper.classList.toggle("is-open", open);
-    button.setAttribute("aria-expanded", String(open));
-  });
-  wrapper.append(button, popover);
-  return wrapper;
-}
-
-function renderModelUsageReport(container, report, showTotalLink) {
-  const header = document.createElement("header");
-  header.className = "model-usage-heading";
-  const copy = document.createElement("div");
-  const title = document.createElement("strong");
-  title.textContent = report.scope === "aggregate" ? "Locally recorded usage" : "Usage for this check";
-  const detail = document.createElement("span");
-  detail.textContent = modelUsageSummary(report);
-  copy.append(title, detail);
-  header.append(copy, buildModelUsageHelp());
-
-  const totals = document.createElement("div");
-  totals.className = "model-usage-totals";
-  for (const [label, value, note] of [
-    ["Input", report.usage?.inputTokens, "Cached input is included"],
-    ["Cached input", report.usage?.cachedInputTokens, "Breakout only"],
-    ["Output", report.usage?.outputTokens, "Primary output counter"],
-    ["Reasoning output", report.usage?.reasoningOutputTokens, "Breakout only"],
-    ["Model time", report.durationMs, `${modelUsageInvocationCount(report)} invocation${modelUsageInvocationCount(report) === 1 ? "" : "s"}`],
-  ]) {
-    const metric = document.createElement("div");
-    const number = document.createElement("strong");
-    number.textContent = label === "Model time" ? formatDuration(value ?? 0) : formatTokenCount(value);
-    const name = document.createElement("span");
-    name.textContent = label;
-    const context = document.createElement("small");
-    context.textContent = note;
-    metric.append(number, name, context);
-    totals.append(metric);
-  }
-
-  const categories = document.createElement("div");
-  categories.className = "model-usage-categories";
-  categories.append(...(report.categories ?? []).map(buildModelUsageCategory));
-  container.replaceChildren(header, totals, categories);
-
-  if (report.usageCoverage === "partial" || report.usageCoverage === "unavailable") {
-    const coverage = modelUsageMessage(report.usageCoverage === "partial"
-      ? "Some invocations did not report every token counter. Displayed totals include only reported values."
-      : "The provider did not report token counters for the recorded invocations.");
-    coverage.classList.add("model-usage-coverage-note");
-    container.append(coverage);
-  }
-  if (report.scope === "aggregate") {
-    const retention = modelUsageMessage("This is local AkuBrowser history, not account-wide Codex usage. Database reset and retention or storage trimming can reduce the available history.");
-    retention.classList.add("model-usage-retention-note");
-    container.append(retention);
-  }
-  if (showTotalLink) {
-    const link = document.createElement("button");
-    link.type = "button";
-    link.className = "text-button model-usage-total-link";
-    link.textContent = "View total model usage →";
-    link.addEventListener("click", () => setInboxSubView("usage"));
-    container.append(link);
-  }
-}
-
-function buildModelUsageCategory(category) {
-  const details = document.createElement("details");
-  details.className = "model-usage-category";
-  const summary = document.createElement("summary");
-  const identity = document.createElement("span");
-  const label = document.createElement("strong");
-  label.textContent = category.label;
-  const execution = document.createElement("small");
-  execution.textContent = [
-    category.execution === "async" ? "Async" : "In run",
-    modelUsageCategoryProfile(category),
-  ].filter(Boolean).join(" · ");
-  identity.append(label, execution);
-  const rollup = document.createElement("span");
-  rollup.textContent = category.invocationCount
-    ? `${formatTokenCount(category.usage?.inputTokens)} input · ${formatTokenCount(category.usage?.outputTokens)} output · ${formatDuration(category.durationMs)}`
-    : humanize(category.status);
-  summary.append(identity, rollup);
-  const body = document.createElement("div");
-  body.className = "model-usage-category-body";
-  if (category.note) body.append(modelUsageMessage(category.note));
-  if (category.entries?.length) {
-    const entries = document.createElement("div");
-    entries.className = "model-usage-entries";
-    entries.append(...category.entries.map(buildModelUsageEntry));
-    body.append(entries);
-  }
-  details.append(summary, body);
-  return details;
-}
-
-function modelUsageCategoryProfile(category) {
-  const process = (state.bootstrap?.reasoningProcesses ?? []).find((candidate) => candidate.id === category.id);
-  const actual = new Map();
-  for (const entry of category.entries ?? []) {
-    if (!(entry.invocationCount > 0) || !entry.model) continue;
-    actual.set(`${entry.model}\u0000${entry.effort || ""}`, { model: entry.model, effort: entry.effort || "" });
-  }
-  if (actual.size > 1) return "Mixed models";
-  if (actual.size === 1) {
-    const used = [...actual.values()][0];
-    return process?.options?.find((option) => option.model === used.model && option.effort === used.effort)?.label
-      || `${formatReasoningModel(used.model)} ${formatReasoningEffort(used.effort)}`;
-  }
-  if (category.status === "pending" || category.status === "running") {
-    const configured = process?.options?.find((option) => option.id === process.profileId)?.label;
-    return configured ? `${configured} configured` : "Configured model pending";
-  }
-  return "No model used";
-}
-
-function buildModelUsageEntry(entry) {
-  const row = document.createElement("article");
-  row.className = "model-usage-entry";
-  const identity = document.createElement("div");
-  const title = document.createElement("strong");
-  title.textContent = entry.source ? sourceLabel(entry.source) : "All sources";
-  const runtime = document.createElement("span");
-  runtime.textContent = [formatReasoningProvider(entry.provider), formatReasoningModel(entry.model), formatReasoningEffort(entry.effort), `${entry.invocationCount} invocation${entry.invocationCount === 1 ? "" : "s"}`].filter(Boolean).join(" · ");
-  identity.append(title, runtime);
-  const metrics = document.createElement("div");
-  metrics.className = "model-usage-entry-metrics";
-  for (const text of [
-    `${formatTokenCount(entry.usage?.inputTokens)} in`,
-    `${formatTokenCount(entry.usage?.cachedInputTokens)} cached`,
-    `${formatTokenCount(entry.usage?.outputTokens)} out`,
-    `${formatTokenCount(entry.usage?.reasoningOutputTokens)} reasoning`,
-    formatDuration(entry.durationMs),
-  ]) {
-    const metric = document.createElement("span");
-    metric.textContent = text;
-    metrics.append(metric);
-  }
-  const status = document.createElement("span");
-  status.className = `model-usage-entry-status status-${inboxStatusTone(entry.status)}`;
-  status.textContent = entry.usageCoverage === "unavailable" ? `${humanize(entry.status)} · usage unavailable` : humanize(entry.status);
-  row.append(identity, metrics, status);
-  return row;
-}
-
-function modelUsageInvocationCount(report) {
-  return (report.categories ?? []).reduce((total, category) => total + Number(category.invocationCount || 0), 0);
-}
-
-function modelUsageSummary(report) {
-  const invocations = modelUsageInvocationCount(report);
-  if (!invocations) return "No model invocation required";
-  const summary = `${formatTokenCount(report.usage?.inputTokens)} input · ${formatTokenCount(report.usage?.outputTokens)} output · ${formatDuration(report.durationMs)} model time`;
-  return report.usageCoverage === "complete" ? summary : `${summary} · ${humanize(report.usageCoverage)} telemetry`;
-}
-
-function formatTokenCount(value) {
-  if (value == null || !Number.isFinite(Number(value))) return "Unavailable";
-  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(Number(value));
-}
-
-async function loadAggregateModelUsage() {
-  const meta = $("#model-usage-meta");
-  const container = $("#model-usage-total");
-  const refresh = $("#model-usage-refresh");
-  const windowDays = Number($("#model-usage-window").value || 30);
-  meta.textContent = `Loading ${windowDays} days of locally recorded usage...`;
-  refresh.disabled = true;
-  container.replaceChildren(modelUsageMessage("Loading model usage..."));
-  try {
-    const response = await api(`/api/model-usage?windowDays=${windowDays}`);
-    const report = response.usage;
-    meta.textContent = `${report.sessionCount} check${report.sessionCount === 1 ? "" : "s"} recorded in the last ${windowDays} days · generated ${formatDate(report.generatedAt)}`;
-    renderModelUsageReport(container, report, false);
-  } catch (error) {
-    meta.textContent = error.message;
-    container.replaceChildren(modelUsageMessage(error.message, "error"));
-  } finally {
-    refresh.disabled = false;
-  }
-}
-
-function buildInboxPreferenceDecisions(decisions) {
-  const section = document.createElement("details");
-  section.className = "inbox-preference-decisions";
-  const summary = document.createElement("summary");
-  const title = document.createElement("strong");
-  title.textContent = "Personalization decisions";
-  const guidance = document.createElement("span");
-  guidance.textContent = "Change an earlier choice. The latest More or Less decision is authoritative.";
-  summary.append(title, guidance);
-  const list = document.createElement("div");
-  list.className = "inbox-preference-list";
-  list.append(...decisions.map(buildInboxPreferenceDecision));
-  section.append(summary, list);
-  return section;
-}
-
-function buildInboxPreferenceDecision(decision) {
-  const row = document.createElement("article");
-  row.className = "inbox-preference-decision";
-  const copy = document.createElement("div");
-  copy.className = "inbox-preference-copy";
-  const summary = document.createElement("strong");
-  summary.textContent = decision.summary || "Previously rated update";
-  const context = document.createElement("span");
-  const renderContext = () => {
-    const origin = decision.origin === "calibration" ? "from calibration" : null;
-    context.textContent = [sourceLabel(decision.source), decision.author, origin, `updated ${formatDate(decision.updatedAt)}`]
-      .filter(Boolean)
-      .join(" \u00b7 ");
-  };
-  renderContext();
-  copy.append(summary, context);
-  const sourceUrl = safeSourceUrl(decision.sourceUrl, decision.source);
-  if (sourceUrl) {
-    const link = document.createElement("a");
-    configureNativePostLink(link, sourceUrl, decision.source);
-    link.textContent = "Open source";
-    copy.append(link);
-  }
-
-  const actions = document.createElement("div");
-  actions.className = "inbox-preference-actions";
-  const more = feedbackButton("More");
-  const less = feedbackButton("Less");
-  const buttons = { more, less };
-  const renderDirection = () => {
-    for (const [direction, button] of Object.entries(buttons)) {
-      const selected = decision.direction === direction;
-      button.classList.toggle("selected", selected);
-      button.setAttribute("aria-pressed", String(selected));
-    }
-  };
-  for (const [direction, button] of Object.entries(buttons)) {
-    button.addEventListener("click", async () => {
-      if (decision.direction === direction) return;
-      more.disabled = true;
-      less.disabled = true;
-      try {
-        await api(`/api/timeline/${encodeURIComponent(decision.timelineId)}/feedback`, {
-          method: "POST",
-          body: { direction, reason: direction === "less" ? "not_interested" : null },
-        });
-        invalidateLibraryStorage();
-        decision.direction = direction;
-        decision.origin = "routine";
-        decision.updatedAt = new Date().toISOString();
-        renderContext();
-        renderDirection();
-      } catch (error) {
-        showError(error);
-      } finally {
-        more.disabled = false;
-        less.disabled = false;
-      }
-    });
-  }
-  renderDirection();
-  actions.append(more, less);
-  row.append(copy, actions);
-  return row;
-}
-
-function buildAIDetectionDiagnostic(value) {
-  const diagnostic = document.createElement("section");
-  diagnostic.className = `ai-detection-diagnostic ai-detection-${value.status}`;
-  const title = document.createElement("strong");
-  title.textContent = value.status === "failed" ? "AI Deep Detection degraded safely" : "AI Deep Detection";
-  const detail = document.createElement("span");
-  detail.textContent = value.status === "failed"
-    ? `${value.error || "Deep Detection unavailable"}. Timeline kept the local Fast Detection result.`
-    : [
-        humanize(value.status),
-        `${value.candidateCount ?? 0} reviewed posts`,
-        value.durationMs ? formatDuration(value.durationMs) : null,
-      ].filter(Boolean).join(" \u00b7 ");
-  diagnostic.append(title, detail);
-  return diagnostic;
-}
-
-function buildAIDetectorYield(value) {
-  const details = document.createElement("details");
-  details.className = "ai-detector-yield";
-  const summary = document.createElement("summary");
-  const title = document.createElement("strong");
-  title.textContent = "AI Detector yield";
-  const rollup = document.createElement("span");
-  rollup.textContent = `${value.fastReviewed || 0} local · ${value.deepReviewed || 0} Deep · ${value.c2paInspected || 0} C2PA`;
-  summary.append(title, rollup);
-  const metrics = document.createElement("div");
-  metrics.className = "ai-detector-yield-metrics";
-  for (const [label, number, detail] of [
-    ["Fast Detection", value.fastReviewed, `${value.fastStrong || 0} preliminary · ${value.fastNoSignal || 0} neutral · ${value.fastInsufficient || 0} insufficient`],
-    ["Deep Detection", value.deepReviewed, `${value.deepEligible || 0} eligible · ${value.deepSkipped || 0} skipped before model use`],
-    ["Platform labels", value.platformAiSignals, "High-authority platform AI labels"],
-    ["C2PA images", value.c2paInspected, `${value.c2paAiOrigin || 0} AI origin · ${value.c2paWithManifest || 0} manifest · ${value.c2paNoManifest || 0} neutral · ${value.c2paFailed || 0} failed`],
-  ]) {
-    const row = document.createElement("article");
-    const copy = document.createElement("span");
-    const name = document.createElement("strong");
-    name.textContent = label;
-    const context = document.createElement("small");
-    context.textContent = detail;
-    copy.append(name, context);
-    const count = document.createElement("strong");
-    count.textContent = String(number || 0);
-    row.append(copy, count);
-    metrics.append(row);
-  }
-  details.append(summary, metrics);
-  return details;
-}
-
-function buildEventResolutionDiagnostic(value) {
-  const diagnostic = document.createElement("section");
-  diagnostic.className = `event-resolution-diagnostic event-resolution-${value.status}`;
-  const title = document.createElement("strong");
-  title.textContent = value.status === "failed" ? "Semantic event resolution degraded safely" : "Semantic event resolution";
-  const detail = document.createElement("span");
-  detail.textContent = value.status === "failed"
-    ? `${value.error?.message || "Resolver unavailable"}. Reports remained unique.`
-    : [
-        `${value.uniqueItems} unique`,
-        `${value.duplicateReports} duplicate reports`,
-        `${value.shortlistCount} shortlisted threads`,
-        value.userSplitCorrections ? `${value.userSplitCorrections} user split${value.userSplitCorrections === 1 ? "" : "s"}` : null,
-        value.userMergeCorrections ? `${value.userMergeCorrections} user merge${value.userMergeCorrections === 1 ? "" : "s"}` : null,
-        value.provider === "local-index" ? "local index only" : `${value.provider}${value.durationMs ? ` \u00b7 ${formatDuration(value.durationMs)}` : ""}`,
-      ].filter(Boolean).join(" \u00b7 ");
-  const trigger = document.createElement("span");
-  trigger.className = "event-resolution-trigger";
-  const triggerLabel = value.resolverInvoked ? "Resolver invoked" : "Local fast path";
-  const triggerTokens = value.triggerTokens?.length ? ` \u00b7 ${value.triggerTokens.join(", ")}` : "";
-  const triggerReason = humanize(value.triggerReason);
-  trigger.textContent = `${triggerLabel}: ${triggerReason} \u00b7 ${value.historicalEventCount ?? 0} retained events \u00b7 strongest overlap ${value.strongestOverlap ?? 0}${triggerTokens}`;
-  diagnostic.append(title, detail, trigger);
-  return diagnostic;
-}
-
-function buildInboxRun(run, sessionStatus = "") {
-  const card = document.createElement("article");
-  card.className = "inbox-run-card";
-  const header = document.createElement("header");
-  const source = document.createElement("strong");
-  source.textContent = sourceLabel(run.source);
-  const stage = document.createElement("span");
-  const sourceUnavailable = run.error?.code === "source_unavailable";
-  stage.className = `status-pill status-${sourceUnavailable ? "warning" : inboxStatusTone(run.status)}`;
-  stage.textContent = run.status === "completed"
-    ? "Completed"
-    : sourceUnavailable
-      ? "Unavailable \u00b7 Source"
-      : `${humanize(run.status)} \u00b7 ${humanize(run.stage)}`;
-  header.append(source, stage);
-  const pipeline = document.createElement("div");
-  pipeline.className = "inbox-pipeline";
-  const metricNumbers = {};
-  for (const [label, stage, value] of [
-    ["Captured", "captured", run.capturedCandidates],
-    ["Skipped unchanged", "skipped", run.skippedResurfaces],
-    ["Evaluated", "evaluated", run.evaluatedCandidates],
-    ["Selected", "selected", run.selectedCandidates],
-    ["Added", "added", run.addedItems],
-  ]) {
-    const metric = document.createElement("div");
-    const number = document.createElement("strong");
-    number.textContent = inboxRunMetricText(run, sessionStatus, stage, value);
-    metricNumbers[stage] = number;
-    const name = document.createElement("span");
-    name.textContent = label;
-    const stageDuration = run.stageDurationsMs?.[stage];
-    const timing = document.createElement("small");
-    timing.className = "inbox-pipeline-duration";
-    timing.textContent = Number.isFinite(stageDuration) ? formatDuration(stageDuration) : "";
-    metric.append(number, name, timing);
-    pipeline.append(metric);
-  }
-  const mechanics = document.createElement("p");
-  mechanics.className = "inbox-run-mechanics";
-  mechanics.textContent = [
-	  run.capturePerformance?.outcome ? `Capture ${humanize(run.capturePerformance.outcome)}` : null,
-    `${run.acquisitionRounds ?? 0} capture round${run.acquisitionRounds === 1 ? "" : "s"}`,
-    `${run.snapshotCount ?? 0} snapshots`,
-    `${run.performedScrolls ?? 0} scrolls`,
-    run.totalDurationMs ? `Total ${formatDuration(run.totalDurationMs)}` : null,
-    run.reasoningDurationMs ? `${formatDuration(run.reasoningDurationMs)} model time` : null,
-    run.resurfacedItems ? `${run.resurfacedItems} resurfaced${run.skippedResurfaces ? ` · ${run.skippedResurfaces} unchanged skipped` : ""}` : null,
-    (run.evaluatedCandidates ?? 0) > 0 ? `${Math.round(((run.selectedCandidates ?? 0) / run.evaluatedCandidates) * 100)}% selection yield` : null,
-  ].filter(Boolean).join(" \u00b7 ");
-  card.append(header, pipeline, mechanics);
-  if (run.error) {
-    const failure = document.createElement("p");
-    failure.className = sourceUnavailable ? "inbox-run-warning" : "inbox-run-error";
-    failure.textContent = sourceUnavailable
-      ? run.error.message
-      : `Stopped at ${humanize(run.error.stage || run.stage)}: ${run.error.message}`;
-    card.append(failure);
-  } else if (run.followUpFallback) {
-    const fallback = document.createElement("p");
-    fallback.className = "inbox-run-warning";
-    fallback.textContent = `Completed from the initial capture after optional follow-up failed: ${run.followUpFallback.message}`;
-    card.append(fallback);
-  }
-  const captureReliabilityNotice = inboxRunCaptureReliabilityNotice(run);
-  if (captureReliabilityNotice) {
-    const notice = document.createElement("p");
-    notice.className = captureReliabilityNotice.tone === "danger" ? "inbox-run-error" : "inbox-run-warning";
-    notice.textContent = captureReliabilityNotice.text;
-    card.append(notice);
-  }
-  if (!run.error && run.summary) {
-    const summary = document.createElement("p");
-    summary.className = "inbox-run-summary";
-    summary.textContent = run.summary;
-    card.append(summary);
-  }
-  if (run.candidateDiagnostics?.length) {
-    card.append(buildCaptureCandidateTelemetry(run.candidateDiagnostics));
-  }
-  if (run.mediaAcquisition) {
-    card.append(buildMediaAcquisitionTelemetry(run.mediaAcquisition));
-  }
-  if (run.visionEvaluation) {
-    card.append(buildVisionEvaluationTelemetry(run.visionEvaluation));
-  }
-  if (run.captureSurface?.length) {
-    card.append(buildCaptureSurfaceTelemetry(run.captureSurface));
-  }
-  if (run.acquisitionPlanning || run.identityResolution) {
-    card.append(buildAcquisitionIdentityTelemetry(run.acquisitionPlanning, run.identityResolution));
-  }
-  card.append(buildInboxFlowInspector(run, (counts) => {
-    for (const [stage, number] of Object.entries(metricNumbers)) {
-      number.textContent = inboxRunMetricText(run, sessionStatus, stage, counts?.[stage]);
-    }
-  }));
-  return card;
-}
-
-function buildVisionEvaluationTelemetry(value) {
-  const details = document.createElement("details");
-  details.className = "vision-evaluation-telemetry";
-  const summary = document.createElement("summary");
-  const title = document.createElement("strong");
-  title.textContent = "Instagram media-only review";
-  const availability = document.createElement("span");
-  availability.textContent = `${value.pending || 0} awaiting review · ${value.deferred || 0} deferred`;
-  summary.append(title, availability);
-  const body = document.createElement("div");
-  body.className = "vision-evaluation-body";
-  const note = document.createElement("p");
-  note.className = "capture-candidate-note";
-  note.textContent = value.availability || "Labels are generated locally. No image is sent to an AI provider.";
-  body.append(note);
-  const list = document.createElement("ol");
-  list.className = "vision-evaluation-jobs";
-  for (const job of value.jobs || []) {
-    const row = document.createElement("li");
-    const label = document.createElement("strong");
-    label.textContent = `${job.manualLabel || "Manual review · media-only post"} · ${job.canonicalIdentity || job.evidenceKey}`;
-    const meta = document.createElement("span");
-    meta.textContent = [job.attemptCount ? `${job.attemptCount} attempt${job.attemptCount === 1 ? "" : "s"}` : null, job.lastError || job.reason].filter(Boolean).join(" · ");
-    row.append(label, meta);
-    list.append(row);
-  }
-  if (list.children.length) body.append(list);
-  details.append(summary, body);
-  return details;
-}
-
-function inboxRunCaptureReliabilityNotice(run) {
-  const captured = Number(run.capturedCandidates) || 0;
-  const terminal = ["completed", "partial", "failed", "cancelled"].includes(run.status);
-  if (captured > 0 || !terminal) return null;
-  if (run.error) {
-    return { tone: "danger", text: "Capture reliability alert: no candidate reached the evaluation pipeline." };
-  }
-  return { tone: "warning", text: "Capture completed with no candidates; evaluation was not attempted." };
-}
-
-function buildCaptureCandidateTelemetry(snapshots) {
-  const details = document.createElement("details");
-  details.className = "capture-candidate-telemetry";
-  const summary = document.createElement("summary");
-  const title = document.createElement("strong");
-  title.textContent = "Capture candidates";
-  const rollup = document.createElement("span");
-  const maximum = (field) => Math.max(0, ...snapshots.map((snapshot) => Number(snapshot[field]) || 0));
-  rollup.textContent = [
-    `${snapshots.length} observed snapshot${snapshots.length === 1 ? "" : "s"}`,
-    `max ${maximum("structuralCandidates")} structural`,
-    `max ${maximum("eligibleCandidates")} eligible`,
-    `max ${maximum("visibleEligibleCandidates")} visible`,
-  ].join(" \u00b7 ");
-  summary.append(title, rollup);
-
-  const list = document.createElement("ol");
-  list.className = "capture-candidate-snapshots";
-  const formatReasons = (reasons) => Object.entries(reasons || {})
-    .filter(([, count]) => Number(count) > 0)
-    .map(([reason, count]) => `${humanize(reason)} ${count}`)
-    .join(", ");
-  for (const snapshot of snapshots) {
-    const row = document.createElement("li");
-    const heading = document.createElement("strong");
-    heading.textContent = `Round ${snapshot.round} \u00b7 Snapshot ${snapshot.snapshot}`;
-    const counts = document.createElement("span");
-    counts.textContent = `${snapshot.structuralCandidates ?? 0} structural \u2192 ${snapshot.eligibleCandidates ?? 0} eligible \u2192 ${snapshot.visibleEligibleCandidates ?? 0} visible \u2192 ${snapshot.newCandidates ?? 0} new`;
-    const context = document.createElement("small");
-    context.textContent = [
-      snapshot.strategy ? humanize(snapshot.strategy) : null,
-      Number.isFinite(snapshot.scrollY) ? `scroll ${snapshot.scrollY}px` : null,
-      Number.isFinite(snapshot.viewportHeight) ? `viewport ${snapshot.viewportHeight}px` : null,
-      snapshot.actionAnchoredCandidates ? `${snapshot.actionAnchoredCandidates} action anchored` : null,
-      formatReasons(snapshot.admittedReasons) ? `admitted: ${formatReasons(snapshot.admittedReasons)}` : null,
-      formatReasons(snapshot.rejectedReasons) ? `rejected: ${formatReasons(snapshot.rejectedReasons)}` : null,
-    ].filter(Boolean).join(" \u00b7 ");
-    row.append(heading, counts, context);
-    list.append(row);
-  }
-  const note = document.createElement("p");
-  note.className = "capture-candidate-note";
-  note.textContent = "Counts are per snapshot observations; repeated DOM candidates are not unique posts.";
-  details.append(summary, list, note);
-  return details;
-}
-
-function buildMediaAcquisitionTelemetry(value) {
-  const details = document.createElement("details");
-  details.className = "media-acquisition-telemetry";
-  const summary = document.createElement("summary");
-  const title = document.createElement("strong");
-  title.textContent = "Media evidence";
-  const rollup = document.createElement("span");
-  rollup.textContent = [
-    `${value.outcomes?.primary_complete || 0} primary`,
-    `${value.outcomes?.recovered || 0} recovered`,
-    `${value.outcomes?.unavailable || 0} unavailable`,
-  ].join(" \u00b7 ");
-  summary.append(title, rollup);
-
-  const body = document.createElement("div");
-  body.className = "media-acquisition-body";
-  const kinds = Object.entries(value.expectedKindCounts || {})
-    .filter(([, count]) => Number(count) > 0)
-    .map(([kind, count]) => `${count} ${humanize(kind)}`)
-    .join(", ");
-  const methods = (value.methods || []).map(humanize).join(", ");
-  const outcome = document.createElement("p");
-  outcome.textContent = [
-    `${value.candidateCount || 0} bounded candidate check${value.candidateCount === 1 ? "" : "s"}`,
-    kinds ? `expected media: ${kinds}` : "no rendered media root declared",
-    `${value.attempts || 0} recovery attempt${value.attempts === 1 ? "" : "s"}`,
-    value.foregroundRequiredCount ? `${value.foregroundRequiredCount} foreground-required` : null,
-    methods ? `methods: ${methods}` : null,
-  ].filter(Boolean).join(" \u00b7 ");
-  const note = document.createElement("p");
-  note.className = "capture-candidate-note";
-  note.textContent = "This telemetry reuses local capture evidence and does not invoke a model.";
-  body.append(outcome, note);
-  details.append(summary, body);
-  return details;
-}
-
-function buildCaptureSurfaceTelemetry(events) {
-  const details = document.createElement("details");
-  details.className = "capture-surface-telemetry";
-  const summary = document.createElement("summary");
-  const title = document.createElement("strong");
-  title.textContent = "Capture surface";
-  const rollup = document.createElement("span");
-  const counts = new Map();
-  for (const event of events) {
-    counts.set(event.event, (counts.get(event.event) || 0) + 1);
-  }
-  const cleanup = events.filter((event) => event.detail?.cleanup?.schema === "aku.surface-cleanup.v1")
-    .at(-1)?.detail.cleanup;
-  const cleanupSummary = cleanup && [cleanup.expected, cleanup.closed, cleanup.retained, cleanup.pending]
-    .every((value) => Number.isInteger(value) && value >= 0 && value <= 4096)
-    ? `${cleanup.closed} closed / ${cleanup.expected} tracked · ${cleanup.retained} lease-retained · ${cleanup.pending} pending`
-    : null;
-  rollup.textContent = [
-    cleanupSummary,
-    ...new Set(events.map((event) => event.detail?.focusPolicyRevision).filter(Boolean)),
-    counts.get("created") ? `${counts.get("created")} created` : null,
-    counts.get("reused") ? `${counts.get("reused")} reused` : null,
-    counts.get("release_requested") ? `${counts.get("release_requested")} release requested` : null,
-    counts.get("released") ? `${counts.get("released")} released` : null,
-    counts.get("preserved_user_owned") ? `${counts.get("preserved_user_owned")} user-owned preserved` : null,
-    counts.get("focus_intervention") ? `${counts.get("focus_intervention")} focus intervention` : null,
-  ].filter(Boolean).join(" \u00b7 ");
-  summary.append(title, rollup);
-  const list = document.createElement("ol");
-  list.className = "capture-surface-events";
-  const labels = {
-    created: "Managed surface created",
-    reused: "Managed surface reused",
-    release_requested: "Cleanup requested",
-    released: "Surface released",
-    preserved_user_owned: "User-owned surface preserved",
-    focus_intervention: "Focus intervention",
-    reconciled: "Stale surface reconciled",
-  };
-  for (const event of events) {
-    const row = document.createElement("li");
-    const copy = document.createElement("span");
-    const label = document.createElement("strong");
-    label.textContent = event.detail?.cleanup ? "Capture cleanup receipt" : labels[event.event] || humanize(event.event);
-    const context = document.createElement("small");
-    context.textContent = [
-      humanize(event.outcome),
-      event.detail?.captureSurfacePolicy?.fingerprint
-        ? `policy ${String(event.detail.captureSurfacePolicy.fingerprint).slice(0, 12)}` : null,
-      event.detail?.isolation ? humanize(event.detail.isolation) : null,
-      event.detail?.restored === true ? "working focus restored" : null,
-      event.detail?.containmentApplied === true ? "capture minimized; rendering may be throttled" : null,
-      event.detail?.focusedWriteAttempted === true ? "explicit foreground requested" : null,
-      event.detail?.preservedUserTabs ? `${event.detail.preservedUserTabs} user tab preserved` : null,
-    ].filter(Boolean).join(" \u00b7 ");
-    copy.append(label, context);
-    const time = document.createElement("time");
-    time.dateTime = event.occurredAt || "";
-    time.textContent = event.occurredAt ? formatDate(event.occurredAt) : "";
-    row.append(copy, time);
-    list.append(row);
-  }
-  details.append(summary, list);
-  return details;
-}
-
-function buildAcquisitionIdentityTelemetry(acquisitionPlanning, identityResolution) {
-  const details = document.createElement("details");
-  details.className = "acquisition-identity-telemetry";
-  const summary = document.createElement("summary");
-  const title = document.createElement("strong");
-  title.textContent = "Acquisition & identity";
-  const rollup = document.createElement("span");
-  const rollupParts = [];
-  if (acquisitionPlanning) {
-    const mode = humanize(acquisitionPlanning.mode);
-    const decision = humanize(acquisitionPlanning.decision);
-    if (mode || decision) {
-      rollupParts.push([mode, decision].filter(Boolean).join(" \u00b7 "));
-    }
-    if (acquisitionPlanning.followUpQueued) {
-      rollupParts.push("follow-up queued");
-    }
-    if (Number(acquisitionPlanning.followUpNewCandidates) > 0) {
-      rollupParts.push(`${acquisitionPlanning.followUpNewCandidates} follow-up new`);
-    }
-  }
-  if (identityResolution) {
-    rollupParts.push(`${identityResolution.nativePresent || 0} native \u00b7 ${identityResolution.nativeMissing || 0} fallback`);
-    if (Number(identityResolution.aliasesReused) > 0) {
-      rollupParts.push(`${identityResolution.aliasesReused} alias reused`);
-    }
-    if (Number(identityResolution.fallbacksPromoted) > 0) {
-      rollupParts.push(`${identityResolution.fallbacksPromoted} promoted`);
-    }
-    if (Number(identityResolution.nativeConflicts) > 0) {
-      rollupParts.push(`${identityResolution.nativeConflicts} conflict`);
-    }
-    if (Number(identityResolution.ambiguousFallbacks) > 0) {
-      rollupParts.push(`${identityResolution.ambiguousFallbacks} ambiguous`);
-    }
-  }
-  rollup.textContent = rollupParts.join(" \u00b7 ");
-  summary.append(title, rollup);
-
-  const body = document.createElement("div");
-  body.className = "acquisition-identity-body";
-  if (acquisitionPlanning) {
-    const planning = document.createElement("p");
-    const planningLabel = document.createElement("strong");
-    planningLabel.textContent = "Acquisition planning";
-    const planningDetail = document.createElement("span");
-    const followUpCount = Number(acquisitionPlanning.followUpNewCandidates);
-    planningDetail.textContent = [
-      acquisitionPlanning.mode ? `mode ${humanize(acquisitionPlanning.mode)}` : null,
-      acquisitionPlanning.decision ? `decision ${humanize(acquisitionPlanning.decision)}` : null,
-      acquisitionPlanning.followUpQueued ? "follow-up queued" : "no follow-up queued",
-      Number.isFinite(followUpCount)
-        ? `${followUpCount} new follow-up candidate${followUpCount === 1 ? "" : "s"}`
-        : null,
-      acquisitionPlanning.reason ? String(acquisitionPlanning.reason) : null,
-    ].filter(Boolean).join(" \u00b7 ");
-    planning.append(planningLabel, planningDetail);
-    body.append(planning);
-  }
-  if (identityResolution) {
-    const identity = document.createElement("p");
-    const identityLabel = document.createElement("strong");
-    identityLabel.textContent = "Identity resolution";
-    const identityDetail = document.createElement("span");
-    identityDetail.textContent = [
-      `${identityResolution.nativePresent || 0} native present`,
-      `${identityResolution.nativeMissing || 0} native missing`,
-      `${identityResolution.aliasesReused || 0} aliases reused`,
-      `${identityResolution.fallbacksPromoted || 0} fallbacks promoted`,
-      `${identityResolution.nativeConflicts || 0} native conflicts`,
-      `${identityResolution.ambiguousFallbacks || 0} ambiguous fallbacks`,
-    ].join(" \u00b7 ");
-    identity.append(identityLabel, identityDetail);
-    body.append(identity);
-  }
-  const note = document.createElement("p");
-  note.className = "capture-candidate-note";
-  note.textContent = "This panel reuses local acquisition and identity receipts and does not invoke a model.";
-  body.append(note);
-  details.append(summary, body);
-  return details;
-}
-
-function inboxSessionFlowText(session) {
-  const terminal = ["completed", "partial", "failed", "cancelled"].includes(session.status);
-  const skipped = Number(session.skippedResurfaces) || 0;
-  const continuity = skipped ? ` · ${skipped} skipped unchanged` : "";
-  if (!terminal) {
-    const evaluation = (session.capturedCandidates ?? 0) > 0 && (session.evaluatedCandidates ?? 0) === 0
-      ? "evaluating candidates"
-      : `${session.evaluatedCandidates ?? 0} evaluated`;
-    return `${session.capturedCandidates ?? 0} captured${continuity} \u2192 ${evaluation} \u2192 composition pending`;
-  }
-  return `${session.capturedCandidates} captured${continuity} \u2192 ${session.evaluatedCandidates} evaluated \u2192 ${session.addedItems} unique${session.duplicateReports ? ` + ${session.duplicateReports} duplicate` : ""}`;
-}
-
-function inboxRunMetricText(run, sessionStatus, stage, value) {
-  const runTerminal = ["completed", "failed", "cancelled"].includes(run.status);
-  const sessionTerminal = ["completed", "partial", "failed", "cancelled"].includes(sessionStatus);
-  if (runTerminal && sessionTerminal) return String(value ?? 0);
-  if (stage === "captured") return String(value ?? 0);
-  if (stage === "skipped") return String(value ?? 0);
-  if (stage === "evaluated") {
-    if (runTerminal) return String(value ?? 0);
-    if ((value ?? 0) > 0) return String(value);
-    return run.status === "reasoning" ? "Evaluating\u2026" : "Waiting";
-  }
-  if (stage === "selected") {
-    if (runTerminal) return String(value ?? 0);
-    if ((value ?? 0) > 0) return String(value);
-    return run.status === "reasoning" ? "Pending" : "Waiting";
-  }
-  if (stage === "added") {
-    if (["failed", "cancelled"].includes(run.status)) return String(value ?? 0);
-    if ((value ?? 0) > 0) return String(value);
-    return sessionTerminal ? String(value ?? 0) : "Pending";
-  }
-  return String(value ?? 0);
-}
-
-function buildInboxFlowInspector(run, onCounts) {
-  const inspector = document.createElement("section");
-  inspector.className = "inbox-flow-inspector";
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "inbox-flow-toggle";
-  toggle.textContent = "Inspect flow";
-  toggle.setAttribute("aria-expanded", "false");
-  const panel = document.createElement("div");
-  panel.className = "inbox-flow-panel";
-  panel.hidden = true;
-  const filters = document.createElement("div");
-  filters.className = "inbox-flow-filters";
-  const list = document.createElement("div");
-  list.className = "inbox-flow-list";
-  const footer = document.createElement("div");
-  footer.className = "inbox-flow-footer";
-  const meta = document.createElement("span");
-  const more = document.createElement("button");
-  more.type = "button";
-  more.textContent = "Show more";
-  more.hidden = true;
-  footer.append(meta);
-  if (run.error && (run.capturedCandidates ?? 0) > 0) {
-    const retry = document.createElement("button");
-    retry.type = "button";
-    retry.className = "inbox-flow-retry";
-    retry.textContent = "Re-evaluate run";
-    retry.title = "Retry reasoning from the already captured canonical evidence. No new browser capture is performed.";
-    retry.addEventListener("click", async () => {
-      retry.disabled = true;
-      retry.textContent = "Starting…";
-      try {
-        await api(`/api/inbox/runs/${encodeURIComponent(run.id)}/re-evaluate`, { method: "POST" });
-        await loadInbox();
-      } catch (error) {
-        showError(error);
-        retry.disabled = false;
-        retry.textContent = "Re-evaluate run";
-      }
-    });
-    footer.append(retry);
-  }
-  footer.append(more);
-  panel.append(filters, list, footer);
-  inspector.append(toggle, panel);
-
-  let activeStage = "captured";
-  let offset = 0;
-  let total = 0;
-  let loading = false;
-  const stageButtons = {};
-  for (const stage of ["captured", "skipped", "evaluated", "selected", "added"]) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.dataset.stage = stage;
-    button.textContent = stage === "skipped" ? "Skipped unchanged" : humanize(stage);
-    button.addEventListener("click", () => {
-      if (activeStage === stage || loading) return;
-      activeStage = stage;
-      loadTrace(true);
-    });
-    stageButtons[stage] = button;
-    filters.append(button);
-  }
-
-  const renderFilterState = (counts = {}) => {
-    for (const [stage, button] of Object.entries(stageButtons)) {
-      const fallback = stage === "skipped"
-        ? run.skippedResurfaces
-        : stage === "added"
-          ? run.addedItems
-          : run[`${stage}Candidates`];
-      const count = counts[stage] ?? fallback ?? 0;
-      button.textContent = `${humanize(stage)} ${count ?? 0}`;
-      button.classList.toggle("selected", stage === activeStage);
-      button.setAttribute("aria-pressed", String(stage === activeStage));
-    }
-  };
-
-  const loadTrace = async (reset) => {
-    if (loading) return;
-    loading = true;
-    if (reset) {
-      offset = 0;
-      list.replaceChildren();
-    }
-    meta.textContent = "Loading…";
-    more.disabled = true;
-    for (const button of Object.values(stageButtons)) button.disabled = true;
-    try {
-      const response = await api(`/api/inbox/runs/${encodeURIComponent(run.id)}/trace?stage=${activeStage}&limit=10&offset=${offset}`);
-      const trace = response.trace;
-      total = trace.total ?? 0;
-      const rows = (trace.items ?? []).map((item) => buildInboxFlowItem(item, trace.source, run.id, async () => {
-        await loadTrace(true);
-        await refreshTimeline();
-      }));
-      if (reset) list.replaceChildren(...rows);
-      else list.append(...rows);
-      offset += rows.length;
-      renderFilterState(trace.counts);
-      onCounts?.(trace.counts);
-      if (!list.children.length) {
-        const empty = document.createElement("p");
-        empty.className = "inbox-flow-empty";
-        const stageLabel = activeStage === "skipped" ? "skipped unchanged" : humanize(activeStage).toLowerCase();
-        empty.textContent = `No ${stageLabel} candidates in this source run.`;
-        list.append(empty);
-      }
-      meta.textContent = total ? `${Math.min(offset, total)} of ${total}` : "No matching candidates";
-      more.hidden = offset >= total;
-    } catch (error) {
-      meta.textContent = error.message;
-      more.hidden = true;
-    } finally {
-      loading = false;
-      more.disabled = false;
-      for (const button of Object.values(stageButtons)) button.disabled = false;
-    }
-  };
-
-  toggle.addEventListener("click", () => {
-    const opening = panel.hidden;
-    panel.hidden = !opening;
-    toggle.textContent = opening ? "Hide flow" : "Inspect flow";
-    toggle.setAttribute("aria-expanded", String(opening));
-    if (opening && !list.children.length) loadTrace(true);
-  });
-  more.addEventListener("click", () => loadTrace(false));
-  renderFilterState();
-  return inspector;
-}
-
-function buildInboxFlowItem(item, source, runId, onChanged) {
-  const row = document.createElement("article");
-  row.className = "inbox-flow-item";
-  const heading = document.createElement("div");
-  heading.className = "inbox-flow-item-heading";
-  const author = document.createElement("strong");
-  author.textContent = item.author || "Captured source item";
-  const outcome = document.createElement("span");
-  outcome.className = `inbox-flow-outcome inbox-flow-outcome-${item.outcome}`;
-  outcome.textContent = inboxFlowOutcomeLabel(item.outcome);
-  heading.append(author);
-  if (item.continuityStatus) {
-    const continuity = document.createElement("span");
-    continuity.className = `inbox-flow-outcome inbox-flow-continuity-${item.continuityStatus}`;
-    continuity.textContent = inboxContinuityLabel(item.continuityStatus);
-    continuity.title = item.continuityDetail || "";
-    heading.append(continuity);
-  }
-  heading.append(outcome);
-  const excerpt = document.createElement("p");
-  excerpt.className = "inbox-flow-excerpt";
-  excerpt.textContent = item.excerpt || "No textual excerpt was captured.";
-  const reason = document.createElement("p");
-  reason.className = "inbox-flow-reason";
-  reason.textContent = item.reason || "No additional rationale recorded.";
-  row.append(heading, excerpt, reason);
-  const actions = document.createElement("div");
-  actions.className = "inbox-flow-item-actions";
-  const sourceUrl = safeSourceUrl(item.sourceUrl, source);
-  if (sourceUrl) {
-    const link = document.createElement("a");
-    configureNativePostLink(link, sourceUrl, source);
-    link.textContent = "Open source";
-    actions.append(link);
-  }
-  if (item.correction) {
-    const state = document.createElement("span");
-    state.textContent = "Selected by you";
-    const undo = document.createElement("button");
-    undo.type = "button";
-    undo.textContent = "Undo";
-    undo.addEventListener("click", async () => {
-      undo.disabled = true;
-      undo.textContent = "Undoing…";
-      try {
-        await api(`/api/selection-corrections/${encodeURIComponent(item.correction.id)}/undo`, { method: "POST" });
-        await onChanged();
-      } catch (error) {
-        showError(error);
-        undo.disabled = false;
-        undo.textContent = "Undo";
-      }
-    });
-    actions.append(state, undo);
-  } else if (item.outcome === "not_selected" && item.candidateRef) {
-    const select = document.createElement("button");
-    select.type = "button";
-    select.className = "inbox-selection-correction-button";
-    const overlap = item.continuityStatus === "prior_knowledge_overlap";
-    const resurfaced = item.continuityStatus?.startsWith("resurfaced_");
-    select.textContent = overlap ? "Select despite overlap" : resurfaced ? "Show this resurface" : "Should have selected";
-    select.title = overlap
-      ? "Add this update despite its overlap with retained knowledge and record the explicit user correction."
-      : resurfaced
-        ? "Add this resurfaced update to the Timeline as an explicit user decision."
-        : "Add this update to the Timeline and teach AkuBrowser that this kind of item matters.";
-    select.addEventListener("click", async () => {
-      select.disabled = true;
-      select.textContent = "Selecting…";
-      try {
-        await api(`/api/inbox/runs/${encodeURIComponent(runId)}/selection-corrections`, {
-          method: "POST",
-          body: { candidateRef: item.candidateRef },
-        });
-        await onChanged();
-      } catch (error) {
-        showError(error);
-        select.disabled = false;
-        select.textContent = overlap ? "Select despite overlap" : resurfaced ? "Show this resurface" : "Should have selected";
-      }
-    });
-    actions.append(select);
-  }
-  if (actions.children.length) row.append(actions);
-  return row;
-}
-
-function inboxFlowOutcomeLabel(outcome) {
-  if (outcome === "captured_only") return "Captured only";
-  if (outcome === "not_selected") return "Not selected";
-  if (outcome === "exact_replay") return "Already captured";
-  if (outcome === "resurfaced_unchanged") return "Skipped before reasoning";
-  if (outcome === "collapsed_duplicate") return "Semantic duplicate";
-  if (outcome === "user_selected") return "Selected by you";
-  return humanize(outcome || "captured");
-}
-
-function inboxContinuityLabel(status) {
-  if (status === "resurfaced_unchanged") return "Resurfaced · unchanged";
-  if (status === "resurfaced_changed") return "Resurfaced · new signal";
-  if (status === "resurfaced_after_cooldown") return "Resurfaced · cooldown passed";
-  if (status === "prior_knowledge_overlap") return "Prior knowledge overlap";
-  return humanize(status);
-}
-
-function inboxStatusTone(status) {
-  if (status === "completed") return "ok";
-  if (["failed", "cancelled"].includes(status)) return "danger";
-  if (status === "partial") return "warning";
-  return "neutral";
-}
-
-function routeAIDetectedItems(items) {
-  if (state.bootstrap?.settings?.aiDetectionEnabled === false) {
-    return { inline: [...items], drawer: [], hidden: [], pending: false };
-  }
-  const mode = state.bootstrap?.settings?.aiDetectionPresentation || "drawer";
-  const result = { inline: [], drawer: [], hidden: [], pending: false };
-  for (const entry of items) {
-    const detection = entry.aiDetection;
-    result.pending ||= Boolean(detection?.pendingDeep || detection?.pendingMedia);
-    const seen = state.seenTimelineItems.has(entry.id);
-    const explicitAIOverride = detection?.personalPolicy?.applied
-      && detection.personalPolicy.verdict === "ai";
-    const keepPreviouslySeenInline = seen
-      && !detection?.directOriginEvidence
-      && !explicitAIOverride;
-    if (mode === "drawer" && detection?.routeToSignals && !keepPreviouslySeenInline) result.drawer.push(entry);
-    else if (mode === "hide" && detection?.hideEligible && !keepPreviouslySeenInline) result.hidden.push(entry);
-    else result.inline.push(entry);
-  }
-  return result;
-}
-
-function renderTimeline(items, latestCheck, timelineBatches = null, highlightSessionID = "") {
-  return scrollPerformanceTrace.measure("timeline_render", () => renderTimelineNow(items, latestCheck, timelineBatches, highlightSessionID));
-}
-
-function renderTimelineNow(items, latestCheck, timelineBatches = null, highlightSessionID = "") {
-  $("#finish-line").classList.remove("hidden");
-  const allItems = Array.isArray(items) ? items : [];
-  const batchMetadata = Array.isArray(timelineBatches)
-    ? timelineBatches
-    : (state.bootstrap?.timelineBatches ?? state.timelineBatches ?? []);
-  state.timelineBatches = batchMetadata;
-  state.timelineItems = allItems;
-  const retainedIDs = new Set(allItems.map((entry) => entry.id));
-  for (const timelineID of state.passiveMediaEvidenceAttempts.keys()) {
-    if (!retainedIDs.has(timelineID)) state.passiveMediaEvidenceAttempts.delete(timelineID);
-  }
-  for (const key of state.expandedTimelineText) {
-    if (!retainedIDs.has(key.split("|")[0])) state.expandedTimelineText.delete(key);
-  }
-  for (const timelineID of state.expandedAIDetails) {
-    if (!retainedIDs.has(timelineID)) state.expandedAIDetails.delete(timelineID);
-  }
-  for (const timelineID of state.expandedAIFeedbackOptions) {
-    if (!retainedIDs.has(timelineID)) state.expandedAIFeedbackOptions.delete(timelineID);
-  }
-  for (const timelineID of state.timelineContentContext.keys()) {
-    if (!retainedIDs.has(timelineID)) state.timelineContentContext.delete(timelineID);
-  }
-  if (state.timelineContentContextActiveID && !retainedIDs.has(state.timelineContentContextActiveID)) {
-    closeTimelineContentContextDrawer({ clearActive: true, focusTrigger: false });
-  }
-  schedulePassiveMediaEnrichment(allItems);
-  const routed = routeAIDetectedItems(items);
-  items = routed.inline;
-  renderTimelineSidePane(routed.drawer, routed.pending);
-  scheduleAIDeepRefresh(routed.pending);
-  const container = $("#result-items");
-  stopObservingInlineVideoVisibilityWithin(container);
-  container.replaceChildren();
-  if (latestCheck) {
-    const duplicates = latestCheck.duplicateReports ?? 0;
-    const parts = [formatTimelineCheckSummary(latestCheck)];
-    if (duplicates) parts.push(`${duplicates} duplicate report${duplicates === 1 ? "" : "s"}`);
-    if (routed.drawer.length) parts.push(`${routed.drawer.length} in AI Signals`);
-    if (routed.hidden.length) parts.push(`${routed.hidden.length} AI-signal post${routed.hidden.length === 1 ? "" : "s"} hidden`);
-    $("#timeline-meta").textContent = `${parts.join(" \u00b7 ")} from the latest check`;
-  } else {
-    $("#timeline-meta").textContent = "No completed check yet.";
-  }
-  $("#finish-stats").textContent = items.length
-    ? `Shown: ${items.length} · bounded local evidence · personalized across sources`
-    : "Check active sources to establish the finite timeline.";
-  if (items.length || routed.drawer.length || routed.hidden.length) {
-    $("#finish-stats").textContent = `Shown: ${items.length} · ${routed.drawer.length} in side pane · ${routed.hidden.length} hidden · bounded local evidence`;
-  }
-  const prepared = state.bootstrap?.autoUpdate?.preparedBatches?.length ?? 0;
-  renderTimelineActions();
-  if (prepared > 0) {
-    $("#finish-stats").textContent += ` · ${prepared} prepared`;
-  }
-  if (!items.length) {
-    const empty = document.createElement("section");
-    empty.className = "finish-line";
-    const title = document.createElement("h3");
-    title.textContent = routed.drawer.length || routed.hidden.length ? "No inline updates in this view" : "No retained updates yet";
-    const detail = document.createElement("p");
-    detail.textContent = routed.drawer.length
-      ? "Strong AI-origin signals are available in the AI Signals side pane."
-      : routed.hidden.length
-        ? "The active high-risk Hide policy removed Deep-confirmed or directly labeled posts from this view."
-        : "AkuBrowser will place evaluated, source-backed items here after the next bounded check.";
-    empty.append(title, detail);
-    container.append(empty);
-    syncTimelineContentContextTabs();
-    scheduleBackToTop();
-    scheduleTimelineContentContextPosition();
-    return;
-  }
-
-  const latestSession = latestCheck?.sessionId ?? items[0].sessionId;
-  const batchBySession = new Map(batchMetadata.map((batch) => [batch.sessionId, batch]));
-  let previousSession = null;
-  let historyBoundaryMarked = false;
-  const conversations = planTimelineConversations(items);
-  for (const group of conversations) {
-    const entry = group.anchor;
-    if (entry.sessionId !== previousSession) {
-      const marker = document.createElement("div");
-      marker.className = "timeline-batch-marker";
-      if (previousSession !== null) {
-        marker.classList.add("timeline-older-batch-marker");
-      }
-      if (!historyBoundaryMarked && previousSession === latestSession && entry.sessionId !== latestSession) {
-        marker.classList.add("timeline-history-boundary");
-        marker.setAttribute("role", "separator");
-        marker.setAttribute("aria-label", "Earlier retained updates");
-        historyBoundaryMarked = true;
-      }
-      const checked = document.createElement("strong");
-      const metadata = batchBySession.get(entry.sessionId);
-      const checkedAt = metadata?.completedAt || (entry.sessionId === latestCheck?.sessionId ? latestCheck.completedAt : entry.createdAt);
-      const detail = document.createElement("span");
-      const isPrepared = metadata?.delivery === "prepared" || metadata?.trigger === "scheduler";
-      if (isPrepared) marker.classList.add("timeline-auto-batch-marker");
-      if (entry.sessionId === highlightSessionID) {
-        marker.classList.add("timeline-revealed-batch-marker");
-        marker.setAttribute("aria-label", "New prepared batch");
-        checked.textContent = "New prepared batch";
-        detail.textContent = `Checked ${formatDate(checkedAt)} · continue scrolling`;
-      } else {
-        checked.textContent = isPrepared ? "Auto check" : `Checked ${formatDate(checkedAt)}`;
-        detail.textContent = isPrepared
-          ? `Checked ${formatDate(checkedAt)} · ${metadata?.itemCount ?? 0} item${metadata?.itemCount === 1 ? "" : "s"} in this batch`
-          : "Unified personalized order";
-      }
-      marker.append(checked, detail);
-      container.append(marker);
-      previousSession = entry.sessionId;
-    }
-    for (const member of group.members) {
-      const rendered = buildTimelineItem(member.entry);
-      rendered.dataset.timelineId = member.entry.id;
-      rendered.setAttribute("tabindex", "-1");
-      decorateTimelineConversation(rendered, member, group, {
-        documentRef: document,
-        formatDate,
-        formatAuthor: (author, source) => sourceIdentity(author, source).displayName,
-        checkedAt: value => batchBySession.get(value.sessionId)?.completedAt || value.createdAt,
-        navigateToParent: timelineID => {
-          const parent = [...container.querySelectorAll(":scope > [data-timeline-id]")]
-            .find(card => card.dataset.timelineId === timelineID);
-          parent?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start" });
-          parent?.focus({ preventScroll: true });
-          if (parent) {
-            parent.classList.add("timeline-conversation-target");
-            window.setTimeout(() => parent.classList.remove("timeline-conversation-target"), 1600);
-          }
-        },
-      });
-      container.append(rendered);
-      observeTimelineItem(rendered, member.entry.id);
-    }
-  }
-  syncTimelineContentContextTabs();
-  scheduleBackToTop();
-  scheduleTimelineContentContextPosition();
-}
-
-function renderTimelineActions() {
-  const prepared = state.bootstrap?.autoUpdate?.preparedBatches?.length ?? 0;
-  const primary = $("#timeline-runner-button");
-  const preparedButton = $("#timeline-prepared-button");
-  const finish = $("#done-button");
-  primary.textContent = "Update now";
-  primary.classList.remove("hidden");
-  if (prepared > 0) {
-    preparedButton.textContent = `Load next batch (${prepared})`;
-    preparedButton.classList.remove("hidden");
-    finish.textContent = `Continue with next batch (${prepared})`;
-    finish.classList.remove("hidden");
-    return;
-  }
-  preparedButton.classList.add("hidden");
-  finish.textContent = "Update now";
-  finish.classList.remove("hidden");
-}
-
-function schedulePassiveMediaEnrichment(items = state.timelineItems) {
-  if (
-    state.passiveMediaEnrichmentActive ||
-    state.passiveMediaEnrichmentTimer ||
-    state.session ||
-    !browserCollectorProbeAllowed(state.bootstrap?.collectionRuntime) ||
-    !state.bootstrap?.bridge?.compatible ||
-    document.visibilityState === "hidden"
-  ) return;
-  if (!passiveMediaCandidates(items).length) return;
-  state.passiveMediaEnrichmentTimer = window.setTimeout(() => {
-    state.passiveMediaEnrichmentTimer = null;
-    void enrichPassiveXMedia(items);
-  }, 0);
-}
-
-function passiveMediaCandidates(items) {
-  const now = Date.now();
-  return (Array.isArray(items) ? items : []).filter((entry) => {
-    if (sourceDescriptor(entry?.source)?.passiveMediaCapability !== "x_response" || !xMediaCandidateId(entry)) return false;
-    if (Array.isArray(entry.evidence?.media) && entry.evidence.media.length > 0) return false;
-    if (entry.evidence?.mediaRecovery?.outcome !== "unavailable") return false;
-    const attemptedAt = state.passiveMediaEvidenceAttempts.get(entry.id) ?? 0;
-    return now - attemptedAt >= PASSIVE_MEDIA_LOOKUP_COOLDOWN_MS;
-  }).slice(0, 24);
-}
-
-async function enrichPassiveXMedia(items) {
-  const candidates = passiveMediaCandidates(items);
-  if (!candidates.length || state.passiveMediaEnrichmentActive) return;
-  state.passiveMediaEnrichmentActive = true;
-  const attemptedAt = Date.now();
-  for (const entry of candidates) state.passiveMediaEvidenceAttempts.set(entry.id, attemptedAt);
-  try {
-    const candidateIds = [...new Set(candidates.map(xMediaCandidateId).filter(Boolean))];
-    const evidence = await lookupPassiveXMediaEvidence(candidateIds);
-    const byCandidate = new Map((evidence?.candidates ?? []).map((entry) => [entry.candidateId, entry.media]));
-    let updated = false;
-    for (const entry of candidates) {
-      const candidateId = xMediaCandidateId(entry);
-      const media = byCandidate.get(candidateId);
-      if (!Array.isArray(media) || media.length === 0) continue;
-      try {
-        const result = await bridgeApi(
-          `/api/bridge/timeline/${encodeURIComponent(entry.id)}/media-evidence`,
-          {
-            method: "POST",
-            body: { candidateId, media, provenance: "passive_x_cache" },
-          },
-        );
-        updated ||= result?.updated === true;
-      } catch (error) {
-        console.debug("Passive X media enrichment was not applied", error);
-      }
-    }
-    if (updated) queueBackgroundTimelineRefresh();
-  } catch (error) {
-    console.debug("Passive X media evidence is not available yet", error);
-  } finally {
-    state.passiveMediaEnrichmentActive = false;
-  }
-}
-
-function lookupPassiveXMediaEvidence(candidateIds) {
-  const requestId = `x_media_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-  return new Promise((resolve, reject) => {
-    const timeout = window.setTimeout(() => finish(
-      reject,
-      new Error("AkuBridge X media evidence lookup timed out."),
-    ), PASSIVE_MEDIA_LOOKUP_TIMEOUT_MS);
-    function finish(callback, value) {
-      window.clearTimeout(timeout);
-      window.removeEventListener("message", onResult);
-      callback(value);
-    }
-    function onResult(event) {
-      if (event.source !== window || event.origin !== endpoint || event.data?.requestId !== requestId) return;
-      if (event.data.type === "AKU_BROWSER_X_MEDIA_EVIDENCE_RESULT") {
-        finish(resolve, event.data.evidence ?? { candidates: [] });
-      } else if (event.data.type === "AKU_BROWSER_X_MEDIA_EVIDENCE_FAILED") {
-        finish(reject, new Error(event.data.message || "AkuBridge X media evidence lookup failed."));
-      }
-    }
-    window.addEventListener("message", onResult);
-    window.postMessage({
-      type: "AKU_BROWSER_X_MEDIA_EVIDENCE_LOOKUP",
-      requestId,
-      candidateIds,
-    }, endpoint);
-  });
-}
-
-function xMediaCandidateId(entry) {
-  if (sourceDescriptor(entry?.source)?.passiveMediaCapability !== "x_response") return null;
-  const values = [
-    entry.evidence?.platformId,
-    entry.evidence?.permalink,
-    entry.item?.sourceUrl,
-    entry.evidenceKey,
-  ];
-  for (const value of values) {
-    if (typeof value !== "string") continue;
-    const direct = value.trim().match(/^(?:x:status:)?(\d{5,30})$/i);
-    if (direct) return `x:status:${direct[1]}`;
-    const status = value.match(/\/status\/(\d{5,30})(?:\b|\/|\?|#|$)/i);
-    if (status) return `x:status:${status[1]}`;
-  }
-  return null;
-}
-
-function observeTimelineItem(element, timelineId) {
-  if (!("IntersectionObserver" in window)) return;
-  const observer = new IntersectionObserver((entries) => {
-    if (entries.some((entry) => entry.isIntersecting)) {
-      state.seenTimelineItems.add(timelineId);
-      observer.disconnect();
-    }
-  }, { threshold: 0.35 });
-  observer.observe(element);
-}
-
-function scheduleAIDeepRefresh(pending) {
-  if (!pending) {
-    if (state.aiDeepPoller) clearTimeout(state.aiDeepPoller);
-    state.aiDeepPoller = null;
-    return;
-  }
-  if (state.aiDeepPoller) return;
-  state.aiDeepPoller = window.setTimeout(() => {
-    state.aiDeepPoller = null;
-    queueBackgroundTimelineRefresh();
-  }, AI_DEEP_POLL_INTERVAL_MS);
-}
-
-function timelineInteractionActive() {
-  const timeline = $("#result-items");
-  if (!timeline) return false;
-  if (timeline.querySelector(".event-suggestion-editor")) return true;
-  if (timeline.querySelector(".ai-feedback-options[open]")) return true;
-  const active = document.activeElement;
-  return Boolean(
-    active
-    && timeline.contains(active)
-    && active.matches("button, select, summary, input, textarea, a[href]"),
-  );
-}
-
-function queueBackgroundTimelineRefresh() {
-  state.backgroundTimelineRefreshPending = true;
-  void flushBackgroundTimelineRefresh();
-}
-
-async function flushBackgroundTimelineRefresh() {
-  if (
-    !state.backgroundTimelineRefreshPending
-    || state.backgroundTimelineRefreshInFlight
-    || timelineInteractionActive()
-  ) return;
-  state.backgroundTimelineRefreshInFlight = true;
-  try {
-    await timelineScrollIdle.wait();
-    if (timelineInteractionActive()) return;
-    state.backgroundTimelineRefreshPending = false;
-    await refreshTimeline({ background: true });
-  } finally {
-    state.backgroundTimelineRefreshInFlight = false;
-  }
-}
+// Frontend feature: settings-operations.js#revokeSourceAccessViaBridge
+
+// Frontend feature: settings-operations.js#openResetDialog
+
+// Frontend feature: settings-operations.js#closeResetDialog
+
+// Frontend feature: diagnostics-ui.js#lastScrollPerformanceReport
+
+// Frontend feature: diagnostics-ui.js#startScrollPerformanceTrace
+
+// Frontend feature: diagnostics-ui.js#saveScrollPerformanceTrace
+
+// Frontend feature: diagnostics-ui.js#downloadScrollPerformanceTrace
+
+// Frontend feature: diagnostics-ui.js#exportDiagnostics
+
+// Frontend feature: settings-operations.js#syncResetConfirmation
+
+// Frontend feature: settings-operations.js#submitReset
+
+// Frontend feature: timeline-rendering.js#scheduleBackToTop
+
+// Frontend feature: timeline-rendering.js#syncBackToTopNow
+
+// Frontend feature: timeline-rendering.js#timelineContentContextObstacles
+
+// Frontend feature: timeline-rendering.js#syncBackToTopPosition
+
+// Frontend feature: timeline-rendering.js#syncBackToTopBoundaryPosition
+
+// Frontend feature: timeline-rendering.js#releaseBackToTopBoundary
+
+// Frontend feature: timeline-rendering.js#returnToTop
+
+// Frontend feature: session-ui.js#handleTimelinePrimaryAction
+
+// Frontend feature: app-lifecycle.js#retryBootstrap
+
+// Frontend feature: session-ui.js#startVisibleUpdate
+
+// Frontend feature: session-ui.js#cancelSession
+
+// Frontend feature: session-ui.js#startPolling
+
+// Frontend feature: session-ui.js#stopPolling
+
+// Frontend feature: session-ui.js#pollSession
+
+// Frontend feature: session-ui.js#releaseCaptureSurface
+
+// Frontend feature: session-ui.js#releaseCaptureSurfaceOnce
+
+// Frontend feature: session-ui.js#dispatch
+
+// Frontend feature: session-ui.js#renderSession
+
+// Frontend feature: session-ui.js#updatePolicyBadge
+
+// Frontend feature: onboarding-ui.js#shouldShowOnboardingLearning
+
+// Frontend feature: onboarding-ui.js#syncOnboardingLearning
+
+// Frontend feature: onboarding-ui.js#moveOnboardingLearning
+
+// Frontend feature: onboarding-ui.js#showOnboardingLearningSlide
+
+// Frontend feature: onboarding-ui.js#renderOnboardingLearningSlide
+
+// Frontend feature: onboarding-ui.js#pauseOnboardingLearning
+
+// Frontend feature: onboarding-ui.js#toggleOnboardingLearningPlayback
+
+// Frontend feature: onboarding-ui.js#syncOnboardingLearningTimer
+
+// Frontend feature: onboarding-ui.js#restartOnboardingLearningTimer
+
+// Frontend feature: onboarding-ui.js#stopOnboardingLearningTimer
+
+// Frontend feature: session-ui.js#describeSessionProgress
+
+// Frontend feature: session-ui.js#renderNativeReaderNotice
+
+// Frontend feature: session-ui.js#closeNativeReadersAndResume
+
+// Frontend feature: session-ui.js#syncRunButtons
+
+// Frontend feature: session-ui.js#renderTimelineCalibrationProgress
+
+// Frontend feature: session-ui.js#preparedBatchDisabledReason
+
+// Frontend feature: session-ui.js#runDisabledReason
+
+// Frontend feature: session-ui.js#bridgeUnavailableReason
+
+// Frontend feature: session-ui.js#sourceAccessNeedsAttention
+
+// Frontend feature: session-ui.js#bridgeSourceReadiness
+
+// Frontend feature: session-ui.js#openSourceAccessSettings
+
+// Frontend feature: onboarding-ui.js#startPendingFirstCalibration
+
+// Frontend feature: onboarding-ui.js#showCalibration
+
+// Frontend feature: onboarding-ui.js#renderCalibration
+
+// Frontend feature: onboarding-ui.js#buildCalibrationCard
+
+// Frontend feature: onboarding-ui.js#showPreviousCalibrationSample
+
+// Frontend feature: onboarding-ui.js#decideCalibration
+
+// Frontend feature: timeline-rendering.js#refreshTimeline
+
+// Frontend feature: timeline-rendering.js#orderTimelineForRevealedBatch
+
+// Frontend feature: timeline-rendering.js#handleFinishLineAction
+
+// Frontend feature: timeline-rendering.js#revealPreparedBatch
+
+// Frontend feature: inbox-ui.js#loadInbox
+
+// Frontend feature: inbox-ui.js#renderInbox
+
+// Frontend feature: inbox-ui.js#buildInboxSession
+
+// Frontend feature: inbox-ui.js#buildSessionModelUsage
+
+// Frontend feature: inbox-ui.js#modelUsageMessage
+
+// Frontend feature: inbox-ui.js#buildModelUsageHelp
+
+// Frontend feature: inbox-ui.js#renderModelUsageReport
+
+// Frontend feature: inbox-ui.js#buildModelUsageCategory
+
+// Frontend feature: inbox-ui.js#modelUsageCategoryProfile
+
+// Frontend feature: inbox-ui.js#buildModelUsageEntry
+
+// Frontend feature: inbox-ui.js#modelUsageInvocationCount
+
+// Frontend feature: inbox-ui.js#modelUsageSummary
+
+// Frontend feature: inbox-ui.js#formatTokenCount
+
+// Frontend feature: inbox-ui.js#loadAggregateModelUsage
+
+// Frontend feature: inbox-ui.js#buildInboxPreferenceDecisions
+
+// Frontend feature: inbox-ui.js#buildInboxPreferenceDecision
+
+// Frontend feature: inbox-ui.js#buildAIDetectionDiagnostic
+
+// Frontend feature: inbox-ui.js#buildAIDetectorYield
+
+// Frontend feature: inbox-ui.js#buildEventResolutionDiagnostic
+
+// Frontend feature: inbox-ui.js#buildInboxRun
+
+// Frontend feature: inbox-ui.js#buildVisionEvaluationTelemetry
+
+// Frontend feature: inbox-ui.js#inboxRunCaptureReliabilityNotice
+
+// Frontend feature: inbox-ui.js#buildCaptureCandidateTelemetry
+
+// Frontend feature: inbox-ui.js#buildMediaAcquisitionTelemetry
+
+// Frontend feature: inbox-ui.js#buildCaptureSurfaceTelemetry
+
+// Frontend feature: inbox-ui.js#buildAcquisitionIdentityTelemetry
+
+// Frontend feature: inbox-ui.js#inboxSessionFlowText
+
+// Frontend feature: inbox-ui.js#inboxRunMetricText
+
+// Frontend feature: inbox-ui.js#buildInboxFlowInspector
+
+// Frontend feature: inbox-ui.js#buildInboxFlowItem
+
+// Frontend feature: inbox-ui.js#inboxFlowOutcomeLabel
+
+// Frontend feature: inbox-ui.js#inboxContinuityLabel
+
+// Frontend feature: inbox-ui.js#inboxStatusTone
+
+// Frontend feature: timeline-rendering.js#routeAIDetectedItems
+
+// Frontend feature: timeline-rendering.js#renderTimeline
+
+// Frontend feature: timeline-rendering.js#renderTimelineNow
+
+// Frontend feature: timeline-rendering.js#renderTimelineActions
+
+// Frontend feature: passive-media-ui.js#schedulePassiveMediaEnrichment
+
+// Frontend feature: passive-media-ui.js#passiveMediaCandidates
+
+// Frontend feature: passive-media-ui.js#enrichPassiveXMedia
+
+// Frontend feature: passive-media-ui.js#lookupPassiveXMediaEvidence
+
+// Frontend feature: passive-media-ui.js#xMediaCandidateId
+
+// Frontend feature: timeline-rendering.js#observeTimelineItem
+
+// Frontend feature: timeline-rendering.js#scheduleAIDeepRefresh
+
+// Frontend feature: timeline-rendering.js#timelineInteractionActive
+
+// Frontend feature: timeline-rendering.js#queueBackgroundTimelineRefresh
+
+// Frontend feature: timeline-rendering.js#flushBackgroundTimelineRefresh
 
 document.addEventListener("focusout", () => {
   window.setTimeout(() => void flushBackgroundTimelineRefresh(), 0);
 });
 
-function renderTimelineSidePane(items, pending) {
-  scheduleTimelineSidePanePosition();
-  state.sidePaneItems = items;
-  const available = syncTimelineSidePaneVisibility();
-  $("#timeline-side-pane-count").textContent = String(items.length);
-  $("#timeline-side-pane-detail").textContent = pending
-    ? `${items.length} routed post${items.length === 1 ? "" : "s"} · Deep Detection is still reviewing this Timeline.`
-    : `${items.length} strong-signal post${items.length === 1 ? "" : "s"} routed from the current finite Timeline.`;
-  if (!available) closeTimelineSidePane();
-  if (!$("#timeline-side-pane").classList.contains("hidden")) populateTimelineSidePane();
-}
+// Frontend feature: timeline-rendering.js#renderTimelineSidePane
 
-function timelineSidePaneAvailable() {
-  return state.bootstrap?.settings?.aiDetectionEnabled !== false
-    && state.bootstrap?.settings?.aiDetectionPresentation === "drawer"
-    && state.currentView === "timeline"
-    && state.bootstrap?.onboarding?.status === "completed"
-    && !state.onboardingEditing
-    && !state.bootstrap?.calibration?.active
-    && Boolean(state.bootstrap?.latestCheck)
-    && state.timelineItems.length > 0;
-}
+// Frontend feature: timeline-rendering.js#timelineSidePaneAvailable
 
-function syncTimelineSidePaneVisibility() {
-  const available = timelineSidePaneAvailable();
-  const toggle = $("#timeline-side-pane-toggle");
-  toggle.classList.toggle("hidden", !available);
-  toggle.classList.toggle("view-hidden", !available);
-  if (!available) closeTimelineSidePane();
-  return available;
-}
+// Frontend feature: timeline-rendering.js#syncTimelineSidePaneVisibility
 
-function openTimelineSidePane() {
-  if (!timelineSidePaneAvailable()) return;
-  $("#timeline-side-pane").classList.remove("hidden");
-  $("#timeline-side-pane-toggle").setAttribute("aria-expanded", "true");
-  populateTimelineSidePane();
-}
+// Frontend feature: timeline-rendering.js#openTimelineSidePane
 
-function closeTimelineSidePane() {
-  $("#timeline-side-pane").classList.add("hidden");
-  $("#timeline-side-pane-toggle").setAttribute("aria-expanded", "false");
-}
+// Frontend feature: timeline-rendering.js#closeTimelineSidePane
 
-function populateTimelineSidePane() {
-  const container = $("#timeline-side-pane-items");
-  container.replaceChildren();
-  if (!state.sidePaneItems.length) {
-    const empty = document.createElement("p");
-    empty.className = "timeline-side-pane-empty";
-    empty.textContent = "No strong AI-origin signals are routed here yet.";
-    container.append(empty);
-    return;
-  }
-  for (const entry of state.sidePaneItems) {
-    const item = buildTimelineItem(entry, { contentContext: false });
-    item.classList.add("timeline-side-pane-card");
-    item.dataset.timelineId = entry.id;
-    container.append(item);
-  }
-}
+// Frontend feature: timeline-rendering.js#populateTimelineSidePane
 
-function buildTimelineItem(entry, { contentContext = true } = {}) {
-  if (entry.semanticEvent?.relation === "duplicate_report") return buildCollapsedDuplicate(entry, { contentContext });
-  const item = buildExpandedTimelineItem(entry);
-  return contentContext ? buildTimelineContentContextAnchor(entry, item) : item;
-}
+// Frontend feature: timeline-content.js#buildTimelineItem
 
-function buildCollapsedDuplicate(entry, { contentContext = true } = {}) {
-  const container = document.createElement("article");
-  container.className = "presentable-item semantic-duplicate-item";
-  const summary = document.createElement("div");
-  summary.className = "semantic-duplicate-summary";
-  const copy = document.createElement("div");
-  const label = document.createElement("span");
-  label.className = "semantic-duplicate-label";
-  label.textContent = "Cross-author semantic duplicate";
-  const claim = document.createElement("strong");
-  claim.textContent = entry.semanticEvent.canonicalClaim || entry.item?.whatChanged || "Same reported event";
-  const provenance = document.createElement("small");
-  provenance.textContent = [sourceLabel(entry.source), entry.item?.author, `${entry.semanticEvent.reportCount || 2} reports in this event`].filter(Boolean).join(" \u00b7 ");
-  copy.append(label, claim, provenance);
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "secondary-button semantic-duplicate-toggle";
-  toggle.textContent = "Show report";
-  toggle.setAttribute("aria-expanded", "false");
-  const expandedReport = buildExpandedTimelineItem(entry);
-  const report = contentContext ? buildTimelineContentContextAnchor(entry, expandedReport) : expandedReport;
-  report.classList.add("semantic-duplicate-report", "hidden");
-  toggle.addEventListener("click", () => {
-    const expanded = toggle.getAttribute("aria-expanded") === "true";
-    if (expanded && state.timelineContentContextActiveID === entry.id) {
-      closeTimelineContentContextDrawer({ clearActive: true, focusTrigger: false });
-    }
-    toggle.setAttribute("aria-expanded", String(!expanded));
-    toggle.textContent = expanded ? "Show report" : "Hide report";
-    report.classList.toggle("hidden", expanded);
-    container.classList.toggle("is-report-expanded", !expanded);
-    syncTimelineContentContextTabs();
-  });
-  summary.append(copy, toggle);
-  container.append(summary, report);
-  return container;
-}
+// Frontend feature: timeline-content.js#buildCollapsedDuplicate
 
-function buildExpandedTimelineItem(entry) {
-  const container = document.createElement("article");
-  container.className = "presentable-item";
-  const toolbar = document.createElement("div");
-  toolbar.className = "item-presentation-toolbar";
-  const signalSlot = document.createElement("span");
-  signalSlot.className = "item-signal-slot";
-  const ai = buildAIDetectionControls(entry);
-  signalSlot.append(buildSourceIcon(entry.source), ai.badge);
-  const label = document.createElement("span");
-  label.className = "presentation-label";
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "presentation-toggle";
-  const brief = buildBrief(entry);
-  const source = buildSourceCard(entry);
-  container.dataset.freshness = source.dataset.freshness;
-  const actions = buildActions(entry);
-  let layout = entry.evidence && state.bootstrap?.settings?.defaultPresentation !== "brief" ? "source" : "brief";
-  const render = () => {
-    const sourceActive = layout === "source" && Boolean(entry.evidence);
-    source.classList.toggle("hidden", !sourceActive);
-    brief.classList.toggle("hidden", sourceActive);
-    label.textContent = sourceActive ? "Source layout" : "Brief";
-    toggle.textContent = sourceActive ? "Switch to brief" : "Switch to source layout";
-    toggle.disabled = !entry.evidence;
-  };
-  toggle.addEventListener("click", () => {
-    layout = layout === "source" ? "brief" : "source";
-    render();
-  });
-  const presentationActions = document.createElement("div");
-  presentationActions.className = "item-presentation-actions";
-  presentationActions.append(toggle, postScreenshotUI.createMenu(entry));
-  toolbar.append(signalSlot, label, presentationActions);
-  container.append(toolbar);
-  container.append(ai.details);
-  container.append(brief, source, actions);
-  render();
-  return container;
-}
+// Frontend feature: timeline-content.js#buildExpandedTimelineItem
 
-function buildAIDetectionControls(entry) {
-  if (state.bootstrap?.settings?.aiDetectionEnabled === false) {
-    const badge = document.createElement("span");
-    badge.className = "hidden";
-    const details = document.createElement("div");
-    details.className = "hidden";
-    return { badge, details };
-  }
-  const detection = entry.aiDetection ?? null;
-  const hasAssessmentLabel = Boolean(detection?.badgeLabel);
-  const badgeLabel = detection?.badgeLabel || (detection?.pendingDeep || detection?.pendingMedia
-    ? "AI signal · Checking"
-    : "AI signal · Neutral");
-  const policy = detection?.personalPolicy;
-  const personalTone = policy?.reviewRequested
-    ? "review"
-    : policy?.applied && policy.verdict === "ai"
-      ? "user-ai"
-      : policy?.applied && policy.verdict === "not_ai"
-        ? "user-not-ai"
-        : "";
-  const badgeTone = personalTone || (hasAssessmentLabel
-    ? detection.corrected || detection.status === "conflicting_evidence"
-      ? "corrected"
-      : detection.userOverride
-        ? "user"
-        : detection.stage || "fast"
-    : detection?.pendingDeep || detection?.pendingMedia
-      ? "pending"
-      : "neutral");
-  const badge = document.createElement("button");
-  badge.type = "button";
-  badge.className = `ai-origin-badge ai-origin-${badgeTone}`;
-  badge.textContent = badgeLabel;
-  badge.title = "Open AI signal details and personal corrections";
-  badge.setAttribute("aria-label", `${badgeLabel}. Open AI signal details and personal corrections.`);
-  const initiallyExpanded = state.expandedAIDetails.has(entry.id);
-  badge.setAttribute("aria-expanded", String(initiallyExpanded));
-  const details = document.createElement("div");
-  details.className = `ai-assessment-detail${initiallyExpanded ? "" : " hidden"}`;
-  const summary = document.createElement("p");
-  summary.textContent = detection?.detail || (detection?.pendingDeep || detection?.pendingMedia
-    ? detection?.pendingMedia
-      ? "Local C2PA inspection is checking attached image provenance. This does not assess authorship of the post text."
-      : "Deep Detection is still reviewing this post. You remain in control of its personal classification."
-    : "No strong AI-origin signal is currently recorded for this post.");
-  const meta = document.createElement("small");
-  const evidence = (detection?.evidenceCodes || []).map(humanize).join(", ");
-  const mediaSignals = (detection?.mediaSignals || []).map((signal) =>
-    [signal.label, humanize(signal.origin), humanize(signal.trustState)].filter(Boolean).join(" / ")
-  ).join("; ");
-  const platformSignals = (detection?.platformSignals || []).map((signal) =>
-    [signal.label, humanize(signal.scope), sourceLabel(signal.source)].filter(Boolean).join(" / ")
-  ).join("; ");
-  const combinedEvidence = [evidence, platformSignals, mediaSignals].filter(Boolean).join("; ");
-  const policyMeta = policy?.applied
-    ? [policy.source === "account_rule" ? "Explicit account rule" : "Your item feedback", humanize(policy.signalScope), humanize(policy.reason)].filter(Boolean).join(" / ")
-    : "";
-  meta.textContent = detection
-    ? [humanize(detection.stage), humanize(detection.confidenceBand), combinedEvidence, policyMeta, `${detection.historyCount || 0} detector assessment${detection.historyCount === 1 ? "" : "s"}`].filter(Boolean).join(" · ")
-    : "No detector assessment yet";
-  const actions = document.createElement("div");
-  actions.className = "ai-assessment-actions";
-  if (policy?.applied && detection.correctionId) {
-    const undo = document.createElement("button");
-    undo.type = "button";
-    undo.textContent = policy.reviewRequested ? "Clear review request" : "Clear my AI feedback";
-    undo.addEventListener("click", async () => {
-      undo.disabled = true;
-      try {
-        await api(`/api/ai-feedback/${encodeURIComponent(detection.correctionId)}/undo`, { method: "POST" });
-        await refreshTimeline();
-      } catch (error) {
-        showError(error);
-        undo.disabled = false;
-      }
-    });
-    actions.append(undo);
-  }
-  const fields = document.createElement("div");
-  fields.className = "ai-feedback-fields";
-  const target = document.createElement("select");
-  target.setAttribute("aria-label", "AI feedback scope");
-  [
-    ["post", "social_post", "This post text", true],
-    ["media", "attached_media", "Attached media", Boolean(entry.evidence?.attachments?.length || entry.evidence?.media?.length)],
-    ["quote", "quoted_post", "Quoted content", Boolean(entry.evidence?.quotedPost && Object.keys(entry.evidence.quotedPost).length)],
-    ["account", "author_account", "This captured account", Boolean(entry.evidence?.author || entry.item?.author)],
-  ].filter((option) => option[3]).forEach(([value, scope, label]) => {
-    const option = document.createElement("option");
-    option.value = value;
-    option.dataset.scope = scope;
-    option.textContent = label;
-    target.append(option);
-  });
-  if (policy?.targetType && [...target.options].some((option) => option.value === policy.targetType)) {
-    target.value = policy.targetType;
-  }
-  const reason = document.createElement("select");
-  reason.setAttribute("aria-label", "Optional AI feedback reason");
-  [
-    ["", "Optional reason"],
-    ["author_disclosed_ai", "Author disclosed AI use"],
-    ["platform_label", "Platform AI label"],
-    ["content_credentials", "Content Credentials / C2PA"],
-    ["account_identifies_as_agent", "Account identifies as an agent"],
-    ["repeated_automated_pattern", "Repeated automated pattern"],
-    ["signal_applies_to_another_object", "Signal applies to another object"],
-    ["known_human_authored", "Known human-authored"],
-    ["insufficient_evidence", "Insufficient evidence"],
-  ].forEach(([value, label]) => {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = label;
-    reason.append(option);
-  });
-  if (policy?.reason) reason.value = policy.reason;
-  const scopeNotice = document.createElement("small");
-  scopeNotice.className = "ai-feedback-scope-notice";
-  const syncScopeNotice = () => {
-    scopeNotice.textContent = target.value === "account"
-      ? "This is an explicit rule for the same captured account identity. It is never inferred from one post automatically."
-      : "This changes AI presentation only. It never changes Timeline ranking or preference learning.";
-  };
-  target.addEventListener("change", syncScopeNotice);
-  syncScopeNotice();
-  fields.append(target, reason, scopeNotice);
-  const notAI = document.createElement("button");
-  notAI.type = "button";
-  notAI.textContent = "Mark as not AI-generated";
-  notAI.addEventListener("click", () => applyAIFeedback(entry.id, "not_ai", target, reason, notAI));
-  const unsure = document.createElement("button");
-  unsure.type = "button";
-  unsure.textContent = "Unsure · Review more deeply";
-  unsure.addEventListener("click", () => applyAIFeedback(entry.id, "unsure", target, reason, unsure));
-  const isAI = document.createElement("button");
-  isAI.type = "button";
-  isAI.textContent = "Mark as AI-generated";
-  isAI.addEventListener("click", () => applyAIFeedback(entry.id, "ai", target, reason, isAI));
-  const decisions = document.createElement("div");
-  decisions.className = "ai-feedback-decisions";
-  decisions.append(notAI, unsure, isAI);
-  const options = document.createElement("details");
-  options.className = "ai-feedback-options";
-  options.open = state.expandedAIFeedbackOptions.has(entry.id);
-  const optionsSummary = document.createElement("summary");
-  optionsSummary.textContent = "Change scope or add a reason";
-  const optionsHint = document.createElement("small");
-  optionsHint.textContent = "Optional. The default action applies to this post text.";
-  options.append(optionsSummary, optionsHint, fields);
-  options.addEventListener("toggle", () => {
-    if (options.open) state.expandedAIFeedbackOptions.add(entry.id);
-    else state.expandedAIFeedbackOptions.delete(entry.id);
-  });
-  actions.append(decisions, options);
-  if ((detection?.feedbackHistoryCount || 0) > 0) {
-    const history = document.createElement("button");
-    history.type = "button";
-    history.className = "ai-feedback-history-button";
-    history.textContent = `View feedback history (${detection.feedbackHistoryCount})`;
-    history.addEventListener("click", () => loadAIFeedbackHistory(entry.id, history, details));
-    actions.append(history);
-  }
-  details.append(summary, meta, actions);
-  badge.addEventListener("click", () => {
-    const expanded = badge.getAttribute("aria-expanded") === "true";
-    badge.setAttribute("aria-expanded", String(!expanded));
-    details.classList.toggle("hidden", expanded);
-    if (expanded) state.expandedAIDetails.delete(entry.id);
-    else state.expandedAIDetails.add(entry.id);
-  });
-  return { badge, details };
-}
+// Frontend feature: timeline-ai-ui.js#buildAIDetectionControls
 
-async function applyAIFeedback(timelineId, verdict, target, reason, trigger) {
-  if (target.value === "account" && !window.confirm(
-    "Apply this as an explicit account-level AI rule? It will affect posts from the same captured account identity, but never Timeline ranking or preference learning."
-  )) {
-    return;
-  }
-  trigger.disabled = true;
-  try {
-    const selected = target.options[target.selectedIndex];
-    await api(`/api/timeline/${encodeURIComponent(timelineId)}/ai-feedback`, {
-      method: "POST",
-      body: {
-        verdict,
-        targetType: target.value,
-        signalScope: selected.dataset.scope,
-        reason: reason.value,
-      },
-    });
-    await refreshTimeline();
-  } catch (error) {
-    showError(error);
-    trigger.disabled = false;
-  }
-}
+// Frontend feature: timeline-ai-ui.js#applyAIFeedback
 
-async function loadAIFeedbackHistory(timelineId, trigger, container) {
-  trigger.disabled = true;
-  try {
-    const payload = await api(`/api/timeline/${encodeURIComponent(timelineId)}/ai-feedback`);
-    container.querySelector(".ai-feedback-history")?.remove();
-    const history = document.createElement("ol");
-    history.className = "ai-feedback-history";
-    (payload.feedback || []).forEach((event) => {
-      const row = document.createElement("li");
-      const decision = event.verdict === "clear" ? "Cleared" : humanize(event.verdict);
-      row.textContent = [
-        decision,
-        humanize(event.targetType),
-        humanize(event.reason),
-        event.createdAt ? formatDate(event.createdAt) : "",
-      ].filter(Boolean).join(" · ");
-      history.append(row);
-    });
-    container.append(history);
-    trigger.textContent = "Feedback history loaded";
-  } catch (error) {
-    showError(error);
-    trigger.disabled = false;
-  }
-}
+// Frontend feature: timeline-ai-ui.js#loadAIFeedbackHistory
 
-function buildBrief(entry) {
-  const item = entry.item ?? {};
-  const brief = document.createElement("div");
-  brief.className = "item-layout-view";
-  const badge = document.createElement("span");
-  badge.className = "evidence-badge";
-  badge.textContent = [humanize(item.evidenceState), `${Math.round((item.confidence ?? 0) * 100)}%`, humanize(item.knowledgeDelta)].filter(Boolean).join(" · ");
-  const title = document.createElement("h3");
-  title.textContent = item.whatChanged;
-  const why = document.createElement("p");
-  why.className = "why-it-matters";
-  why.textContent = item.whyItMatters;
-  const provenance = document.createElement("p");
-  provenance.className = "provenance";
-  provenance.textContent = [sourceLabel(entry.source), item.author, item.publishedAt ? formatDate(item.publishedAt) : null].filter(Boolean).join(" · ");
-  brief.append(badge, title, why, provenance);
-  return brief;
-}
+// Frontend feature: timeline-content.js#buildBrief
 
-const postHeaderContexts = new WeakMap();
+// Frontend feature: timeline-content.js#postHeaderContexts
 
-function buildSourceCard(entry) {
-  const evidence = entry.evidence ?? {};
-  const item = entry.item ?? {};
-  const source = entry.source;
-  const descriptor = sourceDescriptor(source) || {};
-  const card = document.createElement("div");
-  card.className = `source-layout-card source-${source}`;
-  const header = document.createElement("header");
-  const avatar = buildAvatar(evidence.avatarUrl, source, evidence.author || item.author);
-  const identity = document.createElement("div");
-  const author = document.createElement("strong");
-  const parsed = sourceIdentity(evidence.author || item.author, source);
-  author.textContent = parsed.displayName;
-  const context = document.createElement("span");
-  const presentation = evidence.presentation ?? {};
-  const headerContext = {
-    publishedAt: evidence.publishedAt || item.publishedAt,
-    timestampText: presentation.timestampText,
-    connectionDegree: presentation.connectionDegree,
-    secondary: parsed.secondary,
-  };
-  context.textContent = postHeaderContext(headerContext)
-    || formatDate(evidence.publishedAt || item.publishedAt);
-  identity.append(author);
-  if (presentation.headline) {
-    const headline = document.createElement("span");
-    headline.className = "source-layout-headline";
-    headline.textContent = presentation.headline;
-    identity.append(headline);
-  }
-  if (context.textContent) identity.append(context);
-  header.append(avatar, identity);
-  applyPostFreshness(card, {
-    publishedAt: evidence.publishedAt || item.publishedAt,
-    timestampText: presentation.timestampText || parsed.secondary,
-  });
-  postHeaderContexts.set(card, { context, value: headerContext });
+// Frontend feature: timeline-content.js#buildSourceCard
 
-  if (descriptor.socialContextPlacement === "above" && presentation.socialContext) {
-    const social = document.createElement("div");
-    social.className = "source-social-context-above";
-    const socialAvatarUrl = safeMediaUrl(presentation.socialContextAvatarUrl);
-    if (socialAvatarUrl) {
-      const socialAvatar = document.createElement("img");
-      socialAvatar.src = socialAvatarUrl;
-      socialAvatar.alt = "";
-      socialAvatar.loading = "lazy";
-      socialAvatar.referrerPolicy = "no-referrer";
-      social.append(socialAvatar);
-    }
-    const socialCopy = document.createElement("span");
-    socialCopy.textContent = presentation.socialContext;
-    social.append(socialCopy);
-    card.append(social);
-  }
-  card.append(header);
+// Frontend feature: timeline-content.js#applyPostFreshness
 
-  const content = document.createElement("div");
-  content.className = `source-layout-content source-${descriptor.presentationStyle || "social"}-content`;
-  if (descriptor.socialContextPlacement !== "above" && presentation.socialContext) {
-    const social = document.createElement("p");
-    social.className = "source-social-context-content";
-    social.textContent = presentation.socialContext;
-    content.append(social);
-  }
-  const hasCapturedContent = typeof evidence.text === "string"
-    || (Array.isArray(evidence.media) && evidence.media.length > 0)
-    || (Array.isArray(evidence.attachments) && evidence.attachments.length > 0)
-    || (evidence.quotedPost && Object.keys(evidence.quotedPost).length > 0);
-  const sourceText = hasCapturedContent ? evidence.text : item.whatChanged;
-  if (typeof sourceText === "string" && sourceText.trim()) {
-    content.append(buildExpandableText(sourceText, {
-      characterLimit: SOURCE_TEXT_COLLAPSE_CHARACTERS,
-      lineLimit: SOURCE_TEXT_COLLAPSE_LINES,
-      label: "post",
-      expansionKey: entry.id ? `${entry.id}|post` : null,
-    }));
-  }
-  const quote = buildQuotedPost(evidence.quotedPost, source, entry.id ? `${entry.id}|quote` : null);
-  if (quote) content.append(quote);
-  if (content.children.length) card.append(content);
-  const attachments = buildAttachments(evidence.attachments, source);
-  if (attachments) card.append(attachments);
-  const nativePostUrl = safeSourceUrl(item.sourceUrl || evidence.permalink, source);
-  const media = buildMedia(evidence.media, source, evidence.contentKind, nativePostUrl, entry);
-  if (media) card.append(media);
-  const recaptureReason = mediaRecaptureReasonForEntry(entry);
-  if (recaptureReason === "unresolved_video" || evidence.mediaRecovery?.outcome === "unavailable") {
-    const unavailable = document.createElement("div");
-    unavailable.className = "source-layout-media-unavailable";
-    const message = document.createElement("span");
-    message.textContent = recaptureReason === "unresolved_video"
-      ? "Video playback was not captured."
-      : "Media was present at the source but unavailable in this captured view.";
-    unavailable.append(message);
-    unavailable.append(state.foregroundRecaptureOffers.has(entry.id) && state.bootstrap?.collectionRuntime?.effective !== "headless"
-      ? buildForegroundRecaptureOffer(entry)
-      : buildMediaRecaptureButton(entry, recaptureReason));
-    card.append(unavailable);
-  }
-  const engagement = buildEngagement(evidence.engagement, source);
-  if (engagement) card.append(engagement);
-  return card;
-}
-
-function applyPostFreshness(card, value) {
-  const result = classifyPostFreshness(value);
-  card.dataset.freshness = result.key;
-  if (Number.isFinite(result.referenceAt)) card.dataset.freshnessReferenceAt = String(result.referenceAt);
-  else delete card.dataset.freshnessReferenceAt;
-  const item = card.closest(".presentable-item");
-  if (item) item.dataset.freshness = result.key;
-}
-
-function refreshVisiblePostFreshness() {
-  const now = Date.now();
-  for (const card of document.querySelectorAll(".source-layout-card[data-freshness]")) {
-    applyPostFreshness(card, { referenceAt: Number(card.dataset.freshnessReferenceAt), now });
-    const header = postHeaderContexts.get(card);
-    if (header && Number.isFinite(Number(card.dataset.freshnessReferenceAt))) {
-      header.context.textContent = postHeaderContext({
-        ...header.value,
-        referenceAt: Number(card.dataset.freshnessReferenceAt),
-        now,
-      });
-    }
-  }
-}
+// Frontend feature: timeline-content.js#refreshVisiblePostFreshness
 
 window.setInterval(refreshVisiblePostFreshness, 60 * 1000);
 
-function buildAvatar(url, source, author) {
-  if (safeMediaUrl(url)) {
-    const image = document.createElement("img");
-    image.className = "source-layout-avatar";
-    image.src = url;
-    image.alt = "";
-    image.loading = "lazy";
-    image.referrerPolicy = "no-referrer";
-    image.addEventListener("error", () => image.replaceWith(buildAvatar(null, source, author)), { once: true });
-    return image;
-  }
-  const fallback = document.createElement("span");
-  fallback.className = "source-layout-badge";
-  const descriptor = sourceDescriptor(source);
-  fallback.textContent = descriptor?.avatarFallback === "source_icon"
-    ? (descriptor.iconText || sourceLabel(source).slice(0, 1))
-    : initials(author);
-  return fallback;
-}
+// Frontend feature: timeline-content.js#buildAvatar
 
-function buildQuotedPost(value, source, expansionKey = null) {
-  const text = typeof value?.text === "string" ? value.text : "";
-  const media = buildMedia(value?.media, source, value?.contentKind, safeSourceUrl(value?.permalink, source));
-  if (!text.trim() && !media) return null;
-  const quote = document.createElement("section");
-  quote.className = "source-quote-card";
-  const header = document.createElement("header");
-  const avatar = buildAvatar(value.avatarUrl, source, value.author);
-  const identity = document.createElement("div");
-  const author = document.createElement("strong");
-  author.textContent = value.author || "Quoted source";
-  const timestamp = document.createElement("span");
-  timestamp.textContent = formatDate(value.publishedAt);
-  identity.append(author, timestamp);
-  header.append(avatar, identity);
-  quote.append(header);
-  if (text.trim()) {
-    quote.append(buildExpandableText(text, {
-      characterLimit: QUOTE_TEXT_COLLAPSE_CHARACTERS,
-      lineLimit: QUOTE_TEXT_COLLAPSE_LINES,
-      label: "quoted post",
-      expansionKey,
-    }));
-  }
-  if (media) quote.append(media);
-  return quote;
-}
+// Frontend feature: timeline-content.js#buildQuotedPost
 
-function buildExpandableText(value, { characterLimit, lineLimit, label, expansionKey = null }) {
-  const wrapper = document.createElement("div");
-  wrapper.className = "expandable-text";
-  const text = document.createElement("p");
-  text.className = "expandable-text-copy";
-  text.textContent = value || "";
-  wrapper.append(text);
+// Frontend feature: timeline-content.js#buildExpandableText
 
-  const logicalLines = text.textContent.split(/\r?\n/).length;
-  if (text.textContent.length <= characterLimit && logicalLines <= lineLimit) return wrapper;
+// Frontend feature: timeline-media.js#buildMedia
 
-  const initiallyExpanded = expansionKey && state.expandedTimelineText.has(expansionKey);
-  text.classList.toggle("is-collapsed", !initiallyExpanded);
-  text.style.setProperty("--collapse-lines", String(lineLimit));
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "content-expander";
-  toggle.textContent = initiallyExpanded ? "Show less" : "Show more";
-  toggle.setAttribute("aria-expanded", String(Boolean(initiallyExpanded)));
-  toggle.setAttribute("aria-label", `${initiallyExpanded ? "Show less" : "Show more"} ${label} text`);
-  toggle.addEventListener("click", () => {
-    const expanded = toggle.getAttribute("aria-expanded") === "true";
-    text.classList.toggle("is-collapsed", expanded);
-    toggle.setAttribute("aria-expanded", String(!expanded));
-    toggle.setAttribute("aria-label", `${expanded ? "Show more" : "Show less"} ${label} text`);
-    toggle.textContent = expanded ? "Show more" : "Show less";
-    if (expansionKey) {
-      if (expanded) state.expandedTimelineText.delete(expansionKey);
-      else state.expandedTimelineText.add(expansionKey);
-    }
-  });
-  wrapper.append(toggle);
-  return wrapper;
-}
+// Frontend feature: timeline-media.js#buildTimelineMediaCarousel
 
-function buildMedia(values, source, contentKind = "", nativePostUrl = "", entry = null) {
-  const media = boundedTimelineMedia((Array.isArray(values) ? values : [])
-    .map((value) => ({
-      ...value,
-      displayUrl: safeMediaUrl(value.posterUrl || value.url),
-      inlinePlaybackUrl: value.playbackMode === "inline"
-        ? safePlaybackUrl(value.playbackUrl, source)
-        : null,
-    }))
-    .filter((value) => value.displayUrl), undefined, source);
-  if (!media.length) return null;
-  const isVideoMedia = (value) => value.kind === "video" || (contentKind === "video" && media.length === 1);
-  const imageMedia = media.filter((value) => !isVideoMedia(value));
-  if (shouldUseTimelineCarousel(media)) {
-    return buildTimelineMediaCarousel({
-      media,
-      imageMedia,
-      isVideoMedia,
-      source,
-      nativePostUrl,
-      entry,
-    });
-  }
-  const gallery = document.createElement("div");
-  gallery.className = `source-layout-media media-count-${media.length}`;
-  for (const value of media) {
-    const isVideo = isVideoMedia(value);
-    if (isVideo) {
-      gallery.append(buildVideoMedia(value, source, nativePostUrl, entry));
-      continue;
-    }
-    gallery.append(buildImageMediaControl(value, source, imageMedia));
-  }
-  return gallery;
-}
+// Frontend feature: timeline-media.js#buildImageMediaControl
 
-function buildTimelineMediaCarousel({ media, imageMedia, isVideoMedia, source, nativePostUrl, entry }) {
-  const carousel = document.createElement("section");
-  carousel.className = `source-layout-media source-layout-media-carousel media-count-${media.length}`;
-  carousel.tabIndex = 0;
-  carousel.setAttribute("role", "region");
-  carousel.setAttribute("aria-label", `${sourceLabel(source)} post media carousel`);
+// Frontend feature: timeline-media.js#buildVideoMedia
 
-  const stage = document.createElement("div");
-  stage.className = "source-layout-media-carousel-stage";
-  const viewport = document.createElement("div");
-  viewport.className = "source-layout-media-carousel-viewport";
-  const previous = document.createElement("button");
-  previous.type = "button";
-  previous.className = "source-layout-media-carousel-previous";
-  previous.setAttribute("aria-label", "Previous post image");
-  previous.textContent = "‹";
-  const next = document.createElement("button");
-  next.type = "button";
-  next.className = "source-layout-media-carousel-next";
-  next.setAttribute("aria-label", "Next post image");
-  next.textContent = "›";
-  stage.append(viewport, previous, next);
+// Frontend feature: timeline-media.js#buildVideoPosterControl
 
-  const navigation = document.createElement("div");
-  navigation.className = "source-layout-media-carousel-navigation";
-  const dots = document.createElement("div");
-  dots.className = "source-layout-media-carousel-dots";
-  dots.setAttribute("aria-hidden", "true");
-  const status = document.createElement("span");
-  status.className = "source-layout-media-carousel-status";
-  status.setAttribute("aria-live", "polite");
-  navigation.append(dots, status);
-  carousel.append(stage, navigation);
+// Frontend feature: timeline-media.js#activateInlineVideo
 
-  const carouselKey = entry?.id ? String(entry.id) : null;
-  let currentIndex = normalizeTimelineCarouselIndex(
-    carouselKey ? state.timelineCarouselIndexes.get(carouselKey) : 0,
-    media.length,
-  );
-  let suppressOpenUntil = 0;
+// Frontend feature: timeline-media.js#queueInlinePlaybackRecovery
 
-  function show(index) {
-    currentIndex = normalizeTimelineCarouselIndex(index, media.length);
-    if (carouselKey) state.timelineCarouselIndexes.set(carouselKey, currentIndex);
-    const value = media[currentIndex];
-    viewport.replaceChildren(isVideoMedia(value)
-      ? buildVideoMedia(value, source, nativePostUrl, entry)
-      : buildImageMediaControl(value, source, imageMedia, () => Date.now() >= suppressOpenUntil));
-    previous.disabled = currentIndex === 0;
-    next.disabled = currentIndex === media.length - 1;
-    status.textContent = `${currentIndex + 1} of ${media.length}`;
-    dots.replaceChildren(...timelineCarouselDotIndexes(media.length, currentIndex).map((index, offset, indexes) => {
-      const dot = document.createElement("span");
-      dot.className = "source-layout-media-carousel-dot";
-      dot.classList.toggle("is-current", index === currentIndex);
-      dot.classList.toggle("is-window-edge", (
-        offset === 0 && index > 0 ||
-        offset === indexes.length - 1 && index < media.length - 1
-      ));
-      return dot;
-    }));
-  }
-
-  function move(delta) {
-    show(moveTimelineCarouselIndex(currentIndex, delta, media.length));
-  }
-
-  previous.addEventListener("click", () => move(-1));
-  next.addEventListener("click", () => move(1));
-  carousel.addEventListener("keydown", (event) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    move(event.key === "ArrowLeft" ? -1 : 1);
-  });
-
-  let pointerStart = null;
-  viewport.addEventListener("pointerdown", (event) => {
-    if (!event.isPrimary || event.button !== 0 || event.target.closest("video")) return;
-    pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY, captured: false };
-  });
-  viewport.addEventListener("pointermove", (event) => {
-    if (!pointerStart || pointerStart.id !== event.pointerId || pointerStart.captured) return;
-    const deltaX = event.clientX - pointerStart.x;
-    const deltaY = event.clientY - pointerStart.y;
-    if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10) return;
-    if (Math.abs(deltaX) <= Math.abs(deltaY)) {
-      pointerStart = null;
-      return;
-    }
-    pointerStart.captured = true;
-    viewport.setPointerCapture?.(event.pointerId);
-  });
-  viewport.addEventListener("pointerup", (event) => {
-    if (!pointerStart || pointerStart.id !== event.pointerId) return;
-    const deltaX = event.clientX - pointerStart.x;
-    const deltaY = event.clientY - pointerStart.y;
-    pointerStart = null;
-    if (Math.abs(deltaX) < 40 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
-    suppressOpenUntil = Date.now() + 300;
-    event.preventDefault();
-    move(deltaX < 0 ? 1 : -1);
-  });
-  viewport.addEventListener("pointercancel", () => { pointerStart = null; });
-
-  show(currentIndex);
-  return carousel;
-}
-
-function buildImageMediaControl(value, source, imageMedia, canOpen = () => true) {
-  const control = document.createElement("button");
-  control.type = "button";
-  control.className = "source-layout-media-item";
-  const imageIndex = imageMedia.indexOf(value);
-  control.setAttribute("aria-label", `Open image ${imageIndex + 1} of ${imageMedia.length} in viewer`);
-  const image = document.createElement("img");
-  reserveMediaDimensions(image, value);
-  image.src = value.displayUrl;
-  image.alt = value.alt || `${sourceLabel(source)} post media`;
-  image.loading = "lazy";
-  image.referrerPolicy = "no-referrer";
-  control.append(image);
-  control.addEventListener("click", () => {
-    if (!canOpen()) return;
-    openMedia(imageMedia.map((entry) => entry.displayUrl), imageIndex);
-  });
-  return control;
-}
-
-function buildVideoMedia(value, source, nativePostUrl, entry = null) {
-  const shell = document.createElement("div");
-  shell.className = "source-layout-video-shell";
-  const canPlayInline = Boolean(value.inlinePlaybackUrl);
-  const control = buildVideoPosterControl({
-    width: value.width,
-    height: value.height,
-    posterUrl: value.displayUrl,
-    alt: value.alt,
-    source,
-    nativePostUrl,
-    playInline: canPlayInline
-      ? () => activateInlineVideo(shell, {
-        width: value.width,
-        height: value.height,
-        playbackUrl: value.inlinePlaybackUrl,
-        posterUrl: value.displayUrl,
-        alt: value.alt,
-        source,
-        nativePostUrl,
-        entry,
-      })
-      : null,
-  });
-  shell.append(control);
-  return shell;
-}
-
-function buildVideoPosterControl({ posterUrl, alt, source, nativePostUrl, width, height, playInline = null }) {
-  const canPlayInline = typeof playInline === "function";
-  const control = document.createElement(canPlayInline || !nativePostUrl ? "button" : "a");
-  if (control.tagName === "BUTTON") control.type = "button";
-  control.className = "source-layout-media-item is-video-poster";
-  const image = document.createElement("img");
-  reserveMediaDimensions(image, { width, height });
-  image.src = posterUrl;
-  image.alt = alt || `${sourceLabel(source)} video poster`;
-  image.loading = "lazy";
-  image.referrerPolicy = "no-referrer";
-  control.append(image);
-
-  const cue = document.createElement("span");
-  cue.className = "source-layout-video-cue";
-  cue.setAttribute("aria-hidden", "true");
-  cue.textContent = "▶";
-  control.append(cue);
-  if (!canPlayInline) {
-    const label = document.createElement("span");
-    label.className = "source-layout-video-label";
-    label.textContent = nativePostUrl ? "Play on native post" : "Video preview";
-    control.append(label);
-  }
-
-  if (canPlayInline) {
-    control.setAttribute("aria-label", `Play ${sourceLabel(source)} video in AkuBrowser`);
-    control.addEventListener("click", playInline);
-  } else if (nativePostUrl) {
-    configureNativePostLink(control, nativePostUrl, source);
-    control.setAttribute("aria-label", `Open ${sourceLabel(source)} native post to play video`);
-  } else {
-    control.disabled = true;
-    control.setAttribute("aria-label", `${sourceLabel(source)} video preview; native post unavailable`);
-  }
-  return control;
-}
-
-function activateInlineVideo(shell, { playbackUrl, posterUrl, alt, source, nativePostUrl, width, height, entry = null }) {
-  if (!shell || shell.querySelector("video.source-layout-inline-video")) return;
-  const control = shell.querySelector(".source-layout-media-item");
-  if (!control) return;
-  const video = document.createElement("video");
-  reserveMediaDimensions(video, { width, height });
-  video.className = "source-layout-inline-video";
-  video.controls = true;
-  video.playsInline = true;
-  video.preload = "none";
-  video.poster = posterUrl;
-  video.setAttribute("aria-label", `${sourceLabel(source)} video`);
-  video.addEventListener("play", () => {
-    pauseOtherInlineVideos(video);
-    recordUIActivity(false);
-  });
-  video.addEventListener("timeupdate", () => {
-    if (!video.paused) recordUIActivity(false);
-  });
-
-  let fallbackUsed = false;
-  const useNativeFallback = () => {
-    if (fallbackUsed) return;
-    fallbackUsed = true;
-    if (!video.isConnected) return;
-    stopObservingInlineVideoVisibility(video);
-    video.pause();
-    video.removeAttribute("src");
-    video.replaceWith(buildVideoPosterControl({
-      width,
-      height,
-      posterUrl,
-      alt,
-      source,
-      nativePostUrl,
-    }));
-    queueInlinePlaybackRecovery(entry, source, playbackUrl);
-  };
-  video.addEventListener("error", useNativeFallback, { once: true });
-
-  control.replaceWith(video);
-  observeInlineVideoVisibility(video);
-  // Assigning src only after the explicit click keeps Timeline rendering from
-  // creating a passive request to the source video CDN.
-  video.src = playbackUrl;
-  const playback = video.play();
-  if (playback?.catch) {
-    playback.catch(() => {
-      if (video.error) useNativeFallback();
-    });
-  }
-}
-
-function queueInlinePlaybackRecovery(entry, source, playbackUrl) {
-  const descriptor = sourceDescriptor(source);
-  if (
-    descriptor?.playbackRecoveryCapability !== "native_post_recapture" ||
-    !entry?.id || !safeSourceUrl(entry.item?.sourceUrl || entry.evidence?.permalink, source) ||
-    !safePlaybackUrl(playbackUrl, source)
-  ) return;
-  if (playbackRecovery.enqueue({ id: entry.id, source, playbackUrl }) && !playbackRecoveryReady()) {
-    showNotice("Video refresh queued. It will run when collection is ready.");
-  }
-  drainPlaybackRecovery();
-}
-
-function playbackRecoveryReady() {
-  const runtime = state.bootstrap?.collectionRuntime;
-  return Boolean(state.bootstrap && !state.bootstrapLoading && !state.bootstrapError && !state.sidecarEpochReloading
-    && !state.session && !state.pollInFlight && !state.mediaRecaptureActive && !state.closingNativeReaders
-    && !state.bootstrap.calibration?.active && state.bootstrap.onboarding?.status === "completed"
-    && !runtime?.nativeReaderOnly && !(runtime?.activeLeases > 0)
-    && collectionModeState(runtime, state.bootstrap.bridge?.compatible).canCollect);
-}
+// Frontend feature: timeline-media.js#playbackRecoveryReady
 
 const playbackRecovery = createPlaybackRecoveryQueue({
   isReady: playbackRecoveryReady,
@@ -8271,844 +1783,79 @@ const playbackRecovery = createPlaybackRecoveryQueue({
   recover: (entry) => recaptureMedia(entry, null, "background", "playback_error"),
 });
 
-function drainPlaybackRecovery() {
-  void playbackRecovery.drain().catch((error) => console.warn("Video refresh queue deferred.", error));
-}
+// Frontend feature: timeline-media.js#drainPlaybackRecovery
 
-function pauseOtherInlineVideos(activeVideo) {
-  for (const video of document.querySelectorAll("video.source-layout-inline-video")) {
-    if (video !== activeVideo && !video.paused) video.pause();
-  }
-}
+// Frontend feature: timeline-media.js#pauseOtherInlineVideos
 
-let inlineVideoVisibilityObserver = null;
+// Frontend feature: timeline-media.js#inlineVideoVisibilityObserver
 
-function observeInlineVideoVisibility(video) {
-  if (!(video instanceof HTMLVideoElement) || !("IntersectionObserver" in window)) return;
-  if (!inlineVideoVisibilityObserver) {
-    inlineVideoVisibilityObserver = new IntersectionObserver((entries, observer) => {
-      for (const entry of entries) {
-        const observedVideo = entry.target;
-        if (!observedVideo.isConnected) {
-          observer.unobserve(observedVideo);
-          continue;
-        }
-        if (!entry.isIntersecting && !observedVideo.paused) observedVideo.pause();
-      }
-    }, { threshold: 0 });
-  }
-  inlineVideoVisibilityObserver.observe(video);
-}
+// Frontend feature: timeline-media.js#observeInlineVideoVisibility
 
-function stopObservingInlineVideoVisibility(video) {
-  inlineVideoVisibilityObserver?.unobserve(video);
-}
+// Frontend feature: timeline-media.js#stopObservingInlineVideoVisibility
 
-function stopObservingInlineVideoVisibilityWithin(root) {
-  for (const video of root?.querySelectorAll?.("video.source-layout-inline-video") ?? []) {
-    stopObservingInlineVideoVisibility(video);
-  }
-}
+// Frontend feature: timeline-media.js#stopObservingInlineVideoVisibilityWithin
 
-function buildAttachments(values, source) {
-  const attachments = (Array.isArray(values) ? values : [])
-    .map((value) => ({ ...value, safeUrl: safeMediaUrl(value.url) }))
-    .filter((value) => value.safeUrl && value.title)
-    .slice(0, 3);
-  if (!attachments.length) return null;
-  const list = document.createElement("div");
-  list.className = "source-layout-attachments";
-  for (const value of attachments) {
-    const link = document.createElement("a");
-    link.className = "source-layout-attachment";
-    link.href = value.safeUrl;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    const imageUrl = safeMediaUrl(value.imageUrl);
-    if (imageUrl) {
-      const image = document.createElement("img");
-      image.src = imageUrl;
-      image.alt = "";
-      image.loading = "lazy";
-      image.referrerPolicy = "no-referrer";
-      link.append(image);
-    } else {
-      const fallback = document.createElement("span");
-      fallback.className = "source-layout-attachment-fallback";
-      fallback.textContent = sourceDescriptor(source)?.iconText || sourceLabel(source).slice(0, 1);
-      link.append(fallback);
-    }
-    const copy = document.createElement("span");
-    copy.className = "source-layout-attachment-copy";
-    const title = document.createElement("strong");
-    title.textContent = value.title;
-    copy.append(title);
-    const subtitle = [value.subtitle, value.detail].filter(Boolean).join(" · ");
-    if (subtitle) {
-      const detail = document.createElement("span");
-      detail.textContent = subtitle;
-      copy.append(detail);
-    }
-    const domain = document.createElement("small");
-    domain.textContent = value.domain || value.actionLabel || "Open attachment";
-    copy.append(domain);
-    link.append(copy);
-    list.append(link);
-  }
-  return list;
-}
+// Frontend feature: timeline-content.js#buildAttachments
 
-function buildEngagement(value, source) {
-  if (!value || typeof value !== "object") return null;
-  const definitions = (sourceDescriptor(source)?.engagementMetrics ?? [])
-    .map((metric) => [metric.key, metric.icon]);
-  const available = definitions.filter(([key]) => value[key]);
-  if (!available.length) return null;
-  const footer = document.createElement("footer");
-  footer.className = "source-layout-engagement";
-  for (const [key, icon] of available) {
-    const metric = document.createElement("span");
-    metric.textContent = `${icon} ${value[key]}`;
-    footer.append(metric);
-  }
-  return footer;
-}
+// Frontend feature: timeline-content.js#buildEngagement
 
-function buildActions(entry) {
-  const actions = document.createElement("div");
-  actions.className = "result-actions";
-  const link = buildSourceLink(entry);
-  const primary = document.createElement("div");
-  primary.className = "timeline-primary-actions";
-  if (link) primary.append(link);
-  primary.append(buildTimelineReadLaterAction(entry));
-  const feedback = timelineFeedbackUI.build(entry);
-  actions.append(primary, feedback);
-  if (entry.semanticEvent) actions.append(buildSemanticCorrectionActions(entry));
-  return actions;
-}
+// Frontend feature: timeline-actions.js#buildActions
 
-function timelineContentContextAnchor(id) {
-  const trigger = timelineContentContextTrigger(id);
-  if (trigger && !trigger.closest(".semantic-duplicate-report.hidden")) {
-    return trigger.closest(".timeline-content-context-anchor");
-  }
-  const candidates = [...document.querySelectorAll("#result-items > [data-timeline-id]")]
-    .filter((element) => element.dataset.timelineId === String(id));
-  return candidates[0] || null;
-}
+// Frontend feature: timeline-context.js#timelineContentContextAnchor
 
-function timelineContentContextTrigger(id) {
-  return [...document.querySelectorAll("#result-items [data-timeline-content-context-id]")]
-    .find((element) => element.dataset.timelineContentContextId === String(id)) || null;
-}
+// Frontend feature: timeline-context.js#timelineContentContextTrigger
 
-function measureTimelineContentContextTabs() {
-  if (state.currentView !== "timeline") return [];
-  const tabs = [...document.querySelectorAll("#result-items [data-timeline-content-context-id]")];
-  // Finish every geometry read before any tab attribute/class writes.
-  return tabs.map((tab) => {
-    const anchor = tab.closest(".timeline-content-context-anchor");
-    const rect = anchor?.getBoundingClientRect();
-    const tabRect = tab.getBoundingClientRect();
-    return {
-      tab,
-      id: tab.dataset.timelineContentContextId || "",
-      rect,
-      width: tabRect.width,
-      height: tabRect.height,
-      top: rect?.top,
-      bottom: rect?.bottom,
-      eligible: state.currentView === "timeline" && !tab.closest(".semantic-duplicate-report.hidden"),
-    };
-  });
-}
+// Frontend feature: timeline-context.js#measureTimelineContentContextTabs
 
-function syncTimelineContentContextTabs(measured = measureTimelineContentContextTabs()) {
-  if (state.currentView !== "timeline") return;
-  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
-  const visibleID = state.timelineContentContextDrawerOpen
-    ? state.timelineContentContextActiveID
-    : selectContentContextViewportID({
-      candidates: measured,
-      viewportHeight: window.innerHeight,
-      previousID: state.timelineContentContextViewportID,
-    });
-  state.timelineContentContextViewportID = visibleID;
-  for (const measurement of measured) {
-    const { tab, id, rect: postRect, width, eligible } = measurement;
-    const active = state.timelineContentContextDrawerOpen && state.timelineContentContextActiveID === id;
-    const fits = state.currentView === "timeline"
-      && id === visibleID
-      && eligible
-      && postRect
-      && contentContextTabFits({
-        postRight: postRect.right,
-        // The back-to-top control yields this horizontal gutter to the tabs
-        // when its content-side placement would collide with one. Keeping the
-        // fit boundary at the viewport edge prevents an older post's control
-        // from making the next readable post lose its trigger.
-        boundaryLeft: viewportWidth,
-        viewportWidth,
-        tabWidth: width || CONTENT_CONTEXT_TAB_DEFAULT_WIDTH,
-      });
-    syncTimelineContentContextTab(tab, { active });
-    tab.classList.toggle("is-visible", Boolean(fits));
-    tab.classList.toggle("is-retracting", !fits);
-  }
-}
+// Frontend feature: timeline-context.js#syncTimelineContentContextTabs
 
-function timelineContentContextFeedbackKey(timelineID, memoryItemID) {
-  return `${String(timelineID || "")}\n${String(memoryItemID || "")}`;
-}
+// Frontend feature: timeline-context.js#timelineContentContextFeedbackKey
 
-async function submitTimelineContentContextFeedback(timelineID, match, verdict) {
-  const memoryItemID = String(match?.item?.id || "").trim();
-  const current = state.timelineContentContext.get(timelineID);
-  if (!timelineID || !memoryItemID || !current) return;
-  const key = timelineContentContextFeedbackKey(timelineID, memoryItemID);
-  if (state.timelineContentContextFeedbackInFlight.has(key)) return;
-  state.timelineContentContextFeedbackInFlight.add(key);
-  current.feedbackDirty = true;
-  renderTimelineContentContextDrawer();
-  try {
-    const payload = verdict === "clear"
-      ? await api(buildContentContextFeedbackUndoPath(match?.feedback?.id), { method: "POST" })
-      : await api(buildTimelineContentContextFeedbackPath(timelineID), {
-        method: "POST",
-        body: { memoryItemId: memoryItemID, verdict },
-      });
-    const feedback = payload?.feedback;
-    match.feedback = feedback?.verdict === "clear"
-      ? null
-      : { id: String(feedback?.id || ""), verdict: String(feedback?.verdict || "") };
-  } catch (error) {
-    showError(error);
-  } finally {
-    state.timelineContentContextFeedbackInFlight.delete(key);
-    if (state.timelineContentContextActiveID === timelineID) renderTimelineContentContextDrawer();
-  }
-}
+// Frontend feature: timeline-context.js#submitTimelineContentContextFeedback
 
-function renderTimelineContentContextMatch(match, timelineID) {
-  const item = match?.item || {};
-  const article = document.createElement("article");
-  article.className = "timeline-content-context-match";
-  const title = document.createElement("strong");
-  const titleText = String(item.title || item.summary || item.canonicalPermalink || "Untitled local memory").trim();
-  const sourceURL = safeSourceUrl(item.canonicalPermalink, item.source);
-  if (sourceURL) {
-    const link = document.createElement("a");
-    link.href = sourceURL;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    link.textContent = titleText;
-    title.append(link);
-  } else {
-    title.textContent = titleText;
-  }
-  const meta = document.createElement("small");
-  const date = item.publishedAt || item.updatedAt;
-  meta.textContent = [sourceLabel(item.source), date ? formatDate(date) : ""].filter(Boolean).join(" · ");
-  const reason = document.createElement("span");
-  reason.className = "timeline-content-context-reason";
-  reason.textContent = String(match?.matchReason || "Matches a local lexical memory field");
-  const feedback = document.createElement("div");
-  feedback.className = "timeline-content-context-feedback";
-  const verdict = String(match?.feedback?.verdict || "");
-  article.classList.toggle("is-feedback-not-relevant", verdict === "not_relevant");
-  article.classList.toggle("is-feedback-relevant", verdict === "relevant");
-  const key = timelineContentContextFeedbackKey(timelineID, item.id);
-  const busy = state.timelineContentContextFeedbackInFlight.has(key);
-  if (verdict === "relevant" || verdict === "not_relevant") {
-    const status = document.createElement("span");
-    status.className = "timeline-content-context-feedback-status";
-    status.setAttribute("role", "status");
-    status.textContent = verdict === "relevant" ? "Marked relevant" : "Marked not relevant";
-    const undo = document.createElement("button");
-    undo.type = "button";
-    undo.className = "text-button timeline-content-context-feedback-undo";
-    undo.textContent = busy ? "Undoing…" : "Undo";
-    undo.disabled = busy || !match?.feedback?.id;
-    undo.addEventListener("click", () => void submitTimelineContentContextFeedback(timelineID, match, "clear"));
-    feedback.append(status, undo);
-  } else {
-    for (const [label, value] of [["Relevant", "relevant"], ["Not relevant", "not_relevant"]]) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "feedback-button timeline-content-context-feedback-button";
-      button.textContent = label;
-      button.disabled = busy;
-      button.setAttribute("aria-label", `Mark this related context as ${label.toLowerCase()}`);
-      button.addEventListener("click", () => void submitTimelineContentContextFeedback(timelineID, match, value));
-      feedback.append(button);
-    }
-  }
-  article.append(title, meta, reason, feedback);
-  return article;
-}
+// Frontend feature: timeline-context.js#renderTimelineContentContextMatch
 
-function renderTimelineContentContextTopicInsight(insight) {
-  const article = document.createElement("article");
-  article.className = "timeline-content-context-topic-insight";
-  const title = document.createElement("strong");
-  title.textContent = insight?.topicName || "Living Topic";
-  const overview = document.createElement("p");
-  overview.textContent = insight?.overview || "No current overview.";
-  const claims = document.createElement("ul");
-  claims.className = "timeline-content-context-topic-claims";
-  for (const claim of (insight?.claims || [])
-    .filter((claim) => claim?.assessment === "supported" && claim?.temporalStatus === "current")
-    .slice(0, 3)) {
-    const item = document.createElement("li");
-    item.textContent = claim.text;
-    claims.append(item);
-  }
-  const meta = document.createElement("small");
-  meta.textContent = [
-    "Current supported understanding",
-    `${insight?.evidenceCount || 0} active evidence`,
-    `v${insight?.snapshotVersion || 1}`,
-    insight?.evidenceAsOf ? `evidence through ${formatDate(insight.evidenceAsOf)}` : "evidence date unknown",
-    insight?.updatedAt ? `regenerated ${formatDate(insight.updatedAt)}` : null,
-  ].filter(Boolean).join(" · ");
-  const reason = document.createElement("span");
-  reason.className = "timeline-content-context-reason";
-  reason.textContent = String(insight?.matchReason || "Matches a current Living Topic understanding");
-  article.append(title, overview);
-  if (claims.childElementCount) article.append(claims);
-  article.append(meta, reason);
-  return article;
-}
+// Frontend feature: timeline-context.js#renderTimelineContentContextTopicInsight
 
-function renderDirectContext(relation, source) {
-  return renderTimelineDirectContext(relation, source, {
-    documentRef: document, safeSourceUrl, configureNativePostLink, formatDate,
-  });
-}
+// Frontend feature: timeline-context.js#renderDirectContext
 
-function renderTimelineContentContextDrawer() {
-  const body = $("#timeline-content-context-body");
-  if (!body) return;
-  const current = state.timelineContentContext.get(state.timelineContentContextActiveID)
-    || { status: "idle", matches: [] };
-  body.replaceChildren();
-  body.setAttribute("role", current.status === "error" ? "alert" : "status");
-  if (current.status === "loading") {
-    body.textContent = "Loading captured and local context…";
-    return;
-  }
-  if (current.status === "error") {
-    body.textContent = current.message || "Related local context could not be loaded.";
-    return;
-  }
-  const matches = Array.isArray(current.matches) ? current.matches.slice(0, CONTENT_CONTEXT_MAX_LIMIT) : [];
-  const topicInsights = Array.isArray(current.topicInsights) ? current.topicInsights.slice(0, 2) : [];
-  const directContext = Array.isArray(current.directContext) ? current.directContext.slice(0, 8) : [];
-  if (!directContext.length && !matches.length && !topicInsights.length) {
-    body.textContent = "No related local context found.";
-    return;
-  }
-  if (directContext.length) {
-    const heading = document.createElement("strong"); heading.textContent = "Conversation and interaction context";
-    const list = document.createElement("div"); list.className = "timeline-content-context-list";
-    list.append(...directContext.map((relation) => renderDirectContext(relation, current.source)));
-    body.append(heading, list);
-  }
-  if (topicInsights.length) {
-    const topicHeading = document.createElement("strong");
-    topicHeading.textContent = "Current Living Topic understanding";
-    const topicList = document.createElement("div");
-    topicList.className = "timeline-content-context-topic-list";
-    topicList.append(...topicInsights.map(renderTimelineContentContextTopicInsight));
-    body.append(topicHeading, topicList);
-  }
-  if (matches.length) {
-    const heading = document.createElement("strong");
-    heading.textContent = "Related local context";
-    const list = document.createElement("div");
-    list.className = "timeline-content-context-list";
-    list.append(...matches.map((match) => renderTimelineContentContextMatch(match, state.timelineContentContextActiveID)));
-    body.append(heading, list);
-  }
-}
+// Frontend feature: timeline-context.js#renderTimelineContentContextDrawer
 
-function contentContextDrawerMotionDuration() {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 220;
-}
+// Frontend feature: timeline-context.js#contentContextDrawerMotionDuration
 
-function revealTimelineContentContextDrawer({ focus = true } = {}) {
-  const drawer = $("#timeline-content-context-drawer");
-  if (!drawer || !state.timelineContentContextActiveID) return;
-  if (state.timelineContentContextCloseTimer !== null) {
-    window.clearTimeout(state.timelineContentContextCloseTimer);
-    state.timelineContentContextCloseTimer = null;
-  }
-  state.timelineContentContextDrawerOpen = true;
-  drawer.classList.remove("hidden", "is-closing", "is-retracting");
-  drawer.setAttribute("aria-hidden", "false");
-  renderTimelineContentContextDrawer();
-  syncTimelineContentContextTabs();
-  scheduleTimelineContentContextPosition();
-  scheduleBackToTop();
-  window.requestAnimationFrame(() => {
-    if (!state.timelineContentContextDrawerOpen) return;
-    drawer.classList.add("is-open");
-  });
-  if (focus) $("#timeline-content-context-close")?.focus({ preventScroll: true });
-}
+// Frontend feature: timeline-context.js#revealTimelineContentContextDrawer
 
-function closeTimelineContentContextDrawer({ clearActive = true, focusTrigger = true } = {}) {
-  const drawer = $("#timeline-content-context-drawer");
-  const activeID = state.timelineContentContextActiveID;
-  const activeContext = state.timelineContentContext.get(activeID);
-  if (activeContext?.feedbackDirty) state.timelineContentContext.delete(activeID);
-  state.timelineContentContextDrawerOpen = false;
-  observeTimelineContentContextAnchor(null);
-  state.timelineContentContextExpanded = false;
-  $("#timeline-content-context-expand-actions")?.classList.add("hidden");
-  $("#timeline-content-context-expand")?.setAttribute("aria-expanded", "false");
-  if (clearActive) state.timelineContentContextActiveID = "";
-  syncTimelineContentContextTabs();
-  if (!drawer) {
-    syncBackToTopNow();
-    return;
-  }
-  drawer.setAttribute("aria-hidden", "true");
-  drawer.classList.remove("is-open");
-  drawer.classList.add("is-closing", "is-retracting");
-  syncBackToTopNow();
-  if (state.timelineContentContextCloseTimer !== null) {
-    window.clearTimeout(state.timelineContentContextCloseTimer);
-  }
-  const finish = () => {
-    state.timelineContentContextCloseTimer = null;
-    if (state.timelineContentContextDrawerOpen) return;
-    drawer.classList.add("hidden");
-    drawer.classList.remove("is-closing", "is-retracting", "is-rail", "is-overlay", "is-sheet");
-  };
-  const duration = contentContextDrawerMotionDuration();
-  if (duration === 0) finish();
-  else state.timelineContentContextCloseTimer = window.setTimeout(finish, duration);
-  if (focusTrigger) {
-    const trigger = timelineContentContextTrigger(activeID);
-    if (trigger && trigger.classList.contains("is-visible")) trigger.focus({ preventScroll: true });
-    else $("#timeline-heading")?.focus({ preventScroll: true });
-  }
-}
+// Frontend feature: timeline-context.js#closeTimelineContentContextDrawer
 
-function timelineContentContextFocusIsInsideDrawer() {
-  const drawer = $("#timeline-content-context-drawer");
-  return Boolean(drawer && drawer.contains(document.activeElement));
-}
+// Frontend feature: timeline-context.js#timelineContentContextFocusIsInsideDrawer
 
-function openTimelineContentContext(entry, { focus = true } = {}) {
-  if (!entry?.id || state.currentView !== "timeline") return;
-  const previousID = state.timelineContentContextActiveID;
-  if (previousID !== entry.id) state.timelineContentContextExpanded = false;
-  if (previousID && previousID !== entry.id && state.timelineContentContext.get(previousID)?.feedbackDirty) {
-    state.timelineContentContext.delete(previousID);
-  }
-  state.timelineContentContextActiveID = entry.id;
-  const pending = beginTimelineContentContextLookup(state.timelineContentContext, entry.id);
-  revealTimelineContentContextDrawer({ focus });
-  void api(buildTimelineContentContextPath(entry.id)).then((payload) => {
-    if (!settleTimelineContentContextLookup(state.timelineContentContext, entry.id, pending, {
-      status: "success",
-      matches: Array.isArray(payload?.matches) ? payload.matches : [],
-      topicInsights: Array.isArray(payload?.topicInsights) ? payload.topicInsights : [],
-      directContext: Array.isArray(payload?.directContext) ? payload.directContext : [],
-      source: entry.source || entry.item?.source,
-      feedbackDirty: false,
-    })) return;
-    if (state.timelineContentContextActiveID === entry.id) {
-      renderTimelineContentContextDrawer();
-      scheduleTimelineContentContextPosition();
-    }
-  }).catch((error) => {
-    if (!settleTimelineContentContextLookup(state.timelineContentContext, entry.id, pending, {
-      status: "error",
-      message: error.message || String(error),
-      matches: [],
-      topicInsights: [],
-      feedbackDirty: false,
-    })) return;
-    if (state.timelineContentContextActiveID === entry.id) {
-      renderTimelineContentContextDrawer();
-      scheduleTimelineContentContextPosition();
-    }
-  });
-}
+// Frontend feature: timeline-context.js#openTimelineContentContext
 
-function toggleTimelineContentContext(entry) {
-  if (state.timelineContentContextActiveID === entry?.id && state.timelineContentContextDrawerOpen) {
-    closeTimelineContentContextDrawer();
-    return;
-  }
-  openTimelineContentContext(entry);
-}
+// Frontend feature: timeline-context.js#toggleTimelineContentContext
 
-function observeTimelineContentContextAnchor(anchor) {
-  if (state.timelineContentContextObservedAnchor === anchor) return;
-  timelineContentContextAnchorResizeObserver.disconnect();
-  state.timelineContentContextObservedAnchor = anchor || null;
-  if (anchor) timelineContentContextAnchorResizeObserver.observe(anchor);
-}
+// Frontend feature: timeline-context.js#observeTimelineContentContextAnchor
 
-function syncTimelineContentContextExpandAction({ defaultHeight, expandedHeight, hasExpandRoom }) {
-  const drawer = $("#timeline-content-context-drawer");
-  const actions = $("#timeline-content-context-expand-actions");
-  const button = $("#timeline-content-context-expand");
-  if (!drawer || !actions || !button) return;
-  const actionHeight = actions.classList.contains("hidden") ? 0 : actions.offsetHeight;
-  const contentHeight = Math.max(0, drawer.scrollHeight - actionHeight);
-  const hasOverflow = contentHeight > defaultHeight + 1;
-  const available = hasExpandRoom && hasOverflow && contentContextCanExpand({
-    contentHeight,
-    defaultHeight,
-    expandedHeight,
-  });
-  if (!available) state.timelineContentContextExpanded = false;
-  actions.classList.toggle("hidden", !available);
-  button.textContent = state.timelineContentContextExpanded ? "Collapse context" : "Expand context";
-  button.setAttribute("aria-expanded", String(state.timelineContentContextExpanded));
-  drawer.style.setProperty(
-    "--timeline-content-context-rail-height",
-    `${Math.round(state.timelineContentContextExpanded && available ? expandedHeight : defaultHeight)}px`,
-  );
-}
+// Frontend feature: timeline-context.js#syncTimelineContentContextExpandAction
 
-function syncTimelineContentContextPosition() {
-  const drawer = $("#timeline-content-context-drawer");
-  const anchor = timelineContentContextAnchor(state.timelineContentContextActiveID);
-  if (!drawer || !state.timelineContentContextDrawerOpen || state.currentView !== "timeline") return;
-  if (!anchor) {
-    closeTimelineContentContextDrawer({ clearActive: true, focusTrigger: false });
-    return;
-  }
-  observeTimelineContentContextAnchor(anchor);
-  const postRect = anchor.getBoundingClientRect();
-  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
-  const backToTop = $("#back-to-top");
-  const backRect = backToTop && !backToTop.classList.contains("hidden") ? backToTop.getBoundingClientRect() : null;
-  const viewportBottom = backRect ? Math.max(72, backRect.top - 16) : window.innerHeight - 16;
-  const top = Math.max(16, Math.min(postRect.top, viewportBottom - 120));
-  const safeRightBoundary = viewportWidth - 16;
-  const rightGutter = Math.max(0, safeRightBoundary - postRect.right);
-  const mode = contentContextDrawerMode({
-    viewportWidth,
-    rightGutter,
-  });
-  drawer.classList.remove("is-rail", "is-overlay", "is-sheet");
-  drawer.classList.add(`is-${mode}`);
-  if (mode !== "rail") {
-    state.timelineContentContextExpanded = false;
-    $("#timeline-content-context-expand-actions")?.classList.add("hidden");
-    $("#timeline-content-context-expand")?.setAttribute("aria-expanded", "false");
-  }
-  drawer.style.removeProperty("--timeline-content-context-document-left");
-  drawer.style.removeProperty("--timeline-content-context-document-top");
-  drawer.style.removeProperty("--timeline-content-context-rail-height");
-  drawer.style.setProperty("--timeline-content-context-top", `${Math.round(top)}px`);
-  drawer.style.setProperty("--timeline-content-context-max-height", `${Math.max(80, Math.round(viewportBottom - top))}px`);
-  if (mode === "sheet") {
-    drawer.style.removeProperty("--timeline-content-context-right");
-    drawer.style.removeProperty("--timeline-content-context-width");
-    if (backRect) {
-      drawer.style.setProperty(
-        "--timeline-content-context-sheet-bottom",
-        `${Math.round(Math.max(68, window.innerHeight - backRect.top + 16))}px`,
-      );
-    } else {
-      drawer.style.removeProperty("--timeline-content-context-sheet-bottom");
-    }
-    syncBackToTopNow();
-    return;
-  }
-  drawer.style.removeProperty("--timeline-content-context-sheet-bottom");
-  const railPlacement = mode === "rail"
-    ? contentContextRailPlacement({
-      postRight: postRect.right,
-      safeBoundary: safeRightBoundary,
-      viewportWidth,
-    })
-    : null;
-  const width = railPlacement?.width
-    ?? Math.min(360, Math.max(240, viewportWidth - 32));
-  const right = railPlacement?.right ?? 16;
-  if (mode === "rail") {
-    drawer.style.removeProperty("--timeline-content-context-right");
-    drawer.style.setProperty("--timeline-content-context-document-left", `${window.scrollX + postRect.right}px`);
-    drawer.style.setProperty("--timeline-content-context-document-top", `${window.scrollY + postRect.top}px`);
-    const heightLimits = contentContextDrawerHeightLimits({
-      postHeight: postRect.height,
-      viewportAvailable: viewportBottom - postRect.top,
-    });
-    const targetHeight = state.timelineContentContextExpanded
-      ? heightLimits?.expandedHeight
-      : heightLimits?.defaultHeight;
-    drawer.style.setProperty("--timeline-content-context-rail-height", `${Math.round(targetHeight || 120)}px`);
-    drawer.style.setProperty("--timeline-content-context-width", `${width}px`);
-    window.requestAnimationFrame(() => {
-      if (!state.timelineContentContextDrawerOpen || !heightLimits) return;
-      syncTimelineContentContextExpandAction(heightLimits);
-    });
-    syncBackToTopNow();
-    return;
-  }
-  drawer.style.setProperty("--timeline-content-context-right", `${right}px`);
-  drawer.style.setProperty("--timeline-content-context-width", `${width}px`);
-  syncBackToTopNow();
-}
+// Frontend feature: timeline-context.js#syncTimelineContentContextPosition
 
-function scheduleTimelineContentContextPosition() {
-  if (state.timelineContentContextPositionFrame !== null) return;
-  state.timelineContentContextPositionFrame = window.requestAnimationFrame(() => {
-    state.timelineContentContextPositionFrame = null;
-    syncTimelineContentContextPosition();
-  });
-}
+// Frontend feature: timeline-context.js#scheduleTimelineContentContextPosition
 
-function handleTimelineContentContextScroll() {
-  const scrollY = window.scrollY;
-  const previousScrollY = state.timelineContentContextLastScrollY;
-  state.timelineContentContextLastScrollY = scrollY;
-  if (state.timelineContentContextDrawerOpen && state.timelineContentContextActiveID) {
-    const anchor = timelineContentContextAnchor(state.timelineContentContextActiveID);
-    const postRect = anchor?.getBoundingClientRect();
-    const passedReadingExitLine = postRect && contentContextPostPassedReadingExitLine({
-      postBottom: postRect.bottom,
-      viewportHeight: window.innerHeight,
-    });
-    if (!postRect || contentContextShouldCloseOnScroll({
-      previousScrollY,
-      scrollY,
-      postTop: postRect.top,
-      postBottom: postRect.bottom,
-      viewportHeight: window.innerHeight,
-      upScrollMode: state.bootstrap?.settings?.contentContextUpScrollMode || CONTENT_CONTEXT_UP_SCROLL_MODE_DEFAULT,
-    }) || (scrollY > previousScrollY && passedReadingExitLine)) {
-      closeTimelineContentContextDrawer({
-        clearActive: true,
-        focusTrigger: timelineContentContextFocusIsInsideDrawer(),
-      });
-      return;
-    }
-  }
-  // The shared frame callback synchronizes tabs once via syncBackToTopNow.
-}
+// Frontend feature: timeline-context.js#handleTimelineContentContextScroll
 
-function buildTimelineReadLaterAction(entry) {
-  const container = document.createElement("div");
-  container.className = "timeline-memory-actions";
-  const save = document.createElement("button");
-  save.type = "button";
-  save.className = "feedback-button memory-read-later-button";
-  save.setAttribute("aria-label", "Read later");
-  const status = document.createElement("small");
-  status.className = "timeline-memory-action-status";
-  status.setAttribute("role", "status");
-  status.setAttribute("aria-live", "polite");
-  let statusTimer = null;
-  const hasText = Boolean(String(entry?.evidence?.text ?? "").trim());
-  const render = () => {
-    const saved = entry?.personalMemory?.saved === true;
-    const busy = state.timelineReadLaterInFlight.has(entry.id);
-    save.textContent = saved ? "Saved" : busy ? "Adding…" : "Read later";
-    save.disabled = saved || busy;
-    save.classList.toggle("selected", saved);
-    save.classList.toggle("is-saved", saved);
-    save.setAttribute("aria-pressed", String(saved));
-    save.setAttribute("aria-label", saved ? "Saved" : "Read later");
-    save.title = saved
-      ? "This Timeline item is already Saved for later."
-      : hasText
-        ? "Keep the best locally available text in Saved."
-        : "Keep a source reference in Saved; the source text is unavailable locally.";
-  };
-  render();
-  save.addEventListener("click", async () => {
-    if (!entry?.id || state.timelineReadLaterInFlight.has(entry.id) || entry?.personalMemory?.saved === true) return;
-    if (!window.confirm(timelineReadLaterConfirmation(entry))) return;
-    state.timelineReadLaterInFlight.add(entry.id);
-    status.textContent = "";
-    render();
-    try {
-      const response = await api(buildTimelineReadLaterPath(entry.id), { method: "POST" });
-      if (response?.saved !== true) {
-        throw new Error("AkuSidecar did not confirm the Saved action.");
-      }
-      entry.personalMemory = {
-        retentionTier: response.retentionTier,
-        saved: true,
-        permanentKeep: response.permanentKeep === true,
-      };
-      invalidateLibraryStorage();
-      status.textContent = response.alreadySaved === true ? "Already Saved for later." : "Saved for later.";
-      window.clearTimeout(statusTimer);
-      statusTimer = window.setTimeout(() => {
-        status.textContent = "";
-      }, 3500);
-    } catch (error) {
-      window.clearTimeout(statusTimer);
-      status.textContent = "Could not add this item to Saved. Try again.";
-      showError(error);
-    } finally {
-      state.timelineReadLaterInFlight.delete(entry.id);
-      render();
-    }
-  });
-  container.append(save, status);
-  return container;
-}
+// Frontend feature: timeline-actions.js#buildTimelineReadLaterAction
 
-function buildTimelineContentContextAnchor(entry, item) {
-  const { anchor, tab } = buildTimelineContentContextTab(entry, () => toggleTimelineContentContext(entry), document);
-  tab.dataset.timelineContentContextId = entry.id;
-  anchor.prepend(item);
-  return anchor;
-}
+// Frontend feature: timeline-context.js#buildTimelineContentContextAnchor
 
-function buildSemanticCorrectionActions(entry) {
-  const controls = document.createElement("div");
-  controls.className = "semantic-correction-actions";
-  const context = document.createElement("span");
-  context.textContent = entry.semanticEvent.corrected
-    ? "Event relationship corrected by you."
-    : `${humanize(entry.semanticEvent.relation)} · ${Math.round((entry.semanticEvent.confidence || 0) * 100)}% confidence`;
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "event-correction-button";
-  button.textContent = entry.semanticEvent.corrected
-    ? "Undo correction"
-    : "Review event…";
-  button.disabled = entry.semanticEvent.corrected && !entry.semanticEvent.correctionId;
-  button.addEventListener("click", async () => {
-    button.disabled = true;
-    try {
-      if (entry.semanticEvent.corrected) {
-        await api(`/api/event-corrections/${encodeURIComponent(entry.semanticEvent.correctionId)}/undo`, { method: "POST" });
-        await refreshTimeline();
-        clearNotice();
-      } else {
-        await showEventSuggestions(entry, controls, button);
-      }
-    } catch (error) {
-      showError(error);
-    } finally {
-      button.disabled = false;
-    }
-  });
-  controls.append(context, button);
-  return controls;
-}
+// Frontend feature: timeline-actions.js#buildSemanticCorrectionActions
 
-async function showEventSuggestions(entry, controls, trigger) {
-  const { suggestions = [] } = await api(`/api/timeline/${encodeURIComponent(entry.id)}/event-suggestions?limit=3`);
-  controls.querySelector(".event-suggestion-editor")?.remove();
-  const editor = document.createElement("span");
-  editor.className = "event-suggestion-editor";
-  const select = document.createElement("select");
-  select.setAttribute("aria-label", "Choose the same semantic event");
-  const available = [{
-    eventId: entry.semanticEvent.eventId,
-    canonicalClaim: entry.semanticEvent.canonicalClaim || entry.item?.whatChanged || "Current event",
-    reportCount: entry.semanticEvent.reportCount || 1,
-  }, ...suggestions.filter((suggestion) => suggestion.eventId !== entry.semanticEvent.eventId)];
-  for (const suggestion of available) {
-    const option = document.createElement("option");
-    option.value = suggestion.eventId;
-    option.textContent = `${suggestion.canonicalClaim} (${suggestion.reportCount} reports)`;
-    select.append(option);
-  }
-  const novelty = document.createElement("select");
-  novelty.setAttribute("aria-label", "Choose whether this report adds new information");
-  novelty.append(
-    new Option("Same event · repeated report", "duplicate_report"),
-    new Option("Same event · meaningful update", "material_update"),
-  );
-  novelty.value = entry.semanticEvent.relation === "duplicate_report" ? "duplicate_report" : "material_update";
-  const confirm = document.createElement("button");
-  confirm.type = "button";
-  confirm.textContent = "Apply";
-  confirm.addEventListener("click", async () => {
-    confirm.disabled = true;
-    trigger.disabled = true;
-    try {
-      await applySemanticCorrection(entry.id, "same_event", select.value, novelty.value);
-    } catch (error) {
-      showError(error);
-      confirm.disabled = false;
-      trigger.disabled = false;
-    }
-  });
-  const cancel = document.createElement("button");
-  cancel.type = "button";
-  cancel.textContent = "Cancel";
-  cancel.addEventListener("click", () => editor.remove());
-  const split = document.createElement("button");
-  split.type = "button";
-  split.textContent = "Not the same event";
-  split.addEventListener("click", async () => {
-    split.disabled = true;
-    trigger.disabled = true;
-    try {
-      await applySemanticCorrection(entry.id, "not_same_event", "", "");
-    } catch (error) {
-      showError(error);
-      split.disabled = false;
-      trigger.disabled = false;
-    }
-  });
-  editor.append(select, novelty, confirm, split, cancel);
-  controls.append(editor);
-}
+// Frontend feature: timeline-actions.js#showEventSuggestions
 
-async function applySemanticCorrection(timelineId, action, targetEventId, relation = "") {
-  const { correction } = await api(`/api/timeline/${encodeURIComponent(timelineId)}/event-correction`, {
-    method: "POST",
-    body: { action, targetEventId, relation },
-  });
-  await refreshTimeline();
-  showCorrectionNotice(correction);
-}
+// Frontend feature: timeline-actions.js#applySemanticCorrection
 
-function showCorrectionNotice(correction) {
-  const notice = $("#provider-notice");
-  notice.className = "notice notice-complete correction-notice";
-  notice.setAttribute("role", "status");
-  notice.replaceChildren();
-  const message = document.createElement("span");
-  message.textContent = correction.action === "not_same_event"
-    ? "This report now starts a separate event."
-    : correction.toRelation === "material_update"
-      ? "Same event, meaningful update applied."
-      : "Same event, repeated report applied.";
-  const undo = document.createElement("button");
-  undo.type = "button";
-  undo.textContent = "Undo";
-  undo.addEventListener("click", async () => {
-    undo.disabled = true;
-    try {
-      await api(`/api/event-corrections/${encodeURIComponent(correction.id)}/undo`, { method: "POST" });
-      await refreshTimeline();
-      clearNotice();
-    } catch (error) {
-      showError(error);
-    }
-  });
-  notice.append(message, undo, createNoticeDismissButton());
-}
+// Frontend feature: timeline-actions.js#showCorrectionNotice
 
-function buildSourceLink(entry) {
-  const href = originalPostUrl(entry);
-  if (!href) return null;
-  const link = document.createElement("a");
-  link.className = "source-link";
-  configureNativePostLink(link, href, entry.source || entry.item?.source);
-  link.textContent = entry.item?.sourceUrlKind === "native_post" ? "Open native post" : "Open source evidence";
-  return link;
-}
+// Frontend feature: timeline-actions.js#buildSourceLink
 
 function originalPostUrl(entry) {
   return safeSourceUrl(entry.item?.sourceUrl || entry.evidence?.permalink, entry.source || entry.item?.source);
@@ -9131,131 +1878,15 @@ function safeSourceUrl(value, source) {
   return url.href;
 }
 
-function mediaRecaptureReasonForEntry(entry) {
-  const source = entry?.source || entry?.item?.source;
-  if (sourceDescriptor(source)?.playbackRecoveryCapability === "native_post_recapture"
-    && safeSourceUrl(entry?.item?.sourceUrl || entry?.evidence?.permalink, source)
-    && videoPlaybackMissing(entry?.evidence, source, safePlaybackUrl)) return "unresolved_video";
-  return "missing_media";
-}
+// Frontend feature: timeline-actions.js#mediaRecaptureReasonForEntry
 
-function buildMediaRecaptureButton(entry, reason = mediaRecaptureReasonForEntry(entry)) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "recapture-button";
-  button.textContent = reason === "unresolved_video" ? "Recapture video" : "Recapture";
-  button.disabled = Boolean(state.session) || state.mediaRecaptureActive || !collectionModeState(state.bootstrap?.collectionRuntime,state.bootstrap?.bridge?.compatible).canCollect;
-  button.addEventListener("click", () => recaptureMedia(entry, button, "background", reason));
-  return button;
-}
+// Frontend feature: timeline-actions.js#buildMediaRecaptureButton
 
-function buildForegroundRecaptureOffer(entry) {
-  const offer = document.createElement("div");
-  offer.className = "foreground-recapture-offer";
-  offer.setAttribute("aria-label", "Foreground media capture option");
-  const copy = document.createElement("span");
-  copy.textContent = "Still unavailable after a quiet recapture. Try a brief foreground capture? AkuBrowser will return here when it finishes.";
-  const actions = document.createElement("span");
-  actions.className = "foreground-recapture-actions";
-  const accept = document.createElement("button");
-  accept.type = "button";
-  accept.className = "recapture-button foreground-recapture-button";
-  accept.textContent = "Try in foreground";
-  accept.disabled = Boolean(state.session) || state.mediaRecaptureActive || !state.bootstrap?.bridge?.compatible;
-  accept.addEventListener("click", () => recaptureMedia(
-    entry,
-    accept,
-    "foreground",
-    state.foregroundRecaptureOffers.get(entry.id) || "missing_media",
-  ));
-  const dismiss = document.createElement("button");
-  dismiss.type = "button";
-  dismiss.className = "foreground-recapture-dismiss";
-  dismiss.textContent = "Not now";
-  dismiss.addEventListener("click", () => {
-    state.foregroundRecaptureOffers.delete(entry.id);
-    offer.replaceWith(buildMediaRecaptureButton(entry));
-  });
-  actions.append(accept, dismiss);
-  offer.append(copy, actions);
-  return offer;
-}
+// Frontend feature: timeline-actions.js#buildForegroundRecaptureOffer
 
-async function recaptureMedia(entry, button, captureMode, reason = "missing_media") {
-  if(captureMode==='foreground' && state.bootstrap?.collectionRuntime?.effective==='headless') return;
-  if (state.session || state.mediaRecaptureActive || !collectionModeState(state.bootstrap?.collectionRuntime,state.bootstrap?.bridge?.compatible).canCollect) return;
-  state.mediaRecaptureActive = true;
-  if (button) {
-    button.disabled = true;
-    button.textContent = captureMode === "foreground" ? "Capturing in foreground..." : "Recapturing...";
-  }
-  syncRunButtons();
-  clearNotice();
-  try {
-    const { recapture } = await api(`/api/timeline/${encodeURIComponent(entry.id)}/recapture`, {
-      method: "POST",
-      // The original missing-media request used body: { captureMode }.
-      // A typed reason now reuses the same bounded recapture transport.
-      body: { captureMode, reason },
-    });
-    const transport=mediaRecaptureTransport(recapture);
-    const completed = transport==='sidecar' ? await waitForMediaRecapture(recapture.id,api) : await dispatchMediaRecapture(recapture.id);
-    const bridgeCollector = transport === 'bridge' || recapture?.payload?.captureCollector?.backend === 'bridge';
-    if (captureMode === "background" && completed?.outcome !== "recovered" && bridgeCollector) {
-      state.foregroundRecaptureOffers.set(entry.id, reason);
-      await refreshTimeline();
-      return;
-    }
-    state.foregroundRecaptureOffers.delete(entry.id);
-    await refreshTimeline();
-    const notice = $("#provider-notice");
-    notice.className = "notice notice-complete";
-    notice.setAttribute("role", "status");
-    setNoticeText(notice, completed?.outcome === "recovered"
-      ? reason === "playback_error" || reason === "unresolved_video"
-        ? "Playback refreshed from the native post. Select play again."
-        : "Media recaptured from the native post."
-      : transport==='sidecar' ? "Media is still unavailable after recapture." : "Media is still unavailable after the foreground capture.");
-  } catch (error) {
-    showError(error);
-    if (button) {
-      button.disabled = false;
-      button.textContent = captureMode === "foreground" ? "Try in foreground" : "Recapture";
-    }
-  } finally {
-    state.mediaRecaptureActive = false;
-    syncRunButtons();
-  }
-}
+// Frontend feature: timeline-actions.js#recaptureMedia
 
-function dispatchMediaRecapture(recaptureId) {
-  return new Promise((resolve, reject) => {
-    const timeout = window.setTimeout(() => {
-      window.removeEventListener("message", onResult);
-      reject(new Error("AkuBridge media recapture timed out."));
-    }, 70_000);
-    function finish(callback, value) {
-      window.clearTimeout(timeout);
-      window.removeEventListener("message", onResult);
-      callback(value);
-    }
-    function onResult(event) {
-      if (event.source !== window || event.origin !== endpoint || event.data?.recaptureId !== recaptureId) return;
-      if (event.data.type === "AKU_BROWSER_MEDIA_RECAPTURE_COMPLETED") {
-        finish(resolve, event.data.recapture);
-      } else if (event.data.type === "AKU_BROWSER_MEDIA_RECAPTURE_FAILED") {
-        finish(reject, new Error(event.data.message || "AkuBridge media recapture failed."));
-      }
-    }
-    window.addEventListener("message", onResult);
-    window.postMessage({
-      type: "AKU_BROWSER_MEDIA_RECAPTURE",
-      endpoint,
-      token: state.bootstrap.bridgeToken,
-      recaptureId,
-    }, endpoint);
-  });
-}
+// Frontend feature: timeline-actions.js#dispatchMediaRecapture
 
 function feedbackButton(label) {
   const button = document.createElement("button");
@@ -9274,263 +1905,45 @@ function logNativePostTrace(trace, phase, details = {}) {
   else logInteractionTrace("native_post", trace, phase, details);
 }
 
-function openMedia(media, index) {
-  state.media = media;
-  state.mediaIndex = index;
-  state.mediaZoomPreset = "fit";
-  state.mediaZoomFactor = 1;
-  state.mediaZoomManual = false;
-  const viewer = $("#media-viewer");
-  viewer.showModal();
-  renderMedia();
-  viewer.focus({ preventScroll: true });
-}
+// Frontend feature: timeline-media.js#openMedia
 
-function moveMedia(delta) {
-  if (!state.media.length) return;
-  state.mediaIndex = moveTimelineCarouselIndex(state.mediaIndex, delta, state.media.length);
-  renderMedia();
-}
+// Frontend feature: timeline-media.js#moveMedia
 
-function renderMedia() {
-  endMediaPan();
-  state.mediaZoomManual = false;
-  const image = $("#media-viewer-image");
-  image.removeAttribute("style");
-  $("#media-viewer-surface").removeAttribute("style");
-  image.src = state.media[state.mediaIndex] ?? "";
-  $("#media-viewer-canvas").scrollTo(0, 0);
-  syncMediaPanAffordance();
-  $("#media-viewer-count").textContent = `${state.mediaIndex + 1} of ${state.media.length}`;
-  $("#media-viewer-previous").disabled = state.media.length < 2 || state.mediaIndex === 0;
-  $("#media-viewer-next").disabled = state.media.length < 2 || state.mediaIndex === state.media.length - 1;
-}
+// Frontend feature: timeline-media.js#renderMedia
 
-function mediaZoomMetrics() {
-  const canvas = $("#media-viewer-canvas");
-  const image = $("#media-viewer-image");
-  if (!canvas.clientWidth || !canvas.clientHeight || !image.naturalWidth || !image.naturalHeight) return null;
-  const fitScale = Math.min(canvas.clientWidth / image.naturalWidth, canvas.clientHeight / image.naturalHeight);
-  return {
-    canvas,
-    image,
-    surface: $("#media-viewer-surface"),
-    fitScale,
-    fitWidth: image.naturalWidth * fitScale,
-    fitHeight: image.naturalHeight * fitScale,
-  };
-}
+// Frontend feature: timeline-media.js#mediaZoomMetrics
 
-function applyMediaZoom(factor, focalPoint = null) {
-  const metrics = mediaZoomMetrics();
-  if (!metrics) return;
-  const { canvas, image, surface, fitScale, fitWidth, fitHeight } = metrics;
-  const bounded = Math.min(12, Math.max(0.1, factor));
-  const focusX = focalPoint?.x ?? canvas.clientWidth / 2;
-  const focusY = focalPoint?.y ?? canvas.clientHeight / 2;
-  const oldWidth = Math.max(canvas.scrollWidth, canvas.clientWidth);
-  const oldHeight = Math.max(canvas.scrollHeight, canvas.clientHeight);
-  const ratioX = (canvas.scrollLeft + focusX) / oldWidth;
-  const ratioY = (canvas.scrollTop + focusY) / oldHeight;
-  const width = fitWidth * bounded;
-  const height = fitHeight * bounded;
-  image.style.width = `${width}px`;
-  image.style.height = `${height}px`;
-  surface.style.width = `${Math.max(canvas.clientWidth, width)}px`;
-  surface.style.height = `${Math.max(canvas.clientHeight, height)}px`;
-  state.mediaZoomFactor = bounded;
-  $("#media-viewer-scale").textContent = `${Math.round(fitScale * bounded * 100)}%`;
-  canvas.scrollLeft = ratioX * Math.max(canvas.scrollWidth, canvas.clientWidth) - focusX;
-  canvas.scrollTop = ratioY * Math.max(canvas.scrollHeight, canvas.clientHeight) - focusY;
-  syncMediaPanAffordance();
-}
+// Frontend feature: timeline-media.js#applyMediaZoom
 
-function syncMediaPanAffordance() {
-  const canvas = $("#media-viewer-canvas");
-  const pannable = mediaViewerCanPan(canvas);
-  canvas.classList.toggle("is-pannable", pannable);
-  if (!pannable && state.mediaPanPointerId !== null) endMediaPan();
-}
+// Frontend feature: timeline-media.js#syncMediaPanAffordance
 
-function mediaPanStartedOnScrollbar(event, canvas) {
-  const rect = canvas.getBoundingClientRect();
-  const verticalGutter = Math.max(0, canvas.offsetWidth - canvas.clientWidth);
-  const horizontalGutter = Math.max(0, canvas.offsetHeight - canvas.clientHeight);
-  return (verticalGutter > 0 && event.clientX >= rect.right - verticalGutter)
-    || (horizontalGutter > 0 && event.clientY >= rect.bottom - horizontalGutter);
-}
+// Frontend feature: timeline-media.js#mediaPanStartedOnScrollbar
 
-function beginMediaPan(event) {
-  const canvas = $("#media-viewer-canvas");
-  if (!$("#media-viewer").open || event.button !== 0 || !event.isPrimary) return;
-  if (!mediaViewerCanPan(canvas) || mediaPanStartedOnScrollbar(event, canvas)) return;
-  state.mediaPanPointerId = event.pointerId;
-  state.mediaPanStartX = event.clientX;
-  state.mediaPanStartY = event.clientY;
-  state.mediaPanStartLeft = canvas.scrollLeft;
-  state.mediaPanStartTop = canvas.scrollTop;
-  canvas.classList.add("is-panning");
-  canvas.setPointerCapture?.(event.pointerId);
-  event.preventDefault();
-}
+// Frontend feature: timeline-media.js#beginMediaPan
 
-function moveMediaPan(event) {
-  if (state.mediaPanPointerId !== event.pointerId) return;
-  const canvas = $("#media-viewer-canvas");
-  const position = mediaViewerPanPosition({
-    startLeft: state.mediaPanStartLeft,
-    startTop: state.mediaPanStartTop,
-    startX: state.mediaPanStartX,
-    startY: state.mediaPanStartY,
-    x: event.clientX,
-    y: event.clientY,
-  });
-  if (!position) return;
-  canvas.scrollLeft = position.left;
-  canvas.scrollTop = position.top;
-  event.preventDefault();
-}
+// Frontend feature: timeline-media.js#moveMediaPan
 
-function endMediaPan(event = null) {
-  if (event && state.mediaPanPointerId !== event.pointerId) return;
-  const canvas = $("#media-viewer-canvas");
-  const pointerId = state.mediaPanPointerId;
-  if (pointerId !== null && canvas.hasPointerCapture?.(pointerId)) {
-    canvas.releasePointerCapture?.(pointerId);
-  }
-  state.mediaPanPointerId = null;
-  canvas.classList.remove("is-panning");
-}
+// Frontend feature: timeline-media.js#endMediaPan
 
-function syncMediaZoomPresetControl() {
-  const button = $("#media-viewer-zoom");
-  const target = state.mediaZoomPreset === "fit" ? "zoom" : "fit";
-  button.textContent = target === "fit" ? "Fit" : "Zoom";
-  button.setAttribute("aria-label", target === "fit" ? "Snap image to fit" : "Snap image to actual size");
-  button.title = target === "fit" ? "Snap image to fit" : "Snap image to actual size";
-}
+// Frontend feature: timeline-media.js#syncMediaZoomPresetControl
 
-function snapMediaZoom(preset) {
-  const metrics = mediaZoomMetrics();
-  state.mediaZoomPreset = preset === "zoom" ? "zoom" : "fit";
-  state.mediaZoomManual = false;
-  syncMediaZoomPresetControl();
-  if (!metrics) return;
-  const target = state.mediaZoomPreset === "zoom" ? 1 / metrics.fitScale : 1;
-  applyMediaZoom(target);
-}
+// Frontend feature: timeline-media.js#snapMediaZoom
 
-function adjustMediaZoom(multiplier, focalPoint = null) {
-  if (!mediaZoomMetrics()) return;
-  state.mediaZoomManual = true;
-  applyMediaZoom(state.mediaZoomFactor * multiplier, focalPoint);
-}
+// Frontend feature: timeline-media.js#adjustMediaZoom
 
-function showSessionFailure(session) {
-  const failedRuns = (session.runs ?? []).filter((run) => ["failed", "cancelled"].includes(run.status));
-  const failedSources = failedRuns.map((run) => sourceLabel(run.source)).join(" and ");
-  const sourcesUnavailable = failedRuns.length > 0 && failedRuns.every((run) => run.error?.code === "source_unavailable");
-  const windowsSecurityBlocked = failedRuns.some(isWindowsSecurityRuntimeFailure);
-  const panel = $("#failure-panel");
-  const runtimeRecovery = $("#failure-runtime-recovery");
-  $("#retry-button").dataset.action = "return";
-  $("#retry-button").textContent = "Return to timeline";
-  runtimeRecovery.classList.toggle("hidden", !windowsSecurityBlocked);
-  if (windowsSecurityBlocked) {
-    $("#failure-manual-bundle-download").href = matchingWindowsPortableBundleURL();
-  }
-  panel.classList.toggle("failure-panel-warning", sourcesUnavailable || windowsSecurityBlocked);
-  panel.setAttribute("role", sourcesUnavailable ? "status" : "alert");
-  $("#failure-label").textContent = windowsSecurityBlocked
-    ? "WINDOWS SECURITY BLOCKED RUNTIME"
-    : sourcesUnavailable ? "SOURCE UNAVAILABLE" : "RUN STOPPED";
-  $("#failure-title").textContent = windowsSecurityBlocked
-    ? "AkuSidecar could not start Codex with normal file access"
-    : sourcesUnavailable
-      ? `${failedSources || "One source"} is temporarily unavailable`
-      : "The bounded snapshot could not finish";
-  if (windowsSecurityBlocked) {
-    $("#failure-message").textContent = "The local runtime is installed and healthy, but Avast or another Windows security product denied the Codex process access to its local state. Repeating Update now without restarting AkuSidecar will fail again.";
-  } else if (sourcesUnavailable) {
-    $("#failure-message").textContent = `${failedSources} reported a temporary service issue. AkuBrowser kept the validated results from every source that completed; retry after the source recovers.`;
-  } else if (session.status === "partial") {
-    $("#failure-message").textContent = `${failedSources || "One source"} could not finish. AkuBrowser retained and ordered the validated result from the source that completed.`;
-  } else {
-    $("#failure-message").textContent = session.error?.message
-      || failedRuns[0]?.error?.message
-      || "The session stopped before an active source could finish.";
-  }
-  panel.classList.remove("hidden");
-}
+// Frontend feature: session-ui.js#showSessionFailure
 
-function isWindowsSecurityRuntimeFailure(run) {
-  if (run?.error?.code !== "reasoning_failed") return false;
-  const message = String(run.error.message || "").toLowerCase();
-  const accessDenied = message.includes("access is denied") || message.includes("os error 5") || message.includes("spawn eperm");
-  const codexState = message.includes("codex app server") || message.includes("sqlite state runtime") || message.includes("state runtime");
-  return accessDenied && codexState;
-}
+// Frontend feature: session-ui.js#isWindowsSecurityRuntimeFailure
 
-function matchingWindowsPortableBundleURL() {
-  const version = String(state.bootstrap?.version || "").trim();
-  if (!/^\d+\.\d+\.\d+$/.test(version)) {
-    return "https://github.com/abangkis/AkuBrowser/releases/latest";
-  }
-  return `https://github.com/abangkis/AkuBrowser/releases/download/v${version}/AkuBrowser-${version}-windows-x64.zip`;
-}
+// Frontend feature: session-ui.js#matchingWindowsPortableBundleURL
 
-function firstRunCalibrationPending() {
-  return state.bootstrap?.calibration?.firstRunStatus === "pending";
-}
+// Frontend feature: session-ui.js#firstRunCalibrationPending
 
-function showCalibrationRetry(session) {
-  clearNotice();
-  setPill("#sidecar-status", "AkuSidecar ready", "ok");
-  const failedSources = (session?.runs ?? [])
-    .filter((run) => run.status === "failed")
-    .map((run) => sourceLabel(run.source));
-  const panel = $("#failure-panel");
-  $("#failure-runtime-recovery").classList.add("hidden");
-  panel.classList.add("failure-panel-warning");
-  panel.setAttribute("role", "status");
-  $("#failure-label").textContent = "CALIBRATION WAITING";
-  $("#failure-title").textContent = "Check once more to start calibration";
-  $("#failure-message").textContent = failedSources.length
-    ? `${failedSources.join(" and ")} did not produce a validated entry in this check. Choose Update now again; captured evidence remains available in Update Inbox.`
-    : "This check did not produce a validated entry for calibration. Choose Update now again to collect another bounded sample.";
-  $("#retry-button").dataset.action = "retry-update";
-  $("#retry-button").textContent = "Update now again";
-  panel.classList.remove("hidden");
-}
+// Frontend feature: session-ui.js#showCalibrationRetry
 
-function showSessionOutcome(session) {
-  if (!["completed", "partial"].includes(session.status)) return;
-  const additions = session.itemCount ?? session.items?.length ?? 0;
-  if (session.delivery === "prepared") {
-    const notice = $("#provider-notice");
-    notice.className = "notice notice-complete";
-    notice.setAttribute("role", "status");
-    setNoticeText(notice, additions > 0
-      ? `${session.trigger === "scheduler" ? "Auto Update" : "AkuBrowser"} prepared ${additions} item${additions === 1 ? "" : "s"}. Load it from the Timeline header or continue from the finish line when you are ready.`
-      : "Batch preparation completed without a new prepared batch. The diagnostic trace remains in Update Inbox.");
-    return;
-  }
-  if (additions > 0) {
-    clearNotice();
-    return;
-  }
-  const notice = $("#provider-notice");
-  notice.className = "notice notice-complete";
-  notice.setAttribute("role", "status");
-  setNoticeText(notice, "Update complete: 0 additions. No captured candidate cleared the new, material, and trusted-evidence boundary.");
-}
+// Frontend feature: session-ui.js#showSessionOutcome
 
-function hideFailure() {
-  $("#failure-panel").classList.add("hidden");
-  $("#failure-runtime-recovery").classList.add("hidden");
-  $("#retry-button").dataset.action = "return";
-  $("#retry-button").textContent = "Return to timeline";
-}
+// Frontend feature: session-ui.js#hideFailure
 
 function setPill(selector, text, tone) {
   const node = $(selector);
@@ -9628,132 +2041,7 @@ function sourceDescriptor(source) {
   return sourceDescriptors().find((descriptor) => descriptor.id === source);
 }
 
-function renderSourceControls() {
-  const onboarding = $("#onboarding-source-options");
-  const settings = $("#settings-source-options");
-  onboarding.replaceChildren();
-  settings.replaceChildren();
-  for (const descriptor of sourceDescriptors()) {
-    const label = document.createElement("label");
-    label.className = "onboarding-source-option";
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.value = descriptor.id;
-    input.checked = Boolean(descriptor.defaultActive);
-    input.addEventListener("change", updateOnboardingSummary);
-    const card = document.createElement("span");
-    card.className = "onboarding-source-card";
-    const icon = document.createElement("span");
-    icon.className = "onboarding-source-icon";
-    icon.setAttribute("aria-hidden", "true");
-    icon.style.background = descriptor.iconBackground;
-    icon.style.color = descriptor.iconForeground;
-    icon.textContent = descriptor.iconText;
-    const copy = document.createElement("span");
-    copy.className = "onboarding-source-copy";
-    const strong = document.createElement("strong");
-    strong.textContent = descriptor.displayName;
-    const small = document.createElement("small");
-    small.textContent = descriptor.onboardingDescription;
-    copy.append(strong, small);
-    const check = document.createElement("span");
-    check.className = "onboarding-source-check";
-    check.setAttribute("aria-hidden", "true");
-    check.textContent = "✓";
-    card.append(icon, copy, check);
-    label.append(input, card);
-    const onboardingAccess = document.createElement("div");
-    onboardingAccess.className = "onboarding-source-access";
-    const onboardingStatuses = document.createElement("span");
-    onboardingStatuses.className = "onboarding-source-statuses";
-    const onboardingReadiness = document.createElement("small");
-    onboardingReadiness.dataset.onboardingSourceReadiness = descriptor.id;
-    onboardingReadiness.className = "source-readiness-status";
-    onboardingReadiness.textContent = "Access: checking";
-    const onboardingSession = document.createElement("small");
-    onboardingSession.dataset.onboardingSourceSessionReadiness = descriptor.id;
-    onboardingSession.className = "source-session-status";
-    onboardingSession.textContent = "Session: checking existing tabs";
-    onboardingStatuses.append(onboardingReadiness, onboardingSession);
-    const onboardingOpen = document.createElement("button");
-    onboardingOpen.type = "button";
-    onboardingOpen.className = "secondary-button source-open-button";
-    onboardingOpen.dataset.onboardingSourceOpen = descriptor.id;
-    onboardingOpen.setAttribute("aria-label", `Open ${descriptor.displayName} source`);
-    onboardingOpen.textContent = "Open source";
-    onboardingOpen.addEventListener("click", () => openSourceFromSettings(descriptor.id));
-    onboardingAccess.append(onboardingStatuses, onboardingOpen);
-    const onboardingGroup = document.createElement("div");
-    onboardingGroup.className = "onboarding-source-group";
-    onboardingGroup.append(label, onboardingAccess);
-    onboarding.append(onboardingGroup);
-
-    const settingsLabel = document.createElement("div");
-    settingsLabel.className = "settings-row source-settings-row";
-    const settingsCopy = document.createElement("span");
-    settingsCopy.className = "settings-copy";
-    const settingsStrong = document.createElement("strong");
-    settingsStrong.textContent = descriptor.displayName;
-    const settingsSmall = document.createElement("small");
-    settingsSmall.textContent = `Use the ${descriptor.displayName} feed during the next update; sign-in is checked separately.`;
-    const readiness = document.createElement("small");
-    readiness.dataset.sourceReadiness = descriptor.id;
-    readiness.className = "source-readiness-status";
-    readiness.textContent = "Checking access";
-    const sessionStatus = document.createElement("small");
-    sessionStatus.dataset.sourceSessionReadiness = descriptor.id;
-    sessionStatus.className = "source-session-status";
-    sessionStatus.textContent = "Session: checking existing tabs";
-    settingsCopy.append(settingsStrong, settingsSmall, readiness);
-    settingsCopy.append(sessionStatus);
-    const controls = document.createElement("span");
-    controls.className = "source-settings-control";
-    const activeLabel = document.createElement("label");
-    activeLabel.className = "source-active-control";
-    const activeText = document.createElement("span");
-    activeText.textContent = "Active";
-    const settingsInput = document.createElement("input");
-    settingsInput.type = "checkbox";
-    settingsInput.value = descriptor.id;
-    settingsInput.setAttribute("aria-label", `Use ${descriptor.displayName} during updates`);
-    activeLabel.append(settingsInput, activeText);
-
-    const hydrationLabel = document.createElement("label");
-    hydrationLabel.className = "source-hydration-input";
-    const hydrationText = document.createElement("span");
-    hydrationText.textContent = "Hydration";
-    const hydrationField = document.createElement("span");
-    const hydrationInput = document.createElement("input");
-    hydrationInput.type = "number";
-    hydrationInput.min = String(descriptor.hydrationTimeoutMinMs / 1000);
-    hydrationInput.max = String(descriptor.hydrationTimeoutMaxMs / 1000);
-    hydrationInput.step = "1";
-    hydrationInput.dataset.sourceHydration = descriptor.id;
-    hydrationInput.setAttribute("aria-label", `${descriptor.displayName} hydration wait in seconds`);
-    const hydrationUnit = document.createElement("span");
-    hydrationUnit.textContent = "s";
-    hydrationField.append(hydrationInput, hydrationUnit);
-    hydrationLabel.append(hydrationText, hydrationField);
-
-    const reset = document.createElement("button");
-    reset.type = "button";
-    reset.textContent = "Reset to default";
-    reset.addEventListener("click", () => {
-      hydrationInput.value = String(descriptor.hydrationTimeoutDefaultMs / 1000);
-    });
-    const openSource = document.createElement("button");
-    openSource.type = "button";
-    openSource.className = "secondary-button source-open-button";
-    openSource.dataset.sourceOpen = descriptor.id;
-    openSource.textContent = "Open source";
-    openSource.addEventListener("click", () => openSourceFromSettings(descriptor.id));
-    controls.append(activeLabel, hydrationLabel, openSource, reset);
-    settingsLabel.append(settingsCopy, controls);
-    settings.append(settingsLabel);
-  }
-  renderSourceSessionReadiness();
-  renderOnboardingSourceReadiness();
-}
+// Frontend feature: onboarding-ui.js#renderSourceControls
 
 function humanize(value) {
   if (!value) return "";

@@ -1,9 +1,10 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
-const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+const app = readFrontendAppSource();
 const functionBetween = (start, end) => app.slice(app.indexOf(start), app.indexOf(end, app.indexOf(start)));
 
 test("daily action transport sends the explicitly pinned process epoch", async () => {

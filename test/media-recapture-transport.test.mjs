@@ -1,3 +1,4 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -19,7 +20,7 @@ test('hybrid Facebook Browser job is polled without duplicate frontend dispatch'
    {...job,payload:{captureAdmission:job.payload.captureAdmission}}])assert.throws(()=>mediaRecaptureTransport(bad));
 });
 test('actual UI keeps foreground fallback for internally dispatched Facebook Bridge jobs',async()=>{
- const app=await readFile(new URL('../internal/httpapi/web/app.js',import.meta.url),'utf8');
+ const app=await readFrontendAppSource();
  const fn=app.slice(app.indexOf('async function recaptureMedia('),app.indexOf('\nfunction dispatchMediaRecapture('));
  const calls=[],errors=[];let refreshed=0;
  const state={session:null,mediaRecaptureActive:false,bootstrap:{bridge:{compatible:false},collectionRuntime:{available:true,state:'ready',effective:'headless'}},foregroundRecaptureOffers:new Map()};
@@ -33,7 +34,7 @@ test('actual UI keeps foreground fallback for internally dispatched Facebook Bri
  assert.equal(state.mediaRecaptureActive,false);assert.deepEqual(errors,[]);
 });
 test('actual UI recapture function completes headless jobs without Bridge and refreshes timeline',async()=>{
- const app=await readFile(new URL('../internal/httpapi/web/app.js',import.meta.url),'utf8');
+ const app=await readFrontendAppSource();
  const fn=app.slice(app.indexOf('async function recaptureMedia('),app.indexOf('\nfunction dispatchMediaRecapture('));
  for(const outcome of ['recovered','unavailable']){
   const calls=[],notices=[],errors=[];let refreshed=0;

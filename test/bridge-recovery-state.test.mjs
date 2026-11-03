@@ -1,3 +1,4 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -7,7 +8,7 @@ import { bridgeRecoveryState, bridgeReloadVerified, bridgeCaptureBusy } from "..
 const identity = { runtimeRevision: "source-adapters-v116", buildId: "aku-bridge-0.9.2-source-adapters-v116", focusPolicyRevision: "quiet-containment-only-v2", captureSurfacePolicy: { schema: "aku.surface-policy.v1", fingerprint: "a".repeat(64) } };
 const healthy = () => ({ state: "ready", compatible: true, expected: { ...identity }, actual: { ...identity, extensionVersion: "0.9.2" } });
 const drifted = () => ({ ...healthy(), state: "degraded", actual: { ...identity, runtimeRevision: "source-adapters-v108", buildId: "aku-bridge-0.9.2-source-adapters-v108" } });
-const source = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+const source = readFrontendAppSource();
 const render = source.slice(source.indexOf("function renderBridge("), source.indexOf("function configureBackgroundBridge("));
 const reload = source.slice(source.indexOf("async function reloadIncompatibleBridge("), source.indexOf("async function refreshReasoningProviderReadiness("));
 

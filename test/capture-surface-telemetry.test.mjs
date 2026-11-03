@@ -1,9 +1,10 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
-const source = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+const source = readFrontendAppSource();
 const render = source.slice(source.indexOf("function buildCaptureSurfaceTelemetry("),
   source.indexOf("function buildAcquisitionIdentityTelemetry("));
 function fixture() {

@@ -1,3 +1,4 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -6,7 +7,7 @@ import { isVerifiedSurfaceCleanupReceipt } from "../internal/httpapi/web/capture
 import { releaseCompletedSourceSurfaces, sessionUsesBrowserCapture, runUsesBrowserCapture } from "../internal/httpapi/web/capture-surface-release-barrier.js";
 import { isVerifiedSurfaceCleanupReceipt as isVerifiedBridgeCleanupReceipt } from "../../AkuBridge/surface-cleanup-receipt.js";
 
-const appSource = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+const appSource = readFrontendAppSource();
 const workerSource = readFileSync(new URL("../../AkuBridge/service-worker.js", import.meta.url), "utf8");
 
 function extractRegion(source, startMarker, endMarker) {

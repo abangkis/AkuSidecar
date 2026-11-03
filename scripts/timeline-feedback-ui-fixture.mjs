@@ -4,12 +4,13 @@ import { createServer } from "node:http";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { launchChrome } from "../internal/collection/headless/worker/chrome.mjs";
+import { readFrontendAppSource } from "../test/fixtures/frontend-source.mjs";
 
 const [chromePath, root, artifacts, sourcePath] = process.argv.slice(2);
 assert.ok(chromePath && root && artifacts);
 await mkdir(artifacts, { recursive: true });
 const web = resolve(import.meta.dirname, "../internal/httpapi/web");
-const app = await readFile(sourcePath || join(web, "app.js"), "utf8");
+const app = sourcePath ? await readFile(sourcePath, "utf8") : readFrontendAppSource();
 const extracted = app.includes('import { createTimelineFeedbackUI } from "./timeline-feedback.js";');
 function source(from, to) {
   const start = app.indexOf(from), end = app.indexOf(to, start + from.length);

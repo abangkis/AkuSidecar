@@ -1,10 +1,11 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const script = readFileSync(new URL("../internal/httpapi/web/native-post-diagnostics.js", import.meta.url), "utf8");
-const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+const app = readFrontendAppSource();
 
 function load(storage, messages = []) {
   const window = { dispatchEvent() {} };

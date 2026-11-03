@@ -1,3 +1,4 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
@@ -33,7 +34,7 @@ test("idle gate coalesces waiters, delays during repeated scrolls, and resumes o
   assert.ok(cancels >= 2);
 });
 
-const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+const app = readFrontendAppSource();
 test("scroll shares one geometry snapshot across collision placement and Related Context", () => {
   let reads = 0; let shared;
   const tabs = Array.from({ length: 50 }, (_, id) => ({ dataset: { timelineContentContextId: String(id) },

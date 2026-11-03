@@ -1,9 +1,10 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import vm from "node:vm";
 
-const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+const app = readFrontendAppSource();
 const moduleURL = new URL("../internal/httpapi/web/timeline-feedback.js", import.meta.url);
 const extracted = existsSync(moduleURL) ? await import(moduleURL) : null;
 function source(from, to) {

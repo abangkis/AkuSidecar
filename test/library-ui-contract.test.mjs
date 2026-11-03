@@ -1,9 +1,10 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const index = readFileSync(new URL("../internal/httpapi/web/index.html", import.meta.url), "utf8");
-const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+const app = readFrontendAppSource();
 const timelineFeedback = readFileSync(new URL("../internal/httpapi/web/timeline-feedback.js", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../internal/httpapi/web/styles.css", import.meta.url), "utf8");
 

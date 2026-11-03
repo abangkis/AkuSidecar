@@ -1,3 +1,4 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -24,7 +25,7 @@ test("scroll restoration uses current position in the render task and explicitly
 });
 
 test("actual refresh preserves user's movement during network acquisition, with no delayed restore callback", async () => {
-  const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+  const app = readFrontendAppSource();
   let respond; const restored = []; let rendered = 0;
   const window = { scrollY: 900, scrollTo: value => restored.push(value) };
   const context = { state: {}, window,

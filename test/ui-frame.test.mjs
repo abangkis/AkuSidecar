@@ -1,3 +1,4 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -27,7 +28,7 @@ test("a scroll burst coalesces tasks and defers requests made during a flush", (
 });
 
 test("Related Context measures all cards before writing and skips other views", () => {
-  const app = fs.readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+  const app = readFrontendAppSource();
   const start = app.indexOf("function measureTimelineContentContextTabs() {");
   const end = app.indexOf("\nfunction timelineContentContextFeedbackKey", start);
   assert.ok(start >= 0 && end > start);

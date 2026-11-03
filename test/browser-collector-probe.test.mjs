@@ -1,3 +1,4 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -17,7 +18,7 @@ test("only a ready Browser collector accepts passive probes", () => {
 });
 
 test("actual UI ping and source probe do not queue requests or timeout notices for a reader", () => {
-  const app = fs.readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+  const app = readFrontendAppSource();
   const ping = app.slice(app.indexOf("function pingBridge() {"), app.indexOf("let lastBridgeReturnRefreshAt"));
   const start = app.indexOf("function requestSourceSessionReadiness() {");
   const probe = app.slice(start, app.indexOf("function openSourceFromSettings", start));

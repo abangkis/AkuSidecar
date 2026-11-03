@@ -1,3 +1,4 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -92,7 +93,7 @@ test("unavailable header age retains source text without fabricating a time", ()
 });
 
 test("minute refresh advances mounted header ages and retains metadata", () => {
-  const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+  const app = readFrontendAppSource();
   const refresh = app.slice(app.indexOf("function refreshVisiblePostFreshness()"), app.indexOf("window.setInterval(refreshVisiblePostFreshness"));
   const headers = new WeakMap();
   const fixtures = [

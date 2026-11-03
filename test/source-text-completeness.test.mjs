@@ -1,3 +1,4 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -21,7 +22,7 @@ test('source cards omit the incomplete-text notice and preserve expansion for lo
     append(...children) { this.children.push(...children); }
     setAttribute() {} addEventListener() {}
   }
-  const app = readFileSync(new URL('../internal/httpapi/web/app.js', import.meta.url), 'utf8');
+  const app = readFrontendAppSource();
   const card = app.slice(app.indexOf('function buildSourceCard('), app.indexOf('function applyPostFreshness('));
   const expander = app.slice(app.indexOf('function buildExpandableText('), app.indexOf('function buildMedia('));
   const recaptureReason = app.slice(app.indexOf('function mediaRecaptureReasonForEntry('), app.indexOf('function buildMediaRecaptureButton('));

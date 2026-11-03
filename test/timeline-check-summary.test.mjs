@@ -1,9 +1,10 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { formatTimelineCheckSummary } from "../internal/httpapi/web/timeline-check-summary.js";
 
-const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+const app = readFrontendAppSource();
 
 function diagnostics(overrides = {}) {
   return {

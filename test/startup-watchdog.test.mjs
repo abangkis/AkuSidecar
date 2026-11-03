@@ -1,3 +1,4 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -104,7 +105,7 @@ test("restoration timeout is distinct from module failure and ready clears liste
 test("watchdog loads independently before the app module and app confirms render milestones", () => {
   const html = readFileSync(new URL("../internal/httpapi/web/index.html", import.meta.url), "utf8");
   assert.ok(html.indexOf('<script src="/startup-watchdog.js') < html.indexOf('<script type="module" src="/app.js'));
-  const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+  const app = readFrontendAppSource();
   for (const stage of ["restoring", "rendering", "ready"]) {
     assert.ok(app.includes(`new CustomEvent("aku-startup-stage", { detail: "${stage}" })`));
   }

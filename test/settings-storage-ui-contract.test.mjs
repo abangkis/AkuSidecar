@@ -1,9 +1,10 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const html = readFileSync(new URL("../internal/httpapi/web/index.html", import.meta.url), "utf8");
-const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+const app = readFrontendAppSource();
 
 test("Settings storage report separates retention status from database repair and cleanup actions", () => {
   assert.match(html, /<legend>Storage<\/legend>/);

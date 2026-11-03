@@ -1,3 +1,4 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
@@ -79,7 +80,7 @@ test("conversation cues use safe text, preserve older-check provenance and navig
   assert.equal(card.children[0].children[0].textContent, "Reply · parent not in this view");
 });
 
-const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+const app = readFrontendAppSource();
 function render(items, mode = "drawer") {
   const elements = new Map();
   const $ = selector => { if (!elements.has(selector)) elements.set(selector, element()); return elements.get(selector); };

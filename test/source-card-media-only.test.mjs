@@ -1,3 +1,4 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -16,7 +17,7 @@ class Element {
   addEventListener() {}
 }
 
-const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+const app = readFrontendAppSource();
 const slice = (from, to) => app.slice(app.indexOf(`function ${from}(`), app.indexOf(`function ${to}(`));
 function renderer() {
   const context = vm.createContext({

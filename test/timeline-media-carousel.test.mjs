@@ -1,3 +1,4 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -76,7 +77,7 @@ test("carousel dot window follows the current slide in long galleries", () => {
 });
 
 test("carousel swipe capture stays on horizontal viewport movement and preserves taps", async () => {
-  const appSource = await readFile(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+  const appSource = await readFrontendAppSource();
 
   assert.match(appSource, /viewport\.addEventListener\("pointerdown"/);
   assert.match(appSource, /viewport\.addEventListener\("pointermove"/);
@@ -107,7 +108,7 @@ test("media viewer pans only when zoomed content exceeds its canvas", () => {
 });
 
 test("media viewer uses pointer capture for click-and-drag panning", async () => {
-  const appSource = await readFile(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+  const appSource = await readFrontendAppSource();
   const styleSource = await readFile(new URL("../internal/httpapi/web/styles.css", import.meta.url), "utf8");
 
   assert.match(appSource, /\$\("#media-viewer-canvas"\)\.addEventListener\("pointerdown", beginMediaPan\)/);
@@ -117,7 +118,7 @@ test("media viewer uses pointer capture for click-and-drag panning", async () =>
 });
 
 test("media viewer arrows use bounded timeline navigation at both ends", async () => {
-  const appSource = await readFile(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+  const appSource = await readFrontendAppSource();
 
   assert.match(appSource, /state\.mediaIndex = moveTimelineCarouselIndex\(state\.mediaIndex, delta, state\.media\.length\)/);
   assert.match(appSource, /\$\("#media-viewer-previous"\)\.disabled = state\.media\.length < 2 \|\| state\.mediaIndex === 0/);
@@ -125,7 +126,7 @@ test("media viewer arrows use bounded timeline navigation at both ends", async (
 });
 
 test("media viewer keeps focus on the dialog and routes arrow keys to navigation", async () => {
-  const appSource = await readFile(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+  const appSource = await readFrontendAppSource();
   const indexSource = await readFile(new URL("../internal/httpapi/web/index.html", import.meta.url), "utf8");
 
   assert.match(indexSource, /<dialog id="media-viewer"[^>]*tabindex="-1"/);

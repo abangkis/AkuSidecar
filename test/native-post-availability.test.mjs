@@ -1,3 +1,4 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -17,7 +18,7 @@ test("hybrid collection waits until session cleanup and profile leases finish", 
 });
 
 test("actual native link blocks collection clicks and concurrent opens, then restores after completion", async () => {
-  const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+  const app = readFrontendAppSource();
   let click, finish, calls = 0;
   const link = { dataset: {}, setAttribute() {}, removeAttribute() {},
     addEventListener(name, fn) { if (name === "click") click = fn; } };
@@ -45,7 +46,7 @@ test("actual native link blocks collection clicks and concurrent opens, then res
 });
 
 test("manual foreground result reaches the user as a visible success notice", async () => {
-  const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+  const app = readFrontendAppSource();
   const endpoint = "http://127.0.0.1:11122";
   const notices = [];
   let messageListener;

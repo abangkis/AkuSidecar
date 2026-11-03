@@ -1,10 +1,11 @@
+import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { videoPlaybackMissing } from "../internal/httpapi/web/video-recapture-policy.js";
 
-const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
+const app = readFrontendAppSource();
 function fixture() {
   const calls = []; const buttons = [];
   const context = vm.createContext({ URL, videoPlaybackMissing,
