@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback/FullReset/Library removal/passive media evidence, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture/update-session/media-entry/bootstrap/reload-action/development-X/semantic-correction/AI-feedback features, router map and bounded capture-owner path/telemetry rotation guard corrections below, HTTP Inbox selection review, Inbox reads and model usage.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback/FullReset/Library removal/passive media evidence, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture/update-session/media-entry/bootstrap/reload-action/development-X/semantic-correction/AI-feedback features, router map and bounded capture-owner path/telemetry rotation guard corrections below, HTTP Inbox selection review, Inbox reads, model usage and vision evaluation.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -2102,13 +2102,69 @@ Current router snapshot: 106 top-level arms, not endpoint count; 71 retained
 and 52 central Engine functions/methods remain retained. CL-3.3 and CL-3 remain
 partial. Deferred groups are not an automatic extraction queue.
 
+### Vision-evaluation follow-up
+
+The proposed vision-evaluation extraction is complete as `cf534ec`; see the
+vision evaluation result below.
+
+## CL-3.3 HTTP vision evaluation result (2026-11-03)
+
+Two Server adapters are committed as `cf534ec` in
+`internal/httpapi/vision_evaluation.go`: visionEvaluationJobs and
+retryVisionEvaluation. Their 22 original body lines are unchanged except
+indentation and a local `ctx := r.Context()` binding. Both receive the
+router-normalized path. Router predicates, dispatch order and the router
+remainder are exact. Engine/Store retain queue state, capacity, promotion and
+cancellation ownership; protocol and guards remain unchanged. No new interface,
+transaction, worker or production test seam is added.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | `cf534ec`, two vision-evaluation HTTP adapters; thirteenth bounded HTTP extraction |
+| Tested | Identical characterization payload and pass selection: 56 default/dev parent/subtest results before and after. Matching 14-package regression selection: default 2,979 pass/50 skip; dev 3,823 pass/62 skip; zero failures. Four Windows amd64 tag combinations include the test and produce 16 artifacts |
+| Activated | Not performed for this increment |
+| Acceptance | Scoped source/test review accepted and code committed; whole-package, CL-3.3/CL-3 and operational acceptance remain open |
+
+The isolated SQLite/real-Engine fixture uses the existing Store clock injection
+and a counting offline provider. It covers run/source list filtering, FIFO order,
+DTO/manual labels, empty arrays, malformed candidate tolerance and unknown-field
+projection; failed-only retry, active-session behavior, source-wide capacity
+across runs and older/tied deferred priority; exact field reset/retention;
+independently committed peer promotion after a target SQL or zero-row failure;
+route/security/preflight/standard-mux behavior, ignored bodies, ID validation,
+cancellation/deadline, closed Store and response-write failure. Provider, capture
+command and reasoning-invocation counters remain zero. Existing Store queue and
+Engine vision-lane regression coverage remains unchanged.
+
+The current product path remains a media-only queue/manual review based on
+metadata. HTTP 202 records requeue acceptance; it does not establish a running
+evaluator or successful pixel analysis. This cleanup adds no model invocation.
+
+Review reverified the committed baseline, exact moved feature, router remainder,
+frozen characterization, pre-existing Go/config identities, raw logs and summaries,
+four test graphs and all 16 PE/amd64 artifact identities. Passing evidence is
+reused without product test/build reruns for review, documentation or publication.
+No new race-detector run, live provider/native/browser trial, activation or
+configuration change is claimed. Evidence:
+[validation](../runtime/qa/http-vision-evaluation-20261103/validation.json),
+[extraction proof](../runtime/qa/http-vision-evaluation-20261103/extraction-proof.json),
+[review](../runtime/qa/http-vision-evaluation-review-20261103/review.json) and
+[commit/publication readback](../runtime/qa/http-vision-evaluation-review-20261103/final-readback.json).
+Original receipt fields describe their capture time and remain unchanged.
+
+Current router snapshot: 106 top-level arms, not endpoint count; 73 retained
+(47 feature delegations and 26 thin/control/heartbeat arms) and 33 deferred
+(five native/dev/telemetry and 28 product-domain arms). All 30 server.go functions
+and 52 central Engine functions/methods remain retained. CL-3.3 and CL-3 remain
+partial. Deferred groups are not an automatic extraction queue.
+
 ### Proposed next cleanup analysis
 
-Read-only review of two vision-evaluation adapters: GET
-/api/inbox/runs/{runId}/vision-evaluations and POST
-/api/vision-evaluations/{jobId}/retry. Trace supported callers, ID parsing,
-job projection, RetryVisionEvaluation admission/context, status/error mapping
-and durable/background effect order before deciding whether one cohesive
-feature extraction is useful. Specify characterization first; preserve receiver,
-Engine/Store ownership, cancellation, protocol and guards. This proposal authorizes
-no further implementation, activation, runtime/configuration change or trial.
+Read-only review of the GET /api/timeline response composition: paged items,
+latest check, batch summaries and AutoUpdateStatus. Trace supported callers,
+query bounds, projection, ordered fallible reads, any durable effects, request
+context and first-error behavior before deciding whether one cohesive feature
+extraction is useful or the current router boundary should remain. Specify
+characterization first; preserve Engine/Store ownership, protocol and guards.
+This proposal authorizes no further implementation, activation,
+runtime/configuration change or trial.
