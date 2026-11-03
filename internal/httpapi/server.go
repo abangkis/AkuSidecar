@@ -572,13 +572,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 	case r.Method == http.MethodGet && p == "/api/sessions/active":
 		return s.activeSession(w, r)
 	case r.Method == http.MethodGet && p == "/api/inbox":
-		limit := boundedInt(r.URL.Query().Get("limit"), 12, 1, 25)
-		offset := boundedInt(r.URL.Query().Get("offset"), 0, 0, 100000)
-		sessions, total, err := s.engine.Inbox(ctx, limit, offset)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions, "total": total, "limit": limit, "offset": offset})
+		return s.inboxSessions(w, r)
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/inbox/sessions/") && strings.HasSuffix(p, "/model-usage"):
 		sessionID := strings.TrimSuffix(strings.TrimPrefix(p, "/api/inbox/sessions/"), "/model-usage")
 		if sessionID == "" || strings.Contains(sessionID, "/") {
@@ -603,27 +597,7 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request) error {
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"usage": usage})
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/inbox/runs/") && strings.HasSuffix(p, "/trace"):
-		runID := strings.TrimSuffix(strings.TrimPrefix(p, "/api/inbox/runs/"), "/trace")
-		if runID == "" || strings.Contains(runID, "/") {
-			return notFound("run")
-		}
-		stage := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("stage")))
-		if stage == "" {
-			stage = "captured"
-		}
-		if stage != "captured" && stage != "skipped" && stage != "evaluated" && stage != "selected" && stage != "added" {
-			return badRequest("stage must be captured, skipped, evaluated, selected, or added")
-		}
-		limit := boundedInt(r.URL.Query().Get("limit"), 10, 1, 20)
-		offset := boundedInt(r.URL.Query().Get("offset"), 0, 0, 100000)
-		trace, err := s.engine.InboxRunTrace(ctx, runID, stage, limit, offset)
-		if errors.Is(err, sql.ErrNoRows) {
-			return notFound("run")
-		}
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{"trace": trace})
+		return s.inboxRunTrace(w, r, p)
 	case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/inbox/runs/") && strings.HasSuffix(p, "/vision-evaluations"):
 		runID := strings.TrimSuffix(strings.TrimPrefix(p, "/api/inbox/runs/"), "/vision-evaluations")
 		if runID == "" || strings.Contains(runID, "/") {
