@@ -4,7 +4,7 @@ Date: 2026-11-01. Source and method: [consumer inventory](cl1-consumer-inventory
 Scope: CL-1 candidate classification, followed by separately approved G10, G06,
 provider-candidate cleanup, E01 file/profile-merge/executable-preparation
 extractions, the cancellation/Node-fixture validation detours and the separately
-approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback/FullReset/Library removal/passive media evidence, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture/update-session/media-entry/bootstrap/reload-action/development-X/semantic-correction/AI-feedback features, router map and bounded capture-owner path/telemetry rotation guard corrections below, HTTP Inbox selection review and Inbox reads.
+approved CL-3.2 diagnostics/Bridge status/Engine media-recapture/Bridge command/media-provenance/AI-detection/session-admission/observation contracts/process recovery/reasoning result/capture rounds/local acquisition policy/vision lane/selection corrections/AI feedback/FullReset/Library removal/passive media evidence, the Store assertion validation detour and CL-3.3 HTTP Bridge command/media-recapture/update-session/media-entry/bootstrap/reload-action/development-X/semantic-correction/AI-feedback features, router map and bounded capture-owner path/telemetry rotation guard corrections below, HTTP Inbox selection review, Inbox reads and model usage.
 Other candidates remain proposals or retained contracts.
 
 ## Dispositions and approval
@@ -2048,12 +2048,67 @@ Current router snapshot: 106 top-level arms, not endpoint count; 69 retained
 and 52 central Engine functions/methods remain retained. CL-3.3 and CL-3 remain
 partial. Deferred groups are not an automatic extraction queue.
 
+### Model-usage follow-up
+
+The proposed model-usage extraction is complete as `af8d722`; see the model
+usage result below.
+
+## CL-3.3 HTTP model usage result (2026-11-03)
+
+Two Server adapters are committed as `af8d722` in
+`internal/httpapi/model_usage.go`: sessionModelUsage and aggregateModelUsage.
+Their 21 original body lines are unchanged except indentation and a local
+`ctx := r.Context()` binding. The session adapter receives the router-normalized
+path. Router predicates, dispatch order and the router remainder are exact.
+Engine/Store retain ledger reads, grouping, totals, time-window selection and
+state/cancellation ownership; protocol and guards remain unchanged. No new
+interface, cache, transaction or production test seam is added.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | `af8d722`, two model-usage HTTP adapters; twelfth bounded HTTP extraction |
+| Tested | Identical characterization payload and pass selection: 74 default/dev parent/subtest results before and after. Matching 14-package regression selection: default 2,923 pass/50 skip; dev 3,767 pass/62 skip; zero failures. Four Windows amd64 tag combinations include the test and produce 16 artifacts |
+| Activated | Not performed for this increment |
+| Acceptance | Scoped source/test review accepted and code committed; whole-package, CL-3.3/CL-3 and operational acceptance remain open |
+
+The isolated SQLite/real-Engine fixture covers session versus aggregate DTOs,
+four/six-category order, empty entry arrays, omitted scope-specific fields and
+nullable versus zero token counters. Complete/partial/unavailable coverage,
+receipt metadata/timing, chronological session entries, aggregate grouping and
+async Living Topics are preserved without double counting cached/reasoning
+breakouts. Time fixtures distinguish session-created membership from standalone
+topic-receipt membership; timestamps are bounded by the request rather than
+fixed snapshots. HTTP default/clamp/allowlist and duplicate-query order,
+ID/lookup/window error precedence, missing session, ignored GET body, security,
+preflight, standard-mux redirects, cancellation/deadline, closed Store, late
+query and response-write failures retain their existing behavior. Durable row
+counts remain unchanged during successful and failed reads.
+
+Review reverified the committed baseline, exact moved feature, router remainder,
+frozen characterization, pre-existing Go/config identities, raw logs and summaries,
+four test graphs and all 16 PE/amd64 artifact identities. Passing evidence is
+reused without product test/build reruns for review, documentation or publication.
+No new race-detector run, live provider/native/browser trial, activation or
+configuration change is claimed. Evidence:
+[validation](../runtime/qa/http-model-usage-20261103/validation.json),
+[extraction proof](../runtime/qa/http-model-usage-20261103/extraction-proof.json),
+[review](../runtime/qa/http-model-usage-review-20261103/review.json) and
+[commit/publication readback](../runtime/qa/http-model-usage-review-20261103/final-readback.json).
+Original receipt fields describe their capture time and remain unchanged.
+
+Current router snapshot: 106 top-level arms, not endpoint count; 71 retained
+(45 feature delegations and 26 thin/control/heartbeat arms) and 35 deferred
+(five native/dev/telemetry and 30 product-domain arms). All 30 server.go functions
+and 52 central Engine functions/methods remain retained. CL-3.3 and CL-3 remain
+partial. Deferred groups are not an automatic extraction queue.
+
 ### Proposed next cleanup analysis
 
-Read-only review of the two model-usage read adapters: GET
-/api/inbox/sessions/{sessionId}/model-usage and GET /api/model-usage. Trace callers,
-session ID parsing, windowDays default/clamp/allowlist order, output projection
-and error precedence before deciding whether one cohesive feature extraction is
-useful. Specify characterization first; preserve receiver, request context,
-Engine/Store ownership, protocol and guards. This proposal authorizes no further
-implementation, activation, runtime/configuration change or trial.
+Read-only review of two vision-evaluation adapters: GET
+/api/inbox/runs/{runId}/vision-evaluations and POST
+/api/vision-evaluations/{jobId}/retry. Trace supported callers, ID parsing,
+job projection, RetryVisionEvaluation admission/context, status/error mapping
+and durable/background effect order before deciding whether one cohesive
+feature extraction is useful. Specify characterization first; preserve receiver,
+Engine/Store ownership, cancellation, protocol and guards. This proposal authorizes
+no further implementation, activation, runtime/configuration change or trial.
