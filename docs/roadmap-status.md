@@ -1,15 +1,15 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-03 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `3f4a66d` (Inbox selection-review HTTP adapters, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
+Reviewed local source: AkuSidecar `ce57e79` (Inbox read HTTP adapters, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
-The previous code/roadmap checkpoint was published as `68c36de`, including
-AI-feedback HTTP adapters `a3718ff`. The owner has authorized publication of the
-Inbox selection-review HTTP extraction and this roadmap synchronization to
+The previous code/roadmap checkpoint was published as `4425070`, including
+Inbox selection-review HTTP adapters `3f4a66d`. The owner has authorized publication
+of the Inbox read HTTP extraction and this roadmap synchronization to
 origin/main at https://github.com/abangkis/AkuSidecar.git. Validation and the
-later review/commit/publication readback are identified in the Inbox selection-review
-result below; publication must be verified against the remote SHA.
+later review/commit/publication readback are identified in the Inbox read result
+below; publication must be verified against the remote SHA.
 Publication does not establish runtime activation or operational acceptance.
 The Browser worktree contains pre-existing build/cache changes; those changes
 are outside this synchronization and are not evidence of a released tuple.
@@ -694,15 +694,71 @@ Current router snapshot: 106 top-level arms, not endpoint count; 67 retained
 and 52 central Engine functions/methods remain retained. CL-3.3 and CL-3 remain
 partial. Deferred groups are not an automatic extraction queue.
 
+### Inbox read follow-up
+
+The proposed Inbox read extraction is complete as `ce57e79`; see the Inbox
+read result below.
+
+## HTTP Inbox read result (2026-11-03)
+
+Two Server adapters are committed as `ce57e79` in
+`internal/httpapi/inbox.go`: inboxSessions and inboxRunTrace. Their 28 original
+body lines are unchanged except indentation and a local `ctx := r.Context()`
+binding. The trace adapter receives the already-normalized path. Router predicates,
+dispatch order and the router remainder are exact. Engine/Store retain their
+aggregation, projection, state and cancellation ownership; protocol and guards
+are unchanged. No new interface, cache, transaction or production test seam is added.
+
+| Dimension | Current evidence |
+| --- | --- |
+| Implemented | `ce57e79`, two Inbox read HTTP adapters; eleventh bounded HTTP extraction |
+| Tested | Identical characterization payload and pass selection: 70 default/dev parent/subtest results before and after. Matching 14-package regression selection: default 2,849 pass/50 skip; dev 3,693 pass/62 skip; zero failures. Four Windows amd64 tag combinations include the test and produce 16 artifacts |
+| Activated | Not performed for this increment |
+| Acceptance | Scoped source/test review accepted and code committed; whole-package, CL-3.3/CL-3 and operational acceptance remain open |
+
+The isolated SQLite/real-Engine fixture covers list defaults and newest-first
+pagination, clamp/invalid/overflow/duplicate query behavior, empty arrays and
+offsets beyond the total; trace stage normalization and five legal filters;
+global counts versus filtered total/page; opaque candidate/correction/undo
+projection and hidden evidence identities; active-session reads; security,
+preflight, normalized paths and standard-mux redirects; ID/stage/lookup error
+precedence; ignored GET bodies; caller cancellation/deadline, closed Store,
+corrupt observations, late query failure and response-write error. Durable row
+counts stay unchanged during successful and failed reads. Existing Store
+canonical-identity, aggregation and privacy regression coverage remains unchanged.
+
+The initial draft redirect expectation was corrected against local Go 1.26.10
+net/http source before extraction. The frozen test uses a separate standard mux
+as the redirect-code reference and checks the exact normalized Location, absent
+API epoch and unchanged state. This is a test correction, not a router change.
+
+Review reverified the committed baseline, exact moved feature, router remainder,
+frozen characterization, pre-existing Go/config identities, raw logs and summaries,
+four test graphs and all 16 PE/amd64 artifact identities. Passing evidence is
+reused without product test/build reruns for review, documentation or publication.
+No new race-detector run, live provider/native/browser trial, activation or
+configuration change is claimed. Evidence:
+[validation](../runtime/qa/http-inbox-20261103/validation.json),
+[extraction proof](../runtime/qa/http-inbox-20261103/extraction-proof.json),
+[review](../runtime/qa/http-inbox-review-20261103/review.json) and
+[commit/publication readback](../runtime/qa/http-inbox-review-20261103/final-readback.json).
+Original receipt fields describe their capture time and remain unchanged.
+
+Current router snapshot: 106 top-level arms, not endpoint count; 69 retained
+(43 feature delegations and 26 thin/control/heartbeat arms) and 37 deferred
+(five native/dev/telemetry and 32 product-domain arms). All 30 server.go functions
+and 52 central Engine functions/methods remain retained. CL-3.3 and CL-3 remain
+partial. Deferred groups are not an automatic extraction queue.
+
 ### Proposed next cleanup analysis
 
-Read-only review of two Inbox read adapters: GET /api/inbox and GET
-/api/inbox/runs/{runId}/trace. Trace supported callers, pagination/stage defaults,
-normalization, output projection and error precedence before deciding whether
-one cohesive feature extraction is useful. Specify characterization first;
-preserve request context, Engine/Store ownership, protocol and guards. This is
-a proposal only: no further implementation, activation, runtime/configuration
-change or trial is authorized by this record.
+Read-only review of the two model-usage read adapters: GET
+/api/inbox/sessions/{sessionId}/model-usage and GET /api/model-usage. Trace callers,
+session ID parsing, windowDays default/clamp/allowlist order, output projection
+and error precedence before deciding whether one cohesive feature extraction is
+useful. Specify characterization first; preserve receiver, request context,
+Engine/Store ownership, protocol and guards. This proposal authorizes no further
+implementation, activation, runtime/configuration change or trial.
 
 ## Product and installation roadmaps
 
