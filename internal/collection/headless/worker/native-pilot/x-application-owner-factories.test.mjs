@@ -76,6 +76,7 @@ test('every sealed production graph contains native factories and excludes the Q
       const paths=manifest.modules.map(row=>row.path);
       assert(paths.includes('internal/collection/headless/worker/native-pilot/x-application-owner-factories.mjs'));
       assert(paths.includes('internal/collection/headless/worker/native-pilot/x-native-owner-runtime.mjs'));
+      assert(paths.includes('internal/collection/headless/worker/native-pilot/shared/x-native-cdp-result-projection.mjs'));
       assert(!paths.some(path=>path.endsWith('x-native-metadata-probe-driver.mjs')));
       assert(!paths.some(path=>path.startsWith('scripts/auth-session-fixture/')),`${name}: production imports a fixture module`);
       assert(paths.includes('internal/collection/headless/worker/native-pilot/shared/x-standard-chrome-args.mjs'));

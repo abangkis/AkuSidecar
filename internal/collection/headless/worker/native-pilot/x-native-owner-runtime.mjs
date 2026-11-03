@@ -1,3 +1,4 @@
+import {createCDPResultProjector} from './shared/x-native-cdp-result-projection.mjs';
 import {registerFreshStartupSession, startupRootControls, allowsStartupControl, mustRetireStartupOwner, markStartupControlAttempt} from './shared/x-manual-root-controls.mjs';
 import {createStartupTiming} from './shared/x-manual-startup-timing.mjs';
 import {createBatchBootstrap} from './shared/x-batch-bootstrap.mjs';
@@ -10,21 +11,21 @@ import {dirname, isAbsolute, join, relative, resolve, sep} from 'node:path';
 import {performance} from 'node:perf_hooks';
 import {parseStrictJSON} from './shared/x-evidence-ingress.mjs';
 import {standardChromeArgs} from './shared/x-standard-chrome-args.mjs';
-import {projectAccountSettingsBody} from './shared/x-account-settings-body.mjs';
+
 import {accountSettingsBodyMode} from './shared/x-account-settings-capture.mjs';
-import {BOOTSTRAP_CURRENT_SELF_EXPRESSION, validateBootstrapCurrentSelf} from './shared/x-bootstrap-current-self.mjs';
+import {BOOTSTRAP_CURRENT_SELF_EXPRESSION} from './shared/x-bootstrap-current-self.mjs';
 import {BootstrapHandoffCapture} from './shared/x-bootstrap-breakpoint-handoff.mjs';
-import {projectQASourceBody, projectQACookieMetadata, qaCookieRequest} from './shared/x-qa-source-qualification.mjs';
+import {qaCookieRequest} from './shared/x-qa-source-qualification.mjs';
 import {qaGuestCommand} from './shared/x-qa-auth-control.mjs';
 import {qaABCommand, projectQADirectBody} from './shared/x-qa-direct-ab.mjs';
-import {qaWebCommand, QA_WEB_SNAPSHOT, QA_WEB_START, QA_WEB_DISPOSE, validateQAWebHook} from './shared/x-qa-web-aba.mjs';
-import {projectQA401Body} from './shared/x-qa-401-projection.mjs';
+import {qaWebCommand, QA_WEB_SNAPSHOT, QA_WEB_START, QA_WEB_DISPOSE} from './shared/x-qa-web-aba.mjs';
+
 import {QABoundObservation, createManualV2BoundObservation, QA_BOUND_BOOTSTRAP_EXPRESSION, projectBoundBootstrap} from './shared/x-qa-bound-observation.mjs';
 import {QACookieWriteCapture, finishQACookieWriteScope} from './shared/x-qa-cookie-writes.mjs';
-import {shortQACheckpoint, selectQAShortCookies} from './shared/x-qa-short-feasibility.mjs';
+import {shortQACheckpoint} from './shared/x-qa-short-feasibility.mjs';
 import {QACheckpointRendezvous} from './shared/x-qa-checkpoint-rendezvous.mjs';
 import {createQAFeasibilityCollector} from './shared/x-qa-feasibility-collector.mjs';
-import {QA_LIVE_SELF_EXPRESSION, projectQALiveSelf} from './shared/x-qa-live-self.mjs';
+import {QA_LIVE_SELF_EXPRESSION} from './shared/x-qa-live-self.mjs';
 import {qaLiveSelfCommand} from './shared/x-qa-live-self-transport.mjs';
 import {createManualStartupOwner} from './shared/x-manual-startup-owner.mjs';
 import {createXManualOwnerPort, manualOwnerOperation} from './shared/x-native-manual-owner-port.mjs';
@@ -558,136 +559,7 @@ function isTargetURL(rawURL) {
   } catch { return false; }
 }
 
-function projectCDPResult(method, result, projectionKind = null) {
-  if(projectionKind==='application_post'){if(!isObject(result))throw probeError('application_post_unavailable');return result;}
-  if(projectionKind==='manual_root_control'){if(!isObject(result)||Reflect.ownKeys(result).length!==0)throw probeError('manual_root_control_ack');return{acknowledged:true};}
-  if (!isObject(result)) throw probeError('cdp_result_invalid');
-  if(projectionKind==='manual_enrollment_capture')return active.manualEnrollment.project(method,result);
-  switch (method) {
-    case 'Page.addScriptToEvaluateOnNewDocument':
-      if (!safeId(result.identifier)) throw probeError('qa_web_identifier_invalid');
-      return { identifier: result.identifier };
-    case 'Page.getFrameTree': {
-      const frame = result.frameTree?.frame;
-      if (!isObject(frame) || !safeId(frame.id) || !(['qa_guest', 'qa_ab'].includes(projectionKind) ? frame.url === 'about:blank' : isHomeTarget(frame.url))) throw probeError('early_frame_invalid');
-      if (projectionKind === 'qa_live_self' || projectionKind === 'manual_frame') {
-        if (!safeId(frame.loaderId)) throw probeError('qa_live_document_invalid');
-        return { frameId: frame.id, loaderId: frame.loaderId };
-      }
-      return { frameId: frame.id };
-    }
-    case 'Target.createBrowserContext':
-      if (!safeId(result.browserContextId)) throw probeError('qa_guest_context_invalid');
-      return { browserContextId: result.browserContextId };
-    case 'Target.createTarget':
-      if (!safeId(result.targetId)) throw probeError('qa_guest_target_invalid');
-      return { targetId: result.targetId };
-    case 'Page.navigate':
-      if (projectionKind === 'qa_ab') {
-        if (!safeId(result.frameId) || result.frameId !== active?.ab?.frameId ||
-            own(result, 'errorText') && result.errorText !== 'net::ERR_HTTP_RESPONSE_CODE_FAILURE') throw probeError('qa_ab_navigation_failed');
-        return { acknowledged: true };
-      }
-      if (own(result, 'errorText') || !safeId(result.frameId) || result.frameId !== active?.guest?.frameId) throw probeError('qa_guest_navigation_invalid');
-      return { acknowledged: true };
-    case 'Debugger.setInstrumentationBreakpoint':
-      if (!safeId(result.breakpointId)) throw probeError('early_breakpoint_invalid');
-      active.earlyInstrumentationId = result.breakpointId;
-      return { breakpointId: result.breakpointId };
-    case 'Debugger.setBreakpoint': {
-      const handoff = active?.earlyCapture?.handoff;
-      if (!handoff) throw probeError('early_normal_breakpoint_invalid');
-      handoff.created(result.breakpointId);
-      const location = result.actualLocation;
-      const requested = handoff.installing;
-      if (!requested || !isObject(location) || location.scriptId !== requested.scriptId ||
-          !Number.isSafeInteger(location.lineNumber) || location.lineNumber < 0 || location.lineNumber > 1000000 ||
-          !Number.isSafeInteger(location.columnNumber) || location.columnNumber < 0 || location.columnNumber > 1000000) throw probeError('early_normal_breakpoint_invalid');
-      return { breakpointId: result.breakpointId, actualLocation: { scriptId: location.scriptId, lineNumber: location.lineNumber, columnNumber: location.columnNumber } };
-    }
-    case 'Network.getResponseBody':
-      if (!bodyMode(driverMode)) throw probeError('body_mode_required');
-      if (projectionKind === 'qa_web_401') {
-        if (!active?.webABA?.qualify401 || active.webABA.rejection !== null) throw probeError('qa_rejection_read_replayed');
-        const projected = projectQA401Body(result);
-        active.webABA.rejection = projected.rejection;
-        return projected.body;
-      }
-      if (projectionKind === 'qa_bound') return projectQADirectBody(result);
-      if (projectionKind === 'qa_ab' || projectionKind === 'qa_web') return projectQADirectBody(result);
-      return qualificationMode(driverMode) ? projectQASourceBody(result) : projectAccountSettingsBody(result);
-    case 'Network.getCookies':
-      if (projectionKind === 'qa_short_cookies') {
-        try{return selectQAShortCookies(result);}
-        catch(error){if(active?.manualSetup)throw manualSeedFailure('cookie_select','rejected');throw error;}
-      }
-      if (!qualificationMode(driverMode) || !active?.qaCookieIssued) throw probeError('cookie_mode_required');
-      return projectQACookieMetadata(result);
-    case 'Target.getTargets': {
-      if (!Array.isArray(result.targetInfos) || result.targetInfos.length > 128) throw probeError('target_inventory_invalid');
-      const matches = [];
-      for (const target of result.targetInfos) {
-        if (isObject(target) && target.type === 'page' && (projectionKind === 'manual_inventory' || isTargetURL(target.url)) && safeId(target.targetId)) {
-          matches.push(target.targetId);
-        }
-      }
-      if(projectionKind==='manual_inventory')active.manualInventoryTargets=new Set(matches);
-      return { targetIds: matches };
-    }
-    case 'Browser.getWindowForTarget':
-      if (!Number.isSafeInteger(result.windowId) || result.windowId < 1) throw probeError('qa_short_window_invalid');
-      return { windowId: result.windowId };
-    case 'Target.attachToTarget':
-      if (!safeId(result.sessionId)) throw probeError('target_session_invalid');
-      return { sessionId: result.sessionId };
-    case 'Target.closeTarget':
-      if (result.success !== true) throw probeError('qa_ab_close_failed');
-      return { acknowledged: true };
-    case 'Debugger.evaluateOnCallFrame':
-    case 'Runtime.evaluate': {
-      if (projectionKind === 'qa_live_self') {
-        if (!active?.liveSelf?.running || own(result, 'exceptionDetails') || !isObject(result.result) || result.result.type !== 'object') throw probeError('qa_live_result_invalid');
-        try { return projectQALiveSelf(result.result.value); } catch { throw probeError('qa_live_projection_invalid'); }
-      }
-      if (projectionKind === 'qa_web_hook') {
-        if (own(result, 'exceptionDetails') || !isObject(result.result) || !isObject(result.result.value)) throw probeError('qa_web_hook_unavailable');
-        try { return validateQAWebHook(result.result.value); } catch { throw probeError('qa_web_hook_invalid'); }
-      }
-      if (projectionKind === 'bootstrap_current_self') {
-        if (!(driverMode === 'retained_bootstrap' || active?.bound?.running) || own(result, 'exceptionDetails') ||
-            !isObject(result.result) || result.result.type !== 'object' || !isObject(result.result.value)) {
-          throw probeError('bootstrap_runtime_result_invalid');
-        }
-        if (active?.bound?.running) {
-          return projectBoundBootstrap(result.result.value, (id, projection) => active.bound.binder.acceptIdentity(id, projection));
-        }
-        try { return validateBootstrapCurrentSelf(result.result.value); }
-        catch { throw probeError('bootstrap_projection_invalid'); }
-      }
-      if (own(result, 'exceptionDetails') || !isObject(result.result) || result.result.type !== 'boolean' ||
-          typeof result.result.value !== 'boolean') throw probeError('runtime_result_invalid');
-      return { value: result.result.value };
-    }
-    case 'Page.enable':
-    case 'Page.reload':
-    case 'Page.removeScriptToEvaluateOnNewDocument':
-    case 'Network.enable':
-    case 'Network.disable':
-    case 'Network.setBypassServiceWorker':
-    case 'Network.setCacheDisabled':
-    case 'Browser.close':
-    case 'Target.disposeBrowserContext':
-    case 'Runtime.enable':
-    case 'Runtime.disable':
-    case 'Debugger.enable':
-    case 'Debugger.disable':
-    case 'Debugger.removeBreakpoint':
-    case 'Debugger.resume':
-      return { acknowledged: true };
-    default:
-      throw probeError('cdp_method_invalid');
-  }
-}
+
 
 export function projectCDPEvent(message) {
   if (typeof message.method !== 'string' || message.method.length > 128 || !isObject(message.params)) {
@@ -799,6 +671,11 @@ export function createNativeOwnerRuntime(){
   let active = null;
   let cdpFrames = new CDPFrameDecoder();
   const pending = new Map();
+  // Resolve live state only when a reply is projected.
+  const projectCDPResult = createCDPResultProjector({
+    getActive: () => active, getDriverMode: () => driverMode,
+    bodyMode, isHomeTarget, isObject, isTargetURL, own, probeError, qualificationMode, safeId,
+  });
 
   function emit(value, maxBytes = MAX_CONTROL_LINE_BYTES) {
     if(applicationScope){if(value?.event==='manual_startup_progress')applicationScope.emitProgress(value);return;}
