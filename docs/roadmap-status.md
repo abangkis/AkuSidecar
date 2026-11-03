@@ -1,15 +1,14 @@
 # Roadmap status and evidence index
 
 Status synchronized: 2026-11-03 (Asia/Jakarta).
-Reviewed local source: AkuSidecar `70ea120` (test-only vision persistence, production retained at `ed35d82`; per-run candidate evaluation/completion, after acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
+Reviewed local source: AkuSidecar `de95c58` (empty-candidate completion, after vision persistence `70ea120`; per-run candidate evaluation/completion, after acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
-The previous code/roadmap checkpoint was published as `7b312ff`, including
-candidate evaluation `ed35d82`. The owner separately approved vision persistence
-characterization and authorized review, roadmap synchronization, commit and
-publication to origin/main at https://github.com/abangkis/AkuSidecar.git.
-Test commit `70ea120` and this synchronized roadmap are bound to the
-commit/publication readback linked below. Production code remains unchanged.
+The previous code/roadmap checkpoint was published as `367ef89`, including
+vision persistence tests `70ea120`. The owner separately approved empty-candidate
+completion and authorized review, roadmap synchronization, commit and publication
+to origin/main at https://github.com/abangkis/AkuSidecar.git. Code `de95c58`
+and this synchronized roadmap are bound to the commit/publication readback below.
 Publication does not establish runtime activation or operational acceptance.
 The Browser worktree contains pre-existing build/cache changes; those changes
 are outside this synchronization and are not evidence of a released tuple.
@@ -1155,17 +1154,76 @@ These are local ignored QA receipts. Original sourceHead/sourceDirty/committed
 fields describe capture time and remain unchanged; the later readback binds
 the frozen tested payload to commits and the verified publication target.
 
+### Observation preparation and empty-candidate follow-up completed
+
+Read-only review retained observation preparation in Engine.process: accepted
+observation loading, merge/durable coverage, follow-up yield and continuity
+classification/filtering form one ordered orchestration path. Pure helpers
+already have capture_rounds.go and continuity.go owners. Vision handoff remains
+retained under the previous decision. The owner separately approved extracting
+only empty-candidate run completion after characterization on the original code.
+
+## Empty-candidate completion result (2026-11-03)
+
+The owner approved review, roadmap synchronization, commit and publication of
+this bounded increment to origin/main at https://github.com/abangkis/AkuSidecar.git.
+The preceding published code/roadmap checkpoint is 367ef89, including vision
+persistence characterization 70ea120. Production/test code is now de95c58.
+
+| Dimension | Evidence and scope |
+| --- | --- |
+| Implemented | de95c58: 27 original body lines moved into completeRunWithoutCandidates in empty_candidate_completion.go (42 lines); session_execution.go is 255 lines with its six existing declarations. Candidate-count predicate and startNext remain in process |
+| Tested | Frozen characterization payload and pass names match before/after: 218 default/dev parent/subtest results each. Three new roots cover 16 scenarios (19 parent/subtest results). Matching 14-package regression (13 tested; Bridge builder compile-only): default 3,187 pass/50 skip; dev 4,031 pass/62 skip; zero failures. Four Windows amd64 tag combinations include the new test and produce 16 PE/amd64 artifacts |
+| Activated | Not performed; no runtime, configuration, restart or live trial change |
+| Acceptance | Scoped source/test review accepted with no findings. Observation preparation and vision handoff retained; empty-candidate completion separated. CL-3 remains partial; broader package, integration and operational acceptance remain open |
+
+The helper preserves Engine receiver and Store authority; no service, interface,
+new state owner, lock or transaction was introduced. The caller keeps scheduling.
+The original effect order remains: create a missing bypass receipt, select the
+existing summary, CompleteRun with caller context, then best-effort added timing
+with context.Background(). CompleteRun errors remain unwrapped; bypass errors
+retain their existing prefix; timing errors remain ignored. Existing receipt
+maps and present null values are not replaced. Media-only summary still counts
+input candidates and takes precedence over the resurfaced summary.
+
+Characterization uses real process/Store operations with a deterministic provider;
+fixture SQL initializes only disposable history and failure/effect probes. It
+checks singular/plural summaries, combined resurface/media input, map/null receipt
+preservation, second-round yield, ordered durable side effects, bypass/completion
+failure, ignored timing failure, caller cancellation, the schedule lock and
+post-commit cancellation/finalization failure without losing committed output.
+Existing nonempty candidate, capture-round and vision tests remain in the suite.
+
+Review independently compares the moved body and caller remainder with Git source
+367ef89 and verifies frozen source/test/log/graph/helper/artifact hashes. The test
+payload passed before production changed and remains byte-identical afterward.
+All 1,447 other previously tracked files were unchanged at validation and review,
+including existing tests, protocol, guards and the already dirty user config.
+Only the three approved Engine source/test files and four roadmap documents are
+committed by this publication; .tmp/ and experiments/ remain excluded. The 52
+retained central Engine declarations and 106 delegated top-level HTTP arms are
+unchanged. No race-detector, real-provider or broader runtime acceptance is claimed.
+
+Evidence: [validation](../runtime/qa/empty-candidate-completion-20261103/validation.json),
+[extraction proof](../runtime/qa/empty-candidate-completion-20261103/extraction-proof.json),
+[scoped review](../runtime/qa/empty-candidate-completion-review-20261103/review.json),
+and [commit/publication readback](../runtime/qa/empty-candidate-completion-review-20261103/final-readback.json).
+These are local ignored QA receipts. Original sourceHead/sourceDirty/committed
+fields describe capture time and remain unchanged; the later readback binds the
+frozen tested payload to commits and the verified publication target.
+
 ### Proposed next cleanup analysis
 
-Read-only closure review of the remaining Engine.process preparation and
-empty-candidate completion branch: observation merge/durable coverage,
-continuity classification/filtering, bypass receipt and completion/scheduling.
-Determine which orchestration should remain together and whether any real
-responsibility boundary still warrants one bounded extraction. Inventory
-existing characterization and error/cancellation coverage before proposing code.
-Retain the reviewed vision block, Engine facade and Store authority. Preserve
-lock, context, effect/error order, protocol and guards. This proposal authorizes
-no implementation, configuration change, activation or live trial.
+Read-only CL-3.2 closure review of Engine read-model and enrichment ownership:
+trace retained Session, Run, Timeline and Inbox read entry points to Store and
+map enrichment calls to their existing feature owners. Classify actual mixed
+responsibilities versus required facade/delegation, using current consumers and
+tests. Produce an explicit remaining/retained map and at most one justified
+next seam with characterization requirements; a retain-only outcome is valid.
+Do not repeat central-file splitting or the completed process extractions.
+Preserve Store authority, lock/context/cancellation, effect/error order, protocol
+and guards. No implementation, configuration change, activation or trial is
+authorized by this proposal.
 
 
 ## Product and installation roadmaps
