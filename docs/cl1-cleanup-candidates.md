@@ -35,7 +35,7 @@ Publication is bound to the linked readback; activation remains separate.
 F02/test-asset packaging remains a CL-7 question. Original disposition counts
 are not a remaining-work count.
 
-Latest native-runtime result: [automatic CL-5 source closure](#automatic-cl-5-native-responsibility-separation-result-2026-11-04), based on 555dea9, is implemented/tested/reviewed and source closed after owner-authorized review. Publication is bound to readback. Original inventory disposition counts remain unchanged; activation and operational acceptance remain separate.
+Latest Bridge result: [automatic CL-6 source closure](#automatic-cl-6-bridge-reporting-separation-result-2026-11-04), AkuBridge 6ce23f7, is implemented/tested/reviewed and source closed after owner-authorized scoped review. Publication is bound to readback; prior source closures and original inventory disposition counts retain their scope.
 
 ## Dispositions and approval
 
@@ -2869,3 +2869,53 @@ Next proposal: read-only CL-6 Bridge background messaging/capture dispatch,
 tab/window ownership, readiness and lifecycle analysis, with one justified
 responsibility and characterization scope. The earlier codec proposal is
 superseded; earlier partial-status sections retain capture-time meaning.
+
+## Automatic CL-6 Bridge reporting separation result (2026-11-04)
+
+The owner-authorized automatic CL-6 run at AkuBridge 3676f5c separates three
+capture-surface reporting declarations through one stateless factory. Its live
+header/error ports reuse existing functions; message ingress, capture/background
+orchestration, lease/generation journals, reader lifetime, readiness and native
+lifecycle retain their established owners. All 112 retained worker top-level
+nodes remain byte-identical; no protocol, guard or resource authority changes.
+
+| Dimension | Current evidence and scope |
+| --- | --- |
+| Implemented | AkuBridge code 6ce23f7 after 3676f5c: three reporting declarations move to capture-surface-reporting.js with one stateless factory; service-worker wires the existing header/error ports. Eight reviewed Bridge code/test/tooling files are committed; these four canonical Sidecar roadmap documents record source closure, with publication bound to readback |
+| Tested | Frozen reporting characterization: 12/12 before extraction; all 12 pass unchanged through the actual factory after extraction. Related Bridge cohort 145/145; final full Bridge Node 515/515; canonical syntax and native-host Go checks pass. Sidecar consumer Node 44/44; seven-package Go default 2,600 pass/44 skip and dev 3,292 pass/54 skip, zero failures. Windows PE/amd64: two Bridge artifacts plus 16 Sidecar artifacts across four tag modes. Three local projected extension packages each contain 70 verified files and pass actual reporter/identity/policy/receipt checks |
+| Activated | Not performed; no extension reload, native runtime restart, source/account/config changes or live trial |
+| Acceptance | Owner-authorized scoped review has no blocking finding; source CL-6 is closed with the explicit retain/defer map. Publication readback binds commits and both remote SHAs. Activation and operational acceptance remain separate; source CL-3/CL-4/CL-5 retain their published closure |
+
+The baseline exposed two stale readiness source-location assertions in one
+contract test. They now check the existing capture-primitives owner and the
+content-script delegation, with a direct login/availability regression. No
+production readiness behavior changes. Frozen reporting assertions cover payload,
+policy identity, dynamic headers, errors and dispatch/release ordering; the
+existing admission/privacy/cleanup assertions remain. Corrected pre-move full
+Node 510 plus five further passing pre-move characterizations yields final 515.
+
+See the [canonical responsibility and retain/defer map](code-cleanup-roadmap.md#automatic-cl-6-bridge-reporting-separation-result-2026-11-04).
+No further extraction is required to manufacture source closure; the source
+criteria pass and source CL-6 is closed after the owner-authorized review.
+Publication is bound to readback; activation and operational acceptance remain
+separate. CL-3/CL-4/CL-5 retain their closure.
+
+Evidence: [validation and structural review](../../AkuBridge/build/cl6-auto-20261104/qa/validation.json),
+[declaration/remainder proof](../../AkuBridge/build/cl6-auto-20261104/qa/extraction-proof.json),
+[projected package readback](../../AkuBridge/build/cl6-auto-20261104/qa/packages.json),
+[scoped acceptance review](../../AkuBridge/build/cl6-auto-20261104/qa/review.json), and
+[final candidate readback](../../AkuBridge/build/cl6-auto-20261104/qa/final-readback.json).
+These are ignored project-local receipts. Prior CL-5 receipts retain their
+capture-time commit/publication identities; no historical receipt is rewritten.
+
+Publication review: [frozen candidate and scoped recheck](../../AkuBridge/build/cl6-publication-20261104/qa/review.json)
+and [commit/remote readback](../../AkuBridge/build/cl6-publication-20261104/qa/final-readback.json).
+The original implementation receipts retain capture-time candidate fields;
+publication readback binds their unchanged tested payload to code 6ce23f7,
+the roadmap commit and both origin/main SHAs. Passing product checks are reused
+after hash verification, without rerunning suites solely for publication.
+
+Next proposal: read-only CL-7 packaging/harness analysis to reconcile supported
+entry-point source lists, package seals, generated manifests and test inputs. No CL-7 implementation,
+activation or trial is part of this run. Earlier next-proposal paragraphs
+retain capture-time meaning and are superseded by this automatic result.

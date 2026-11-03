@@ -1,7 +1,7 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-04 (Asia/Jakarta). Reviewed automatic CL-5 source cohort based on 555dea9 closes source CL-5; publication identity is bound to readback. Source CL-3/CL-4 remain closed; activation/operational acceptance remain separate.
+Status synchronized: 2026-11-04 (Asia/Jakarta). Latest delta is reviewed source CL-6 closure for AkuBridge 6ce23f7; roadmap and remote identities are bound to publication readback. Source CL-3/CL-4/CL-5 remain closed. Activation and operational acceptance remain separate.
 Status: source CL-3 closed after the accepted responsibility-map review at
 `6b9b3a0`; source CL-4 closed by the reviewed FE result below. Comprehensive
 cleanup remains in progress. See the
@@ -115,7 +115,7 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b` and media recapture `be9fcd2`; Engine media recapture `c614512`; Engine Bridge commands `3e13434`; Engine media provenance `8d7f7b6`; Engine AI detection `b84a62d`; Engine session admission `4bf0731`; observation contracts `d9c3025`; process recovery `5b39fa4`; reasoning result `eb05ac8`; capture rounds and deterministic Store test `683b1e8`; local acquisition policy `f16f11a`; vision-lane routing/coverage `25c3339`; selection corrections `f3d46b8`; AI feedback `6a1ce33`; FullReset `da019dd`; Library removal/Forget `a19bf86`; passive media evidence `2bdc0f1`; HTTP update/session `d32c065`; HTTP media entry `90e3a7f`; HTTP bootstrap `97bbe51`; capture-owner path guard `b482ba2`; HTTP reload actions `6ea303c`; telemetry rotation/shutdown guard `237dbd1`; HTTP development X controls `1814c9b`; HTTP semantic corrections `3c5e61a`; HTTP AI feedback `a3718ff`; HTTP Inbox selection review `3f4a66d`; HTTP Inbox reads `ce57e79`; HTTP model usage `af8d722`; HTTP vision evaluation `cf534ec`; HTTP Timeline composition `3cf90b4`; automatic HTTP handler completion `9da6ed8`; acquisition execution `8027599`; candidate evaluation `ed35d82`; vision persistence tests `70ea120`; empty-candidate completion `de95c58`; Store Timeline read-model `bee6a9f`; automatic Store feature separation `f27e91b` (95 declarations/15 feature files); validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Capture/Collection/Bridge builder/Selection/EventEngine/Reasoning/Domain/Detector/Inspector/Store/Engine/HTTP/config/application scope selects 14 packages (13 with tests, Bridge builder compile-only): default 3,267 pass/50 skip and dev 4,111 pass/62 skip, zero failures; whole Store default 462 pass/5 skip and dev 614 pass/7 skip before/after (45 new results); earlier Store Timeline read-model characterization 72 pass/1 skip default/dev retained; empty-candidate completion characterization 218 default/dev before/after retained; earlier vision persistence characterization 94 default/dev retained; candidate evaluation characterization 88 default/dev before/after retained; acquisition execution characterization retained; remaining HTTP feature characterization retained; Timeline characterization retained; vision-evaluation characterization retained; model-usage characterization retained; Inbox read characterization retained; selection-review characterization retained; AI-feedback characterization retained; semantic correction characterization retained; development X characterization retained; earlier telemetry/reload characterization and concurrency evidence retained; earlier guard/bootstrap receipts retained, four Store build-tag graphs and 16 Windows artifacts pass. Earlier acquisition-policy/capture-round/privacy/HTTP/Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Backend source CL-3.1/CL-3.2/CL-3.3 closed after accepted responsibility-map/exit-criteria review at 6b9b3a0, with code through f27e91b; [retain/defer decisions](#cl-3-source-closure-2026-11-03) recorded. No material ownership gap requires another extraction. Runtime activation, operational acceptance and CL-8 source sign-off remain separate |
 | CL-4: frontend feature ownership | 3b9cfd1: 374 functions/20 feature factories; 30 shared/root functions retained | Frozen 29/29 characterization; Node 360/360; HTTP/app default 1,322 pass/25 skip and dev 1,345 pass/12 skip; four Windows modes/12 artifacts; actual embedded desktop/mobile checks | Not performed | CL-4.1/CL-4.2/CL-4.3 source closed after scoped review; retain/defer map below. Operational acceptance and CL-5 through CL-8 remain separate |
 | CL-5: native runtime and QA boundaries | Reviewed automatic cohort based on 555dea9: 47 declarations/seven production modules; e146d40 projector fix retained; commit bound to publication readback | New characterization 31/31 before; combined 62/62 after/final; native Node 780/780; seven-package default/dev Go; four Windows modes/16 PE artifacts; sealed manual/daily/main 80/81/100 modules | Not performed | Source CL-5 closed after owner-authorized review; retain/defer map below. Operational acceptance remains separate |
-| CL-6: Bridge responsibility boundaries | Existing source/lifecycle modules retained; further split proposed | Existing baseline only for remaining seams | No new rollout | Background dispatch/surface integration pending |
+| CL-6: Bridge responsibility boundaries | AkuBridge 6ce23f7: reporting factory/three moved declarations; retained operation/resource owners mapped | Reporting 12 before/after; Bridge Node 515, native-host Go, Sidecar Node 44 and default/dev Go pass; 18 Windows artifacts; three projected packages/70 files each | Not performed | Source CL-6 closed after owner-authorized scoped review; explicit retain map below and publication readback bind the code/docs/remote identities. Operational acceptance remains separate |
 | CL-7: build, packaging and test organization | Existing packaging retained; full consumer reconciliation proposed | Partial prior package evidence | No new rollout | Supported-entry/build-tag closure pending |
 | CL-8: integration and source sign-off | Not started for the comprehensive roadmap | Final matrix pending | Separate operational gate | Comprehensive source acceptance pending; runtime acceptance separate |
 
@@ -325,6 +325,8 @@ production package graphs, existing protocol/provenance/negative conformance
 passes, and source-pinned manual/daily/main bundles remain complete.
 
 ### CL-6: Bridge responsibility boundaries
+
+Current status: source closed after owner-authorized review of AkuBridge 6ce23f7. See the [automatic CL-6 result](#automatic-cl-6-bridge-reporting-separation-result-2026-11-04) for the reporting extraction, unchanged guard/ownership proof, validation and deliberate retain map. Publication readback binds both repositories; activation remains separate.
 
 - Map background messaging, capture dispatch, tab/window ownership, readiness
   and lifecycle consumers in `service-worker.js` and related modules.
@@ -2234,3 +2236,139 @@ capture dispatch, tab/window ownership, readiness and lifecycle consumers before
 choosing one responsibility and its characterization tests. No CL-6 edit,
 restart or trial is part of this publication. The prior codec-analysis proposal is superseded by this authorized automatic
 run; historical partial-status sections retain their capture-time meaning.
+
+## Automatic CL-6 Bridge reporting separation result (2026-11-04)
+
+The owner authorized automatic CL-6 refactoring using the established
+characterize-before-move, verify, review and responsibility-map pattern.
+AkuBridge starts at 3676f5c; the canonical Sidecar roadmap starts at aac4967.
+The bounded source outcome separates reporting from decisions about resource
+release and explicitly retains the existing operation/resource owners.
+
+| Dimension | Current evidence and scope |
+| --- | --- |
+| Implemented | AkuBridge code 6ce23f7 after 3676f5c: three reporting declarations move to capture-surface-reporting.js with one stateless factory; service-worker wires the existing header/error ports. Eight reviewed Bridge code/test/tooling files are committed; these four canonical Sidecar roadmap documents record source closure, with publication bound to readback |
+| Tested | Frozen reporting characterization: 12/12 before extraction; all 12 pass unchanged through the actual factory after extraction. Related Bridge cohort 145/145; final full Bridge Node 515/515; canonical syntax and native-host Go checks pass. Sidecar consumer Node 44/44; seven-package Go default 2,600 pass/44 skip and dev 3,292 pass/54 skip, zero failures. Windows PE/amd64: two Bridge artifacts plus 16 Sidecar artifacts across four tag modes. Three local projected extension packages each contain 70 verified files and pass actual reporter/identity/policy/receipt checks |
+| Activated | Not performed; no extension reload, native runtime restart, source/account/config changes or live trial |
+| Acceptance | Owner-authorized scoped review has no blocking finding; source CL-6 is closed with the explicit retain/defer map. Publication readback binds commits and both remote SHAs. Activation and operational acceptance remain separate; source CL-3/CL-4/CL-5 retain their published closure |
+
+### Implemented feature and behavior
+
+The new capture-surface-reporting.js owns postCaptureSurfaceEvents,
+captureSurfaceEvent and private createCaptureSurfaceEventId. A single
+createCaptureSurfaceReporter({ bridgeHeaders, responseError }) factory returns
+the two existing caller operations. It owns no Chrome object, lease, queue,
+generation, timer, storage record or admission state. Headers are resolved at
+request time through the existing bridgeHeaders function, including the current
+split-capture instance. There is no header snapshot or second command guard.
+
+Function signatures, input rejection, source fallback, event ordering, policy
+identity, outcome limits, timestamp/UUID fallback, payloads, HTTP endpoint,
+headers and error behavior remain exact. Callers retain their existing awaits
+and best-effort catches. Observation submission precedes successful telemetry
+and command completion; original capture failures remain authoritative when
+telemetry or failure submission also fails. Release request telemetry precedes
+the owned resource release, followed by receipt telemetry; a telemetry failure
+cannot prevent release or replace its outcome.
+
+The service worker changes from 2,549 to 2,483 lines. Size is descriptive, not an
+exit target. All 112 retained top-level declarations/statements, including the
+complete listener and orchestration bodies, are byte-identical. A reconstruction
+proof permits only the three declaration moves, import/composition wiring and
+blank-line cleanup. Moved declaration bodies are identical ignoring indentation
+and EOL. The final 12 behavior assertions are frozen before extraction; the
+baseline adapter reads the original declarations, then the final adapter imports
+the actual production factory. No baseline fallback remains in the final helper.
+
+### Responsibility map and deliberate retains
+
+| Boundary | Retained owner and reason | Concrete return trigger |
+| --- | --- | --- |
+| Message ingress, split handlers, event registration and sender checks | service-worker.js composes existing capabilities and preserves synchronous true/false/undefined replies, rejection envelopes and response-before-reload order | A supported second ingress needs exactly the same routing/authorization contract, or a demonstrated listener-order defect requires an independent owner |
+| Capture and media-recapture dispatch | One commandGuard and the existing claim/capture/submit/finish ordering; recapture retains its distinct release finally | An independently supported capture caller needs a stable execution lifetime, or a demonstrated ordering defect justifies separation |
+| Background config, heartbeat, lease reconciliation, polling and release | One persisted config/poll owner; createSingleFlightSessionPump already owns coalescing. Cleanup receipt completion remains before new pending-command admission | A genuinely independent background lifetime/consumer or an evidenced admission/config race |
+| Managed capture tab/window resources | createManagedCaptureWindowRuntime and surface-cleanup-journal retain serialized operations, ledger, exact lease/generation checks and durable pending cleanup | An explicitly approved resource-lifetime change with restart/negative ownership characterization |
+| Reader and source windows | Existing reader-window-runtime/source-window-runtime own explicit user actions. Reader windows remain excluded from capture; managed capture windows remain excluded from reader opening | A supported new reader/source-window lifetime or native foreground handshake requirement |
+| Navigation, readiness, freshness and prepared capture | Existing policies/adapters plus operation-local activation/focus callbacks. Source parsers remain in adapters; navigation completion is distinct from final capture readiness | A real reusable browser-operation consumer or an approved readiness/focus behavior change |
+| Installed-tab recovery, self-reload, native lifecycle and source access | Existing recovery policy, native scheduler/client and local serialized reconciliation queues | A second consumer needs the complete recovery lifecycle or a concrete restart/ordering defect |
+
+An independent read-only Sol assessment found no demonstrated additional owner
+conflict or mandatory extraction. The CL-6 criterion requires a justified
+responsibility split, preserved contracts and explicit ownership. The remaining
+service-worker composition would otherwise become a broad callback map without
+a new resource boundary. These are explicit retain decisions rather than an
+unbounded file-splitting backlog.
+
+### Characterization, baseline correction and consumers
+
+The original full cohort reported 508 pass/one failure: an old contract test
+looked for login_required in content-script.js although readiness decisions
+already belong to capture-primitives.js. Once that location was corrected, a
+second assertion in the same test exposed the same stale availability context.
+Both now check the real owner and the content-script delegation path. A direct
+behavior test proves login blocking, including visible candidates, and
+availability precedence. Production readiness code is unchanged. Intermediate
+failed checks are retained in the local logs, including one corrected matcher
+that initially assumed an if statement instead of the existing ternary.
+
+The corrected full pre-move cohort passed 510/510. Five additional dispatch and
+release characterizations also passed before extraction and bring the final
+full cohort to 515/515. Tests cover invalid/no-op input, payload/fallback order,
+input preservation, current policy fingerprint, live headers, UUID fallback,
+server/JSON/network errors, successful and failing dispatch, original-error
+identity, and release/report ordering with authoritative cleanup outcomes.
+
+The existing admission-diagnostic regression now uses the actual reporter
+instead of slicing its old worker location. It retains all admission-before-
+cleanup, privacy, byte-budget, source and no-tab-deletion assertions, and checks
+the real executing policy fingerprint instead of a stub string. The extension
+contract follows the moved endpoint and includes the new file in forbidden-API
+coverage. Existing readiness, native lifecycle, sender, reader-exclusion and
+ownership assertions remain intact. npm run check adds the new module syntax
+check; existing checks are retained.
+
+### Source exit assessment and limits
+
+| Source criterion | Evidence |
+| --- | --- |
+| Message/manifest compatibility | Retained listener bodies and manifest/capability files remain exact; source contract and Bridge/split regressions pass |
+| Asset completeness and extension identity | Static relative imports make the new reporter reachable. Verifier follows 70 files; canonical Browser projection is applied only to local development/acceptance/production-app copies, and the reporter is exercised from each copy with controlled fetch |
+| Policy/receipt contract parity | Executing policy fingerprint remains equal to the unchanged Sidecar pin; packaged Bridge cleanup receipt matches its separately packaged Sidecar consumer. Negative cleanup and lease/generation regressions remain |
+| Explicit resource ownership | Existing managed journal, reader lifetime, command guard, split epoch, source access and native scheduler remain sole owners; reporting adds no mutable owner or fallback |
+
+The owner-authorized review confirms the source exit criteria; source CL-6 is
+closed for code 6ce23f7 and the recorded retain/defer map. Local staged
+packages remain verification artifacts rather than installed releases. Node/Go/Windows
+checks do not prove loaded-extension identity, clean-machine startup, live
+provider behavior, UI focus/quality parity, race-detector or full-repository
+acceptance. No visual UI is changed. Source CL-7/CL-8 retain their separate scope.
+
+All 166 other tracked Bridge files, 1,503 non-roadmap Sidecar files and 200
+tracked Browser files match the captured baseline, including pre-existing dirty
+configuration/build files. Untracked user work is excluded. This automatic run
+did not commit, push, activate, reload or run a live source trial. The owner
+subsequently authorized reviewed source closure and publication; activation
+and live trials remain separate.
+
+Evidence: [validation and structural review](../../AkuBridge/build/cl6-auto-20261104/qa/validation.json),
+[declaration/remainder proof](../../AkuBridge/build/cl6-auto-20261104/qa/extraction-proof.json),
+[projected package readback](../../AkuBridge/build/cl6-auto-20261104/qa/packages.json),
+[scoped acceptance review](../../AkuBridge/build/cl6-auto-20261104/qa/review.json), and
+[final candidate readback](../../AkuBridge/build/cl6-auto-20261104/qa/final-readback.json).
+These are ignored project-local receipts. Prior CL-5 receipts retain their
+capture-time commit/publication identities; no historical receipt is rewritten.
+
+Publication review: [frozen candidate and scoped recheck](../../AkuBridge/build/cl6-publication-20261104/qa/review.json)
+and [commit/remote readback](../../AkuBridge/build/cl6-publication-20261104/qa/final-readback.json).
+The original implementation receipts retain capture-time candidate fields;
+publication readback binds their unchanged tested payload to code 6ce23f7,
+the roadmap commit and both origin/main SHAs. Passing product checks are reused
+after hash verification, without rerunning suites solely for publication.
+
+### Next boundary
+
+Source CL-6 is closed after scoped review. The next proposed analysis is
+read-only CL-7 source lists/package seals/
+generated manifest and harness organization, with existing dirty Browser build
+changes treated separately. No CL-7 implementation is included. Earlier CL-5
+next-proposal text retains its historical meaning and is superseded by this run.
