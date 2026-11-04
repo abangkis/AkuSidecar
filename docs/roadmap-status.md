@@ -1,6 +1,6 @@
 # Roadmap status and evidence index
 
-Status synchronized: 2026-11-04 (Asia/Jakarta). Latest delta is reviewed CL-7 worker test-filename exclusion and packaging regression in AkuBrowser 8190b45, after F02 in Sidecar 2af9698, accepted for publication with commit/remote identity bound to readback. CL-7 remains partial; source CL-3 through CL-6 remain closed. Activation and operational acceptance remain separate.
+Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-7 is closed after the accepted source/package/harness review and AkuBridge 6875355, retaining Browser 8190b45 and Sidecar F02 2af9698. Source CL-3 through CL-6 remain closed. Dirty Browser build/cache P05 is excluded; CL-8 and activation/operational acceptance remain separate. Commit/remote identities are bound to publication readback.
 Earlier source history before the latest result: AkuSidecar `80acfb9` (Timeline More/Less and restart-dev assertion correction, after `f27e91b` automatic Store feature separation; 95 declarations/15 feature files; after Store Timeline read-model `bee6a9f`, after empty-candidate completion `de95c58`, after vision persistence `70ea120`; per-run candidate evaluation/completion, after acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
@@ -1663,6 +1663,42 @@ implementation. Pre-existing dirty Browser build/cache work and unrelated
 Sidecar config/.tmp/experiments are preserved outside these commits. The prior
 headless-worker next proposal is historical for this now accepted boundary.
 No next refactor, activation or trial is authorized by this record.
+
+## CL-7 source closure (2026-11-04)
+
+Reviewed Bridge code/test commit: `68753553644203bfa0ed0bdd9cf553e6c5e669e0`,
+based on `6ce23f7`; validation source is Sidecar `fc50f9d` and Browser `8190b45`.
+The verifier rejects referenced *.test.js/mjs/cjs without changing the current
+70-file production inventory or its fingerprint; ten CLI cases characterize
+closure, hashes, prior directory guards, missing files, test channels and helpers.
+
+| Dimension | Current status and scope |
+| --- | --- |
+| Implemented | Bridge package suffix guard and ten CLI cases; earlier Sidecar F02 and Browser worker filter retained; supported source/package/harness owners reconciled |
+| Tested | Bridge npm 525 pass; final/publication characterization 10/10. Sidecar Node 762 pass/2 disposable-Chrome opt-in skip; HTTP boundary 16 default/dev; four primary tag graphs and 27 auxiliary/platform/tag metadata queries (four expected fixture exclusions); 12 Windows PE/amd64 artifacts. Five 70-file identity projections and 20 source recipes preserve payload hashes; synthetic promotion/rollback/tamper/PrepareOnly checks pass |
+| Activated | Not performed; no restart, installation, configuration/account/profile change or live source trial |
+| Acceptance | Selected clean source CL-7 closed after owner-authorized scoped review. Retain/defer map and explicit exclusions accepted; CL-8 comprehensive integration/sign-off and operational acceptance remain separate |
+
+See the [canonical closure, retain/defer decisions, commands and limits](code-cleanup-roadmap.md#cl-7-source-closure-2026-11-04).
+P04 maintenance/recovery tools remain source-retained. P01/P02/P03 compatibility
+contracts remain; P05 dirty Browser build/cache stays outside these commits and
+needs its own review. The earlier shared-cache dependency gap is resolved for
+the recorded metadata/Windows artifacts using an existing pinned project cache
+with network disabled; no dependency/module-file change was needed.
+
+Ignored Sidecar evidence: build/cl7-auto-20261104/qa/{final-review,
+publication-review,publication-readback,go-validation,entry-metadata,
+auxiliary-compilation,package-consumers}.json plus logs. Bridge
+build/cl7-auto-20261104/ retains characterization, npm and inventory receipts.
+Publication readback binds source/test/log/artifact identities to commits and
+remote main; older receipts retain capture-time meaning. No full-repository,
+macOS execution/signing, installer execution or live acceptance is claimed.
+
+Next proposal: read-only CL-8 integration/sign-off planning, reconciling final
+candidate dispositions with the cross-repository matrix and determining which
+remaining checks are necessary. No CL-8 change, cache adoption or trial is
+approved by this record. Earlier CL-7 partial/next-proposal paragraphs are
+historical and superseded only within the accepted clean source scope.
 
 ## Product and installation roadmaps
 

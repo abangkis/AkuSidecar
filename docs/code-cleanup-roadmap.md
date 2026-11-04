@@ -1,7 +1,7 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-04 (Asia/Jakarta). Latest delta is reviewed CL-7 worker test-filename exclusion and packaging regression in AkuBrowser 8190b45, after F02 in Sidecar 2af9698. CL-7 remains partial; source CL-3 through CL-6 retain their closure. Activation and operational acceptance remain separate. Commit/remote identities are bound to publication readback.
+Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-7 is closed after the accepted packaging/source/harness review and AkuBridge 6875355, retaining Browser 8190b45 and Sidecar F02 2af9698. Source CL-3 through CL-6 retain their closures. Pre-existing dirty Browser build/cache work is explicitly excluded; CL-8 and activation/operational acceptance remain separate. Commit/remote identities are bound to publication readback.
 Status: source CL-3 closed after the accepted responsibility-map review at
 `6b9b3a0`; source CL-4 closed by the reviewed FE result below. Comprehensive
 cleanup remains in progress. See the
@@ -116,7 +116,7 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-4: frontend feature ownership | 3b9cfd1: 374 functions/20 feature factories; 30 shared/root functions retained | Frozen 29/29 characterization; Node 360/360; HTTP/app default 1,322 pass/25 skip and dev 1,345 pass/12 skip; four Windows modes/12 artifacts; actual embedded desktop/mobile checks | Not performed | CL-4.1/CL-4.2/CL-4.3 source closed after scoped review; retain/defer map below. Operational acceptance and CL-5 through CL-8 remain separate |
 | CL-5: native runtime and QA boundaries | Reviewed automatic cohort based on 555dea9: 47 declarations/seven production modules; e146d40 projector fix retained; commit bound to publication readback | New characterization 31/31 before; combined 62/62 after/final; native Node 780/780; seven-package default/dev Go; four Windows modes/16 PE artifacts; sealed manual/daily/main 80/81/100 modules | Not performed | Source CL-5 closed after owner-authorized review; retain/defer map below. Operational acceptance remains separate |
 | CL-6: Bridge responsibility boundaries | AkuBridge 6ce23f7: reporting factory/three moved declarations; retained operation/resource owners mapped | Reporting 12 before/after; Bridge Node 515, native-host Go, Sidecar Node 44 and default/dev Go pass; 18 Windows artifacts; three projected packages/70 files each | Not performed | Source CL-6 closed after owner-authorized scoped review; explicit retain map below and publication readback bind the code/docs/remote identities. Operational acceptance remains separate |
-| CL-7: build, packaging and test organization | F02 in Sidecar 2af9698 retained; worker test-filename exclusion and expanded packaging fixture in Browser 8190b45 | Worker fixture red/green; cold/warm/fresh-source/cache-corruption/untrusted-archive checks pass; sealed Node 16/16; all 111 production sources retained, 26 tests excluded; manual/daily/main driver and manifest bytes unchanged. Earlier F02 Node/HTTP/four-mode Windows evidence retains its own scope | Not performed | Both selected increments reviewed and accepted for publication; CL-7 remains partial. Whole-stage exit-criteria reconciliation and pre-existing dirty Browser build/cache review remain separate |
+| CL-7: build, packaging and test organization | Sidecar F02 2af9698, Browser worker filter 8190b45 and Bridge package test-filename guard/10 CLI cases 6875355; source/package/harness ownership reconciled | Bridge 525 pass and final/publication characterization 10/10; Sidecar Node 762 pass/2 opt-in skip; embedded/static 16 default/dev; four tag graphs and 27 auxiliary/platform/tag metadata queries; 12 Windows PE/amd64 artifacts; five 70-file projected packages and 20 source recipes verified. Earlier worker cold/warm and exact sealed-byte receipts retained | Not performed | Selected source CL-7 closed after owner-authorized scoped review; retain/defer decisions and triggers below. Dirty Browser build/cache P05 excluded, macOS/installed/live acceptance and CL-8 remain separate |
 | CL-8: integration and source sign-off | Not started for the comprehensive roadmap | Final matrix pending | Separate operational gate | Comprehensive source acceptance pending; runtime acceptance separate |
 
 ### CL-1: inventory before deletion
@@ -340,7 +340,7 @@ resource ownership is explicit without additional singleton state or fallback.
 
 ### CL-7: build, packaging and test organization
 
-Current status: partial. [F02 test-asset separation](#cl-7-f02-test-asset-boundary-result-2026-11-04) and the [worker packaging boundary](#cl-7-worker-test-filename-boundary-result-2026-11-04) are implemented/tested/source-reviewed and accepted for publication. Whole-stage exit-criteria reconciliation and pre-existing dirty Browser build/cache work retain separate review.
+Current status: selected source closed after the [CL-7 source-closure review](#cl-7-source-closure-2026-11-04), including [F02](#cl-7-f02-test-asset-boundary-result-2026-11-04), the [worker packaging boundary](#cl-7-worker-test-filename-boundary-result-2026-11-04) and Bridge 6875355. Existing supported owners are retained with return triggers. Pre-existing dirty Browser build/cache P05 remains excluded for separate review; source closure does not establish runtime, macOS, installed or signing acceptance.
 
 - Reconcile source lists, package seals, generated manifests, asset pins and
   harness inputs after each move. Test the packaged consumer, not just imports
@@ -2536,3 +2536,93 @@ Existing cached/generated files are test inputs or disposable receipts, not
 source changes adopted by this review. The earlier F02 next proposal is now
 historical for this selected boundary. No next implementation, activation or
 trial is approved by this documentation update.
+
+## CL-7 source closure (2026-11-04)
+
+The owner authorized an automatic CL-7 run, followed by review, source closure,
+roadmap synchronization, commit and push when no blocking issue remained.
+The accepted delta is AkuBridge `68753553644203bfa0ed0bdd9cf553e6c5e669e0`,
+based on `6ce23f7`; validation also uses Sidecar `fc50f9d` and Browser `8190b45`.
+Earlier F02 and worker-filter source identities/evidence retain their scope.
+
+| Dimension | Accepted status and scope |
+| --- | --- |
+| Implemented | Bridge verifier adds one forbidden filename-suffix branch for referenced *.test.js/mjs/cjs. A new project-local CLI fixture suite adds ten cases for exact inventory/hash output, reference closure, missing files, prior directory exclusion, test suffix rejection through imports/HTML/manifest/source registry, and preservation of test-helper.js/x-qa.js. Runtime, protocol, manifest, version, dependencies and existing guards remain unchanged |
+| Tested | Seven initial characterization cases demonstrate four failures before the fix. Final ten cases pass, including after safe fixture cleanup/timeout handling and again during publication review. Canonical Bridge npm test: 525 pass. Sidecar worker/native/package Node: 762 pass, two disposable-Chrome opt-in skips, zero failures. Embedded/static: 16 pass in each default/dev mode. Four Windows tag modes compile app + HTTP test binaries; Browser launcher/installer/signer and Bridge host add four binaries: 12 PE/amd64 artifacts total |
+| Activated | Not performed. Only project-local packaging, synthetic harness, metadata and compilation checks; no runtime restart, live source trial, installation, dependency upgrade or account/profile/configuration change |
+| Acceptance | Scoped code/test review has no blocking finding. Selected clean source CL-7 is closed with the retained owners and explicit exclusions below. This is source acceptance, not comprehensive CL-8 sign-off, macOS execution/signing, installed/upgrade acceptance or live behavior acceptance |
+
+### Exit criteria and consumer evidence
+
+| Exit criterion | Evidence and limit |
+| --- | --- |
+| Supported source/build-tag/package entries accounted for | Four primary Go selections retain 31/34/32/34 local packages. 27 auxiliary/tag/platform queries retain four expected fixture-only build exclusions and no unresolved dependency errors. Production entry points remain distinct from explicitly gated QA executables |
+| No missing production payload or test leakage in selected packages | Bridge production inventory stays exactly 70 files with fingerprint d0e7e9645ce4d40c820f604ceccd8a2b62e64a35f1a76e240d086fcbad70efee. All five identity projections preserve that file set and all non-projection bytes; four source recipes per profile preserve hashes and resolver identity. The staged worker retains all 111 production sources; tests remain excluded. All 65 production web byte payloads occur in both Windows binaries in each mode |
+| Package/production ownership remains explicit | Sealed manual/daily/main roots retain 80/81/100 modules, 26/26/32 assets, immutable generated catalogs/timing and exact previous driver/manifest hashes. QA-like native helper names remain legitimate production dependencies. No fixture-driver/source-checkout fallback is introduced |
+| Harness behavior and evidence are reproducible | Existing real stager fixture proves source selection; synthetic bundle harness separately proves promotion, rollback, tamper rejection, service-plan checks and copied PlanOnly/PrepareOnly behavior. Ten new CLI tests run with the ordinary Bridge npm test discovery. Passing broader evidence is reused only after protected source, log and artifact hash checks |
+
+### Retain/defer map and return triggers
+
+| Boundary | Decision | Return trigger |
+| --- | --- | --- |
+| Sidecar embedded/static web | Retain wildcard embedding and HTTP/security owners; F02 removes only suites | Asset, bootstrap, test location or static exposure changes |
+| General worker staging/cache | Retain real pin-checked stager, full non-test source set and all 13 shared/x-qa helpers | Source layout/extension, asset recipe, pin or cache contract changes |
+| Sealed native packages | Retain distinct manual/daily/main entries, graph builder, factories and generated recipes | Entry/import/factory or capture/timing recipe changes |
+| Bridge inventory and Browser consumers | Retain manifest/registered-source/HTML/import closure, deterministic hashes, shared verification.files and identity projection | Reference syntax or executable asset kind changes, including non-js import roots; package/profile/source registration changes |
+| Development bundle harness | Retain separate real source-selection and synthetic lifetime/provenance checks | Bundle entry, provenance schema, staging/promotion/rollback changes |
+| Go tag/auxiliary roots | Retain supported product/diagnostic tools and explicit fixture gates | Build tags, entry points, imports, embeds or platform selectors change |
+| Frozen Store/macOS/preview tooling P04 | Retain maintenance/recovery lanes still named by release contracts and tests; frozen publication is not retirement evidence | Explicit lane-retirement decision or changes needing platform-native validation |
+| Compatibility P01/P02/P03 | Retain launcher rollback, old-file cleanup and signed update formats | Approved replacement/migration with consumer and rollback evidence |
+| Pre-existing dirty Browser build/cache P05 | Exclude from this closure and publication; all eight tracked dirty files and five untracked source-cache files retain baseline hashes | Separate owner-authorized review/inclusion of that existing work |
+
+P04's source-retention decision supersedes its earlier unverified retirement
+classification only within this reviewed source scope. P05 remains unreviewed
+outside the closure. Original CL-1 aggregate counts and old partial/next-proposal
+paragraphs remain historical checkpoints; they do not override this decision.
+
+The initial shared cache lacked pinned x/sys v0.19.0 for Browser Windows roots.
+The existing Sidecar .go-build/mod cache already contained it; using that cache
+with GOPROXY=off and -mod=readonly resolved metadata and compilation without any
+installation, upgrade or module-file change. This resolves the earlier offline
+dependency limitation for these queries/artifacts, not the excluded cache tools.
+
+### Commands, evidence and limits
+
+From AkuBridge, the current source and new characterization are reproducible with:
+
+```text
+node --test --test-isolation=none test/extension-package.test.mjs
+npm test
+npm run package:verify
+```
+
+The Sidecar Node cohort selects worker/native-pilot/*.test.mjs,
+worker/test/*.test.mjs and scripts/{build-x-daily-owner,x-native-owner,
+x-development-pilot-package,x-daily-development-package}.test.mjs. HTTP boundary
+checks select TestEmbeddedAssetsExcludeTestSuites, TestStaticAssetsExcludeTestSuites
+and TestStaticProductionAssetsPreserveBodiesAndGuards in default/dev. Windows
+compilation uses go build for cmd/akusidecar and go test -c for internal/httpapi
+in default, auth_session_dev, auth_session_fixture and combined tags. Auxiliary
+builds use the existing launcher, installer, signer and native-host module roots.
+Use the canonical source-cache adapter, project-local temporary/output directories
+and no inherited live-test consent flags; no runtime launcher is a validation step.
+
+Ignored Sidecar receipts under build/cl7-auto-20261104/: CL7-source-review.md,
+qa/final-review.json, qa/publication-review.json, qa/publication-readback.json,
+qa/go-validation.json, qa/entry-metadata.json, qa/auxiliary-compilation.json,
+qa/package-consumers.json and the Node/synthetic harness logs. Bridge receipts
+under build/cl7-auto-20261104/ retain red/green/final/publication characterization,
+canonical npm output and before/after/publication inventories. Source/artifact/log
+hashes and publication readback bind tested payloads, commits and remote main SHAs.
+Receipts may be absent in another checkout; absence is not a new passing result.
+
+The two Chrome cases remain opt-in skips; no live/browser acceptance is claimed.
+Darwin metadata is source selection only. The existing Browser dirty builders,
+user config, .tmp/experiments, profiles and data are not included or validated by
+this closure. No full-repository test or complete installer execution is claimed.
+
+Next proposal: read-only CL-8 integration/sign-off planning. Reconcile the final
+candidate ledger and cross-repository validation matrix, decide which prior
+receipts remain valid, and identify the minimum remaining integration checks.
+CL-8 implementation/testing, cache-tool adoption, activation and trials require
+their own scope; this closure does not authorize them.
