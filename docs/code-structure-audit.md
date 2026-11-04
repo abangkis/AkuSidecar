@@ -2,7 +2,7 @@
 
 ## Status synchronization (2026-11-04)
 
-Latest delta: completed P05 scratch maintenance is published as Browser 54a1b49 after Step 3B 5fa73c9 and cache 8c39d97. The owner freezes further Mac work/native qualification and selects Windows-only focus; see the [current decision](#p05-completed-scratch-maintenance-and-mac-freeze-2026-11-04). Selected source CL-3 through CL-8 retain their closures. Full P05 and operational/release acceptance are not declared; earlier statements/receipts retain their checkpoint scopes.
+Latest delta: Windows installed-app cache lifecycle characterization is implemented, tested and reviewed as Browser 16a6ff2; see the [current result](#p05-windows-installed-app-cache-lifecycle-characterization-2026-11-04) for publication status. Earlier cache/scratch increments retain their published status. Further Mac work/native qualification stays frozen; focus remains Windows-only. Selected source CL-3 through CL-8 retain their closures. Full P05 and operational/release acceptance are not declared; earlier statements/receipts retain their checkpoint scopes.
 
 Previous packaging checkpoint: [CL-7 F02 test-asset separation](#cl-7-f02-test-asset-boundary-result-2026-11-04), based on Sidecar 10c1daf, was implemented/tested/source-reviewed before the later CL-7/CL-8 closures. Its original scope and receipt identities are retained.
 
@@ -1724,7 +1724,20 @@ are recorded below; the prior Mac analysis proposal is historical.
 | Acceptance | The completed maintenance source increment is accepted. Further Mac refactoring and native qualification are frozen/deferred by the owner and do not gate Windows cleanup. Full P05 and operational/release acceptance remain unestablished |
 
 See the [canonical freeze decision, receipts and Windows proposal](code-cleanup-roadmap.md#p05-completed-scratch-maintenance-and-mac-freeze-2026-11-04).
-Next inspect the active Windows installed-app builder's actual cache/temp wrapper
+The next proposal at that checkpoint was to inspect the active Windows installed-app builder's actual cache/temp wrapper
 failure path. Existing helper tests and source assertions are not by themselves
 execution evidence for that wrapper. No identity/release guard change or installer
 execution is included in this proposal.
+
+## P05 Windows installed-app cache lifecycle characterization (2026-11-04)
+
+| Dimension | Current status and scope |
+| --- | --- |
+| Implemented | Browser 16a6ff2d0c1d3f8a0db6a0cb31d42810dd72ac4a adds only a wrapper integration suite. Production responsibilities, protocol and guards are unchanged |
+| Tested | Two owned/caller-scratch cases pass; two fixture-only missing-cleanup mutations fail at restoration. The actual copied builder/helper execute; the first Node identity port is controlled. Restoration and preservation are observed in-process before teardown. Staged bytes and production hashes match the prior successful receipt |
+| Published | Browser 16a6ff2 pushed to Origin/main and verified as 16a6ff2d0c1d3f8a0db6a0cb31d42810dd72ac4a. Final receipt separately binds documentation publication |
+| Acceptance | Scoped review finds no blocker. The first-gate failure path is covered; full build, checker execution, installer and operational/release acceptance are unproven. Full P05 stays open. Mac work/qualification stays frozen |
+
+See the [canonical evidence and limits](code-cleanup-roadmap.md#p05-windows-installed-app-cache-lifecycle-characterization-2026-11-04).
+The next proposed analysis compares remaining Windows wrappers with execution
+coverage, without approving another implementation or operational action.

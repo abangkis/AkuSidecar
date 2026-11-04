@@ -38,7 +38,7 @@ disposition counts are not a remaining-work count.
 
 Latest Bridge result: [automatic CL-6 source closure](#automatic-cl-6-bridge-reporting-separation-result-2026-11-04), AkuBridge 6ce23f7, is implemented/tested/reviewed and source closed after owner-authorized scoped review. Publication is bound to readback; prior source closures and original inventory disposition counts retain their scope.
 
-Latest packaging result: selected source CL-7 remains closed; P05 was excluded at that historical checkpoint. Cache 8c39d97, Sidecar ignore ff65e9e, Step 3B 5fa73c9 and completed scratch maintenance 54a1b49 are published separately. The [Mac freeze / Windows-only direction](#p05-completed-scratch-maintenance-and-mac-freeze-2026-11-04) supersedes the prior Mac next proposals. Full P05 and operational/release acceptance remain unestablished; original inventory counts retain their capture-time meaning.
+Latest packaging result: selected source CL-7 remains closed; P05 was excluded at that historical checkpoint. Earlier cache/scratch increments retain their published status. Windows installed-app cache lifecycle characterization is implemented, tested and reviewed as Browser 16a6ff2; see the [current result](#p05-windows-installed-app-cache-lifecycle-characterization-2026-11-04) for publication status. Mac work/qualification remains frozen. Full P05 and operational/release acceptance remain unestablished; original inventory counts retain their capture-time meaning.
 
 ## Dispositions and approval
 
@@ -147,7 +147,7 @@ Paths in this section are relative to AkuBrowser.
 | P02 | `retain-required` | Installer `legacySetupPath` removal/uninstall cleanup | `installer/windows/installer.go` removes old setup executable during install and includes it in uninstall paths | Old-file cleanup is active upgrade behavior; retiring the old UI did not retire upgrade cleanup |
 | P03 | `defer-until-replacement` | Signed update manifest v1 and conditional legacy artifact names | Windows/macOS companion builders, manifest signer, Bridge host update reader and tests; Windows emitter requires matching product/Bridge/Sidecar identity | Keep exact signature/version/compatibility policy until supported old host/update consumers migrate; no manifest relabel or schema reinterpretation |
 | P04 | `retain-required` | Frozen Store/macOS/preview asset-generation and distribution tooling | CL-7 closure retains maintenance/recovery tools named by release contracts/tests; current Windows binaries compile and Darwin selectors are mapped. This supersedes the earlier unverified source-retirement classification | Revisit on explicit lane-retirement decision or changes requiring platform-native validation; frozen publication is not obsolescence proof, source retention is not macOS/installed acceptance |
-| P05 | `unverified` (original inventory) | Browser source-build cache helpers, wrappers and tests | Cache 8c39d97, Sidecar ignore ff65e9e, Step 3B ordering 5fa73c9 and completed scratch maintenance 54a1b49 are published. The last combined cohort passes 15/15. Separate records below define source acceptance and the owner's Windows-only direction | Completed increments are accepted within scope; further Mac work/qualification is frozen and is not a Windows cleanup gate. Full P05 closure is not declared. Preserve the historical CL-7/CL-8 exclusion and do not claim installed/release acceptance |
+| P05 | `unverified` (original inventory) | Browser source-build cache helpers, wrappers and tests | Earlier cache/scratch increments retain publication and the separate 15/15 cohort. Windows wrapper characterization 16a6ff2 is published: two passing cases and two expected missing-cleanup failures. Separate records below define source acceptance and evidence limits | Completed increments are accepted within scope; further Mac work/qualification is frozen and is not a Windows cleanup gate. Full P05 closure is not declared. Preserve the historical CL-7/CL-8 exclusion and do not claim full-build/installed/release acceptance |
 
 ## First concrete proposal for CL-2
 
@@ -3019,6 +3019,19 @@ CL-8 counts are unchanged.
 | Acceptance | Scoped maintenance accepted. Further Mac work and native qualification are frozen/deferred until explicit owner unfreeze. They are not a Windows cleanup gate. Full P05 and release/operational acceptance are not declared |
 
 See the [canonical decision and evidence](code-cleanup-roadmap.md#p05-completed-scratch-maintenance-and-mac-freeze-2026-11-04).
-Next proposal is read-only actual-wrapper cache/temp lifetime analysis for the
+The proposal at that checkpoint was read-only actual-wrapper cache/temp lifetime analysis for the
 active Windows installed-app builder, selecting one failure-path integration
 characterization. Do not loosen identity/release guards or start an installer/trial.
+
+## P05 Windows installed-app cache lifecycle characterization (2026-11-04)
+
+| Dimension | Current status and scope |
+| --- | --- |
+| Implemented | Browser 16a6ff2d0c1d3f8a0db6a0cb31d42810dd72ac4a adds one test suite; production builder/helper, protocol, identity and cleanup guards are unchanged |
+| Tested | Two full-wrapper child-process cases pass; two isolated missing-cleanup mutations fail at restoration assertions. Eight environment variables, owned/caller scratch and cache/output/sibling preservation are checked before harness teardown. Exact staged bytes match the existing successful evidence; no redundant test run |
+| Published | Browser 16a6ff2 pushed to Origin/main; remote SHA verified as 16a6ff2d0c1d3f8a0db6a0cb31d42810dd72ac4a. Final publication receipt separately binds the documentation commit/remote SHA |
+| Acceptance | Selected failure-path characterization reviewed without blocking findings. Successful full build, identity-checker execution, installer and operational/release acceptance are not proven. Full P05 stays open; Mac stays frozen |
+
+See the [canonical scope, receipts and next proposal](code-cleanup-roadmap.md#p05-windows-installed-app-cache-lifecycle-characterization-2026-11-04).
+Next propose a read-only comparison of remaining Windows wrappers and execution
+coverage; no new implementation, build, installer or trial is authorized here.

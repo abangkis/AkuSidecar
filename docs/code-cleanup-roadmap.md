@@ -1,7 +1,7 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-3 through CL-8 retain their closures; source identity v118 and historical release v116 remain separate. P05 cache 8c39d97 and Step 3B ordering 5fa73c9 are published. Completed scratch maintenance is published as Browser 54a1b49. The owner has frozen further Mac work and qualification and selected Windows-only focus. Deferred Mac acceptance is not a gate for the next Windows P05 increment. Full P05 closure and operational/release acceptance are not declared; current records distinguish implemented, tested, published and acceptance.
+Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-3 through CL-8 retain their closures; source identity v118 and historical release v116 remain separate. P05 cache 8c39d97, Step 3B ordering 5fa73c9 and completed scratch maintenance 54a1b49 retain their published status. Windows installed-app cache lifecycle characterization is implemented, tested and reviewed as Browser 16a6ff2; its publication readback is recorded below. Further Mac work and qualification remain frozen and do not gate Windows cleanup. Full P05 closure and operational/release acceptance are not declared; implemented, tested, published and acceptance remain separate.
 Status: the selected CL source cleanup is signed off through CL-8, with retained
 contracts, explicit deferrals and the historical P05 exclusion. The later
 [P05 cache increment](#p05-source-build-cache-publication-2026-11-04) has its own
@@ -2857,7 +2857,7 @@ synthetic work/failure points. It is not a native installer/signing run. Source
 availability and a maintenance fix do not unfreeze the platform. Release metadata,
 supported Mac recovery paths and all protocol/guard contracts remain unchanged.
 
-Next minimum proposal: read-only lifecycle analysis of the active Windows
+At this freeze checkpoint, the next minimum proposal was read-only lifecycle analysis of the active Windows
 `scripts/build-windows-installed-app.ps1` cache/temp wrapper, starting with failure
 at the runtime-identity gate. Select one integration characterization that verifies
 the actual wrapper restores environment and removes only owned scratch. Existing
@@ -2866,3 +2866,43 @@ source assertions, and the installed-app artifact validator inspects outputs.
 This is a scoped coverage question, not a claim that every Windows test is absent.
 Do not change the identity gate or release metadata. No Windows implementation,
 runtime restart, installer execution or trial is authorized by this record.
+
+## P05 Windows installed-app cache lifecycle characterization (2026-11-04)
+
+The owner subsequently authorized the failure-path characterization, reviewed
+the result and approved roadmap synchronization, commit and push. This closes
+the selected wrapper-execution coverage gap without changing production code.
+
+| Dimension | Current status and evidence |
+| --- | --- |
+| Implemented | Browser `16a6ff2d0c1d3f8a0db6a0cb31d42810dd72ac4a` adds only `scripts/test-windows-installed-app-cache-lifecycle.ps1`. Each fixture executes a complete byte-copied production builder and helper in an isolated child PowerShell process. No protocol, identity gate, guard, timeout, cleanup or release metadata changes |
+| Tested | Two real-wrapper cases pass: generated owned scratch and caller-provided GOTMPDIR/cache overrides. Two isolated copies with the wrapper cleanup call disabled fail at the expected environment-restoration assertion. All eight environment variables are checked after catch in the same child process, before harness teardown. Owned scratch is removed; caller scratch, cache sentinels, output and a pre-existing scratch sibling are preserved |
+| Published | Browser 16a6ff2 pushed to Origin/main; remote SHA verified as 16a6ff2d0c1d3f8a0db6a0cb31d42810dd72ac4a on 2026-11-04. The local publication receipt below records that readback and separately binds the documentation commit/remote identity after publication |
+| Acceptance | Scoped test/source review has no blocking finding. This proves the actual wrapper's cleanup after a controlled failure at the first runtime-identity Node port. It does not execute that checker, prove a successful full build or qualify the installer. Full P05 and operational/release acceptance remain open; Mac stays frozen. No activation or live trial |
+
+Canonical command from AkuBrowser:
+`pwsh -NoProfile -File scripts/test-windows-installed-app-cache-lifecycle.ps1`.
+The Node port verifies its exact arguments and returns controlled exit 17; the
+wrapper retains its exact error contract. Unexpected Node, Go, Git and npm
+execution is rejected. The two mutations affect fixture copies only; the real
+builder and helper remain unchanged. Fixture paths are project-local, and
+harness deletion is restricted to its verified immediate GUID child.
+
+Ignored local Browser receipts:
+[validation](../../AkuBrowser/build/p05-windows-installed-app-cache-20261104/validation.json),
+[two passes and two expected failures](../../AkuBrowser/build/p05-windows-installed-app-cache-20261104/integration.log),
+and [publication readback](../../AkuBrowser/build/p05-windows-installed-app-cache-20261104/publication-readback.json).
+They may be absent in other checkouts. The suite SHA-256 is
+`fe4c5c3dd76b372f6bc96b421cee58a58e20a59d719e30d457d99588a82f4222`;
+the exact staged test bytes match that successful run. Builder/helper hashes
+also match the validation receipt. Testing is reused after identity checks;
+publication alone does not require another test/build. The validation's
+`committed=false` and `pushed=false` fields retain capture-time meaning;
+publication readback supersedes those fields for publication status.
+
+Next minimum proposal, requiring separate approval: read-only comparison of
+the remaining active Windows cache/temp wrappers against their execution tests.
+Choose one concrete uncovered failure path, or retain the existing coverage
+if sufficient. Do not infer a production defect or start implementation, a full
+build, installer, activation or trial. Preserve the Mac freeze and unrelated
+Sidecar config/experiments.

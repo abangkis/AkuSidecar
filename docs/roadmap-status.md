@@ -1,6 +1,6 @@
 # Roadmap status and evidence index
 
-Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-3 through CL-8 and historical dispositions retain their scopes; source v118 and historical release v116 remain separate. Completed P05 scratch maintenance is published as Browser 54a1b49 after cache 8c39d97 and Step 3B 5fa73c9. The owner freezes further Mac work/native qualification and selects Windows-only focus. Deferred Mac acceptance is not a Windows cleanup gate; full P05 and operational/release acceptance are not declared. Current records separate implemented, tested, published and acceptance.
+Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-3 through CL-8 and historical dispositions retain their scopes; source v118 and historical release v116 remain separate. Windows installed-app cache lifecycle characterization is implemented, tested and reviewed as Browser 16a6ff2; its publication status is recorded below. Earlier P05 cache/scratch increments retain their published status. Further Mac work/native qualification stays frozen and does not gate Windows cleanup. Full P05 and operational/release acceptance are not declared; implemented, tested, published and acceptance remain separate.
 Earlier source history before the latest result: AkuSidecar `80acfb9` (Timeline More/Less and restart-dev assertion correction, after `f27e91b` automatic Store feature separation; 95 declarations/15 feature files; after Store Timeline read-model `bee6a9f`, after empty-candidate completion `de95c58`, after vision persistence `70ea120`; per-run candidate evaluation/completion, after acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
@@ -1824,6 +1824,20 @@ RC9 receipt at `AkuBrowser/acceptance/windows-installed-app-rc9-2026-09-23.md`.
 The release documents record RC9 as the latest published prerelease; remote
 release/tag state was not queried during this synchronization. Comment-control
 SITC remains an exploration document, not an implementation roadmap commitment.
+
+## P05 Windows installed-app cache lifecycle characterization (2026-11-04)
+
+| Dimension | Current status and scope |
+| --- | --- |
+| Implemented | Browser 16a6ff2d0c1d3f8a0db6a0cb31d42810dd72ac4a adds one integration test suite; production code, release metadata, protocol and guards are unchanged |
+| Tested | Two actual-wrapper cases pass and two fixture-only missing-cleanup mutations fail as expected. Same-process restoration of eight variables and owned/caller scratch, cache, output and sibling preservation are verified. Exact staged bytes match the existing passing receipt; no test/build rerun for publication |
+| Published | Browser 16a6ff2 pushed to Origin/main; remote SHA verified as 16a6ff2d0c1d3f8a0db6a0cb31d42810dd72ac4a. Final receipt separately binds the Sidecar documentation commit/remote identity |
+| Acceptance | Selected test/source scope reviewed without blocking findings. Controlled identity-port failure is covered; checker execution, successful full build, installer and operational/release acceptance are not established. Full P05 stays open; Mac stays frozen |
+
+See the [canonical record and local receipts](code-cleanup-roadmap.md#p05-windows-installed-app-cache-lifecycle-characterization-2026-11-04).
+Next minimum proposal: read-only comparison of remaining active Windows
+cache/temp wrappers and their execution coverage. No further implementation,
+build, installer, runtime activation or trial is approved by this record.
 
 ## Latest operational evidence and next boundary
 
