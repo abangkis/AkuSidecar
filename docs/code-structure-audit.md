@@ -2,7 +2,7 @@
 
 ## Status synchronization (2026-11-04)
 
-Latest delta: the [P05 Step 3B projection-order correction](#p05-step-3b-projection-order-2026-11-04) is reviewed/tested/published as Browser 5fa73c9 after the cache increment 8c39d97 and Sidecar ignore ff65e9e. The ordering gap is closed in source; full P05 closure, macOS packaging scratch and operational/release acceptance remain separate. Selected source CL-3 through CL-8 retain their canonical closures. Earlier stage statements and original receipts remain historical checkpoints.
+Latest delta: completed P05 scratch maintenance is published as Browser 54a1b49 after Step 3B 5fa73c9 and cache 8c39d97. The owner freezes further Mac work/native qualification and selects Windows-only focus; see the [current decision](#p05-completed-scratch-maintenance-and-mac-freeze-2026-11-04). Selected source CL-3 through CL-8 retain their closures. Full P05 and operational/release acceptance are not declared; earlier statements/receipts retain their checkpoint scopes.
 
 Previous packaging checkpoint: [CL-7 F02 test-asset separation](#cl-7-f02-test-asset-boundary-result-2026-11-04), based on Sidecar 10c1daf, was implemented/tested/source-reviewed before the later CL-7/CL-8 closures. Its original scope and receipt identities are retained.
 
@@ -1693,7 +1693,8 @@ missing initializer; the new assertion makes the presence/order requirement expl
 
 The original CL-7/CL-8 P05 exclusion remains historical. At the cache checkpoint,
 system-temp macOS packaging scratch and Step 3B's early unpacked_root use were
-inherited limits. The latter is corrected below; packaging scratch remains open.
+inherited limits. Later records below correct both source gaps before the owner
+freezes further Mac work and native qualification.
 Neither is attributed to the relative-cache fix. No production
 code change, new test run, compilation or trial is part of this roadmap
 synchronization. The roadmap's commit/publication is tracked separately from
@@ -1710,5 +1711,20 @@ the verified source publication above.
 
 See the [canonical ordering, helper ownership and receipts](code-cleanup-roadmap.md#p05-step-3b-projection-order-2026-11-04).
 The fixture is not a full macOS builder run; Darwin/signing/source-tuple gates
-remain untouched. The next proposed read-only boundary is the runtime installer's
-packaging scratch lifetime and its TMPDIR/tmp location. It is not implemented here.
+remain untouched. The later approved scratch relocation and subsequent Mac freeze
+are recorded below; the prior Mac analysis proposal is historical.
+
+## P05 completed scratch maintenance and Mac freeze (2026-11-04)
+
+| Dimension | Current status and scope |
+| --- | --- |
+| Implemented | Browser 54a1b49535be4f3a7c84b75af98611d67b7bc8f5 relocates packaging scratch through one template-parent substitution and adds six cases; existing trap, guards, cleanup, cache and output ownership are preserved |
+| Tested | Prior source-bound cohort: 15/15 pass without skips; four old-parent location failures. Real initializer/allocation/EXIT cleanup use synthetic work/failure points; no native pkgbuild, signing or installer qualification. Results are reused after hash verification |
+| Published | Browser 54a1b49 pushed; Origin/main verified as 54a1b49535be4f3a7c84b75af98611d67b7bc8f5. Supporting roadmap publication has separate final readback |
+| Acceptance | The completed maintenance source increment is accepted. Further Mac refactoring and native qualification are frozen/deferred by the owner and do not gate Windows cleanup. Full P05 and operational/release acceptance remain unestablished |
+
+See the [canonical freeze decision, receipts and Windows proposal](code-cleanup-roadmap.md#p05-completed-scratch-maintenance-and-mac-freeze-2026-11-04).
+Next inspect the active Windows installed-app builder's actual cache/temp wrapper
+failure path. Existing helper tests and source assertions are not by themselves
+execution evidence for that wrapper. No identity/release guard change or installer
+execution is included in this proposal.

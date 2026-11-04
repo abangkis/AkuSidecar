@@ -38,7 +38,7 @@ disposition counts are not a remaining-work count.
 
 Latest Bridge result: [automatic CL-6 source closure](#automatic-cl-6-bridge-reporting-separation-result-2026-11-04), AkuBridge 6ce23f7, is implemented/tested/reviewed and source closed after owner-authorized scoped review. Publication is bound to readback; prior source closures and original inventory disposition counts retain their scope.
 
-Latest packaging result: [selected source CL-7 is closed](code-cleanup-roadmap.md#cl-7-source-closure-2026-11-04); P04 remains source-retained for maintenance/recovery. P05 was excluded at that checkpoint. Its cache increment is published in Browser 8c39d97 with Sidecar ff65e9e; the later [Step 3B projection-order correction](#p05-step-3b-projection-order-2026-11-04) is reviewed/tested/published as Browser 5fa73c9. Full P05 closure and runtime, macOS and installed acceptance remain unestablished; original inventory counts retain their capture-time meaning.
+Latest packaging result: selected source CL-7 remains closed; P05 was excluded at that historical checkpoint. Cache 8c39d97, Sidecar ignore ff65e9e, Step 3B 5fa73c9 and completed scratch maintenance 54a1b49 are published separately. The [Mac freeze / Windows-only direction](#p05-completed-scratch-maintenance-and-mac-freeze-2026-11-04) supersedes the prior Mac next proposals. Full P05 and operational/release acceptance remain unestablished; original inventory counts retain their capture-time meaning.
 
 ## Dispositions and approval
 
@@ -147,7 +147,7 @@ Paths in this section are relative to AkuBrowser.
 | P02 | `retain-required` | Installer `legacySetupPath` removal/uninstall cleanup | `installer/windows/installer.go` removes old setup executable during install and includes it in uninstall paths | Old-file cleanup is active upgrade behavior; retiring the old UI did not retire upgrade cleanup |
 | P03 | `defer-until-replacement` | Signed update manifest v1 and conditional legacy artifact names | Windows/macOS companion builders, manifest signer, Bridge host update reader and tests; Windows emitter requires matching product/Bridge/Sidecar identity | Keep exact signature/version/compatibility policy until supported old host/update consumers migrate; no manifest relabel or schema reinterpretation |
 | P04 | `retain-required` | Frozen Store/macOS/preview asset-generation and distribution tooling | CL-7 closure retains maintenance/recovery tools named by release contracts/tests; current Windows binaries compile and Darwin selectors are mapped. This supersedes the earlier unverified source-retirement classification | Revisit on explicit lane-retirement decision or changes requiring platform-native validation; frozen publication is not obsolescence proof, source retention is not macOS/installed acceptance |
-| P05 | `unverified` (original inventory) | Browser source-build cache helpers, wrappers and tests | Cache package Browser 8c39d97 and supporting Sidecar ff65e9e are published; Step 3B ordering correction 5fa73c9 adds four regression cases, with final combined 9/9 passing. Separate four-dimension records below define current source acceptance | Published cache and ordering increments are accepted within their scopes; full P05 exit criteria and system-temp macOS packaging scratch remain open. Preserve the historical CL-7/CL-8 exclusion and do not claim release/installed acceptance |
+| P05 | `unverified` (original inventory) | Browser source-build cache helpers, wrappers and tests | Cache 8c39d97, Sidecar ignore ff65e9e, Step 3B ordering 5fa73c9 and completed scratch maintenance 54a1b49 are published. The last combined cohort passes 15/15. Separate records below define source acceptance and the owner's Windows-only direction | Completed increments are accepted within scope; further Mac work/qualification is frozen and is not a Windows cleanup gate. Full P05 closure is not declared. Preserve the historical CL-7/CL-8 exclusion and do not claim installed/release acceptance |
 
 ## First concrete proposal for CL-2
 
@@ -3005,6 +3005,20 @@ activation, installer execution or trial is part of this synchronization.
 | Acceptance | Scoped source review accepts the ordering correction and closes that source gap. Full P05 closure and native macOS/installer/operational acceptance remain unestablished. No activation, full builder run or live trial |
 
 See the [canonical sequence, evidence and limits](code-cleanup-roadmap.md#p05-step-3b-projection-order-2026-11-04).
-The next proposal is read-only packaging scratch lifecycle analysis for the macOS
-runtime installer, whose build_root still uses TMPDIR/tmp. No such implementation
-or further cleanup is included. Historical inventory/CL-8 counts are unchanged.
+The subsequent one-line scratch relocation is recorded below. The owner then
+froze further Mac work and selected Windows-only focus. Historical inventory/
+CL-8 counts are unchanged.
+
+## P05 completed scratch maintenance and Mac freeze (2026-11-04)
+
+| Dimension | Current status and scope |
+| --- | --- |
+| Implemented | Browser 54a1b49535be4f3a7c84b75af98611d67b7bc8f5: one mktemp parent substitution and a six-case regression suite; trap, cleanup, prefix and guards unchanged |
+| Tested | Matching existing evidence: 15/15 pass, no skips; four location assertions reject the old parent. Caller-owned Go temp, shared caches, sibling scratch, outputs and failure codes are retained. No new Mac validation for publication |
+| Published | Browser 54a1b49 pushed and Origin/main verified at full SHA 54a1b49535be4f3a7c84b75af98611d67b7bc8f5; documentation publication is tracked by final readback |
+| Acceptance | Scoped maintenance accepted. Further Mac work and native qualification are frozen/deferred until explicit owner unfreeze. They are not a Windows cleanup gate. Full P05 and release/operational acceptance are not declared |
+
+See the [canonical decision and evidence](code-cleanup-roadmap.md#p05-completed-scratch-maintenance-and-mac-freeze-2026-11-04).
+Next proposal is read-only actual-wrapper cache/temp lifetime analysis for the
+active Windows installed-app builder, selecting one failure-path integration
+characterization. Do not loosen identity/release guards or start an installer/trial.

@@ -1,6 +1,6 @@
 # Roadmap status and evidence index
 
-Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-3 through CL-8 retain their closures and historical disposition scopes. Source candidate v118 and historical release v116 remain separate. P05 cache Browser 8c39d97 and Sidecar ignore ff65e9e are published; the later Step 3B projection-order correction is reviewed/tested/published as Browser 5fa73c9. Full P05 closure, remaining macOS packaging scratch, three migration-dependent deferrals and operational/release acceptance remain separate. Current P05 records distinguish implemented, tested, published and acceptance.
+Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-3 through CL-8 and historical dispositions retain their scopes; source v118 and historical release v116 remain separate. Completed P05 scratch maintenance is published as Browser 54a1b49 after cache 8c39d97 and Step 3B 5fa73c9. The owner freezes further Mac work/native qualification and selects Windows-only focus. Deferred Mac acceptance is not a Windows cleanup gate; full P05 and operational/release acceptance are not declared. Current records separate implemented, tested, published and acceptance.
 Earlier source history before the latest result: AkuSidecar `80acfb9` (Timeline More/Less and restart-dev assertion correction, after `f27e91b` automatic Store feature separation; 95 declarations/15 feature files; after Store Timeline read-model `bee6a9f`, after empty-candidate completion `de95c58`, after vision persistence `70ea120`; per-run candidate evaluation/completion, after acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
@@ -1763,7 +1763,8 @@ this synchronization; no product tests or trials were rerun.
 The CL-8 32-row map still describes its original checkpoint: P05 was excluded
 then and the cache increment was reviewed/published afterward. CL-3 through CL-8
 closures are not reopened. The Step 3B ordering issue is corrected in the later
-result below; inherited macOS TMPDIR packaging scratch remains a separate follow-up.
+result below; the later scratch maintenance and owner freeze decision also
+supersede the old TMPDIR follow-up as an active next task.
 Sidecar config/experiments remain local and outside these documentation edits.
 
 ## P05 Step 3B projection order (2026-11-04)
@@ -1781,9 +1782,26 @@ binds the tested source to source/documentation commits and remote SHAs; origina
 pre-publication validation fields retain capture-time meaning. The fixture does
 not run the full native macOS packaging/signing workflow or weaken its gates.
 
-Next minimum P05 proposal: read-only analysis of macOS runtime packaging scratch
-(`build_root` under TMPDIR/tmp), defining one project-local relocation and cleanup
-ownership tests. No further production change, trial or new workstream is included.
+The subsequent scratch relocation and owner's Mac-freeze/Windows-only decision
+are recorded below. The prior Mac next proposal is historical.
+
+## P05 completed scratch maintenance and Mac freeze (2026-11-04)
+
+| Dimension | Current status and scope |
+| --- | --- |
+| Implemented | Browser 54a1b49535be4f3a7c84b75af98611d67b7bc8f5: one mktemp parent change to project-local and six scratch regression cases. Prefix, trap, cleanup, guard and caller-owned GOTMPDIR behavior remain unchanged |
+| Tested | Existing 15/15 cohort passes without skips: six scratch, four Step 3B, five cache cases. Four location assertions fail on the old parent. Failure paths retain caller/shared/output state and exit codes. No Mac testing or native qualification rerun for publication |
+| Published | Browser 54a1b49 pushed and Origin/main verified as 54a1b49535be4f3a7c84b75af98611d67b7bc8f5 on 2026-11-04. Supporting documentation publication is bound separately by final readback |
+| Acceptance | Scoped completed maintenance accepted; the owner freezes further Mac work and native qualification until explicit unfreeze. Deferred Mac acceptance does not block Windows-focused cleanup. Full P05 or release/operational acceptance is not declared |
+
+See the [canonical Windows-only direction and evidence](code-cleanup-roadmap.md#p05-completed-scratch-maintenance-and-mac-freeze-2026-11-04)
+and [publication readback](../../AkuBrowser/build/p05-macos-scratch-20261104/publication-readback.json).
+Original validation fields retain their pre-publication meanings.
+
+Next minimum proposal: read-only cache/temp lifetime analysis of the actual
+Windows installed-app builder, starting with runtime-identity gate failure and
+one integration characterization. Preserve the gate and release metadata; no
+Windows implementation, installer execution or live trial is included here.
 
 ## Product and installation roadmaps
 

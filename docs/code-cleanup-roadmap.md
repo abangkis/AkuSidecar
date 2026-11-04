@@ -1,7 +1,7 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-8 and source CL-3 through CL-7 retain their closures. Source identity v118 and historical release authority v116 remain separate. The P05 cache increment is published as Browser 8c39d97 with Sidecar ignore ff65e9e; the later Step 3B projection-order fix is reviewed/tested/published as Browser 5fa73c9. The source ordering gap is closed within its scope. Full P05 closure, the inherited macOS packaging scratch location, three migration-dependent deferrals and operational/release acceptance remain separate. Current P05 records distinguish implemented, tested, published and acceptance.
+Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-3 through CL-8 retain their closures; source identity v118 and historical release v116 remain separate. P05 cache 8c39d97 and Step 3B ordering 5fa73c9 are published. Completed scratch maintenance is published as Browser 54a1b49. The owner has frozen further Mac work and qualification and selected Windows-only focus. Deferred Mac acceptance is not a gate for the next Windows P05 increment. Full P05 closure and operational/release acceptance are not declared; current records distinguish implemented, tested, published and acceptance.
 Status: the selected CL source cleanup is signed off through CL-8, with retained
 contracts, explicit deferrals and the historical P05 exclusion. The later
 [P05 cache increment](#p05-source-build-cache-publication-2026-11-04) has its own
@@ -2787,12 +2787,13 @@ from the verified source commits above.
 
 At this cache-publication checkpoint, two inherited macOS limits were recorded:
 system-temp packaging scratch and Step 3B's early `$unpacked_root` use. The latter
-is now corrected in the separate result below. The runtime installer's packaging
-scratch under `${TMPDIR:-/tmp}` remains open. Syntax and extracted-operation
-tests do not establish successful native packaging.
+is now corrected in the separate result below. The later scratch-maintenance
+record relocates the runtime installer's packaging scratch to project-local.
+Native Mac qualification remains deferred under the owner's freeze; syntax and
+extracted-operation tests do not establish successful native packaging.
 
-Next proposal: read-only analysis of the runtime installer's packaging scratch
-lifecycle, selecting one project-local location change and its ownership tests.
+That packaging scratch analysis was subsequently approved and implemented.
+The active next Windows proposal is recorded in the freeze decision below.
 No further implementation, cleanup deletion, activation, commit/push or trial
 is authorized by this documentation update.
 
@@ -2828,8 +2829,40 @@ the readback supersedes them for publication. The existing product checks are
 reused after source/hash verification; a documentation commit does not require
 another full test or build.
 
-Next minimum P05 proposal is read-only analysis of `build_root` in
-`scripts/build-macos-runtime-installer.sh`: its packaging scratch still uses
-`${TMPDIR:-/tmp}`. Define one project-local relocation while retaining unique
-creation, cleanup ownership and caller-provided Go temp behavior. This next
-analysis/implementation is not performed or authorized by this record.
+At this checkpoint, the next proposal was read-only packaging scratch analysis.
+The owner later approved the one-line relocation recorded below, then froze
+further Mac work and selected Windows-only focus. This earlier proposal is
+historical and is no longer the active next task.
+
+## P05 completed scratch maintenance and Mac freeze (2026-11-04)
+
+| Dimension | Current status and evidence |
+| --- | --- |
+| Implemented | Browser `54a1b49535be4f3a7c84b75af98611d67b7bc8f5` changes only the packaging mktemp template parent to `$source_build_temp_root`, retaining `akubrowser-macos-installer.XXXXXX`, trap, guards and cleanup. `scripts/macos-runtime-scratch.test.mjs` adds six cases. Two source/test files are committed |
+| Tested | Existing evidence passes 15/15 without skips: six scratch, four Step 3B and five cache cases. Before the production change, four location assertions fail and two failure-path cases pass after the fixture's Windows drive-letter adapter correction. Success/error cleanup, caller GOTMPDIR, cache/sibling/output preservation and allocation failure are covered. Source/test hashes and normalized staged payload match those receipts. No Mac tests, signing or installer workflow are rerun during publication |
+| Published | Browser 54a1b49 pushed to Origin/main; remote SHA verified as 54a1b49535be4f3a7c84b75af98611d67b7bc8f5 on 2026-11-04. The supporting roadmap publication is separately bound by the final readback |
+| Acceptance | The completed maintenance increment is accepted within its source/test scope. The owner freezes further Mac refactoring, packaging/signing/install qualification and live Mac validation until explicit unfreeze. Native Mac acceptance remains unproven/deferred and does not block Windows-focused cleanup. Full P05 or release/operational acceptance is not declared |
+
+Evidence: Browser-local ignored
+[validation](../../AkuBrowser/build/p05-macos-scratch-20261104/validation.json),
+[corrected pre-fix run](../../AkuBrowser/build/p05-macos-scratch-20261104/red.log),
+[15 passing results](../../AkuBrowser/build/p05-macos-scratch-20261104/green.log), and
+[publication readback](../../AkuBrowser/build/p05-macos-scratch-20261104/publication-readback.json).
+Initial fixture-only drive-case failures are retained in the original log and
+are not represented as production regressions. Pre-publication false commit/push
+fields retain capture-time meaning; the readback establishes publication.
+
+The fixture executes the actual initializer, allocation and EXIT cleanup with
+synthetic work/failure points. It is not a native installer/signing run. Source
+availability and a maintenance fix do not unfreeze the platform. Release metadata,
+supported Mac recovery paths and all protocol/guard contracts remain unchanged.
+
+Next minimum proposal: read-only lifecycle analysis of the active Windows
+`scripts/build-windows-installed-app.ps1` cache/temp wrapper, starting with failure
+at the runtime-identity gate. Select one integration characterization that verifies
+the actual wrapper restores environment and removes only owned scratch. Existing
+PowerShell evidence exercises the helper; wrapper checks in that suite are parse/
+source assertions, and the installed-app artifact validator inspects outputs.
+This is a scoped coverage question, not a claim that every Windows test is absent.
+Do not change the identity gate or release metadata. No Windows implementation,
+runtime restart, installer execution or trial is authorized by this record.
