@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {createInstagramTrialControls, instagramTrialView} from "./instagram-trial-controls.js";
-import {createXDailyControls} from "./x-daily-controls.js";
+import {createInstagramTrialControls, instagramTrialView} from "../internal/httpapi/web/instagram-trial-controls.js";
+import {createXDailyControls} from "../internal/httpapi/web/x-daily-controls.js";
 
 class FakeElement {
   hidden = false;

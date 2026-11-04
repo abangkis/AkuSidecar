@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { collectionModeState } from './collection-mode.js';
+import { collectionModeState } from '../internal/httpapi/web/collection-mode.js';
 test('unmanaged browser keeps existing readiness',()=>{
  assert.equal(collectionModeState(null,true).canCollect,true);
  assert.equal(collectionModeState(null,false).canCollect,false);

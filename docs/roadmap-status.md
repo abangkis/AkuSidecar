@@ -1,6 +1,6 @@
 # Roadmap status and evidence index
 
-Status synchronized: 2026-11-04 (Asia/Jakarta). Latest delta is reviewed source CL-6 closure for AkuBridge 6ce23f7; roadmap and both remote identities are bound to publication readback. Source CL-3/CL-4/CL-5 remain closed. Activation and operational acceptance remain separate.
+Status synchronized: 2026-11-04 (Asia/Jakarta). Latest delta is reviewed CL-7 F02 test-asset separation based on Sidecar 10c1daf, accepted for publication with commit/remote identity bound to readback. CL-7 remains partial; source CL-3 through CL-6 remain closed. Activation and operational acceptance remain separate.
 Earlier source history before the latest result: AkuSidecar `80acfb9` (Timeline More/Less and restart-dev assertion correction, after `f27e91b` automatic Store feature separation; 95 declarations/15 feature files; after Store Timeline read-model `bee6a9f`, after empty-candidate completion `de95c58`, after vision persistence `70ea120`; per-run candidate evaluation/completion, after acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
@@ -1596,6 +1596,45 @@ Next proposal: read-only CL-7 packaging/harness analysis to reconcile supported
 entry-point source lists, package seals, generated manifests and test inputs. No CL-7 implementation,
 activation or trial is part of this run. Earlier next-proposal paragraphs
 retain capture-time meaning and are superseded by this automatic result.
+
+## CL-7 F02 test-asset boundary result (2026-11-04)
+
+The owner-approved F02 source cohort based on Sidecar 10c1daf relocates two
+Node suites from the embedded web directory to test/, preserves all nine cases
+and assertions, and adds embedded/static route boundary regressions. The
+existing IG suite is preserved under its original name; the moved retry suite
+uses instagram-trial-controls-retry.test.mjs to avoid replacing that coverage.
+
+| Dimension | Current evidence and scope |
+| --- | --- |
+| Implemented | Reviewed F02 source cohort based on Sidecar 10c1daf: two suites relocate from internal/httpapi/web to test/; only three relative imports change. New assets_boundary_test.go enforces the embedded/static boundary; commit identity is bound to publication readback |
+| Tested | Original nine tests pass before/after; full selected Node cohort 369/369 before/after with the same test-name multiset. New Go boundary: six expected failures/ten positive passes before relocation, then 16/16 pass. HTTP default 1,320 pass/23 skip; dev 1,343 pass/10 skip. Four Windows tag modes yield eight PE/amd64 HTTP test/app artifacts; both test-suite byte payloads absent and all 65 production web assets present |
+| Activated | Not performed; no runtime restart, live source trial, account/profile/configuration change or installer activation |
+| Acceptance | Owner-authorized scoped review has no blocking finding; F02 source change is accepted for commit/publication. CL-7 remains partial; other package/harness boundaries and pre-existing dirty build/cache changes are not closed by F02 |
+
+The existing native-reader harness now discovers both suites. The production
+embed directive, static/security implementation and 65 remaining web assets are
+unchanged. Only the two test-asset GET/HEAD paths intentionally become 404;
+production assets remain served and foreign host/origin requests remain 403.
+Original validation is reused after source/log/artifact hash verification.
+
+See the [canonical F02 result and limits](code-cleanup-roadmap.md#cl-7-f02-test-asset-boundary-result-2026-11-04).
+Original CL-1 disposition counts remain capture-time inventory counts. F02 is
+now an accepted implemented/tested extraction, not an unresolved classification
+or test deletion. Source CL-3 through CL-6 retain their existing closures.
+
+Evidence: [original validation](../build/f02-20261104/qa/validation.json),
+[move/assertion proof](../build/f02-20261104/qa/move-proof.json),
+[publication review](../build/f02-publication-20261104/qa/review.json), and
+[commit/remote readback](../build/f02-publication-20261104/qa/final-readback.json).
+These are ignored project-local receipts. Original candidate fields retain
+capture-time meaning; later readback binds the tested payload, commit and
+origin/main SHA without rewriting the implementation evidence.
+
+Next proposal: read-only headless-worker source-filter/inventory/sealed-graph
+and harness reconciliation. CL-7 remains partial. Pre-existing dirty Browser
+build/cache work and unrelated Sidecar config/.tmp/experiments remain separate.
+No new refactor, runtime activation or trial is authorized by this record.
 
 ## Product and installation roadmaps
 

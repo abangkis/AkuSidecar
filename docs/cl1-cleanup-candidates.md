@@ -32,10 +32,13 @@ established by this closure; other cleanup stages retain their own status.
 Latest frontend result: [automatic CL-4 separation](#automatic-frontend-feature-separation-result-2026-11-03),
 code `3b9cfd1`, closes the selected F01/CL-4 source cohort after scoped review.
 Publication is bound to the linked readback; activation remains separate.
-F02/test-asset packaging remains a CL-7 question. Original disposition counts
-are not a remaining-work count.
+F02/test-asset packaging is now implemented/tested/source-reviewed in CL-7,
+with publication bound to the result below. CL-7 remains partial. Original
+disposition counts are not a remaining-work count.
 
 Latest Bridge result: [automatic CL-6 source closure](#automatic-cl-6-bridge-reporting-separation-result-2026-11-04), AkuBridge 6ce23f7, is implemented/tested/reviewed and source closed after owner-authorized scoped review. Publication is bound to readback; prior source closures and original inventory disposition counts retain their scope.
+
+Latest packaging result: [CL-7 F02 test-asset separation](#cl-7-f02-test-asset-boundary-result-2026-11-04), based on Sidecar 10c1daf, is implemented/tested/source-reviewed and accepted for publication. Existing dirty build/cache work remains separate.
 
 ## Dispositions and approval
 
@@ -117,7 +120,7 @@ Bridge paths are relative to AkuBridge; web paths are relative to AkuSidecar.
 | B05 | `retain-required` | `service-worker-entry-v3.js` | Manifest background root directly imports it; it selects registration generation while delegating logic | Not an unused wrapper; changing/removing it affects extension registration/update identity |
 | B06 | `retain-required` | Source-adapter DOM/media fallback branches, including LinkedIn old/new author shapes | Active adapter calls under current registered scripts and page-world resolver catalogs | Preserve attribution/identity/unknown states; layout fallback retirement requires source evidence, not a name search or broader permissive parsing |
 | F01 | `extract` | Web `app.js` Timeline and Settings feature/event ownership | 37-module app graph, HTML bootstrap, DOM actions, revision/epoch and dirty-state flows | Preserve event attach/teardown, focus, cache invalidation, cleanup barriers and provider actions; separate UI behavior checks from authenticated trials |
-| F02 | `unverified` | Direct web `.test.mjs` files under `go:embed web/*` | App imports do not consume them, but embedded filesystem/static routing does | Review asset/route and test-location contracts before excluding or moving files; tests are not removable merely because app does not import them |
+| F02 | `extract` | Two web Node suites moved to test/ with only import paths changed; new assets_boundary_test.go | Nine cases/assertions retained; Node 369; HTTP default/dev and four Windows modes pass; 65 production assets retained, test payloads absent | Implemented/tested/source-reviewed and accepted for publication; original aggregate disposition counts retain capture-time meaning. No test deletion, runtime protocol or guard change; CL-7 remains partial |
 
 ## Launcher, installer and build consumers
 
@@ -2919,3 +2922,42 @@ Next proposal: read-only CL-7 packaging/harness analysis to reconcile supported
 entry-point source lists, package seals, generated manifests and test inputs. No CL-7 implementation,
 activation or trial is part of this run. Earlier next-proposal paragraphs
 retain capture-time meaning and are superseded by this automatic result.
+
+## CL-7 F02 test-asset boundary result (2026-11-04)
+
+The owner-approved F02 source cohort based on Sidecar 10c1daf relocates two
+Node suites from the embedded web directory to test/, preserves all nine cases
+and assertions, and adds embedded/static route boundary regressions. The
+existing IG suite is preserved under its original name; the moved retry suite
+uses instagram-trial-controls-retry.test.mjs to avoid replacing that coverage.
+
+| Dimension | Current evidence and scope |
+| --- | --- |
+| Implemented | Reviewed F02 source cohort based on Sidecar 10c1daf: two suites relocate from internal/httpapi/web to test/; only three relative imports change. New assets_boundary_test.go enforces the embedded/static boundary; commit identity is bound to publication readback |
+| Tested | Original nine tests pass before/after; full selected Node cohort 369/369 before/after with the same test-name multiset. New Go boundary: six expected failures/ten positive passes before relocation, then 16/16 pass. HTTP default 1,320 pass/23 skip; dev 1,343 pass/10 skip. Four Windows tag modes yield eight PE/amd64 HTTP test/app artifacts; both test-suite byte payloads absent and all 65 production web assets present |
+| Activated | Not performed; no runtime restart, live source trial, account/profile/configuration change or installer activation |
+| Acceptance | Owner-authorized scoped review has no blocking finding; F02 source change is accepted for commit/publication. CL-7 remains partial; other package/harness boundaries and pre-existing dirty build/cache changes are not closed by F02 |
+
+The existing native-reader harness now discovers both suites. The production
+embed directive, static/security implementation and 65 remaining web assets are
+unchanged. Only the two test-asset GET/HEAD paths intentionally become 404;
+production assets remain served and foreign host/origin requests remain 403.
+Original validation is reused after source/log/artifact hash verification.
+
+See the [canonical F02 result and limits](code-cleanup-roadmap.md#cl-7-f02-test-asset-boundary-result-2026-11-04).
+Original CL-1 disposition counts remain capture-time inventory counts. F02 is
+now an accepted implemented/tested extraction, not an unresolved classification
+or test deletion. Source CL-3 through CL-6 retain their existing closures.
+
+Evidence: [original validation](../build/f02-20261104/qa/validation.json),
+[move/assertion proof](../build/f02-20261104/qa/move-proof.json),
+[publication review](../build/f02-publication-20261104/qa/review.json), and
+[commit/remote readback](../build/f02-publication-20261104/qa/final-readback.json).
+These are ignored project-local receipts. Original candidate fields retain
+capture-time meaning; later readback binds the tested payload, commit and
+origin/main SHA without rewriting the implementation evidence.
+
+Next proposal: read-only headless-worker source-filter/inventory/sealed-graph
+and harness reconciliation. CL-7 remains partial. Pre-existing dirty Browser
+build/cache work and unrelated Sidecar config/.tmp/experiments remain separate.
+No new refactor, runtime activation or trial is authorized by this record.
