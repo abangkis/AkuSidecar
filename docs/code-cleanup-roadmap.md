@@ -1,7 +1,7 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-04 (Asia/Jakarta). Latest delta is reviewed CL-7 F02 test-asset separation based on Sidecar 10c1daf, accepted for publication. CL-7 remains partial; source CL-3 through CL-6 retain their closure. Activation and operational acceptance remain separate.
+Status synchronized: 2026-11-04 (Asia/Jakarta). Latest delta is reviewed CL-7 worker test-filename exclusion and packaging regression in AkuBrowser 8190b45, after F02 in Sidecar 2af9698. CL-7 remains partial; source CL-3 through CL-6 retain their closure. Activation and operational acceptance remain separate. Commit/remote identities are bound to publication readback.
 Status: source CL-3 closed after the accepted responsibility-map review at
 `6b9b3a0`; source CL-4 closed by the reviewed FE result below. Comprehensive
 cleanup remains in progress. See the
@@ -116,7 +116,7 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-4: frontend feature ownership | 3b9cfd1: 374 functions/20 feature factories; 30 shared/root functions retained | Frozen 29/29 characterization; Node 360/360; HTTP/app default 1,322 pass/25 skip and dev 1,345 pass/12 skip; four Windows modes/12 artifacts; actual embedded desktop/mobile checks | Not performed | CL-4.1/CL-4.2/CL-4.3 source closed after scoped review; retain/defer map below. Operational acceptance and CL-5 through CL-8 remain separate |
 | CL-5: native runtime and QA boundaries | Reviewed automatic cohort based on 555dea9: 47 declarations/seven production modules; e146d40 projector fix retained; commit bound to publication readback | New characterization 31/31 before; combined 62/62 after/final; native Node 780/780; seven-package default/dev Go; four Windows modes/16 PE artifacts; sealed manual/daily/main 80/81/100 modules | Not performed | Source CL-5 closed after owner-authorized review; retain/defer map below. Operational acceptance remains separate |
 | CL-6: Bridge responsibility boundaries | AkuBridge 6ce23f7: reporting factory/three moved declarations; retained operation/resource owners mapped | Reporting 12 before/after; Bridge Node 515, native-host Go, Sidecar Node 44 and default/dev Go pass; 18 Windows artifacts; three projected packages/70 files each | Not performed | Source CL-6 closed after owner-authorized scoped review; explicit retain map below and publication readback bind the code/docs/remote identities. Operational acceptance remains separate |
-| CL-7: build, packaging and test organization | F02: two test-suite relocations plus embedded/static boundary regression; existing package owners retained | Nine cases preserved; Node 369/369; boundary 16/16; HTTP default/dev pass; four Windows modes/eight pinned artifacts retain 65 production assets without the two suites | Not performed | F02 reviewed and accepted for publication; CL-7 remains partial. Supported-entry/package/harness reconciliation and dirty Browser build/cache review remain separate |
+| CL-7: build, packaging and test organization | F02 in Sidecar 2af9698 retained; worker test-filename exclusion and expanded packaging fixture in Browser 8190b45 | Worker fixture red/green; cold/warm/fresh-source/cache-corruption/untrusted-archive checks pass; sealed Node 16/16; all 111 production sources retained, 26 tests excluded; manual/daily/main driver and manifest bytes unchanged. Earlier F02 Node/HTTP/four-mode Windows evidence retains its own scope | Not performed | Both selected increments reviewed and accepted for publication; CL-7 remains partial. Whole-stage exit-criteria reconciliation and pre-existing dirty Browser build/cache review remain separate |
 | CL-8: integration and source sign-off | Not started for the comprehensive roadmap | Final matrix pending | Separate operational gate | Comprehensive source acceptance pending; runtime acceptance separate |
 
 ### CL-1: inventory before deletion
@@ -340,7 +340,7 @@ resource ownership is explicit without additional singleton state or fallback.
 
 ### CL-7: build, packaging and test organization
 
-Current status: partial. [F02 test-asset separation](#cl-7-f02-test-asset-boundary-result-2026-11-04) is implemented/tested/source-reviewed and accepted for publication; remaining packaging/harness scope and pre-existing dirty Browser build/cache work retain separate review.
+Current status: partial. [F02 test-asset separation](#cl-7-f02-test-asset-boundary-result-2026-11-04) and the [worker packaging boundary](#cl-7-worker-test-filename-boundary-result-2026-11-04) are implemented/tested/source-reviewed and accepted for publication. Whole-stage exit-criteria reconciliation and pre-existing dirty Browser build/cache work retain separate review.
 
 - Reconcile source lists, package seals, generated manifests, asset pins and
   harness inputs after each move. Test the packaged consumer, not just imports
@@ -2455,3 +2455,84 @@ before implementation. Existing dirty Browser build/cache files require their
 own review; F02 does not adopt, edit, commit or validate that pending work.
 Earlier F02-unverified and next-proposal paragraphs describe capture-time
 checkpoints and are superseded only for this selected boundary.
+
+## CL-7 worker test-filename boundary result (2026-11-04)
+
+The owner approved the filename exclusion and packaging fixture after read-only
+source-filter, inventory, sealed-graph and harness analysis, then authorized
+review, roadmap synchronization, commit and push if no blocking issue remained.
+The reviewed code is AkuBrowser `8190b45371c940b1e5e461cc8d8cc7958893a687`,
+based on `3a3c043`; Sidecar remains at the F02 source `2af9698` for validation.
+
+| Dimension | Current evidence and scope |
+| --- | --- |
+| Implemented | Only Browser scripts/stage-headless-worker.ps1 and scripts/test-headless-worker-packaging.ps1 change. The existing directory exclusions gain a filename suffix exclusion for *.test.mjs, *.test.cjs and *.test.js. The fixture adds root/nested negative cases, positive native/shared helpers, source-byte checks and exact payload/source-count assertions |
+| Tested | Expanded fixture fails on the unchanged stager with worker.test.mjs leaking, then passes after the filter. Existing cold/warm cache regression passes fresh source discovery, corrupt extracted-cache recovery and untrusted archive rejection. Three sealed Node suites pass 16/16. Real staging retains all 111 production source files byte-for-byte, excludes 26 test files (313,806 bytes), and retains all 13 existing shared/x-qa-*.mjs helpers |
+| Activated | Not performed; project-local packaging/cache checks only, with the same official pinned archive reacquired as described below. No runtime restart, live source trial, account/profile/configuration change, installer activation or dependency upgrade |
+| Acceptance | Scoped review has no blocking finding. The owner-authorized change is accepted for commit/publication; it closes this packaging gap, not all CL-7 or operational acceptance |
+
+### Package and guard readback
+
+| Sealed entry | Modules | Capture assets | Readback |
+| --- | ---: | ---: | --- |
+| manual | 80 | 26 | All worker dependencies staged; driver and manifest SHA-256 unchanged from the CL-5 receipt |
+| daily | 81 | 26 | All worker dependencies staged; driver and manifest SHA-256 unchanged from the CL-5 receipt |
+| main | 100 | 32 | All worker dependencies staged; driver and manifest SHA-256 unchanged from the CL-5 receipt |
+
+No test/fixture module enters these sealed graphs. Native helpers keep their
+production ownership; a QA-like helper name alone is not grounds for removal.
+The schema, capabilities and daily/main lifecycle flags remain unchanged.
+Official archive pin/provenance, Node/license hashes, path/reparse checks,
+source enumeration on every stage, cache verification and cleanup remain intact.
+The generated development inventory still hashes the staged files; its synthetic
+prepare-only harness remains a separate promotion/provenance test, not proof of
+real source selection. The real stager fixture and actual package readback now
+cover this selected source boundary without changing that harness.
+
+The initial sandbox run could not inspect Windows processes, so output retention
+failed closed before the fixture assertion. Authorized tests ran outside the
+sandbox with that guard intact. The previously available Node archive was no
+longer present when cache regression began; the official stager reacquired the
+same pinned 24.16.0 archive, verified SHA-256
+`edaca9bd58ec8e92037dac4e877d52f6b8f430b81c18b57e264b4e2fb111cd56`,
+and the unchanged cache regression then passed with its explicit local path.
+
+### Reproduction and evidence
+
+From AkuBrowser, use PowerShell with normal Windows process-inspection access:
+
+```powershell
+pwsh -NoProfile -File scripts/test-headless-worker-packaging.ps1
+pwsh -NoProfile -File scripts/stage-headless-worker.ps1 -DestinationDirectory build/cl7-worker-filter/headless-worker -CacheRoot build/cl7-worker-filter/cache
+pwsh -NoProfile -File scripts/test-headless-worker-cache.ps1 -ArchivePath build/cl7-worker-filter/cache/24.16.0/node-v24.16.0-win-x64.zip
+```
+
+From AkuSidecar, run the sealed graph/protocol regressions:
+
+```text
+node --test internal/collection/headless/worker/native-pilot/x-application-owner-factories.test.mjs scripts/build-x-daily-owner.test.mjs scripts/x-native-owner.test.mjs
+```
+
+Ignored project-local receipts: Browser
+`build/headless-worker-source-filter-20261104/qa/packaging-green.log`,
+`cache-regression.log`, `readback.json`, `review.json` and `final-readback.json`;
+Sidecar `build/cl7-worker-source-filter-20261104/qa/sealed-regression.log` and
+`build/cl7-worker-source-filter-20261104/packages/{manual,daily,main}`.
+Source/log/artifact identities are checked for review; passing suites are reused
+while those inputs remain unchanged. Earlier Go/HTTP/four-mode Windows evidence
+belongs to F02; no new application compile or whole-repository test is claimed.
+
+### Remaining scope and next proposal
+
+Next propose a read-only CL-7 exit-criteria reconciliation across the selected
+supported source lists, package/build entry points, generated manifests and
+harness commands. Decide retain/defer explicitly and identify any remaining real
+consumer gap before proposing more code. F02 and this worker filter are accepted
+increments; comprehensive CL-7 source closure is not yet established.
+
+Pre-existing Browser build/cache changes (including the dirty check.ps1), Sidecar
+config/.tmp/experiments and all unrelated source remain outside these commits.
+Existing cached/generated files are test inputs or disposable receipts, not
+source changes adopted by this review. The earlier F02 next proposal is now
+historical for this selected boundary. No next implementation, activation or
+trial is approved by this documentation update.

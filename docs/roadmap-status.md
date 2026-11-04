@@ -1,6 +1,6 @@
 # Roadmap status and evidence index
 
-Status synchronized: 2026-11-04 (Asia/Jakarta). Latest delta is reviewed CL-7 F02 test-asset separation based on Sidecar 10c1daf, accepted for publication with commit/remote identity bound to readback. CL-7 remains partial; source CL-3 through CL-6 remain closed. Activation and operational acceptance remain separate.
+Status synchronized: 2026-11-04 (Asia/Jakarta). Latest delta is reviewed CL-7 worker test-filename exclusion and packaging regression in AkuBrowser 8190b45, after F02 in Sidecar 2af9698, accepted for publication with commit/remote identity bound to readback. CL-7 remains partial; source CL-3 through CL-6 remain closed. Activation and operational acceptance remain separate.
 Earlier source history before the latest result: AkuSidecar `80acfb9` (Timeline More/Less and restart-dev assertion correction, after `f27e91b` automatic Store feature separation; 95 declarations/15 feature files; after Store Timeline read-model `bee6a9f`, after empty-candidate completion `de95c58`, after vision persistence `70ea120`; per-run candidate evaluation/completion, after acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
@@ -1635,6 +1635,34 @@ Next proposal: read-only headless-worker source-filter/inventory/sealed-graph
 and harness reconciliation. CL-7 remains partial. Pre-existing dirty Browser
 build/cache work and unrelated Sidecar config/.tmp/experiments remain separate.
 No new refactor, runtime activation or trial is authorized by this record.
+
+## CL-7 worker test-filename boundary result (2026-11-04)
+
+Reviewed code: AkuBrowser `8190b45371c940b1e5e461cc8d8cc7958893a687`, based
+on `3a3c043`; Sidecar validation source remains F02 `2af9698`.
+
+| Dimension | Current evidence and scope |
+| --- | --- |
+| Implemented | Browser stager excludes *.test.mjs/cjs/js filenames in addition to existing test/node_modules/.git directory exclusions. Expanded packaging fixture covers root/nested test files, production helpers, byte preservation and exact inventory/source count |
+| Tested | Fixture red/green confirmed; cold/warm cache, fresh sources, corrupt-cache recovery and untrusted-archive rejection pass. Sealed Node regression 16/16; real staging excludes 26 tests (313,806 bytes) while retaining all 111 production sources and all 13 shared/x-qa-*.mjs helpers. Manual/daily/main graphs retain 80/81/100 modules and 26/26/32 assets; drivers/manifests remain byte-identical to the prior receipts |
+| Activated | Not performed; only project-local packaging/cache/Node validation, no runtime restart or live source trial |
+| Acceptance | Scoped review has no blocking finding; accepted for authorized commit/publication. CL-7 remains partial; whole-stage source acceptance and operational acceptance are separate |
+
+See the [canonical result, commands, guards and limits](code-cleanup-roadmap.md#cl-7-worker-test-filename-boundary-result-2026-11-04).
+Browser ignored receipts are under
+`build/headless-worker-source-filter-20261104/qa/`, including `readback.json`,
+`review.json` and `final-readback.json`; Sidecar sealed regression/packages are
+under `build/cl7-worker-source-filter-20261104/`. Review reuses passing evidence
+after input/hash checks; no new application compile or complete CL-7 acceptance
+is claimed. Earlier F02 and source CL-3 through CL-6 closures retain their scope.
+
+Next proposal: read-only CL-7 exit-criteria reconciliation of supported source
+lists, package/build entry points, generated manifests and harness commands;
+record retain/defer decisions and identify a real remaining gap before more
+implementation. Pre-existing dirty Browser build/cache work and unrelated
+Sidecar config/.tmp/experiments are preserved outside these commits. The prior
+headless-worker next proposal is historical for this now accepted boundary.
+No next refactor, activation or trial is authorized by this record.
 
 ## Product and installation roadmaps
 
