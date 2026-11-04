@@ -1,7 +1,7 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-8 is closed after owner-authorized review of B02 characterization in Bridge 32b3834 and the final disposition/evidence matrix. Source CL-3 through CL-7 retain their closures. Source identity remains v118 under Browser 1b96fff; historical release authority remains v116. The separately reviewed P05 cache increment is implemented, tested and published as Browser 8c39d97, with supporting Sidecar ignore commit ff65e9e. Full P05 closure, three migration-dependent deferrals, activation and operational/release acceptance remain separate. See the P05 publication record below for the four distinct status dimensions.
+Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-8 and source CL-3 through CL-7 retain their closures. Source identity v118 and historical release authority v116 remain separate. The P05 cache increment is published as Browser 8c39d97 with Sidecar ignore ff65e9e; the later Step 3B projection-order fix is reviewed/tested/published as Browser 5fa73c9. The source ordering gap is closed within its scope. Full P05 closure, the inherited macOS packaging scratch location, three migration-dependent deferrals and operational/release acceptance remain separate. Current P05 records distinguish implemented, tested, published and acceptance.
 Status: the selected CL source cleanup is signed off through CL-8, with retained
 contracts, explicit deferrals and the historical P05 exclusion. The later
 [P05 cache increment](#p05-source-build-cache-publication-2026-11-04) has its own
@@ -2785,13 +2785,51 @@ from the verified source commits above.
 
 ### Remaining scope and next proposal
 
-Two inherited macOS tooling limits remain explicitly separate: the runtime
-installer still creates packaging scratch under `${TMPDIR:-/tmp}`, and Step 3B
-uses `$unpacked_root` before its later assignment under `set -u`. Both predate
-the cache increment. Syntax and extracted-operation tests do not establish
-successful native packaging or close these limits.
+At this cache-publication checkpoint, two inherited macOS limits were recorded:
+system-temp packaging scratch and Step 3B's early `$unpacked_root` use. The latter
+is now corrected in the separate result below. The runtime installer's packaging
+scratch under `${TMPDIR:-/tmp}` remains open. Syntax and extracted-operation
+tests do not establish successful native packaging.
 
-Next proposal: read-only analysis of Step 3B's `$unpacked_root` ordering, with one
-bounded correction and regression requirement to be proposed for approval.
+Next proposal: read-only analysis of the runtime installer's packaging scratch
+lifecycle, selecting one project-local location change and its ownership tests.
 No further implementation, cleanup deletion, activation, commit/push or trial
 is authorized by this documentation update.
+
+## P05 Step 3B projection order (2026-11-04)
+
+| Dimension | Current status and evidence |
+| --- | --- |
+| Implemented | Browser `5fa73c9703f881495aab345e97749956dfd58dca` moves the existing identity-projection invocation after the verified-file copy and before fingerprinting. No invocation arguments, package format, helper bodies or staging/cleanup guards change. New `scripts/macos-3b-package-order.test.mjs` owns four regression cases; two Browser files are committed |
+| Tested | All four new cases fail on the original placement. Final combined cohort passes 9/9 with zero failures/skips: four Step 3B cases plus the existing five cache/ownership cases. The cases check unset/inherited target handling, projected manifest/deployment bytes and fingerprint, prior-staging preservation and owned cleanup on projection failure. Shell syntax and whitespace checks pass. Source/helper hashes match the receipts; staged test bytes match the tested file, and the staged shell matches the LF-normalized source executed by the fixture |
+| Published | Browser `5fa73c9` was pushed to `Origin/main`; remote SHA was verified as `5fa73c9703f881495aab345e97749956dfd58dca` on 2026-11-04 (Asia/Jakarta). Sidecar's earlier local roadmap commit `7a533e1` and this synchronization are published separately; final readback binds the resulting documentation commit and remote main |
+| Acceptance | Scoped source/test review finds no blocking issue and accepts this correction. The early/unset target and copy/projection/fingerprint ordering gap is closed in source. Full P05 closure, native macOS package execution/signing, Windows installer qualification and operational/release acceptance are not established. No activation or live trial is included |
+
+The required sequence is containment/staging guard, exclusive creation and
+ownership claim, verified-file copy, acceptance identity projection, then
+fingerprint. The projection helper reads and writes the copied manifest and
+deployment file. Merely initializing the variable earlier would not provide
+those files and could let subsequent copy overwrite projected bytes.
+
+The test executes the production package segment, copy logic, projection and
+fingerprint helpers and EXIT cleanup in isolated project-local directories.
+The verifier inventory is synthetic; Windows has a path-format adapter for the
+normalization port. The production containment guard still executes. The full
+Darwin/signing/source-tuple preflight and archive/installer workflow are not run
+or weakened. Passing this fixture is not native macOS acceptance.
+
+Ignored Browser receipts in `build/p05-step3b-order-20261104/`:
+[original validation](../../AkuBrowser/build/p05-step3b-order-20261104/validation.json),
+[four expected failures](../../AkuBrowser/build/p05-step3b-order-20261104/red.log),
+[nine passing results](../../AkuBrowser/build/p05-step3b-order-20261104/green.log), and
+[publication readback](../../AkuBrowser/build/p05-step3b-order-20261104/publication-readback.json).
+Original `committed=false`/`pushed=false` fields describe pre-publication capture;
+the readback supersedes them for publication. The existing product checks are
+reused after source/hash verification; a documentation commit does not require
+another full test or build.
+
+Next minimum P05 proposal is read-only analysis of `build_root` in
+`scripts/build-macos-runtime-installer.sh`: its packaging scratch still uses
+`${TMPDIR:-/tmp}`. Define one project-local relocation while retaining unique
+creation, cleanup ownership and caller-provided Go temp behavior. This next
+analysis/implementation is not performed or authorized by this record.

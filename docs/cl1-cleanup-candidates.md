@@ -38,7 +38,7 @@ disposition counts are not a remaining-work count.
 
 Latest Bridge result: [automatic CL-6 source closure](#automatic-cl-6-bridge-reporting-separation-result-2026-11-04), AkuBridge 6ce23f7, is implemented/tested/reviewed and source closed after owner-authorized scoped review. Publication is bound to readback; prior source closures and original inventory disposition counts retain their scope.
 
-Latest packaging result: [selected source CL-7 is closed](code-cleanup-roadmap.md#cl-7-source-closure-2026-11-04) after accepted Sidecar F02 2af9698, Browser worker filter 8190b45 and Bridge package suffix guard/characterization 6875355. P04 is source-retained for maintenance/recovery. P05 was excluded at that checkpoint; its separately reviewed cache increment is now implemented/tested/published in Browser 8c39d97 with Sidecar ff65e9e. See the [current P05 status](#p05-source-build-cache-publication-2026-11-04). Full P05 closure and runtime, macOS and installed acceptance remain unestablished; original inventory counts retain their capture-time meaning.
+Latest packaging result: [selected source CL-7 is closed](code-cleanup-roadmap.md#cl-7-source-closure-2026-11-04); P04 remains source-retained for maintenance/recovery. P05 was excluded at that checkpoint. Its cache increment is published in Browser 8c39d97 with Sidecar ff65e9e; the later [Step 3B projection-order correction](#p05-step-3b-projection-order-2026-11-04) is reviewed/tested/published as Browser 5fa73c9. Full P05 closure and runtime, macOS and installed acceptance remain unestablished; original inventory counts retain their capture-time meaning.
 
 ## Dispositions and approval
 
@@ -147,7 +147,7 @@ Paths in this section are relative to AkuBrowser.
 | P02 | `retain-required` | Installer `legacySetupPath` removal/uninstall cleanup | `installer/windows/installer.go` removes old setup executable during install and includes it in uninstall paths | Old-file cleanup is active upgrade behavior; retiring the old UI did not retire upgrade cleanup |
 | P03 | `defer-until-replacement` | Signed update manifest v1 and conditional legacy artifact names | Windows/macOS companion builders, manifest signer, Bridge host update reader and tests; Windows emitter requires matching product/Bridge/Sidecar identity | Keep exact signature/version/compatibility policy until supported old host/update consumers migrate; no manifest relabel or schema reinterpretation |
 | P04 | `retain-required` | Frozen Store/macOS/preview asset-generation and distribution tooling | CL-7 closure retains maintenance/recovery tools named by release contracts/tests; current Windows binaries compile and Darwin selectors are mapped. This supersedes the earlier unverified source-retirement classification | Revisit on explicit lane-retirement decision or changes requiring platform-native validation; frozen publication is not obsolescence proof, source retention is not macOS/installed acceptance |
-| P05 | `unverified` (original inventory) | Browser source-build cache helpers, wrappers and tests | The formerly dirty 13-file package is separately reviewed/tested/published as Browser 8c39d97; Sidecar ff65e9e adds the supporting root .tmp ignore. Relative npm cache identity and cleanup ownership have bounded evidence; see the four-dimension result below | Accept the published cache increment within its scope; full P05 exit criteria and inherited macOS tooling limits remain open. Preserve the historical CL-7/CL-8 exclusion and do not claim release/installed acceptance |
+| P05 | `unverified` (original inventory) | Browser source-build cache helpers, wrappers and tests | Cache package Browser 8c39d97 and supporting Sidecar ff65e9e are published; Step 3B ordering correction 5fa73c9 adds four regression cases, with final combined 9/9 passing. Separate four-dimension records below define current source acceptance | Published cache and ordering increments are accepted within their scopes; full P05 exit criteria and system-temp macOS packaging scratch remain open. Preserve the historical CL-7/CL-8 exclusion and do not claim release/installed acceptance |
 
 ## First concrete proposal for CL-2
 
@@ -2988,9 +2988,23 @@ No new refactor, runtime activation or trial is authorized by this record.
 
 See the [canonical ownership, evidence and remaining-scope record](code-cleanup-roadmap.md#p05-source-build-cache-publication-2026-11-04).
 The CL-8 32-row disposition snapshot remains historical; this result is a separate
-P05 increment, not a retroactive change to the closed source gate. The two inherited
-macOS limits (system-temp packaging scratch and Step 3B pre-assignment use) remain
-separate. Prior unreviewed/dirty statements describe earlier checkpoints.
+P05 increment, not a retroactive change to the closed source gate. The inherited
+Step 3B ordering gap is corrected in the later result below; system-temp packaging
+scratch remains separate. Prior unreviewed/dirty statements describe earlier checkpoints.
 Publication of this roadmap update is separate from the source commits above.
 No code, additional deletion,
 activation, installer execution or trial is part of this synchronization.
+
+## P05 Step 3B projection order (2026-11-04)
+
+| Dimension | Current status and scope |
+| --- | --- |
+| Implemented | Browser 5fa73c9703f881495aab345e97749956dfd58dca moves one existing projection invocation after copy and before fingerprint; adds four isolated regression cases. Staging ownership, cleanup, helper bodies, arguments and protocol remain unchanged |
+| Tested | Four new cases fail before the correction; combined new/existing cohort passes 9/9, no failures/skips. Actual copy/projection/fingerprint and cleanup run in fixtures; unset/inherited target, prior staging and projection failure are covered. The synthetic verifier and Windows path adapter retain their explicit fixture limits |
+| Published | Browser 5fa73c9 is pushed; Origin/main was verified at full SHA 5fa73c9703f881495aab345e97749956dfd58dca. Documentation publication is separately bound by the final readback, including the earlier local roadmap commit 7a533e1 |
+| Acceptance | Scoped source review accepts the ordering correction and closes that source gap. Full P05 closure and native macOS/installer/operational acceptance remain unestablished. No activation, full builder run or live trial |
+
+See the [canonical sequence, evidence and limits](code-cleanup-roadmap.md#p05-step-3b-projection-order-2026-11-04).
+The next proposal is read-only packaging scratch lifecycle analysis for the macOS
+runtime installer, whose build_root still uses TMPDIR/tmp. No such implementation
+or further cleanup is included. Historical inventory/CL-8 counts are unchanged.

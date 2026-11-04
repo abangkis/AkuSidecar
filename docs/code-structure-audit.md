@@ -2,7 +2,7 @@
 
 ## Status synchronization (2026-11-04)
 
-Latest delta: the separately reviewed [P05 source-build cache increment](#p05-source-build-cache-publication-2026-11-04) is implemented/tested/published as Browser 8c39d97 with supporting Sidecar ff65e9e. Scoped source acceptance is recorded; full P05 closure and operational/release acceptance remain unestablished. Selected source CL-3 through CL-8 retain their canonical closures. Earlier partial-stage statements and original receipts remain historical checkpoints.
+Latest delta: the [P05 Step 3B projection-order correction](#p05-step-3b-projection-order-2026-11-04) is reviewed/tested/published as Browser 5fa73c9 after the cache increment 8c39d97 and Sidecar ignore ff65e9e. The ordering gap is closed in source; full P05 closure, macOS packaging scratch and operational/release acceptance remain separate. Selected source CL-3 through CL-8 retain their canonical closures. Earlier stage statements and original receipts remain historical checkpoints.
 
 Previous packaging checkpoint: [CL-7 F02 test-asset separation](#cl-7-f02-test-asset-boundary-result-2026-11-04), based on Sidecar 10c1daf, was implemented/tested/source-reviewed before the later CL-7/CL-8 closures. Its original scope and receipt identities are retained.
 
@@ -1691,9 +1691,24 @@ out-of-root directories. The added root-only ignores do not exclude other Shared
 The earlier initializer audit is corrected: the old suite already rejected the
 missing initializer; the new assertion makes the presence/order requirement explicit.
 
-The original CL-7/CL-8 P05 exclusion remains historical. Inherited macOS packaging
-scratch under TMPDIR/tmp and Step 3B's early unpacked_root use remain separate
-follow-ups, not regressions attributed to the new relative-cache fix. No production
+The original CL-7/CL-8 P05 exclusion remains historical. At the cache checkpoint,
+system-temp macOS packaging scratch and Step 3B's early unpacked_root use were
+inherited limits. The latter is corrected below; packaging scratch remains open.
+Neither is attributed to the relative-cache fix. No production
 code change, new test run, compilation or trial is part of this roadmap
 synchronization. The roadmap's commit/publication is tracked separately from
 the verified source publication above.
+
+## P05 Step 3B projection order (2026-11-04)
+
+| Dimension | Current status and scope |
+| --- | --- |
+| Implemented | Browser 5fa73c9703f881495aab345e97749956dfd58dca relocates the existing projection call after copied files exist and before fingerprinting. The new four-case suite owns this package-order contract. Guards, cleanup, helper bodies and invocation arguments are unchanged |
+| Tested | Four intended pre-fix failures; final combined suite passes 9/9 without skips. Tests execute actual copy/project/fingerprint and cleanup using synthetic verifier inventory and a Windows path-format adapter. Unset/inherited target handling, projected byte identity, prior-staging preservation and owned cleanup on failure are verified; shell syntax passes |
+| Published | Browser 5fa73c9 pushed; Origin/main verified as 5fa73c9703f881495aab345e97749956dfd58dca on 2026-11-04. Source/receipt identities are bound to publication readback; Sidecar documentation is published separately |
+| Acceptance | Source/test review has no blocking finding and accepts the bounded correction. Full P05, native macOS packaging/signing, installed and operational/release acceptance remain open. No runtime activation or live trial |
+
+See the [canonical ordering, helper ownership and receipts](code-cleanup-roadmap.md#p05-step-3b-projection-order-2026-11-04).
+The fixture is not a full macOS builder run; Darwin/signing/source-tuple gates
+remain untouched. The next proposed read-only boundary is the runtime installer's
+packaging scratch lifetime and its TMPDIR/tmp location. It is not implemented here.

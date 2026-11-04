@@ -1,6 +1,6 @@
 # Roadmap status and evidence index
 
-Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-8 is closed after owner-authorized final review of Bridge B02 32b3834 and the complete 32-row disposition/evidence matrix. Source CL-3 through CL-7 retain their closures. Source candidate v118 and historical release v116 remain separate. The separately reviewed P05 cache increment is implemented/tested/published as Browser 8c39d97 with Sidecar ff65e9e; full P05 closure, three migration-dependent deferrals and operational/release acceptance remain separate. The P05 record below distinguishes implementation, testing, publication and acceptance.
+Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-3 through CL-8 retain their closures and historical disposition scopes. Source candidate v118 and historical release v116 remain separate. P05 cache Browser 8c39d97 and Sidecar ignore ff65e9e are published; the later Step 3B projection-order correction is reviewed/tested/published as Browser 5fa73c9. Full P05 closure, remaining macOS packaging scratch, three migration-dependent deferrals and operational/release acceptance remain separate. Current P05 records distinguish implemented, tested, published and acceptance.
 Earlier source history before the latest result: AkuSidecar `80acfb9` (Timeline More/Less and restart-dev assertion correction, after `f27e91b` automatic Store feature separation; 95 declarations/15 feature files; after Store Timeline read-model `bee6a9f`, after empty-candidate completion `de95c58`, after vision persistence `70ea120`; per-run candidate evaluation/completion, after acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
@@ -1762,9 +1762,28 @@ this synchronization; no product tests or trials were rerun.
 
 The CL-8 32-row map still describes its original checkpoint: P05 was excluded
 then and the cache increment was reviewed/published afterward. CL-3 through CL-8
-closures are not reopened. Inherited macOS TMPDIR packaging scratch and the
-Step 3B unpacked_root ordering issue remain separate bounded follow-ups.
+closures are not reopened. The Step 3B ordering issue is corrected in the later
+result below; inherited macOS TMPDIR packaging scratch remains a separate follow-up.
 Sidecar config/experiments remain local and outside these documentation edits.
+
+## P05 Step 3B projection order (2026-11-04)
+
+| Dimension | Current status and scope |
+| --- | --- |
+| Implemented | Browser 5fa73c9703f881495aab345e97749956dfd58dca moves the existing projection call after copy and before fingerprint; adds scripts/macos-3b-package-order.test.mjs with four cases. No guard, cleanup, helper-body, invocation-argument or protocol change |
+| Tested | All four new cases fail on the original placement. Final combined cohort passes 9/9 with zero failures/skips: four new and five existing cache/ownership cases. Actual projection/copy/fingerprint and cleanup execute in fixtures with explicit synthetic verifier and Windows path-adapter limits. Shell syntax passes; source/hash identities match receipts |
+| Published | Browser 5fa73c9 pushed and Origin/main verified as 5fa73c9703f881495aab345e97749956dfd58dca on 2026-11-04. Earlier local Sidecar roadmap 7a533e1 and this synchronization have separate documentation publication bound by final readback |
+| Acceptance | The reviewed ordering correction is source-accepted; its early/unset-target gap is closed in source. Full P05 closure, macOS/installer and operational/release acceptance are not established. No activation or live trial |
+
+Canonical record: [Step 3B sequence, receipts and remaining scope](code-cleanup-roadmap.md#p05-step-3b-projection-order-2026-11-04).
+[Publication readback](../../AkuBrowser/build/p05-step3b-order-20261104/publication-readback.json)
+binds the tested source to source/documentation commits and remote SHAs; original
+pre-publication validation fields retain capture-time meaning. The fixture does
+not run the full native macOS packaging/signing workflow or weaken its gates.
+
+Next minimum P05 proposal: read-only analysis of macOS runtime packaging scratch
+(`build_root` under TMPDIR/tmp), defining one project-local relocation and cleanup
+ownership tests. No further production change, trial or new workstream is included.
 
 ## Product and installation roadmaps
 
