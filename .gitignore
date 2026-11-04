@@ -16,6 +16,7 @@ runtime/
 coverage/
 .go-build/
 .goland-build/
+/.tmp/
 
 # Local configuration and secrets
 .env
