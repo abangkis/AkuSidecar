@@ -1,6 +1,6 @@
 # Roadmap status and evidence index
 
-Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-7 is closed after the accepted source/package/harness review and AkuBridge 6875355, retaining Browser 8190b45 and Sidecar F02 2af9698. Source CL-3 through CL-6 remain closed. Dirty Browser build/cache P05 is excluded; CL-8 and activation/operational acceptance remain separate. Commit/remote identities are bound to publication readback.
+Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-8 is closed after owner-authorized final review of Bridge B02 32b3834 and the complete 32-row disposition/evidence matrix. Source CL-3 through CL-7 retain their closures. Source candidate v118 and historical release v116 remain separate; dirty Browser build/cache P05, three migration-dependent deferrals and operational/release acceptance remain outside sign-off. Publication readback binds final commits and remote SHAs.
 Earlier source history before the latest result: AkuSidecar `80acfb9` (Timeline More/Less and restart-dev assertion correction, after `f27e91b` automatic Store feature separation; 95 declarations/15 feature files; after Store Timeline read-model `bee6a9f`, after empty-candidate completion `de95c58`, after vision persistence `70ea120`; per-run candidate evaluation/completion, after acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
@@ -1699,6 +1699,48 @@ candidate dispositions with the cross-repository matrix and determining which
 remaining checks are necessary. No CL-8 change, cache adoption or trial is
 approved by this record. Earlier CL-7 partial/next-proposal paragraphs are
 historical and superseded only within the accepted clean source scope.
+
+## CL-8 source closure (2026-11-04)
+
+Accepted Bridge B02 commit: `32b38348a82292bee8ca77b337bb32ad180a44ec`, based
+on 810bd99. The source increment adds only the real-caller test suite and three
+Sidecar ledger/status updates; production runtime/protocol/guards and historical
+release metadata remain unchanged. Validation baselines: Browser 1b96fff and
+Sidecar 848ee55. Owner-authorized final review closes selected source CL-8;
+publication readback binds source, test/log/artifact identities and remote SHAs.
+
+| Dimension | Current status and scope |
+| --- | --- |
+| Implemented | B02 real-caller characterization; all 32 selected rows reconciled: one removed, six extracted, 21 retained, three deferred, one excluded P05 |
+| Tested | B02 18/18; canonical Bridge 543/543; Sidecar negotiation/security/split-heartbeat fencing 47 default and 47 dev, zero failures/skips; current source-candidate v118 gate passes. Earlier behavioral/visual/package/12-artifact Windows evidence reused after input/hash review |
+| Activated | Not performed; no installation, restart, live source trial or configuration/account/profile change |
+| Acceptance | Owner-authorized final review finds no blocking selected-source gap and accepts the earlier bounded independent review. Selected source CL-8 is closed with explicit retains, deferrals and exclusions; operational and release acceptance remain separate |
+
+See the [canonical closure, disposition matrix, B02 decision and limits](code-cleanup-roadmap.md#cl-8-source-closure-2026-11-04).
+B02 retains both existing projections: protocol 2 is complete; legacy loopback
+keeps focusPolicyRevision and background omits it. The new tests also preserve
+origin/source/error envelopes, owner/token/identity/contract headers and ordered
+authorization retirement. No consolidation or protocol normalization is proposed.
+
+G07/N02/P03 remain deferred to their named replacement/migration owners and
+triggers. P05's 13 dirty build/cache files and unrelated Sidecar config/.tmp/
+experiments remain excluded. Source-only identity v118 is explicit and not
+release-qualified; historical release authority v116 and its default guard stay
+unchanged. The two Chrome opt-in skips, macOS/installed acceptance and live X/IG
+qualification are not claimed as passing source checks.
+
+Ignored receipts: Bridge/build/cl8-auto-20261104/ and
+Sidecar/build/cl8-auto-20261104/qa/, including the baseline, targeted/canonical
+logs, default/dev interop results, candidate output, validation.json,
+publication-review.json and publication-readback.json. Earlier CL-7, identity
+and automatic candidate receipts retain their original scopes. No further
+mandatory extraction is identified for the signed-off selected source scope.
+
+Next cleanup proposal: separate read-only P05 ownership/diff review of the 13
+dirty Browser build/cache files, including cache paths, producer/consumer
+boundaries, retention/cleanup guards and required tests. Do not include that work
+or delete cache without its own authorization. Release preparation, activation,
+installer/macOS and live-source acceptance remain separate future work.
 
 ## Product and installation roadmaps
 

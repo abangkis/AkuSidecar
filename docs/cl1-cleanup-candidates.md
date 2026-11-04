@@ -33,7 +33,7 @@ Latest frontend result: [automatic CL-4 separation](#automatic-frontend-feature-
 code `3b9cfd1`, closes the selected F01/CL-4 source cohort after scoped review.
 Publication is bound to the linked readback; activation remains separate.
 F02/test-asset packaging is now implemented/tested/source-reviewed in CL-7,
-with publication bound to the result below. CL-7 remains partial. Original
+with publication bound to the result below. Selected source CL-7 is closed. Original
 disposition counts are not a remaining-work count.
 
 Latest Bridge result: [automatic CL-6 source closure](#automatic-cl-6-bridge-reporting-separation-result-2026-11-04), AkuBridge 6ce23f7, is implemented/tested/reviewed and source closed after owner-authorized scoped review. Publication is bound to readback; prior source closures and original inventory disposition counts retain their scope.
@@ -41,6 +41,17 @@ Latest Bridge result: [automatic CL-6 source closure](#automatic-cl-6-bridge-rep
 Latest packaging result: [selected source CL-7 is closed](code-cleanup-roadmap.md#cl-7-source-closure-2026-11-04) after accepted Sidecar F02 2af9698, Browser worker filter 8190b45 and Bridge package suffix guard/characterization 6875355. P04 is source-retained for maintenance/recovery; P05 dirty build/cache remains excluded and unreviewed. Original CL-1 aggregate counts retain their capture-time meaning; source acceptance does not establish runtime, macOS or installed acceptance.
 
 ## Dispositions and approval
+
+Selected source CL-8 is closed after owner-authorized final review. All 32 rows
+are reconciled as one completed removal,
+six completed selected extractions, 21 supported retains, three explicit deferrals
+and one excluded/unreviewed boundary (P05). B02's real-caller characterization
+now supports retaining its two existing projections. See the
+[CL-8 source closure](code-cleanup-roadmap.md#cl-8-source-closure-2026-11-04).
+B02 is committed as AkuBridge 32b3834; publication readback binds final source
+and roadmap commits. This does not close operational gates or adopt the
+pre-existing dirty build/cache work. The original counts below
+retain their capture-time meaning.
 
 The disposition counts are the original CL-1 inventory, not a remaining-work
 count. E01 and E02 selected source boundaries are complete; further Settings
@@ -114,7 +125,7 @@ Bridge paths are relative to AkuBridge; web paths are relative to AkuSidecar.
 | ID | Disposition | Target and role | Supported consumers / evidence | Checks and rollback constraint before any change |
 | --- | --- | --- | --- | --- |
 | B01 | `retain-required` | `native-runtime-client.js` v1 retry and `native-host/protocol.go` versions 1/2 | Host actively accepts both; client maps v1 reconcile to status/start; `native-runtime-client.test.mjs:115,189,752` | Preserve retry bounds, exact request identity and v1 exclusion of v2 capabilities/policy; installed old hosts not enumerated |
-| B02 | `unverified` | `aku-browser-tab-bridge.js:capabilitiesForSidecar` versus `bridge-capabilities.js:bridgeCapabilitiesForProtocol` | Both are referenced by loopback message/heartbeat flows; latter strips `focusPolicyRevision`, former does not | Resolve supported legacy consumer shape and add boundary coverage before consolidation; do not silently change negotiated protocol or label this a proven regression |
+| B02 | `retain-required` | Classic loopback capabilitiesForSidecar versus ESM bridgeCapabilitiesForProtocol used by background heartbeat | Accepted Bridge 32b3834 adds 18 real-caller characterization cases. Protocol 2 preserves the full payload; existing legacy loopback retains focusPolicyRevision and background omits it. Canonical Bridge 543 pass; Sidecar negotiation/security/fencing 47 default/dev. Production code unchanged | Retain separate packaged callers and existing wire shapes. Revisit only for an approved consumer/legacy-shape migration with exact boundary tests; unknown external consumer absence is not established or required for retention. Selected source CL-8 closed; commit/publication bound to readback |
 | B03 | `retain-required` | `content-script.js:legacyExpansionState` | Two extraction/presentation call sites map `no_collapse_observed` to `already_complete`; observation/presentation shape remains a consumer | Retain wire/presentation interpretation until an explicit migration; current state names alone do not make this dead code |
 | B04 | `retain-required` | `surface-cleanup-receipt.js` and web `capture-surface-cleanup-receipt.js` | Background service and embedded UI are separately packaged; `capture-surface-policy.test.mjs:44` enforces byte-normalized parity | Retain exact lease/source/count/reason predicates in both packages until a packaging replacement is approved |
 | B05 | `retain-required` | `service-worker-entry-v3.js` | Manifest background root directly imports it; it selects registration generation while delegating logic | Not an unused wrapper; changing/removing it affects extension registration/update identity |

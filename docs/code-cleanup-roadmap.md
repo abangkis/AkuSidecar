@@ -1,11 +1,11 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-7 is closed after the accepted packaging/source/harness review and AkuBridge 6875355, retaining Browser 8190b45 and Sidecar F02 2af9698. Source CL-3 through CL-6 retain their closures. Pre-existing dirty Browser build/cache work is explicitly excluded; CL-8 and activation/operational acceptance remain separate. Commit/remote identities are bound to publication readback.
-Status: source CL-3 closed after the accepted responsibility-map review at
-`6b9b3a0`; source CL-4 closed by the reviewed FE result below. Comprehensive
-cleanup remains in progress. See the
-[closure decision](#cl-3-source-closure-2026-11-03) for retain/defer triggers.
+Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-8 is closed after owner-authorized review of B02 characterization in Bridge 32b3834 and the final disposition/evidence matrix. Source CL-3 through CL-7 retain their closures. Source identity remains v118 under Browser 1b96fff; historical release authority remains v116. Dirty Browser build/cache P05, three migration-dependent deferrals, activation and operational/release acceptance remain separate. Publication readback binds final commits and remote SHAs.
+Status: the selected CL source cleanup is signed off through CL-8, with retained
+contracts, explicit deferrals and the P05 exclusion. See the
+[final source closure](#cl-8-source-closure-2026-11-04) and earlier stage maps for
+return triggers. This does not certify every legacy-looking symbol or a release.
 Other workstreams and changes outside approved increments require approval.
 Earlier partial/open statements retain their historical checkpoint scope.
 No implementation, deletion, dependency upgrade, activation or trial is approved
@@ -110,14 +110,14 @@ ledger entries when a later modularization creates a proven obsolete path.
 | Stage | Implemented | Tested | Activated | Acceptance |
 | --- | --- | --- | --- | --- |
 | CL-0: inherited bounded cleanup | Eight increments above complete | Scoped receipts retained | Cleanup activation not recorded | Bounded code reviews complete; no whole-repository completion claim |
-| CL-1: consumer and compatibility inventory | [Entry/consumer map](cl1-consumer-inventory.md) and [32-boundary candidate ledger](cl1-cleanup-candidates.md) delivered | Read-only four-tag metadata, native/package/reference and source-preservation checks; no product test/build | Not applicable to an audit | Ready for review; external-consumer and offline Browser dependency limits explicit; no implementation approved |
-| CL-2: proven obsolete-code retirement | Earlier wrappers plus G10 `DeleteMemoryItem` removal committed with roadmap as `21ac9ad` | G10 exact remainder check, full Store/HTTP regressions and four-mode Windows compilation passed | Not performed for G10 | G10 reviewed/committed; comprehensive retirement remains scoped by the remaining ledger entries |
+| CL-1: consumer and compatibility inventory | [Entry/consumer map](cl1-consumer-inventory.md) and [32-boundary candidate ledger](cl1-cleanup-candidates.md) delivered | Read-only four-tag metadata, native/package/reference and source-preservation checks; no product test/build at the inventory checkpoint | Not applicable to an audit | Inventory accepted as the historical baseline; final dispositions reviewed under CL-8. Original counts are not the current backlog; external-consumer and capture-time dependency limits remain scoped |
+| CL-2: proven obsolete-code retirement | Earlier wrappers plus G10 `DeleteMemoryItem` removal committed with roadmap as `21ac9ad` | G10 exact remainder check, full Store/HTTP regressions and four-mode Windows compilation passed | Not performed for G10 | Selected removal reviewed/accepted; remaining ledger clusters are retained, deferred or excluded under the final CL-8 map, not unapproved deletion tasks |
 | CL-3: backend responsibility boundaries | G06 `d82f53b`; candidate cleanup `7d00d9c`; Settings file move `02e063e`; profile merge `aea3867`; executable preparation `c303ed4`; diagnostics export `1068e35`; Bridge status `7b2d0d8`; HTTP Bridge commands `7cb712b` and media recapture `be9fcd2`; Engine media recapture `c614512`; Engine Bridge commands `3e13434`; Engine media provenance `8d7f7b6`; Engine AI detection `b84a62d`; Engine session admission `4bf0731`; observation contracts `d9c3025`; process recovery `5b39fa4`; reasoning result `eb05ac8`; capture rounds and deterministic Store test `683b1e8`; local acquisition policy `f16f11a`; vision-lane routing/coverage `25c3339`; selection corrections `f3d46b8`; AI feedback `6a1ce33`; FullReset `da019dd`; Library removal/Forget `a19bf86`; passive media evidence `2bdc0f1`; HTTP update/session `d32c065`; HTTP media entry `90e3a7f`; HTTP bootstrap `97bbe51`; capture-owner path guard `b482ba2`; HTTP reload actions `6ea303c`; telemetry rotation/shutdown guard `237dbd1`; HTTP development X controls `1814c9b`; HTTP semantic corrections `3c5e61a`; HTTP AI feedback `a3718ff`; HTTP Inbox selection review `3f4a66d`; HTTP Inbox reads `ce57e79`; HTTP model usage `af8d722`; HTTP vision evaluation `cf534ec`; HTTP Timeline composition `3cf90b4`; automatic HTTP handler completion `9da6ed8`; acquisition execution `8027599`; candidate evaluation `ed35d82`; vision persistence tests `70ea120`; empty-candidate completion `de95c58`; Store Timeline read-model `bee6a9f`; automatic Store feature separation `f27e91b` (95 declarations/15 feature files); validation detours `edb246d`/`8dc3f5e`; earlier lifecycle/session seams retained | Latest combined Capture/Collection/Bridge builder/Selection/EventEngine/Reasoning/Domain/Detector/Inspector/Store/Engine/HTTP/config/application scope selects 14 packages (13 with tests, Bridge builder compile-only): default 3,267 pass/50 skip and dev 4,111 pass/62 skip, zero failures; whole Store default 462 pass/5 skip and dev 614 pass/7 skip before/after (45 new results); earlier Store Timeline read-model characterization 72 pass/1 skip default/dev retained; empty-candidate completion characterization 218 default/dev before/after retained; earlier vision persistence characterization 94 default/dev retained; candidate evaluation characterization 88 default/dev before/after retained; acquisition execution characterization retained; remaining HTTP feature characterization retained; Timeline characterization retained; vision-evaluation characterization retained; model-usage characterization retained; Inbox read characterization retained; selection-review characterization retained; AI-feedback characterization retained; semantic correction characterization retained; development X characterization retained; earlier telemetry/reload characterization and concurrency evidence retained; earlier guard/bootstrap receipts retained, four Store build-tag graphs and 16 Windows artifacts pass. Earlier acquisition-policy/capture-round/privacy/HTTP/Bridge status/diagnostics/Node/cancellation/profile receipts retain their own scope | Not performed for these increments | Backend source CL-3.1/CL-3.2/CL-3.3 closed after accepted responsibility-map/exit-criteria review at 6b9b3a0, with code through f27e91b; [retain/defer decisions](#cl-3-source-closure-2026-11-03) recorded. No material ownership gap requires another extraction. Runtime activation, operational acceptance and CL-8 source sign-off remain separate |
 | CL-4: frontend feature ownership | 3b9cfd1: 374 functions/20 feature factories; 30 shared/root functions retained | Frozen 29/29 characterization; Node 360/360; HTTP/app default 1,322 pass/25 skip and dev 1,345 pass/12 skip; four Windows modes/12 artifacts; actual embedded desktop/mobile checks | Not performed | CL-4.1/CL-4.2/CL-4.3 source closed after scoped review; retain/defer map below. Operational acceptance and CL-5 through CL-8 remain separate |
 | CL-5: native runtime and QA boundaries | Reviewed automatic cohort based on 555dea9: 47 declarations/seven production modules; e146d40 projector fix retained; commit bound to publication readback | New characterization 31/31 before; combined 62/62 after/final; native Node 780/780; seven-package default/dev Go; four Windows modes/16 PE artifacts; sealed manual/daily/main 80/81/100 modules | Not performed | Source CL-5 closed after owner-authorized review; retain/defer map below. Operational acceptance remains separate |
 | CL-6: Bridge responsibility boundaries | AkuBridge 6ce23f7: reporting factory/three moved declarations; retained operation/resource owners mapped | Reporting 12 before/after; Bridge Node 515, native-host Go, Sidecar Node 44 and default/dev Go pass; 18 Windows artifacts; three projected packages/70 files each | Not performed | Source CL-6 closed after owner-authorized scoped review; explicit retain map below and publication readback bind the code/docs/remote identities. Operational acceptance remains separate |
 | CL-7: build, packaging and test organization | Sidecar F02 2af9698, Browser worker filter 8190b45 and Bridge package test-filename guard/10 CLI cases 6875355; source/package/harness ownership reconciled | Bridge 525 pass and final/publication characterization 10/10; Sidecar Node 762 pass/2 opt-in skip; embedded/static 16 default/dev; four tag graphs and 27 auxiliary/platform/tag metadata queries; 12 Windows PE/amd64 artifacts; five 70-file projected packages and 20 source recipes verified. Earlier worker cold/warm and exact sealed-byte receipts retained | Not performed | Selected source CL-7 closed after owner-authorized scoped review; retain/defer decisions and triggers below. Dirty Browser build/cache P05 excluded, macOS/installed/live acceptance and CL-8 remain separate |
-| CL-8: integration and source sign-off | Not started for the comprehensive roadmap | Final matrix pending | Separate operational gate | Comprehensive source acceptance pending; runtime acceptance separate |
+| CL-8: integration and source sign-off | Bridge B02 32b3834: 18 real-caller tests; final 32-row ledger and cross-repository matrix reconciled; explicit source-candidate identity v118 remains separate from historical release v116 | B02 18/18; canonical Bridge 543/543; Sidecar negotiation/security/split-heartbeat 47 default and 47 dev. Candidate gate passes; prior behavioral, package, visual and 12-artifact Windows evidence reused after source/receipt/artifact hash review | Not performed | Selected source CL-8 closed after owner-authorized final review. One removal, six extractions, 21 retains, three deferrals and one excluded P05. Commit/remote identities bound to readback; release/install/macOS/live acceptance remains separate |
 
 ### CL-1: inventory before deletion
 
@@ -358,6 +358,11 @@ production dependency on QA paths or silently missing asset; test commands and
 evidence locations are reproducible for a clean source checkout.
 
 ### CL-8: integration and source sign-off
+
+Current status: [selected source closed](#cl-8-source-closure-2026-11-04)
+after owner-authorized final review, with commit/publication bound to readback.
+The selected ledger is reconciled, including B02 retention and the explicit P05
+exclusion. No new activation or release qualification follows from this status.
 
 Close every selected candidate as removed, extracted, retained with a supported
 reason, or deferred with an explicit dependency/owner. Material unresolved
@@ -2626,3 +2631,94 @@ candidate ledger and cross-repository validation matrix, decide which prior
 receipts remain valid, and identify the minimum remaining integration checks.
 CL-8 implementation/testing, cache-tool adoption, activation and trials require
 their own scope; this closure does not authorize them.
+
+## CL-8 source closure (2026-11-04)
+
+The owner authorized an automatic CL-8 run, then final review, source closure,
+commit and push if no issue remained. Accepted B02 commit:
+AkuBridge `32b38348a82292bee8ca77b337bb32ad180a44ec`, based on `810bd99`.
+Other validation baselines: Browser `1b96fff`, Sidecar `848ee55`. The change
+adds one Bridge test suite and synchronizes three Sidecar ledger/status documents.
+No production runtime, transport, protocol, guard or historical release metadata
+changes. Publication review/readback binds the tested payload, final commits and
+remote main identities; original candidate receipts retain capture-time meaning.
+
+| Dimension | Accepted status and scope |
+| --- | --- |
+| Implemented | Eighteen tests execute the complete classic loopback script and actual private background caller/helper declarations with synthetic external ports. The production ESM binding and manifest registration are checked; no helper is exported or consolidated. All 32 candidate dispositions are reconciled |
+| Tested | B02 18/18 and canonical Bridge npm test 543/543. Existing Sidecar Engine/HTTP negotiation, capability/security bounds and split-heartbeat/rotation fencing tests pass 47 results in default and 47 in dev, zero failures/skips. The current source-candidate v118 gate passes. Broader previously passing evidence is reused after input/receipt/artifact verification |
+| Activated | Not performed; no real browser/source/account/profile, installation, service restart, configuration change or dependency upgrade |
+| Acceptance | Owner-authorized final source/test/evidence review has no blocking finding and accepts the prior bounded independent review. Selected source CL-8 is closed with the complete 32-row disposition map and explicit exclusions. This does not close operational or release qualification gates |
+
+### Final disposition reconciliation
+
+| Disposition | IDs | Count |
+| --- | --- | ---: |
+| Removed | G10 | 1 |
+| Selected extraction completed | G06, E01, E02, N03, F01, F02 | 6 |
+| Supported retain | G01-G05, G08, G09, G11, E03, N01, N04, N05, B01-B06, P01, P02, P04 | 21 |
+| Deferred pending replacement/migration | G07, N02, P03 | 3 |
+| Explicitly excluded, unreviewed | P05 | 1 |
+
+These are 32 selected contract clusters, not a census of all legacy-looking
+symbols or a claim of no out-of-tree consumer. The CL-1 summary remains an
+original inventory classification. G07 stays with config/reasoning owners until
+config/telemetry consumers and precedence/normalization migrate. N02 stays with
+native-source owners until qualified X and generic-source proof/lifecycle parity.
+P03 stays with host/update/packaging owners until old signed-update consumers
+migrate with compatibility and rollback evidence. Return triggers in the earlier
+closure maps remain effective. P05's eight tracked dirty and five untracked
+build/cache files remain outside sign-off; separate owner-authorized review is
+required before inclusion. Sidecar config/.tmp/experiments are also excluded.
+
+### B02 retain decision
+
+The classic content script and ESM background heartbeat have supported, separately
+packaged callers. Numeric protocol 2 preserves the full capability payload. The
+existing legacy projection differs: loopback retains focusPolicyRevision while
+background removes it along with protocolMajor/protocolMinor/updateCapabilities.
+The tests freeze that difference and preserve additive/source-access/surface-policy
+fields without mutating the input. This is a retention decision, not proof that
+the two shapes are interchangeable or that a legacy regression has been found.
+Revisit only for a concrete consumer/legacy-shape migration with exact boundary
+coverage; do not create another production abstraction solely to remove a name.
+
+Negative cases retain loopback source/origin/message guards, response origin and
+error envelopes. Background checks preserve capture-instance/token/identity/contract
+headers, authorization retirement before alarm clearing on 401/403, and independent
+delivery failure behavior on 500. All work uses synthetic ports and payloads.
+
+### Cross-repository validation matrix
+
+| Boundary | Evidence retained or added | Reuse reason / limit |
+| --- | --- | --- |
+| Backend/durable/config | Accepted CL-3 responsibility/characterization and subsequent CL-6 seven-package default/dev receipts; F02 full HTTP default 1,320 and dev 1,343 pass; current 47 default/dev interoperability results added | Production Go sources unchanged; F02-specific embedded/static changes have their own HTTP evidence. No new cross-version installed DB qualification |
+| Frontend | CL-4 frozen characterization, Node and actual embedded desktop/mobile receipts; F02 Node 369 and asset boundary 16 default/dev | Production UI bytes unchanged; later changes concern removed test assets and separately tested tooling. No new visual/provider acceptance |
+| Native owners | CL-5 native/QA 780 receipts, later CL-7 worker/package 762 pass/2 opt-in skip and exact sealed manual/daily/main manifests | These are different cohorts, not additive unique-test counts. Production graph/payload inputs remain unchanged; disposable-Chrome cases remain opt-in skips |
+| Bridge lifecycle/protocol | CL-6 reporting/lifecycle/native-host receipts; current canonical Node 543, B02 18 and Sidecar negotiation/security/fencing 47 default/dev | No runtime source change. Private caller fixture uses real declarations and synthetic ports, not a loaded extension or installed host |
+| Build/package consumers | CL-7 four tag graphs, 27 auxiliary/tag/platform metadata queries, 12 Windows PE/amd64 artifacts, five 70-file projections, 20 source recipes, 111 worker sources and cold/warm cache receipts | Artifact and protected input hashes remain valid. No recompilation needed for the new test/documentation. Darwin metadata is not macOS execution/signing |
+| Source versus release identity | Published explicit candidate manifest/checker: 44 identity and 14 Bridge contract tests; current candidate gate v118 passes with releaseQualified=false | Historical release authority/contracts/examples remain v116. Default release mismatch is expected and remains enforced; no installer/update qualification or publication rewrite |
+
+### Evidence and final gate
+
+New source: AkuBridge/test/bridge-capability-projection.test.mjs. Bridge ignored
+receipts: build/cl8-auto-20261104/{b02-characterization.log,npm-test.log,
+package-inventory.json}. Sidecar ignored receipts: build/cl8-auto-20261104/qa/
+{before.json,interop-default.jsonl,interop-dev.jsonl,source-candidate.json,
+validation.json,publication-review.json,publication-readback.json} and the source
+review report. Earlier CL-7 and source-candidate
+receipts retain capture-time scope and source/artifact identities. A missing
+local receipt in another checkout is not a new passing result.
+
+Final review confirms the B02 test, ledger totals, source/receipt/artifact hash
+bindings, explicit deferral triggers and exclusions. No additional mandatory
+production extraction or broad test/rebuild is identified. A new failure or
+changed input reopens only the affected row. Earlier candidate/pending-review
+statements are historical within this selected source scope.
+
+Next cleanup proposal: read-only P05 ownership/diff review of the 13 pre-existing
+dirty Browser build/cache files. Map cache paths, producer/consumer boundaries,
+retention/cleanup guards and necessary tests before any inclusion proposal.
+This source sign-off does not approve those changes or cache deletion. Release
+preparation, activation, installer/macOS acceptance and live X/IG qualification
+also remain separate future work, not conditions asserted as passed here.
