@@ -1,6 +1,6 @@
 # Roadmap status and evidence index
 
-Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-8 is closed after owner-authorized final review of Bridge B02 32b3834 and the complete 32-row disposition/evidence matrix. Source CL-3 through CL-7 retain their closures. Source candidate v118 and historical release v116 remain separate; dirty Browser build/cache P05, three migration-dependent deferrals and operational/release acceptance remain outside sign-off. Publication readback binds final commits and remote SHAs.
+Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-8 is closed after owner-authorized final review of Bridge B02 32b3834 and the complete 32-row disposition/evidence matrix. Source CL-3 through CL-7 retain their closures. Source candidate v118 and historical release v116 remain separate. The separately reviewed P05 cache increment is implemented/tested/published as Browser 8c39d97 with Sidecar ff65e9e; full P05 closure, three migration-dependent deferrals and operational/release acceptance remain separate. The P05 record below distinguishes implementation, testing, publication and acceptance.
 Earlier source history before the latest result: AkuSidecar `80acfb9` (Timeline More/Less and restart-dev assertion correction, after `f27e91b` automatic Store feature separation; 95 declarations/15 feature files; after Store Timeline read-model `bee6a9f`, after empty-candidate completion `de95c58`, after vision persistence `70ea120`; per-run candidate evaluation/completion, after acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
@@ -11,8 +11,9 @@ https://github.com/abangkis/AkuSidecar.git. Code `80acfb9` is the reviewed
 frontend/test payload; its publication readback is recorded below. Earlier
 Store and CL-3 receipts retain their historical identities and acceptance scope.
 Publication does not establish runtime activation or operational acceptance.
-The Browser worktree contains pre-existing build/cache changes; those changes
-are outside this synchronization and are not evidence of a released tuple.
+The previously dirty Browser build/cache package has been separately reviewed
+and published under P05. That source publication is not evidence of a released
+tuple; older exclusion statements below retain their checkpoint scope.
 
 Current decision: source CL-3 is closed following the owner-accepted read-only
 responsibility-map review at Sidecar `6b9b3a0` (code through `f27e91b`). See
@@ -28,6 +29,7 @@ established by this closure; other cleanup stages retain their own status.
 | --- | --- | --- |
 | Implemented | Code exists at the named commit, or an explicitly identified historical contract records implementation | Test success, deployment or provider qualification |
 | Tested | The named source/artifact passed the stated offline, synthetic or local checks | A current running binary, a clean-machine install or real-provider acceptance |
+| Published | The named source commit was pushed and its remote branch SHA was verified at the recorded checkpoint | Runtime activation, installer distribution, a product release or operational acceptance |
 | Activated | A dated receipt identifies the artifact used in a running process | Activation of later commits, continuous current health or a clean source build |
 | Acceptance | The stated source, product or operational gate has reviewed evidence and scope; source acceptance does not establish activation | Acceptance of another source, mode, release or broader reliability claim |
 
@@ -1741,6 +1743,28 @@ dirty Browser build/cache files, including cache paths, producer/consumer
 boundaries, retention/cleanup guards and required tests. Do not include that work
 or delete cache without its own authorization. Release preparation, activation,
 installer/macOS and live-source acceptance remain separate future work.
+
+## P05 source-build cache publication (2026-11-04)
+
+| Dimension | Current status and scope |
+| --- | --- |
+| Implemented | Browser 8c39d97: 13-file cache helper/wrapper/documentation/test package, including relative npm cwd rebasing without converting a relative override to absolute. Sidecar ff65e9e: root /.tmp/ ignore only. Precedence, cleanup ownership and protocol/security guards retain their existing authority |
+| Tested | Final working-tree and exact staged Node suite: 5/5, zero failures/skips. Exact staged PowerShell suite and both separate shell syntax checks pass. Actual npm config queries pass three cases. Isolated removal of rebasing fails at the intended location assertion. Earlier ownership/containment and 14 ignore-boundary checks retain their stated scope |
+| Published | Browser 8c39d979292232884a431d04d240cbc3f0c91495 on Origin/main and Sidecar ff65e9e6e392a05ed065a61ed183132f3b42b3f4 on origin/main; remote SHAs rechecked on 2026-11-04. Committed Browser blobs match the recorded staged SHA-256 inventory. Commit/publication of this roadmap update is tracked separately |
+| Acceptance | The reviewed cache increment is source-accepted. Full P05 closure, native macOS packaging/signing, Windows installer qualification and operational/release acceptance are not established. Activation and live X/IG trials were not performed; they are separate workstreams |
+
+Canonical detail: [P05 ownership, proof identities and remaining scope](code-cleanup-roadmap.md#p05-source-build-cache-publication-2026-11-04).
+Local ignored [publication readback](../../AkuBrowser/build/p05-relative-npm-20261104/publication-readback.json)
+supersedes the historical pending-publication field in the earlier validation
+receipt. The Node/PowerShell staged logs, npm queries and negative proof are
+linked from the canonical record. Source/receipt identities were verified for
+this synchronization; no product tests or trials were rerun.
+
+The CL-8 32-row map still describes its original checkpoint: P05 was excluded
+then and the cache increment was reviewed/published afterward. CL-3 through CL-8
+closures are not reopened. Inherited macOS TMPDIR packaging scratch and the
+Step 3B unpacked_root ordering issue remain separate bounded follow-ups.
+Sidecar config/experiments remain local and outside these documentation edits.
 
 ## Product and installation roadmaps
 

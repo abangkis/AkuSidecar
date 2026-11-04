@@ -38,24 +38,28 @@ disposition counts are not a remaining-work count.
 
 Latest Bridge result: [automatic CL-6 source closure](#automatic-cl-6-bridge-reporting-separation-result-2026-11-04), AkuBridge 6ce23f7, is implemented/tested/reviewed and source closed after owner-authorized scoped review. Publication is bound to readback; prior source closures and original inventory disposition counts retain their scope.
 
-Latest packaging result: [selected source CL-7 is closed](code-cleanup-roadmap.md#cl-7-source-closure-2026-11-04) after accepted Sidecar F02 2af9698, Browser worker filter 8190b45 and Bridge package suffix guard/characterization 6875355. P04 is source-retained for maintenance/recovery; P05 dirty build/cache remains excluded and unreviewed. Original CL-1 aggregate counts retain their capture-time meaning; source acceptance does not establish runtime, macOS or installed acceptance.
+Latest packaging result: [selected source CL-7 is closed](code-cleanup-roadmap.md#cl-7-source-closure-2026-11-04) after accepted Sidecar F02 2af9698, Browser worker filter 8190b45 and Bridge package suffix guard/characterization 6875355. P04 is source-retained for maintenance/recovery. P05 was excluded at that checkpoint; its separately reviewed cache increment is now implemented/tested/published in Browser 8c39d97 with Sidecar ff65e9e. See the [current P05 status](#p05-source-build-cache-publication-2026-11-04). Full P05 closure and runtime, macOS and installed acceptance remain unestablished; original inventory counts retain their capture-time meaning.
 
 ## Dispositions and approval
 
-Selected source CL-8 is closed after owner-authorized final review. All 32 rows
-are reconciled as one completed removal,
+Selected source CL-8 is closed after owner-authorized final review. At that checkpoint, all 32 rows
+were reconciled as one completed removal,
 six completed selected extractions, 21 supported retains, three explicit deferrals
 and one excluded/unreviewed boundary (P05). B02's real-caller characterization
 now supports retaining its two existing projections. See the
 [CL-8 source closure](code-cleanup-roadmap.md#cl-8-source-closure-2026-11-04).
 B02 is committed as AkuBridge 32b3834; publication readback binds final source
 and roadmap commits. This does not close operational gates or adopt the
-pre-existing dirty build/cache work. The original counts below
+then-dirty build/cache work. The separately published P05 result below does not
+rewrite that closure snapshot. The original counts below
 retain their capture-time meaning.
 
 The disposition counts are the original CL-1 inventory, not a remaining-work
 count. E01 and E02 selected source boundaries are complete; further Settings
 phase splitting is deferred under the closure triggers, not an open CL-3 gate.
+P05 retains its original inventory label in the table below; that label is not
+a current claim that the published cache increment is unreviewed. Its current
+implemented/tested/published/acceptance state is recorded separately below.
 
 | Disposition | Count | Meaning |
 | --- | ---: | --- |
@@ -143,7 +147,7 @@ Paths in this section are relative to AkuBrowser.
 | P02 | `retain-required` | Installer `legacySetupPath` removal/uninstall cleanup | `installer/windows/installer.go` removes old setup executable during install and includes it in uninstall paths | Old-file cleanup is active upgrade behavior; retiring the old UI did not retire upgrade cleanup |
 | P03 | `defer-until-replacement` | Signed update manifest v1 and conditional legacy artifact names | Windows/macOS companion builders, manifest signer, Bridge host update reader and tests; Windows emitter requires matching product/Bridge/Sidecar identity | Keep exact signature/version/compatibility policy until supported old host/update consumers migrate; no manifest relabel or schema reinterpretation |
 | P04 | `retain-required` | Frozen Store/macOS/preview asset-generation and distribution tooling | CL-7 closure retains maintenance/recovery tools named by release contracts/tests; current Windows binaries compile and Darwin selectors are mapped. This supersedes the earlier unverified source-retirement classification | Revisit on explicit lane-retirement decision or changes requiring platform-native validation; frozen publication is not obsolescence proof, source retention is not macOS/installed acceptance |
-| P05 | `unverified` | Existing uncommitted Browser build/cache scripts and helpers | All 13 dirty files preserved and excluded from source CL-7 closure. The old shared-cache dependency gap is resolved for recorded committed-product metadata/Windows artifacts using an already populated pinned project cache; this does not review the dirty tools | Separate owner-authorized review/inclusion; preserve hashes, do not commit this work under the packaging closure or claim a fresh clean tuple |
+| P05 | `unverified` (original inventory) | Browser source-build cache helpers, wrappers and tests | The formerly dirty 13-file package is separately reviewed/tested/published as Browser 8c39d97; Sidecar ff65e9e adds the supporting root .tmp ignore. Relative npm cache identity and cleanup ownership have bounded evidence; see the four-dimension result below | Accept the published cache increment within its scope; full P05 exit criteria and inherited macOS tooling limits remain open. Preserve the historical CL-7/CL-8 exclusion and do not claim release/installed acceptance |
 
 ## First concrete proposal for CL-2
 
@@ -2972,3 +2976,21 @@ Next proposal: read-only headless-worker source-filter/inventory/sealed-graph
 and harness reconciliation. CL-7 remains partial. Pre-existing dirty Browser
 build/cache work and unrelated Sidecar config/.tmp/experiments remain separate.
 No new refactor, runtime activation or trial is authorized by this record.
+
+## P05 source-build cache publication (2026-11-04)
+
+| Dimension | Current status and scope |
+| --- | --- |
+| Implemented | Browser 8c39d97 publishes the 13-file cache helper/wrapper/documentation/test package. Relative npm overrides stay relative and are rebased for the command directory; precedence and strict CLI guards remain. Sidecar ff65e9e adds only root /.tmp/ |
+| Tested | Working-tree and exact staged Node suite: 5/5, no failures/skips. Exact staged PowerShell suite and both shell syntax checks pass. Actual npm queries cover three cache cases; an isolated wrapper without rebasing fails at the intended assertion. Cleanup ownership/out-of-root preservation and narrow ignore-boundary evidence are retained |
+| Published | Browser 8c39d979292232884a431d04d240cbc3f0c91495 on Origin/main and Sidecar ff65e9e6e392a05ed065a61ed183132f3b42b3f4 on origin/main; both remote SHAs rechecked on 2026-11-04. Committed Browser payload matches the staged inventory |
+| Acceptance | The reviewed cache increment is source-accepted; full P05 closure is not declared. The original unverified inventory label is historical, not a claim that the published code is unreviewed. Native macOS packaging/signing, Windows installer and operational/release acceptance are not established; activation and live trials were not performed |
+
+See the [canonical ownership, evidence and remaining-scope record](code-cleanup-roadmap.md#p05-source-build-cache-publication-2026-11-04).
+The CL-8 32-row disposition snapshot remains historical; this result is a separate
+P05 increment, not a retroactive change to the closed source gate. The two inherited
+macOS limits (system-temp packaging scratch and Step 3B pre-assignment use) remain
+separate. Prior unreviewed/dirty statements describe earlier checkpoints.
+Publication of this roadmap update is separate from the source commits above.
+No code, additional deletion,
+activation, installer execution or trial is part of this synchronization.

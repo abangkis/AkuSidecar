@@ -2,7 +2,9 @@
 
 ## Status synchronization (2026-11-04)
 
-Latest delta: [CL-7 F02 test-asset separation](#cl-7-f02-test-asset-boundary-result-2026-11-04), based on Sidecar 10c1daf, is implemented/tested/source-reviewed and accepted for publication. CL-7 remains partial; existing CL-3 through CL-6 closure and prior receipt identities retain their scope.
+Latest delta: the separately reviewed [P05 source-build cache increment](#p05-source-build-cache-publication-2026-11-04) is implemented/tested/published as Browser 8c39d97 with supporting Sidecar ff65e9e. Scoped source acceptance is recorded; full P05 closure and operational/release acceptance remain unestablished. Selected source CL-3 through CL-8 retain their canonical closures. Earlier partial-stage statements and original receipts remain historical checkpoints.
+
+Previous packaging checkpoint: [CL-7 F02 test-asset separation](#cl-7-f02-test-asset-boundary-result-2026-11-04), based on Sidecar 10c1daf, was implemented/tested/source-reviewed before the later CL-7/CL-8 closures. Its original scope and receipt identities are retained.
 
 Previous frontend checkpoint: the owner-authorized [automatic FE run](#automatic-frontend-feature-separation-result-2026-11-03)
 is reviewed code `3b9cfd1` after baseline 0533ad3. CL-4 source scope is closed;
@@ -1673,3 +1675,25 @@ Next proposal: read-only headless-worker source-filter/inventory/sealed-graph
 and harness reconciliation. CL-7 remains partial. Pre-existing dirty Browser
 build/cache work and unrelated Sidecar config/.tmp/experiments remain separate.
 No new refactor, runtime activation or trial is authorized by this record.
+
+## P05 source-build cache publication (2026-11-04)
+
+| Dimension | Current status and scope |
+| --- | --- |
+| Implemented | Browser 8c39d97 contains the complete reviewed 13-file cache increment. Cache selection stays in Node/PowerShell helpers; wrappers own command environment and scratch lifetimes. Relative npm overrides remain relative through cwd rebasing. Sidecar ff65e9e adds only a root /.tmp/ ignore rule |
+| Tested | Exact staged Node suite passes 5/5 without skips; the staged PowerShell suite and separate syntax checks for both shell wrappers pass. Three actual npm config-query cases retain cache identity. Isolated removal of rebasing fails at the intended location assertion; ownership/containment and strict CLI guards remain covered within their recorded scopes |
+| Published | Browser 8c39d979292232884a431d04d240cbc3f0c91495 and Sidecar ff65e9e6e392a05ed065a61ed183132f3b42b3f4 were pushed; remote main readback was rechecked on 2026-11-04. Git's LF-normalized committed Browser blobs match the tested staged inventory |
+| Acceptance | The selected source/cache increment is reviewed and accepted. Full P05 closure is not declared; native macOS packaging/signing, Windows installer and operational/release qualification are not proven. No runtime activation or live source trial is included |
+
+See the [canonical P05 responsibility, evidence and limits record](code-cleanup-roadmap.md#p05-source-build-cache-publication-2026-11-04).
+Shared caches remain persistent; temporary cleanup preserves caller-owned and
+out-of-root directories. The added root-only ignores do not exclude other SharedTemp paths.
+The earlier initializer audit is corrected: the old suite already rejected the
+missing initializer; the new assertion makes the presence/order requirement explicit.
+
+The original CL-7/CL-8 P05 exclusion remains historical. Inherited macOS packaging
+scratch under TMPDIR/tmp and Step 3B's early unpacked_root use remain separate
+follow-ups, not regressions attributed to the new relative-cache fix. No production
+code change, new test run, compilation or trial is part of this roadmap
+synchronization. The roadmap's commit/publication is tracked separately from
+the verified source publication above.

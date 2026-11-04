@@ -1,9 +1,11 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-8 is closed after owner-authorized review of B02 characterization in Bridge 32b3834 and the final disposition/evidence matrix. Source CL-3 through CL-7 retain their closures. Source identity remains v118 under Browser 1b96fff; historical release authority remains v116. Dirty Browser build/cache P05, three migration-dependent deferrals, activation and operational/release acceptance remain separate. Publication readback binds final commits and remote SHAs.
+Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-8 is closed after owner-authorized review of B02 characterization in Bridge 32b3834 and the final disposition/evidence matrix. Source CL-3 through CL-7 retain their closures. Source identity remains v118 under Browser 1b96fff; historical release authority remains v116. The separately reviewed P05 cache increment is implemented, tested and published as Browser 8c39d97, with supporting Sidecar ignore commit ff65e9e. Full P05 closure, three migration-dependent deferrals, activation and operational/release acceptance remain separate. See the P05 publication record below for the four distinct status dimensions.
 Status: the selected CL source cleanup is signed off through CL-8, with retained
-contracts, explicit deferrals and the P05 exclusion. See the
+contracts, explicit deferrals and the historical P05 exclusion. The later
+[P05 cache increment](#p05-source-build-cache-publication-2026-11-04) has its own
+scoped review and publication; it does not rewrite the CL-7/CL-8 checkpoint. See the
 [final source closure](#cl-8-source-closure-2026-11-04) and earlier stage maps for
 return triggers. This does not certify every legacy-looking symbol or a release.
 Other workstreams and changes outside approved increments require approval.
@@ -22,8 +24,9 @@ clear responsibility, and preserve supported behavior and durable data.
 Scope covers tracked product source, build/package entry points, tests, fixtures,
 contracts and developer tooling in these three repositories. Inspect generated
 bundles and manifests as consumers without treating generated output as source.
-The existing dirty Browser build/cache changes are a separate work item; inspect
-their ownership before any proposed inclusion. Untracked experiments, profiles,
+The previously dirty Browser build/cache package was separately reviewed and
+published in the P05 increment below. Remaining tooling gaps require their own
+approved scope. Untracked experiments, profiles,
 databases, user data and build/cache deletion are outside this roadmap.
 
 This roadmap does not start Bookmark Import, Keep Up, shared reservations,
@@ -2716,9 +2719,79 @@ production extraction or broad test/rebuild is identified. A new failure or
 changed input reopens only the affected row. Earlier candidate/pending-review
 statements are historical within this selected source scope.
 
-Next cleanup proposal: read-only P05 ownership/diff review of the 13 pre-existing
+At the CL-8 closure checkpoint, the next cleanup proposal was read-only P05 ownership/diff review of the 13 pre-existing
 dirty Browser build/cache files. Map cache paths, producer/consumer boundaries,
 retention/cleanup guards and necessary tests before any inclusion proposal.
 This source sign-off does not approve those changes or cache deletion. Release
 preparation, activation, installer/macOS acceptance and live X/IG qualification
 also remain separate future work, not conditions asserted as passed here.
+
+## P05 source-build cache publication (2026-11-04)
+
+The owner separately authorized P05 ownership/diff review, bounded ownership
+tests, narrow ignore rules, the relative npm cache fix and coherent package
+publication after review of its test dependencies. The original
+13-file Browser package is now published. This supersedes current descriptions
+of that package as dirty/unreviewed; earlier CL-7/CL-8 exclusions and their
+32-row disposition snapshots retain their capture-time meaning.
+
+| Dimension | Current status and evidence |
+| --- | --- |
+| Implemented | Browser `8c39d979292232884a431d04d240cbc3f0c91495` adds the Node/PowerShell cache helpers, documentation and suites, updates five Windows and two macOS wrappers, and scopes cache/temp ignores: 13 files. Relative npm overrides remain relative and are rebased for the Bridge command directory, preserving the caller-selected cache location and override precedence. Supporting Sidecar `ff65e9e6e392a05ed065a61ed183132f3b42b3f4` adds only root `/.tmp/` |
+| Tested | Final Node suite: 5/5, zero failures/skips, both in the working tree and in the exact LF-normalized staged payload. The exact staged PowerShell suite passes, including owned-temp cleanup, caller-owned preservation and out-of-root preservation with `OwnsTempDirectory=true`; both staged shell wrappers separately pass syntax checks. Actual npm config queries pass three cases: a relative path with spaces, a cache at the command directory and an existing absolute override. Removing npm rebasing only in an isolated wrapper copy produces the intended location assertion failure. Extra CLI arguments/unknown cache names remain rejected. Fourteen ignore-boundary checks retain visibility outside their narrow roots; earlier ownership mutation receipts retain their stated scope |
+| Published | Browser commit `8c39d97` was pushed to `Origin/main`; Sidecar `ff65e9e` was pushed to `origin/main`. Both remote main SHAs were rechecked on 2026-11-04 (Asia/Jakarta) and match the full commit IDs above. Committed Browser blobs match the recorded staged SHA-256 inventory. Publication is source availability, not runtime activation or a release |
+| Acceptance | The reviewed cache increment is accepted within its recorded source/test scope. Full P05 closure is not declared. Native macOS package execution/signing, Windows installer qualification and broader operational/release acceptance were not performed. Existing CL source closures and deferred migrations are unchanged |
+
+### Ownership and preserved boundaries
+
+- Helpers select shared compiler/package caches; the wrappers own temporary
+  process environment changes and restore them on exit. Shared caches are not
+  treated as disposable per-run output or deleted by temporary cleanup.
+- Generated Go scratch directories remain project-local. Caller-provided
+  `GOTMPDIR` remains caller-owned; the PowerShell cleanup retains containment,
+  generated-name and reparse-point checks. The macOS staging owner starts false,
+  claims only after exclusive creation and releases ownership after promotion.
+- The new Browser rule scopes `SharedTemp/build-cache/` to the repository root;
+  it adds no exclusions for other `SharedTemp` paths. The Sidecar change adds
+  only a root `.tmp/` rule. Existing ignore rules continue to apply.
+  The two previously authorized obsolete test logs were removed separately;
+  this documentation synchronization deletes nothing.
+- The initializer assertion is an explicit presence/order check. The older
+  suite also rejected the missing-initializer mutation through its ordering
+  assertion; this is not recorded as a demonstrated full-suite false-positive fix.
+- No runtime restart, source/account/profile/configuration change or live trial
+  is included. The retained local Sidecar config and experiments were not committed.
+
+### Evidence identity and reuse
+
+Local ignored Browser receipts under `build/p05-relative-npm-20261104/`:
+[final publication readback](../../AkuBrowser/build/p05-relative-npm-20261104/publication-readback.json),
+[staged payload inventory](../../AkuBrowser/build/p05-relative-npm-20261104/staged-payload.json),
+[exact staged Node log](../../AkuBrowser/build/p05-relative-npm-20261104/staged-node-suite.log),
+[exact staged PowerShell log](../../AkuBrowser/build/p05-relative-npm-20261104/staged-powershell.log),
+[npm integration](../../AkuBrowser/build/p05-relative-npm-20261104/npm-integration.json), and
+[isolated negative proof](../../AkuBrowser/build/p05-relative-npm-20261104/without-rebase.json).
+Earlier `p05-ownership-initializer-20261104/qa/validation.json` and
+`p05-out-of-root-regression-20261104/validation.json` preserve their original
+input identities. Git normalized CRLF to LF when staging; the final suites ran
+against those exact staged bytes before commit. The pre-publication
+`validation.json` has a historical pending field; `publication-readback.json`
+records the completed push and supersedes that field for publication status.
+
+This synchronization verifies receipt/committed-blob identities and remote SHAs;
+it does not rerun product tests, compile applications, run installers or trials,
+or activate a runtime. Publication of this roadmap update is tracked separately
+from the verified source commits above.
+
+### Remaining scope and next proposal
+
+Two inherited macOS tooling limits remain explicitly separate: the runtime
+installer still creates packaging scratch under `${TMPDIR:-/tmp}`, and Step 3B
+uses `$unpacked_root` before its later assignment under `set -u`. Both predate
+the cache increment. Syntax and extracted-operation tests do not establish
+successful native packaging or close these limits.
+
+Next proposal: read-only analysis of Step 3B's `$unpacked_root` ordering, with one
+bounded correction and regression requirement to be proposed for approval.
+No further implementation, cleanup deletion, activation, commit/push or trial
+is authorized by this documentation update.
