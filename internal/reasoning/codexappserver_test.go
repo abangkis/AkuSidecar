@@ -15,6 +15,7 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	"github.com/abangkis/AkuSidecar/internal/livingtopics"
 	"github.com/abangkis/ai4u-inference-sdk-go/inference"
 	sdkcodex "github.com/abangkis/ai4u-inference-sdk-go/providers/codexappserver"
 )
@@ -393,7 +394,9 @@ func fakeCodexAppServer() {
 					continue
 				}
 			}
-			if _, planning := properties["decision"]; planning {
+			if fixture := os.Getenv("AKU_FAKE_CODEX_RESULT_JSON"); fixture != "" {
+				output = json.RawMessage(fixture)
+			} else if _, planning := properties["decision"]; planning {
 				output = AcquisitionPlan{Decision: "finish", Reason: "enough bounded evidence"}
 			} else {
 				if os.Getenv("AKU_FAKE_CODEX_EMPTY_FINAL") == "1" {
@@ -692,6 +695,76 @@ func TestCodexRejectsExternalSchemaBeforeStartingTurn(t *testing.T) {
 	}
 	if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
 		t.Fatalf("fake provider started a turn for invalid schema; marker stat=%v", statErr)
+	}
+}
+
+func TestCodexLivingTopicSnapshotPreservesEvidenceAliasUniqueness(t *testing.T) {
+	const snapshot = `{
+		"status":"ready","overview":"Evidence-backed update.","coverageState":"focused",
+		"claims":[{
+			"key":"update","lifecycleSubject":"update","lifecycleEvidenceAlias":"","lifecycleEvidenceQuote":"",
+			"materialValue":"published","text":"An update was published.","assessment":"supported",
+			"centrality":"central","subtopic":"release","temporalStatus":"current","eventStatus":"unknown",
+			"evidenceAliases":%s
+		}],
+		"deltas":[{"kind":"new","text":"An update was published.","evidenceAliases":%s}],
+		"evidenceRoles":[{"evidenceAlias":"evidence_001","role":"core","subtopic":"release","sourceCluster":"release","epistemicClass":"primary"}]
+	}`
+	schema, err := readSchema(filepath.Join(filepathRoot(t), "schemas", "living-topic-snapshot.schema.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const unique = `["evidence_001"]`
+	const duplicate = `["evidence_001","evidence_001"]`
+	for _, tc := range []struct {
+		name, claimAliases, deltaAliases string
+		wantValidationFailure            bool
+	}{
+		{"valid", unique, unique, false},
+		{"duplicate claim alias", duplicate, unique, true},
+		{"duplicate delta alias", unique, duplicate, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("AKU_FAKE_CODEX_APP_SERVER", "1")
+			t.Setenv("AKU_FAKE_CODEX_RESULT_JSON", fmt.Sprintf(snapshot, tc.claimAliases, tc.deltaAliases))
+			provider := newFakeCodexAppServer(t)
+			defer provider.Close()
+			raw, usage, _, err := provider.InvokeStructured(context.Background(), livingtopics.ExecutionProfile, "prompt", schema, provider.planning)
+			if usage.Input == nil {
+				t.Fatalf("snapshot did not reach the fake provider: %v", err)
+			}
+			if tc.wantValidationFailure {
+				if raw != "" || !isInferenceFailure(err, inference.FailureCodeValidation, "") {
+					t.Fatalf("duplicate aliases must fail local validation: raw=%q err=%v", raw, err)
+				}
+			} else if err != nil || raw == "" {
+				t.Fatalf("valid snapshot must pass: raw=%q err=%v", raw, err)
+			}
+		})
+	}
+}
+
+func TestCodexNativeSchemasForSidecarWorkloads(t *testing.T) {
+	root := filepathRoot(t)
+	for _, name := range []string{
+		"acquisition-plan", "reasoning-result", "semantic-event-resolution",
+		"ai-deep-detection", "living-topic-snapshot", "living-topic-routing",
+	} {
+		t.Run(name, func(t *testing.T) {
+			raw, err := os.ReadFile(filepath.Join(root, "schemas", name+".schema.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if name == "living-topic-snapshot" {
+				raw, err = codexLivingTopicSnapshotSchema(raw)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := inference.ValidateSchemaCompatibility(inference.SchemaCompatibilityCodexNativeV1, raw); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

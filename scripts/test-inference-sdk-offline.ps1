@@ -4,9 +4,9 @@ $ErrorActionPreference = 'Stop'
 $sourceBuildCaches = Get-SourceBuildCachePaths -Repository (Split-Path -Parent $PSScriptRoot)
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).ProviderPath
 $runId = [guid]::NewGuid().ToString('N')
-$gateRoot = Join-Path $projectRoot '.go-build\inference-sdk-v024'
+$gateRoot = Join-Path $projectRoot '.go-build\inference-sdk-v027'
 $runRoot = Join-Path $gateRoot ('run-' + $runId)
-foreach ($relative in @('.go-build', '.go-build\mod', '.go-build\sdk-v024-cache', '.go-build\inference-sdk-v024')) {
+foreach ($relative in @('.go-build', '.go-build\mod', '.go-build\inference-sdk-v027')) {
     $directory = Join-Path $projectRoot $relative
     if (!(Test-Path -LiteralPath $directory -PathType Container)) {
         New-Item -ItemType Directory -Path $directory | Out-Null
@@ -43,9 +43,9 @@ try {
     $env:AKU_FAKE_CODEX_APP_SERVER = '0'
     $modules = @(& go list -m -f '{{.Path}} {{.Version}}{{if .Replace}} replaced{{end}}' github.com/abangkis/ai4u-inference-sdk-go github.com/abangkis/ai4u-common-execution-profile-go)
     if ($LASTEXITCODE -ne 0 -or $modules.Count -ne 2 -or
-        $modules[0] -ne 'github.com/abangkis/ai4u-inference-sdk-go v0.24.0' -or
+        $modules[0] -ne 'github.com/abangkis/ai4u-inference-sdk-go v0.27.0' -or
         $modules[1] -ne 'github.com/abangkis/ai4u-common-execution-profile-go v0.2.0') {
-        throw 'Published SDK v0.24.0 and Common Profile v0.2.0 must already be cached, without replacements.'
+        throw 'Published SDK v0.27.0 and Common Profile v0.2.0 must already be cached, without replacements.'
     }
     $modules | Tee-Object -FilePath $logPath
     Invoke-OfflineGo -GoArguments @('mod', 'verify')

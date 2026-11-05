@@ -1,6 +1,7 @@
 package reasoning
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/codexruntime"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	"github.com/abangkis/AkuSidecar/internal/livingtopics"
 	"github.com/abangkis/ai4u-inference-sdk-go/inference"
 	"github.com/abangkis/ai4u-inference-sdk-go/providers/codexappserver"
 )
@@ -254,7 +256,48 @@ func (c *CodexAppServer) ResolveProfile(id string) (config.ModelConfig, bool) {
 // InvokeStructured exposes the shared App Server transport to bounded adapters
 // without adding their domain-specific methods to the reasoning Provider.
 func (c *CodexAppServer) InvokeStructured(ctx context.Context, profileID string, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
-	return c.invoke(ctx, inference.ProfileID(profileID), prompt, schema, model)
+	if profileID != livingtopics.ExecutionProfile {
+		return c.invoke(ctx, inference.ProfileID(profileID), prompt, schema, model)
+	}
+	fullSchema, err := schemaJSON(schema)
+	if err != nil {
+		return "", domain.ModelUsage{}, 0, fmt.Errorf("encode Living Topics snapshot schema: %w", err)
+	}
+	wireSchema, err := codexLivingTopicSnapshotSchema(fullSchema)
+	if err != nil {
+		return "", domain.ModelUsage{}, 0, fmt.Errorf("project Living Topics snapshot schema for Codex: %w", err)
+	}
+	raw, usage, duration, err := c.invoke(ctx, inference.ProfileID(profileID), prompt, wireSchema, model)
+	if err != nil {
+		return "", usage, duration, err
+	}
+	if err := inference.ValidateJSONSchemaResponse(raw, fullSchema); err != nil {
+		return "", usage, duration, inference.MarkOutputEvidence(err, raw)
+	}
+	return raw, usage, duration, nil
+}
+
+func codexLivingTopicSnapshotSchema(fullSchema []byte) (json.RawMessage, error) {
+	var schema map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(fullSchema))
+	decoder.UseNumber()
+	if err := decoder.Decode(&schema); err != nil {
+		return nil, err
+	}
+	properties, _ := schema["properties"].(map[string]any)
+	for _, collection := range []string{"claims", "deltas"} {
+		array, _ := properties[collection].(map[string]any)
+		item, _ := array["items"].(map[string]any)
+		fields, _ := item["properties"].(map[string]any)
+		// The full product schema enforces uniqueness after generation.
+		aliases, _ := fields["evidenceAliases"].(map[string]any)
+		delete(aliases, "uniqueItems")
+		if lifecycleAlias, ok := fields["lifecycleEvidenceAlias"].(map[string]any); ok && lifecycleAlias["anyOf"] != nil {
+			// Both union branches already specify their string type.
+			delete(lifecycleAlias, "type")
+		}
+	}
+	return json.Marshal(schema)
 }
 
 func (c *CodexAppServer) Plan(ctx context.Context, run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem) (AcquisitionPlan, domain.ReasoningTelemetry, error) {
