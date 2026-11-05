@@ -220,6 +220,15 @@ func main() {
 	}
 	eventRuntime := semanticengine.New(state, eventResolver)
 	runtime := engine.New(state, provider, cfg, logger, eventRuntime)
+	if options.DevGLMPlanningShadow {
+		shadow, shadowErr := reasoning.NewGLMPlanningShadow(cfg)
+		if shadowErr != nil {
+			logger.Printf("planning_shadow unavailable: %v", shadowErr)
+		} else {
+			runtime.SetGLMPlanningShadow(shadow)
+			logger.Printf("planning_shadow enabled model=%s", reasoning.GLMPlanningShadowModel)
+		}
+	}
 	fatal(logger, runtime.BindNativeDerivationHold(maintenance))
 	if daily != nil {
 		fatal(logger, daily.Attach(runtime))

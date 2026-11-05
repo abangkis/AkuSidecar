@@ -68,6 +68,7 @@ func (e *Engine) executeAcquisitionPlanning(ctx context.Context, runID string, r
 			}
 			plan, telemetry, planErr := e.planWithProfile(ctx, run, merged, nil, settings.ReasoningAcquisitionProfile)
 			_ = e.store.SaveTelemetry(context.Background(), telemetry)
+			e.startPlanningShadow(ctx, run, merged, telemetry.Provider, plan, planErr)
 			var failureCode string
 			if planErr != nil {
 				failure, typed := reasoning.ProviderFailureFrom(planErr)

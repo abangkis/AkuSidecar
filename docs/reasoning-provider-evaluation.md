@@ -332,6 +332,25 @@ may state which policy the SDK requested, but must not claim that the SDK
 independently audited the upstream provider. Availability under this filter is
 unknown until the separate live gate is run.
 
+## GLM Acquisition Planning shadow
+
+The development runtime accepts `--dev-glm-planning-shadow` alongside `--dev`.
+Before enabling the flag, provision a dedicated OpenRouter key under
+`openrouter.planning-shadow` in the local credential store and verify that the
+key's guardrail or account privacy settings use **ZDR Only** for the All other
+models group. See [OpenRouter's retention policy](https://openrouter.ai/docs/guides/features/zdr).
+If the credential is unavailable, the runtime logs the shadow setup failure and
+continues using the active provider.
+
+The shadow samples model-planned runs from manual visible updates. It sends
+only bounded acquisition telemetry with `zdr: true`, `data_collection: "deny"`,
+and `store: false`. Each sample has a 10-second deadline and a 2,048-token output
+budget. One sample may be in flight per process, with no retries or backlog.
+The authoritative planner continues independently. Search service logs for
+`planning_shadow` to compare decisions, latency, usage, and failure codes.
+Prompts, post content, and model explanations are excluded from shadow logs.
+Remove the flag from the next development launch to disable the observer.
+
 ## Optional acquisition planning recovery — 2026-10-07
 
 Gemini Planning now uses 2,048 output tokens, increased from 512. Other workload

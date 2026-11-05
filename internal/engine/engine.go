@@ -85,6 +85,7 @@ type Engine struct {
 	headlessAccess                           []domain.Source
 	bridgeOrigins                            map[string]time.Time
 	work                                     engineWorkState
+	planningShadow                           *acquisitionPlanningShadow // guarded by mu
 	logger                                   Logger
 	reloads                                  *ReloadActions
 	events                                   *semanticengine.Engine

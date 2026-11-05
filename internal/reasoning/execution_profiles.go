@@ -215,12 +215,7 @@ func invokeBound(ctx context.Context, pool *boundClientPool, profileID inference
 		latency := time.Since(started)
 		return "", domain.ModelUsage{CallerLatencyMS: latency.Milliseconds()}, latency, fmt.Errorf("encode %s response schema: %w", profileID, err)
 	}
-	response, err := client.Generate(ctx, inference.Request{
-		ProfileID: profileID, Workload: string(profileID),
-		SystemPrompt: "Return only the requested structured JSON result.", UserPrompt: prompt,
-		ResponseFormat:  inference.JSONSchema(string(profileID), responseFormatName(profileID), "AkuSidecar structured result", rawSchema, true),
-		MaxOutputTokens: requestMaxOutputTokens(pool.adapterID, model),
-	})
+	response, err := client.Generate(ctx, structuredRequest(profileID, prompt, rawSchema, requestMaxOutputTokens(pool.adapterID, model)))
 	callerLatency := time.Since(started)
 	if err != nil {
 		return "", modelUsageFromInferenceFailure(err, callerLatency), callerLatency, err
@@ -230,6 +225,15 @@ func invokeBound(ctx context.Context, pool *boundClientPool, profileID inference
 	}
 	usage := modelUsageFromInferenceEvidence(response.Usage, &response.Receipt, response.Timing, response.DurationMillis, callerLatency)
 	return response.Text, usage, callerLatency, nil
+}
+
+func structuredRequest(profileID inference.ProfileID, prompt string, schema json.RawMessage, maxOutputTokens int) inference.Request {
+	return inference.Request{
+		ProfileID: profileID, Workload: string(profileID),
+		SystemPrompt: "Return only the requested structured JSON result.", UserPrompt: prompt,
+		ResponseFormat:  inference.JSONSchema(string(profileID), responseFormatName(profileID), "AkuSidecar structured result", schema, true),
+		MaxOutputTokens: maxOutputTokens,
+	}
 }
 
 // Codex App Server rejects bounded output requests. Keep the workload profile

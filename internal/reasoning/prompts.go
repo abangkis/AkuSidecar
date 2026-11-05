@@ -53,6 +53,10 @@ type planningFrontier struct {
 }
 
 func buildPlanningPrompt(run domain.Run, observation domain.Observation, _ []domain.ReasonedItem) string {
+	return formatPlanningPrompt(run.Source, planningPromptObservation(observation))
+}
+
+func formatPlanningPrompt(source domain.Source, observation planningObservation) string {
 	return fmt.Sprintf(`You are AkuBrowser's bounded acquisition planner.
 
 The supplied observation is application-owned acquisition telemetry, not source content. Do not use tools, browse, execute commands, or read files.
@@ -61,7 +65,7 @@ Choose only "finish" or "request_follow_up". A follow-up means one adjacent olde
 Null telemetry means unknown, not false or zero. Unknown telemetry does not prove the feed is exhausted. A follow-up still requires a known navigable continuation and a concrete gap.
 
 Run: %s
-Acquisition telemetry: %s`, mustJSON(promptRun{Source: run.Source}), mustJSON(planningPromptObservation(observation)))
+Acquisition telemetry: %s`, mustJSON(promptRun{Source: source}), mustJSON(observation))
 }
 
 func planningPromptObservation(value domain.Observation) planningObservation {

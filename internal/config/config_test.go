@@ -293,6 +293,13 @@ func TestConcurrencyConfigurationDefaultsAndOptInValidation(t *testing.T) {
 	}
 }
 
+func TestGLMPlanningShadowRequiresDevelopment(t *testing.T) {
+	_, err := Load(Options{DevGLMPlanningShadow: true})
+	if err == nil || err.Error() != "dev-glm-planning-shadow requires -dev" {
+		t.Fatalf("non-development flag error = %v", err)
+	}
+}
+
 func TestRepositorySidecarConfigLoads(t *testing.T) {
 	configPath := filepath.Join("..", "..", "config", "sidecar.json")
 	if _, err := os.Stat(configPath); err != nil {

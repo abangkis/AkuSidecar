@@ -75,6 +75,9 @@ func (e *Engine) CancelSession(ctx context.Context, id string) error {
 	e.work.prepareCancellation()
 	for _, run := range session.Runs {
 		e.work.cancelRun(run.ID)
+		if shadow := e.planningShadow; shadow != nil && shadow.runID == run.ID {
+			shadow.cancel()
+		}
 	}
 	e.mu.Unlock()
 	if err := e.store.CancelSession(ctx, id); err != nil {
@@ -89,6 +92,9 @@ func (e *Engine) Shutdown() {
 	e.work.beginShutdown()
 	e.scheduler.stop()
 	e.work.cancelActive()
+	if shadow := e.planningShadow; shadow != nil && shadow.cancel != nil {
+		shadow.cancel()
+	}
 	e.mu.Unlock()
 	e.shutdownXManual()
 }
