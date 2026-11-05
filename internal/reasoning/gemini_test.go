@@ -146,9 +146,8 @@ func TestGeminiProfileCatalog(t *testing.T) {
 	}
 }
 
-func TestRepositoryGeminiProfileUsesWorkloadModels(t *testing.T) {
-	const planningModel = "gemini-3.1-flash-lite"
-	const otherModel = "gemini-3.5-flash-lite"
+func repositoryGeminiTestConfig(t *testing.T) config.Config {
+	t.Helper()
 	root := filepathRoot(t)
 	raw, err := os.ReadFile(filepath.Join(root, "config", "sidecar.json"))
 	if err != nil {
@@ -161,6 +160,13 @@ func TestRepositoryGeminiProfileUsesWorkloadModels(t *testing.T) {
 	if err := cfg.Reasoning.Select("gemini-flash-lite"); err != nil {
 		t.Fatal(err)
 	}
+	return cfg
+}
+
+func TestRepositoryGeminiProfileUsesWorkloadModels(t *testing.T) {
+	const planningModel = "gemini-3.1-flash-lite"
+	const otherModel = "gemini-3.5-flash-lite"
+	cfg := repositoryGeminiTestConfig(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/models/"+planningModel {
 			_, _ = fmt.Fprintf(w, `{"name":"models/%s"}`, planningModel)
@@ -199,7 +205,7 @@ func TestRepositoryGeminiProfileUsesWorkloadModels(t *testing.T) {
 		want string
 	}{
 		{"planning", cfg.Reasoning.Planning, planningModel},
-		{"evaluation", cfg.Reasoning.Evaluation, otherModel},
+		{"evaluation", cfg.Reasoning.Evaluation, "gemini-3.1-flash-lite"},
 		{"semantic event", cfg.Reasoning.SemanticEvent, otherModel},
 		{"AI detection", cfg.Reasoning.AIDetection, otherModel},
 	} {
@@ -299,14 +305,22 @@ func TestProjectGeminiSchemaRemovesLivingTopicUniqueItemsOnlyOnWire(t *testing.T
 }
 
 func TestGeminiCandidateEvaluationChunksSevenCandidatesAndAggregatesTelemetry(t *testing.T) {
-	server, calls := geminiEvaluationChunkServer(t, 0)
-	provider, err := newGemini(geminiTestConfig(t, server.URL), staticCredentialResolver("gemini-test-key"))
+	const evaluationModel = "gemini-3.1-flash-lite"
+	server, calls := geminiEvaluationChunkServer(t, evaluationModel, 0)
+	cfg := repositoryGeminiTestConfig(t)
+	cfg.Reasoning.Endpoint = server.URL
+	provider, err := newGemini(cfg, staticCredentialResolver("gemini-test-key"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer provider.Close()
+	profile, ok := provider.ResolveProfile("gemini_high")
+	if !ok {
+		t.Fatal("saved Gemini profile no longer resolves")
+	}
 	run, observation := sevenCandidateGeminiInput()
-	result, telemetry, err := provider.Analyze(context.Background(), run, observation, nil)
+	model := cfg.Reasoning.Evaluation.WithProfileSelection(profile)
+	result, telemetry, err := provider.AnalyzeWithModel(context.Background(), run, observation, nil, string(ExecutionProfileEvaluation), model)
 	if err != nil {
 		t.Fatalf("analysis error: %v", err)
 	}
@@ -330,7 +344,7 @@ func TestGeminiCandidateEvaluationChunksSevenCandidatesAndAggregatesTelemetry(t 
 	if result.Summary != "chunk 1\n\nchunk 2" || len(result.Limitations) != 2 || result.RepeatedClaimsCollapsed != 3 || result.DeferredByBudget != 3 {
 		t.Fatalf("merged metadata=%+v", result)
 	}
-	if telemetry.Status != "completed" || telemetry.InputTokens == nil || telemetry.OutputTokens == nil || telemetry.ReasoningOutputTokens == nil {
+	if telemetry.Model != evaluationModel || telemetry.Status != "completed" || telemetry.InputTokens == nil || telemetry.OutputTokens == nil || telemetry.ReasoningOutputTokens == nil {
 		t.Fatalf("aggregated telemetry=%+v", telemetry)
 	}
 	if *telemetry.InputTokens != 30 || *telemetry.OutputTokens != 9 || *telemetry.ReasoningOutputTokens != 6 {
@@ -339,7 +353,7 @@ func TestGeminiCandidateEvaluationChunksSevenCandidatesAndAggregatesTelemetry(t 
 }
 
 func TestGeminiCandidateEvaluationChunkFailureDoesNotReturnPartialSuccess(t *testing.T) {
-	server, calls := geminiEvaluationChunkServer(t, 2)
+	server, calls := geminiEvaluationChunkServer(t, "gemini-3.5-flash-lite", 2)
 	provider, err := newGemini(geminiTestConfig(t, server.URL), staticCredentialResolver("gemini-test-key"))
 	if err != nil {
 		t.Fatal(err)
@@ -367,7 +381,7 @@ type geminiChunkCapture struct {
 	prompts []string
 }
 
-func geminiEvaluationChunkServer(t *testing.T, failCall int) (*httptest.Server, *geminiChunkCapture) {
+func geminiEvaluationChunkServer(t *testing.T, modelID string, failCall int) (*httptest.Server, *geminiChunkCapture) {
 	t.Helper()
 	calls := &geminiChunkCapture{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -375,7 +389,12 @@ func geminiEvaluationChunkServer(t *testing.T, failCall int) (*httptest.Server, 
 			t.Errorf("API key header=%q", got)
 		}
 		if strings.HasPrefix(r.URL.Path, "/models/") {
-			_, _ = fmt.Fprint(w, `{"name":"models/gemini-3.5-flash-lite"}`)
+			if r.URL.Path != "/models/"+modelID {
+				t.Errorf("Gemini preflight path=%q, want /models/%s", r.URL.Path, modelID)
+				http.NotFound(w, r)
+				return
+			}
+			_, _ = fmt.Fprintf(w, `{"name":%q}`, "models/"+modelID)
 			return
 		}
 		if r.URL.Path != "/interactions" {
@@ -383,9 +402,15 @@ func geminiEvaluationChunkServer(t *testing.T, failCall int) (*httptest.Server, 
 		}
 		var payload struct {
 			Input string `json:"input"`
+			Model string `json:"model"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode payload: %v", err)
+		}
+		if payload.Model != modelID {
+			t.Errorf("evaluation payload model=%q, want %q", payload.Model, modelID)
+			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
 		size := strings.Count(payload.Input, `"alias"`)
 		calls.mu.Lock()
@@ -413,7 +438,7 @@ func geminiEvaluationChunkServer(t *testing.T, failCall int) (*httptest.Server, 
 		}
 		encoded, _ := json.Marshal(string(raw))
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(w, `{"id":"interaction-%d","model":"gemini-3.5-flash-lite","status":"completed","output_text":%s,"usage":{"total_input_tokens":%d,"total_output_tokens":%d,"total_thought_tokens":%d}}`, callNumber, encoded, 10*callNumber, 3*callNumber, 2*callNumber)
+		_, _ = fmt.Fprintf(w, `{"id":"interaction-%d","model":%q,"status":"completed","output_text":%s,"usage":{"total_input_tokens":%d,"total_output_tokens":%d,"total_thought_tokens":%d}}`, callNumber, modelID, encoded, 10*callNumber, 3*callNumber, 2*callNumber)
 	}))
 	t.Cleanup(server.Close)
 	return server, calls
