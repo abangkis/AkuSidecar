@@ -149,9 +149,12 @@ type ModelConfig struct {
 }
 
 // WithProfileSelection composes provider-owned model/reasoning identity with
-// workload-owned output and assurance policy. Selecting a runtime profile must
-// not silently replace the budget calibrated for the invoking workload.
+// workload-owned output and assurance policy. An effort-only profile also
+// retains the workload's configured model.
 func (m ModelConfig) WithProfileSelection(profile ModelConfig) ModelConfig {
+	if profile.StableModelID() == "" {
+		profile.ModelID, profile.Model = m.ModelID, m.Model
+	}
 	profile.Assurance = m.Assurance
 	profile.MaxOutputTokens = m.MaxOutputTokens
 	return profile
@@ -258,7 +261,7 @@ func ProviderLabel(name string) string {
 	case "groq":
 		return "Groq · GPT-OSS 120B"
 	case "gemini-flash-lite":
-		return "Gemini · 3.5 Flash Lite"
+		return "Gemini · Flash-Lite"
 	case "gemini-flash":
 		return "Gemini · 3.7 Flash"
 	case "deterministic":

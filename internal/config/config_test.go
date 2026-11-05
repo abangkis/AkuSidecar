@@ -253,7 +253,7 @@ func TestGeminiProviderRequiresCanonicalCredentialReference(t *testing.T) {
 	if err := provider.Validate("gemini-flash-lite"); err != nil {
 		t.Fatal(err)
 	}
-	if label := ProviderLabel("gemini-flash-lite"); label != "Gemini · 3.5 Flash Lite" {
+	if label := ProviderLabel("gemini-flash-lite"); label != "Gemini · Flash-Lite" {
 		t.Fatalf("label=%q", label)
 	}
 	reasoning := ReasoningConfig{Providers: map[string]ProviderConfig{

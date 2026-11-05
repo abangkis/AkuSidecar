@@ -45,6 +45,7 @@ func (p *routedProfileProvider) ProfileOptions() []reasoning.ProfileOption {
 	return []reasoning.ProfileOption{
 		{ID: "luna_xhigh", Label: "Luna XHigh", Model: "gpt-5.6-luna", Effort: "xhigh"},
 		{ID: "sol_medium", Label: "Sol Medium", Model: "gpt-5.6-sol", Effort: "medium"},
+		{ID: "effort_high", Label: "High", Effort: "high"},
 	}
 }
 
@@ -79,7 +80,7 @@ func TestReasoningProfilesUseBackendCatalogPerInvocation(t *testing.T) {
 	settings.ReasoningAcquisitionProfile = "sol_medium"
 	settings.ReasoningEvaluationProfile = "luna_xhigh"
 	profiles := runtime.ReasoningProcesses(settings)
-	if profiles[0].Model != "gpt-5.6-sol" || profiles[0].Effort != "medium" || len(profiles[0].Options) != 2 {
+	if profiles[0].Model != "gpt-5.6-sol" || profiles[0].Effort != "medium" || len(profiles[0].Options) != 3 {
 		t.Fatalf("profiles=%+v", profiles)
 	}
 	run := domain.Run{ID: "run", SessionID: "session", Source: domain.SourceX}
@@ -111,6 +112,24 @@ func TestReasoningProfilePreservesWorkloadPolicy(t *testing.T) {
 	}
 	if model.Assurance != "provider_strict" || model.MaxOutputTokens != 8192 {
 		t.Fatalf("workload policy was replaced by profile defaults: %+v", model)
+	}
+}
+
+func TestReasoningProcessesDisplayWorkloadModelsForEffortOnlyProfiles(t *testing.T) {
+	runtime := &Engine{provider: &routedProfileProvider{}, config: config.Config{
+		Reasoning: config.ReasoningConfig{
+			Planning:   config.ModelConfig{ModelID: "planning-model"},
+			Evaluation: config.ModelConfig{ModelID: "evaluation-model"},
+		},
+	}}
+	profiles := runtime.ReasoningProcesses(domain.Settings{
+		ReasoningAcquisitionProfile: "effort_high", ReasoningEvaluationProfile: "effort_high",
+	})
+	for i, want := range []string{"planning-model", "evaluation-model"} {
+		profile := profiles[i]
+		if profile.Model != want || profile.Options[2].Model != want || profile.Effort != "high" {
+			t.Fatalf("%s profile=%+v, want workload model %s", profile.ID, profile, want)
+		}
 	}
 }
 

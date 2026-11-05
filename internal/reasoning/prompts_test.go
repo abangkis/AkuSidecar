@@ -198,7 +198,7 @@ func TestPlanningPromptUsesOnlyBoundedAcquisitionTelemetry(t *testing.T) {
 	}
 	knowledge := []domain.ReasonedItem{{WhatChanged: "PRIOR_KNOWLEDGE_SENTINEL", SourceURL: "https://x.com/private/status/2"}}
 	prompt := buildPlanningPrompt(domain.Run{ID: "private-run-id", SessionID: "private-session-id", Source: domain.SourceX}, observation, knowledge)
-	if len(prompt) > 2000 {
+	if len(prompt) > 2800 {
 		t.Fatalf("planning prompt exceeded its regression budget: %d bytes", len(prompt))
 	}
 	for _, forbidden := range []string{"SOURCE_CONTENT_SENTINEL", "PRIOR_KNOWLEDGE_SENTINEL", "RECOVERY_SENTINEL", "private-native-anchor", "private-run-id", "private-session-id", "https://"} {
@@ -210,6 +210,29 @@ func TestPlanningPromptUsesOnlyBoundedAcquisitionTelemetry(t *testing.T) {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("planning prompt missing %q: %s", required, prompt)
 		}
+	}
+}
+
+func TestPlanningPromptOrdersReasonRules(t *testing.T) {
+	prompt := buildPlanningPrompt(domain.Run{Source: domain.SourceX}, domain.Observation{Source: domain.SourceX}, nil)
+	previous := strings.Index(prompt, "Choose the first matching rule below.")
+	if previous < 0 {
+		t.Fatal("planning prompt does not specify reason precedence")
+	}
+	for _, rule := range []string{
+		`If continuationReady is false, return decision "finish" and reason "continuation_blocked"`,
+		`If continuationReady is null or missing, return decision "finish" and reason "continuation_unknown"`,
+		`continuationReady must be true`,
+		`If scrollStopReason is "deadline" and the frontier is open, return "request_follow_up" with "deadline_gap"`,
+		`If captureQuality.invalidCount or captureQuality.retryableCount is greater than zero and an adjacent viewport can recover that evidence, return "request_follow_up" with "recoverable_evidence_gap"`,
+		`If scrollStopReason is "budget_exhausted" and the frontier is open, return "request_follow_up" with "unfinished_frontier"`,
+		`If frontier.newCandidateCount is explicitly zero and frontier.hasMoreCandidateSignal is explicitly false, return "finish" with "frontier_closed"`,
+	} {
+		position := strings.Index(prompt, rule)
+		if position <= previous {
+			t.Fatalf("reason rule missing or out of order: %s", rule)
+		}
+		previous = position
 	}
 }
 

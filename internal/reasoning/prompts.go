@@ -65,7 +65,19 @@ Choose only "finish" or "request_follow_up". A follow-up means one adjacent olde
 Null telemetry means unknown, not false or zero. Unknown telemetry does not prove the feed is exhausted. A follow-up still requires a known navigable continuation and a concrete gap.
 
 Run: %s
-Acquisition telemetry: %s`, mustJSON(promptRun{Source: source}), mustJSON(observation))
+Acquisition telemetry: %s
+
+Choose the first matching rule below. Return its exact decision and reason as a pair.
+
+1. If continuationReady is false, return decision "finish" and reason "continuation_blocked". Explicit false means blocked, even when the frontier signals that more candidates exist.
+2. If continuationReady is null or missing, return decision "finish" and reason "continuation_unknown". This code is reserved for unknown continuation. Missing scroll or frontier fields do not override a known continuationReady value.
+3. For the remaining rules, continuationReady must be true. An open frontier means frontier.newCandidateCount is greater than zero AND frontier.hasMoreCandidateSignal is true.
+   a. If scrollStopReason is "deadline" and the frontier is open, return "request_follow_up" with "deadline_gap".
+   b. If captureQuality.invalidCount or captureQuality.retryableCount is greater than zero and an adjacent viewport can recover that evidence, return "request_follow_up" with "recoverable_evidence_gap". Choose this before checking scroll-budget exhaustion, even when the frontier is open. A degraded verdict alone does not establish this gap.
+   c. If scrollStopReason is "budget_exhausted" and the frontier is open, return "request_follow_up" with "unfinished_frontier".
+   d. If frontier.newCandidateCount is explicitly zero and frontier.hasMoreCandidateSignal is explicitly false, return "finish" with "frontier_closed".
+
+If no rule matches, apply the bounded follow-up criteria above and write a brief reason grounded in the supplied telemetry. Use the named codes only when their conditions hold.`, mustJSON(promptRun{Source: source}), mustJSON(observation))
 }
 
 func planningPromptObservation(value domain.Observation) planningObservation {

@@ -129,10 +129,16 @@ func (e *Engine) ReasoningProcesses(settings domain.Settings) []ReasoningProcess
 		if provider == "deterministic" {
 			model = config.ModelConfig{Model: "local-deterministic", Effort: "none"}
 		}
+		workloadOptions := append([]reasoning.ProfileOption(nil), options...)
+		for i := range workloadOptions {
+			if workloadOptions[i].Model == "" {
+				workloadOptions[i].Model = fallback.DisplayModel()
+			}
+		}
 		return ReasoningProcessProfile{
 			ID: id, Label: label, Description: description, Provider: provider,
 			Model: model.DisplayModel(), Effort: model.DisplayEffort(), Execution: execution,
-			ProfileID: profileID, Options: append([]reasoning.ProfileOption(nil), options...),
+			ProfileID: profileID, Options: workloadOptions,
 		}
 	}
 	return []ReasoningProcessProfile{

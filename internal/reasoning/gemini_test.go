@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -139,8 +141,79 @@ func TestGeminiProfileCatalog(t *testing.T) {
 		t.Fatalf("options=%+v", options)
 	}
 	model, ok := provider.ResolveProfile("gemini_high")
-	if !ok || model.ModelID != "gemini-3.5-flash-lite" || model.ReasoningOptionID != "high" || model.MaxOutputTokens != 0 || model.Assurance != "" {
+	if !ok || model.StableModelID() != "" || model.ReasoningOptionID != "high" || model.MaxOutputTokens != 0 || model.Assurance != "" {
 		t.Fatalf("model=%+v ok=%v", model, ok)
+	}
+}
+
+func TestRepositoryGeminiProfileUsesWorkloadModels(t *testing.T) {
+	const planningModel = "gemini-3.1-flash-lite"
+	const otherModel = "gemini-3.5-flash-lite"
+	root := filepathRoot(t)
+	raw, err := os.ReadFile(filepath.Join(root, "config", "sidecar.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{Root: root}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Reasoning.Select("gemini-flash-lite"); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/models/"+planningModel {
+			_, _ = fmt.Fprintf(w, `{"name":"models/%s"}`, planningModel)
+			return
+		}
+		if r.Method != http.MethodPost || r.URL.Path != "/interactions" {
+			t.Errorf("unexpected Gemini request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		var payload struct {
+			Model string `json:"model"`
+			Input string `json:"input"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || payload.Model != planningModel || !strings.Contains(payload.Input, `"continuation_blocked"`) {
+			t.Errorf("planning payload model=%q, has reason rules=%t, error=%v", payload.Model, strings.Contains(payload.Input, `"continuation_blocked"`), err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_, _ = fmt.Fprintf(w, `{"id":"planning","model":%q,"status":"completed","output_text":"{\"decision\":\"finish\",\"reason\":\"continuation_blocked\"}"}`, planningModel)
+	}))
+	defer server.Close()
+	cfg.Reasoning.Endpoint = server.URL
+	provider, err := newGemini(cfg, staticCredentialResolver("gemini-test-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer provider.Close()
+	profile, ok := provider.ResolveProfile("gemini_high")
+	if !ok {
+		t.Fatal("saved Gemini profile no longer resolves")
+	}
+	for _, test := range []struct {
+		name string
+		base config.ModelConfig
+		want string
+	}{
+		{"planning", cfg.Reasoning.Planning, planningModel},
+		{"evaluation", cfg.Reasoning.Evaluation, otherModel},
+		{"semantic event", cfg.Reasoning.SemanticEvent, otherModel},
+		{"AI detection", cfg.Reasoning.AIDetection, otherModel},
+	} {
+		resolved := test.base.WithProfileSelection(profile)
+		if resolved.StableModelID() != test.want || resolved.ExactReasoningOption() != "high" || resolved.MaxOutputTokens != test.base.MaxOutputTokens || resolved.Assurance != test.base.Assurance {
+			t.Errorf("%s resolved to %+v, want %s with workload policy", test.name, resolved, test.want)
+		}
+	}
+	run := domain.Run{Source: domain.SourceX}
+	observation := domain.Observation{Source: run.Source, Coverage: map[string]any{"frontier": map[string]any{"continuationReady": false}}}
+	model := cfg.Reasoning.Planning.WithProfileSelection(profile)
+	plan, telemetry, err := provider.PlanWithModel(context.Background(), run, observation, nil, string(ExecutionProfilePlanning), model)
+	if err != nil || plan != (AcquisitionPlan{Decision: "finish", Reason: "continuation_blocked"}) || telemetry.Model != planningModel {
+		t.Fatalf("planning result=%+v model=%q error=%v", plan, telemetry.Model, err)
 	}
 }
 

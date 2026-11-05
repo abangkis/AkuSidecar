@@ -30,7 +30,7 @@ type StructuredInvoker interface {
 type ProfileOption struct {
 	ID     string `json:"id"`
 	Label  string `json:"label"`
-	Model  string `json:"model"`
+	Model  string `json:"model"` // Empty for effort-only options that use the workload's configured model.
 	Effort string `json:"effort"`
 }
 

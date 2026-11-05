@@ -207,7 +207,7 @@ func (g *Gemini) ProfileOptions() []ProfileOption {
 	for _, reasoning := range descriptor.Capabilities.Reasoning {
 		effort := reasoning.ID
 		label := "Gemini " + strings.ToUpper(effort[:1]) + effort[1:]
-		options = append(options, ProfileOption{ID: "gemini_" + effort, Label: label, Model: modelID, Effort: effort})
+		options = append(options, ProfileOption{ID: "gemini_" + effort, Label: label, Effort: effort})
 	}
 	return options
 }
@@ -215,7 +215,7 @@ func (g *Gemini) ProfileOptions() []ProfileOption {
 func (g *Gemini) ResolveProfile(id string) (config.ModelConfig, bool) {
 	for _, option := range g.ProfileOptions() {
 		if option.ID == id {
-			return config.ModelConfig{ModelID: option.Model, Model: option.Model, MinReasoningTier: option.Effort, ReasoningOptionID: option.Effort, Effort: option.Effort, ProfileID: id}, true
+			return config.ModelConfig{MinReasoningTier: option.Effort, ReasoningOptionID: option.Effort, Effort: option.Effort, ProfileID: id}, true
 		}
 	}
 	return config.ModelConfig{}, false
