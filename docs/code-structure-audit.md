@@ -2,7 +2,7 @@
 
 ## Status synchronization (2026-11-05)
 
-Latest delta: workspace-check cache lifecycle characterization 1086328 is implemented, tested, reviewed and published after installed-app characterization 16a6ff2; see the [current result](#p05-workspace-check-cache-lifecycle-characterization-2026-11-05). Earlier cache/scratch increments retain their published status. Documentation publication is bound separately by the final readback. Further Mac work/native qualification stays frozen; focus remains Windows-only. Selected source CL-3 through CL-8 retain their closures. Full P05 and operational/release acceptance are not declared; earlier statements/receipts retain their checkpoint scopes.
+Latest delta: owner-approved source P05 Windows is closed after reconciliation of cache helpers, all five Windows wrapper structures and the two priority-wrapper execution receipts. See the [source closure](#p05-windows-source-closure-2026-11-05) for evidence, retained owners and return triggers. Selected source CL-3 through CL-8 remain closed; inventory/removal decisions retain their scopes. No production code changes or new test/build runs. Full-build, installer and operational/release acceptance remain separate. Mac remains frozen. Documentation publication is bound by final readback.
 
 Previous packaging checkpoint: [CL-7 F02 test-asset separation](#cl-7-f02-test-asset-boundary-result-2026-11-04), based on Sidecar 10c1daf, was implemented/tested/source-reviewed before the later CL-7/CL-8 closures. Its original scope and receipt identities are retained.
 
@@ -1752,6 +1752,22 @@ coverage, without approving another implementation or operational action.
 | Acceptance | Scoped review and payload checks found no blocker. Selected wrapper cleanup is covered; checker execution, downstream checks, full build, installer and operational/release acceptance remain unproven. Full P05 stays open; Mac stays frozen |
 
 See the [canonical evidence and limits](code-cleanup-roadmap.md#p05-workspace-check-cache-lifecycle-characterization-2026-11-05).
-Next propose read-only reconciliation of Windows P05 source exit criteria to
+The next proposal at that checkpoint was read-only reconciliation of Windows P05 source exit criteria to
 distinguish a real active-path gap from wrappers retained with return triggers.
 This record does not authorize further code, build, installer or runtime work.
+
+## P05 Windows source closure (2026-11-05)
+
+| Dimension | Current status and scope |
+| --- | --- |
+| Implemented | Cache/helper owners 8c39d97 and priority-wrapper characterization 16a6ff2/1086328 are retained. This closure changes documentation only |
+| Tested | Existing source-bound helper and two independent wrapper receipts remain valid. All 11 original non-Mac inputs and suite hashes match; read-only AST checks account for outer setup/finally cleanup in five wrappers. No new product test/build |
+| Published | Source and preceding documentation 7571451 are published; final readback separately binds closure documentation publication |
+| Acceptance | Owner-approved selected P05 Windows source scope closed with no material ownership gap. Full-build, installer, operational/release and live-source acceptance are separate. Mac remains frozen |
+
+The [canonical closure](code-cleanup-roadmap.md#p05-windows-source-closure-2026-11-05)
+records retained helpers, five wrappers, independent suites, the NSIS tuple/output
+owner and supported compatibility paths. Revisit on explicit lane reactivation,
+cache/lifecycle or consumer change, demonstrated regression or approved consumer
+retirement. Mac qualification requires explicit unfreeze. Selected source
+refactoring is complete; this does not declare all product acceptance complete.

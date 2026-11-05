@@ -1,7 +1,7 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-05 (Asia/Jakarta). Selected source CL-3 through CL-8 retain their closures; source identity v118 and historical release v116 remain separate. P05 workspace-check cache lifecycle characterization 1086328 is implemented, tested, reviewed and published after installed-app characterization 16a6ff2. Earlier cache/scratch increments retain their published status. Documentation publication is bound separately by the linked final readback. Further Mac work and qualification remain frozen and do not gate Windows cleanup. Full P05 closure and operational/release acceptance are not declared; implemented, tested, published and acceptance remain separate.
+Status synchronized: 2026-11-05 (Asia/Jakarta). Selected CL-1 inventory and CL-2 removals are accepted; selected source CL-3 through CL-8 retain their closures. Owner-approved source P05 Windows is now closed after reconciliation of published cache helpers and wrapper characterization (8c39d97, 16a6ff2 and 1086328). Earlier CL-7/CL-8 exclusions and inventory counts remain historical. Source v118 and historical release v116 remain separate. Retain/defer decisions and return triggers are recorded in the P05 Windows source-closure section. Full-build, installer and operational/release acceptance remain separate. Mac remains frozen. Documentation publication is bound by final readback.
 Status: the selected CL source cleanup is signed off through CL-8, with retained
 contracts, explicit deferrals and the historical P05 exclusion. The later
 [P05 cache increment](#p05-source-build-cache-publication-2026-11-04) has its own
@@ -121,6 +121,7 @@ ledger entries when a later modularization creates a proven obsolete path.
 | CL-6: Bridge responsibility boundaries | AkuBridge 6ce23f7: reporting factory/three moved declarations; retained operation/resource owners mapped | Reporting 12 before/after; Bridge Node 515, native-host Go, Sidecar Node 44 and default/dev Go pass; 18 Windows artifacts; three projected packages/70 files each | Not performed | Source CL-6 closed after owner-authorized scoped review; explicit retain map below and publication readback bind the code/docs/remote identities. Operational acceptance remains separate |
 | CL-7: build, packaging and test organization | Sidecar F02 2af9698, Browser worker filter 8190b45 and Bridge package test-filename guard/10 CLI cases 6875355; source/package/harness ownership reconciled | Bridge 525 pass and final/publication characterization 10/10; Sidecar Node 762 pass/2 opt-in skip; embedded/static 16 default/dev; four tag graphs and 27 auxiliary/platform/tag metadata queries; 12 Windows PE/amd64 artifacts; five 70-file projected packages and 20 source recipes verified. Earlier worker cold/warm and exact sealed-byte receipts retained | Not performed | Selected source CL-7 closed after owner-authorized scoped review; retain/defer decisions and triggers below. Dirty Browser build/cache P05 excluded, macOS/installed/live acceptance and CL-8 remain separate |
 | CL-8: integration and source sign-off | Bridge B02 32b3834: 18 real-caller tests; final 32-row ledger and cross-repository matrix reconciled; explicit source-candidate identity v118 remains separate from historical release v116 | B02 18/18; canonical Bridge 543/543; Sidecar negotiation/security/split-heartbeat 47 default and 47 dev. Candidate gate passes; prior behavioral, package, visual and 12-artifact Windows evidence reused after source/receipt/artifact hash review | Not performed | Selected source CL-8 closed after owner-authorized final review. One removal, six extractions, 21 retains, three deferrals and one excluded P05. Commit/remote identities bound to readback; release/install/macOS/live acceptance remains separate |
+| P05 Windows: source-build cache/temp cleanup | Cache helpers/wrappers 8c39d97; installed-app suite 16a6ff2; workspace-check suite 1086328; no code change for closure | Existing Node/helper receipts and two separate two-pass/two-mutation wrapper receipts reused after hash checks; all five outer try/finally structures reconciled; narrow ignores checked | Not performed | Selected Windows source scope closed after owner approval; retain/defer/return triggers below. Full-build, installer, operational/release acceptance and frozen Mac qualification remain separate |
 
 ### CL-1: inventory before deletion
 
@@ -343,7 +344,7 @@ resource ownership is explicit without additional singleton state or fallback.
 
 ### CL-7: build, packaging and test organization
 
-Current status: selected source closed after the [CL-7 source-closure review](#cl-7-source-closure-2026-11-04), including [F02](#cl-7-f02-test-asset-boundary-result-2026-11-04), the [worker packaging boundary](#cl-7-worker-test-filename-boundary-result-2026-11-04) and Bridge 6875355. Existing supported owners are retained with return triggers. Pre-existing dirty Browser build/cache P05 remains excluded for separate review; source closure does not establish runtime, macOS, installed or signing acceptance.
+Current status: selected source closed after the [CL-7 source-closure review](#cl-7-source-closure-2026-11-04), including [F02](#cl-7-f02-test-asset-boundary-result-2026-11-04), the [worker packaging boundary](#cl-7-worker-test-filename-boundary-result-2026-11-04) and Bridge 6875355. Existing supported owners are retained with return triggers. P05 was excluded at that historical CL-7 checkpoint and is now source-closed separately for Windows; source closure does not establish runtime, macOS, installed or signing acceptance.
 
 - Reconcile source lists, package seals, generated manifests, asset pins and
   harness inputs after each move. Test the packaged consumer, not just imports
@@ -2948,10 +2949,73 @@ receipts; no new combined cohort was run. Other Windows wrappers retain their
 existing helper/source/contract evidence. They are not automatically declared
 obsolete, execution-tested or defective by this increment.
 
-Next minimum proposal, requiring separate approval: read-only reconciliation of
+At this workspace-check checkpoint, the next proposal was read-only reconciliation of
 the Windows P05 source exit criteria against the cache/helper and both wrapper
 receipts. Decide whether a real active-path gap remains or the other wrappers
 should retain existing coverage with concrete return triggers. Keep full-build,
 installer and operational acceptance separate, and do not use frozen Mac
 qualification as a Windows cleanup gate. No additional implementation, deletion,
 build, installer, activation or trial is authorized by this record.
+
+## P05 Windows source closure (2026-11-05)
+
+The owner approved the read-only exit-criteria conclusion and authorized this
+documentation closure, retain/defer decisions, commit and push. Selected P05
+Windows source scope is closed. The historical CL-7/CL-8 exclusion and original
+32-boundary inventory counts are not retroactively changed. Earlier statements
+that P05 was open describe their capture-time checkpoints; this decision closes
+only the selected Windows source gate. It does not declare cross-platform,
+full-build, installed or operational/release acceptance.
+
+| Dimension | Current status and evidence |
+| --- | --- |
+| Implemented | Published Browser cache package 8c39d979292232884a431d04d240cbc3f0c91495, installed-app wrapper suite 16a6ff2d0c1d3f8a0db6a0cb31d42810dd72ac4a and workspace-check suite 1086328f47893e30b00054579b6ca4b9571542a1. Sidecar ff65e9e retains the narrow root .tmp ignore. This closure changes documentation only |
+| Tested | Existing helper/Node evidence and each priority-wrapper suite's separate two-pass/two-mutation receipt are retained. All 11 non-Mac inputs from the original staged package match current committed hashes; both wrapper suites match their receipt hashes. Read-only AST checks confirm setup in the outer try and one guarded cleanup in finally for all five Windows wrappers. Narrow ignore checks preserve other SharedTemp visibility and find no tracked cache/temp inputs. No new product test, build, installer or trial |
+| Published | Source commits above retain their verified publication; preceding roadmap synchronization 7571451101658218740bfe47dc5aed7bf30682fa is published. Publication of this closure documentation is separately bound by the final readback below; source publication and documentation publication are distinct |
+| Acceptance | Owner-approved selected Windows source scope is closed. No material source/ownership gap requires another implementation increment. This is not evidence of successful current full build, installer/clean-machine qualification, activation or live X/IG acceptance. Mac work and native qualification remain frozen until explicit owner unfreeze |
+
+### Exit criteria reconciliation
+
+| Criterion | Conclusion and practical limit |
+| --- | --- |
+| Owners and entry points accounted for | One shared cache resolver/helper owns selection/restoration; all five Go build/check wrappers enter and exit through it. Installed-app and workspace-check are the priority execution-characterized paths. Preview/companion/updater owners remain supported; they are not deleted or relabeled as execution-tested |
+| Persistent cache and disposable scratch separated | Cache paths are persistent and never deleted by per-run cleanup. Generated scratch stays project-local; caller GOTMPDIR remains caller-owned. Restoration preserves the eight saved variables; cleanup retains containment, immediate-parent, generated-name and reparse-point guards |
+| Scoped behavioral evidence sufficient | Helper evidence covers selection/override precedence, failure restoration, unique scratch, caller ownership and out-of-root preservation. Both priority-wrapper suites exercise complete copied wrappers and detect missing cleanup before harness teardown. Their first-gate scope does not imply successful downstream builds or exhaustive failure coverage |
+| Repository/test boundary preserved | Production imports the production helper, not a test or ignored receipt. Fixture/cache roots are narrowly ignored; unrelated SharedTemp files remain visible. Test commands and receipt identities are recorded in the preceding increments; ignored receipts may be absent in a fresh checkout |
+| Changes reviewable and published | Reviewed source/test commits and publication receipts are bound to their inputs. Documentation/source identities, implemented/tested/published status and operational acceptance remain separate |
+
+### Retain/defer decisions and return triggers
+
+| Boundary | Decision | Return trigger |
+| --- | --- | --- |
+| Shared Node/PowerShell cache helpers and five Windows wrappers | Retain the existing ownership split and common cleanup; no generic lifecycle framework or further split is required | A resolver, override precedence, saved-variable, scratch ownership or cleanup contract change; a new direct compiler/package-manager consumer; or a demonstrated restoration/cleanup regression |
+| Installed-app and workspace-check integration suites | Retain independent two-case/two-mutation suites and explicit commands | Wrapper/helper or first-gate behavior changes; investigate and add coverage for the affected path rather than rerunning unchanged full product suites |
+| Preview builder, companion runtime installer and updater tooling | Retain current helper/source/contract coverage and supported consumers; defer extra wrapper-execution characterization | Explicit lane reactivation, a lifecycle/cache change in that wrapper, or an observed wrapper-specific failure requires a targeted characterization before changing that path |
+| Windows installed-app NSIS assembler | Retain its tuple-validation/output-lifecycle owner; it consumes a prepared tuple and does not directly invoke Go/npm, so no source-cache wrapper is added | A new direct compiler/package-manager invocation or a concrete scratch/cache ownership change |
+| Supported compatibility and historical recovery paths | Retain; frozen publication and legacy names do not prove obsolescence | Explicit supported-consumer retirement/replacement with migration and rollback evidence |
+| Full build, installer/clean-machine, activation and live-source acceptance | Keep separate from source cleanup; not completed or newly required by this closure | Owner-approved release/runtime qualification with an exact candidate tuple and required environment; no trial/build is authorized by this document |
+| Mac refactoring and native packaging/signing/install qualification | Frozen/deferred; not a Windows source-closure gate | Explicit owner unfreeze and separately approved platform-native scope |
+
+Evidence: the preceding [cache publication](#p05-source-build-cache-publication-2026-11-04),
+[installed-app characterization](#p05-windows-installed-app-cache-lifecycle-characterization-2026-11-04)
+and [workspace-check characterization](#p05-workspace-check-cache-lifecycle-characterization-2026-11-05)
+retain their commands, test limits and receipts. The prior
+[roadmap publication](../../AkuBrowser/build/p05-windows-source-review-20261105/roadmap-publication-readback.json)
+and this [closure publication readback](../../AkuBrowser/build/p05-windows-source-review-20261105/closure-publication-readback.json)
+bind documentation commits separately. Local ignored receipts may be absent in
+another checkout; their absence is not a new test result.
+
+### What is complete and what remains separate
+
+The agreed source-refactoring roadmap is complete within its selected scope:
+CL-1 inventory and CL-2 evidence-backed removals are accepted; source CL-3 through
+CL-8 and P05 Windows are closed. Retained code is an intentional supported owner,
+not an unfinished deletion queue. Deferred work requires its recorded trigger;
+there is no mandatory next extraction based on file size alone.
+
+This does not mean all product work is complete. Full-build/installer and
+operational/release qualification, live X/IG behavior and frozen Mac acceptance
+remain separate workstreams with their existing limits. The next action is to
+choose one owner-approved acceptance goal or a concrete triggered change, not to
+start another automatic refactoring cycle. No implementation, deletion, build,
+installer, activation or trial is authorized by this closure.
