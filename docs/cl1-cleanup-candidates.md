@@ -38,7 +38,7 @@ disposition counts are not a remaining-work count.
 
 Latest Bridge result: [automatic CL-6 source closure](#automatic-cl-6-bridge-reporting-separation-result-2026-11-04), AkuBridge 6ce23f7, is implemented/tested/reviewed and source closed after owner-authorized scoped review. Publication is bound to readback; prior source closures and original inventory disposition counts retain their scope.
 
-Latest packaging result: selected source CL-7 remains closed; P05 was excluded at that historical checkpoint. Earlier cache/scratch increments retain their published status. Windows installed-app cache lifecycle characterization is implemented, tested and reviewed as Browser 16a6ff2; see the [current result](#p05-windows-installed-app-cache-lifecycle-characterization-2026-11-04) for publication status. Mac work/qualification remains frozen. Full P05 and operational/release acceptance remain unestablished; original inventory counts retain their capture-time meaning.
+Latest packaging result (synchronized 2026-11-05): selected source CL-7 remains closed; P05 was excluded at that historical checkpoint. Workspace-check cache lifecycle characterization 1086328 is implemented, tested, reviewed and published after installed-app characterization 16a6ff2; see the [current result](#p05-workspace-check-cache-lifecycle-characterization-2026-11-05). Earlier cache/scratch publication remains valid. Documentation publication is bound separately by the final readback. Mac work/qualification remains frozen. Full P05 and operational/release acceptance remain unestablished; original inventory counts retain their capture-time meaning.
 
 ## Dispositions and approval
 
@@ -147,7 +147,7 @@ Paths in this section are relative to AkuBrowser.
 | P02 | `retain-required` | Installer `legacySetupPath` removal/uninstall cleanup | `installer/windows/installer.go` removes old setup executable during install and includes it in uninstall paths | Old-file cleanup is active upgrade behavior; retiring the old UI did not retire upgrade cleanup |
 | P03 | `defer-until-replacement` | Signed update manifest v1 and conditional legacy artifact names | Windows/macOS companion builders, manifest signer, Bridge host update reader and tests; Windows emitter requires matching product/Bridge/Sidecar identity | Keep exact signature/version/compatibility policy until supported old host/update consumers migrate; no manifest relabel or schema reinterpretation |
 | P04 | `retain-required` | Frozen Store/macOS/preview asset-generation and distribution tooling | CL-7 closure retains maintenance/recovery tools named by release contracts/tests; current Windows binaries compile and Darwin selectors are mapped. This supersedes the earlier unverified source-retirement classification | Revisit on explicit lane-retirement decision or changes requiring platform-native validation; frozen publication is not obsolescence proof, source retention is not macOS/installed acceptance |
-| P05 | `unverified` (original inventory) | Browser source-build cache helpers, wrappers and tests | Earlier cache/scratch increments retain publication and the separate 15/15 cohort. Windows wrapper characterization 16a6ff2 is published: two passing cases and two expected missing-cleanup failures. Separate records below define source acceptance and evidence limits | Completed increments are accepted within scope; further Mac work/qualification is frozen and is not a Windows cleanup gate. Full P05 closure is not declared. Preserve the historical CL-7/CL-8 exclusion and do not claim full-build/installed/release acceptance |
+| P05 | `unverified` (original inventory) | Browser source-build cache helpers, wrappers and tests | Earlier cache/scratch publication and its 15/15 cohort remain separate. Installed-app 16a6ff2 and workspace-check 1086328 are published; each suite records two passing cases and two expected missing-cleanup failures. No new combined cohort. Documentation publication is bound separately by final readback | Completed increments are accepted within scope; further Mac work/qualification is frozen and is not a Windows cleanup gate. Full P05 closure is not declared. Preserve the historical CL-7/CL-8 exclusion and do not claim full-build/installed/release acceptance |
 
 ## First concrete proposal for CL-2
 
@@ -3033,5 +3033,19 @@ characterization. Do not loosen identity/release guards or start an installer/tr
 | Acceptance | Selected failure-path characterization reviewed without blocking findings. Successful full build, identity-checker execution, installer and operational/release acceptance are not proven. Full P05 stays open; Mac stays frozen |
 
 See the [canonical scope, receipts and next proposal](code-cleanup-roadmap.md#p05-windows-installed-app-cache-lifecycle-characterization-2026-11-04).
-Next propose a read-only comparison of remaining Windows wrappers and execution
+At that checkpoint, the next proposal was a read-only comparison of remaining Windows wrappers and execution
 coverage; no new implementation, build, installer or trial is authorized here.
+
+## P05 workspace-check cache lifecycle characterization (2026-11-05)
+
+| Dimension | Current status and scope |
+| --- | --- |
+| Implemented | Browser 1086328f47893e30b00054579b6ca4b9571542a1 adds one integration suite for the actual copied check.ps1/helper; production code, protocol, identity and cleanup guards are unchanged |
+| Tested | Two owned/caller-scratch cases pass; two fixture-only missing-cleanup mutations fail at restoration assertions. Eight environment variables, owned cleanup and caller/cache/output/sibling preservation are verified before teardown. Test bytes and wrapper/helper identities match existing evidence; no test/build rerun |
+| Published | Browser 1086328 was pushed and Origin/main verified at full SHA 1086328f47893e30b00054579b6ca4b9571542a1 on 2026-11-04. Documentation publication is bound separately by the final readback |
+| Acceptance | Scoped review and payload checks found no blocker. The selected first-gate failure path is covered; checker execution, downstream workspace validation, full build, installer and operational/release acceptance are not proven. Full P05 stays open; Mac stays frozen |
+
+See the [canonical identities, receipts and next proposal](code-cleanup-roadmap.md#p05-workspace-check-cache-lifecycle-characterization-2026-11-05).
+Next propose read-only reconciliation of Windows P05 source exit criteria,
+retaining separate operational acceptance and explicit return triggers for any
+remaining wrappers. No additional implementation or operational action is approved.

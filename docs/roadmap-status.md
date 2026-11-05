@@ -1,6 +1,6 @@
 # Roadmap status and evidence index
 
-Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-3 through CL-8 and historical dispositions retain their scopes; source v118 and historical release v116 remain separate. Windows installed-app cache lifecycle characterization is implemented, tested and reviewed as Browser 16a6ff2; its publication status is recorded below. Earlier P05 cache/scratch increments retain their published status. Further Mac work/native qualification stays frozen and does not gate Windows cleanup. Full P05 and operational/release acceptance are not declared; implemented, tested, published and acceptance remain separate.
+Status synchronized: 2026-11-05 (Asia/Jakarta). Selected source CL-3 through CL-8 and historical dispositions retain their scopes; source v118 and historical release v116 remain separate. Workspace-check cache lifecycle characterization 1086328 is implemented, tested, reviewed and published after installed-app characterization 16a6ff2; its current record appears below. Earlier P05 cache/scratch increments retain their published status. Documentation publication is bound separately by the final readback. Further Mac work/native qualification stays frozen and does not gate Windows cleanup. Full P05 and operational/release acceptance are not declared; implemented, tested, published and acceptance remain separate.
 Earlier source history before the latest result: AkuSidecar `80acfb9` (Timeline More/Less and restart-dev assertion correction, after `f27e91b` automatic Store feature separation; 95 declarations/15 feature files; after Store Timeline read-model `bee6a9f`, after empty-candidate completion `de95c58`, after vision persistence `70ea120`; per-run candidate evaluation/completion, after acquisition planning orchestration, after automatic remaining HTTP handler separation, after Timeline composition HTTP adaptation, vision-evaluation HTTP adapters `cf534ec`, model-usage HTTP adapters `af8d722`, Inbox read HTTP adapters `ce57e79`, Inbox selection-review HTTP adapters `3f4a66d`, after AI-feedback HTTP adapters `a3718ff`, after semantic correction HTTP adapters `3c5e61a`, development X HTTP controls `1814c9b`, capture telemetry rotation/shutdown compatibility `237dbd1`, HTTP Bridge reload actions `6ea303c`, capture-owner path guard `b482ba2`, HTTP bootstrap/router map `97bbe51`, HTTP media-recapture entry points `90e3a7f`, HTTP update/session lifecycle `d32c065`, Engine passive media evidence `2bdc0f1`, Library removal/Forget `a19bf86`, FullReset `da019dd`, AI feedback `6a1ce33` and selection corrections `f3d46b8`, vision-lane routing/coverage `25c3339`, local acquisition policy `f16f11a`, capture-round separation and deterministic Store privacy test `683b1e8`, reasoning result `eb05ac8`, process recovery `5b39fa4`, observation contracts `d9c3025`, session admission `4bf0731`, AI detection `b84a62d`, media provenance `8d7f7b6`, Engine Bridge commands `3e13434`, Engine media recapture `c614512`, HTTP recapture `be9fcd2`, HTTP commands `7cb712b`, Bridge status `7b2d0d8` and diagnostics export `1068e35`),
 AkuBrowser `3a3c043`, AkuBridge `3676f5c`.
 This is a documentation checkpoint, not a runtime inspection or release.
@@ -1835,9 +1835,23 @@ SITC remains an exploration document, not an implementation roadmap commitment.
 | Acceptance | Selected test/source scope reviewed without blocking findings. Controlled identity-port failure is covered; checker execution, successful full build, installer and operational/release acceptance are not established. Full P05 stays open; Mac stays frozen |
 
 See the [canonical record and local receipts](code-cleanup-roadmap.md#p05-windows-installed-app-cache-lifecycle-characterization-2026-11-04).
-Next minimum proposal: read-only comparison of remaining active Windows
+The next proposal at that checkpoint was read-only comparison of remaining active Windows
 cache/temp wrappers and their execution coverage. No further implementation,
 build, installer, runtime activation or trial is approved by this record.
+
+## P05 workspace-check cache lifecycle characterization (2026-11-05)
+
+| Dimension | Current status and scope |
+| --- | --- |
+| Implemented | Browser 1086328f47893e30b00054579b6ca4b9571542a1 adds one check.ps1 wrapper integration suite; production code, release metadata, protocol and guards are unchanged |
+| Tested | Two real-wrapper cases pass and two missing-cleanup mutations fail as expected. Same-process restoration of eight variables and owned/caller scratch, cache, output and sibling preservation are verified before teardown. Existing evidence matches source and committed identities; no new test/build run |
+| Published | Browser 1086328 was pushed to Origin/main and remote SHA verified as 1086328f47893e30b00054579b6ca4b9571542a1 on 2026-11-04. The 2026-11-05 documentation publication is bound separately by the linked final readback |
+| Acceptance | Scoped review and payload checks found no blocker. Controlled identity-port failure cleanup is covered; checker execution, downstream workspace checks, full build, installer and operational/release acceptance are not established. Full P05 stays open; Mac stays frozen |
+
+See the [canonical record, receipt identities and limits](code-cleanup-roadmap.md#p05-workspace-check-cache-lifecycle-characterization-2026-11-05).
+Next minimum proposal: read-only reconciliation of Windows P05 source exit
+criteria, including retention/return triggers for remaining wrappers. No further
+implementation, build, installer, activation or trial is authorized here.
 
 ## Latest operational evidence and next boundary
 

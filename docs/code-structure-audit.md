@@ -1,8 +1,8 @@
 # Product source structure audit — 2026-10-25
 
-## Status synchronization (2026-11-04)
+## Status synchronization (2026-11-05)
 
-Latest delta: Windows installed-app cache lifecycle characterization is implemented, tested and reviewed as Browser 16a6ff2; see the [current result](#p05-windows-installed-app-cache-lifecycle-characterization-2026-11-04) for publication status. Earlier cache/scratch increments retain their published status. Further Mac work/native qualification stays frozen; focus remains Windows-only. Selected source CL-3 through CL-8 retain their closures. Full P05 and operational/release acceptance are not declared; earlier statements/receipts retain their checkpoint scopes.
+Latest delta: workspace-check cache lifecycle characterization 1086328 is implemented, tested, reviewed and published after installed-app characterization 16a6ff2; see the [current result](#p05-workspace-check-cache-lifecycle-characterization-2026-11-05). Earlier cache/scratch increments retain their published status. Documentation publication is bound separately by the final readback. Further Mac work/native qualification stays frozen; focus remains Windows-only. Selected source CL-3 through CL-8 retain their closures. Full P05 and operational/release acceptance are not declared; earlier statements/receipts retain their checkpoint scopes.
 
 Previous packaging checkpoint: [CL-7 F02 test-asset separation](#cl-7-f02-test-asset-boundary-result-2026-11-04), based on Sidecar 10c1daf, was implemented/tested/source-reviewed before the later CL-7/CL-8 closures. Its original scope and receipt identities are retained.
 
@@ -1739,5 +1739,19 @@ execution is included in this proposal.
 | Acceptance | Scoped review finds no blocker. The first-gate failure path is covered; full build, checker execution, installer and operational/release acceptance are unproven. Full P05 stays open. Mac work/qualification stays frozen |
 
 See the [canonical evidence and limits](code-cleanup-roadmap.md#p05-windows-installed-app-cache-lifecycle-characterization-2026-11-04).
-The next proposed analysis compares remaining Windows wrappers with execution
+The proposed analysis at that checkpoint compared remaining Windows wrappers with execution
 coverage, without approving another implementation or operational action.
+
+## P05 workspace-check cache lifecycle characterization (2026-11-05)
+
+| Dimension | Current status and scope |
+| --- | --- |
+| Implemented | Browser 1086328f47893e30b00054579b6ca4b9571542a1 adds only a check.ps1 cache lifecycle integration suite; production responsibilities, protocol and guards are unchanged |
+| Tested | Two real-wrapper child-process cases pass; two missing-cleanup mutations fail at restoration. The first Node port is controlled; eight-variable restoration and owned/caller/cache/output/sibling preservation are observed before teardown. Existing logs and tested-source/committed identities match; no new product test/build |
+| Published | Browser 1086328 was pushed; Origin/main SHA 1086328f47893e30b00054579b6ca4b9571542a1 was verified on 2026-11-04. Documentation publication is bound separately by the final readback |
+| Acceptance | Scoped review and payload checks found no blocker. Selected wrapper cleanup is covered; checker execution, downstream checks, full build, installer and operational/release acceptance remain unproven. Full P05 stays open; Mac stays frozen |
+
+See the [canonical evidence and limits](code-cleanup-roadmap.md#p05-workspace-check-cache-lifecycle-characterization-2026-11-05).
+Next propose read-only reconciliation of Windows P05 source exit criteria to
+distinguish a real active-path gap from wrappers retained with return triggers.
+This record does not authorize further code, build, installer or runtime work.

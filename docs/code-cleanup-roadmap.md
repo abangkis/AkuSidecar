@@ -1,7 +1,7 @@
 # Comprehensive code cleanup roadmap
 
 Date: 2026-11-01 (Asia/Jakarta).
-Status synchronized: 2026-11-04 (Asia/Jakarta). Selected source CL-3 through CL-8 retain their closures; source identity v118 and historical release v116 remain separate. P05 cache 8c39d97, Step 3B ordering 5fa73c9 and completed scratch maintenance 54a1b49 retain their published status. Windows installed-app cache lifecycle characterization is implemented, tested and reviewed as Browser 16a6ff2; its publication readback is recorded below. Further Mac work and qualification remain frozen and do not gate Windows cleanup. Full P05 closure and operational/release acceptance are not declared; implemented, tested, published and acceptance remain separate.
+Status synchronized: 2026-11-05 (Asia/Jakarta). Selected source CL-3 through CL-8 retain their closures; source identity v118 and historical release v116 remain separate. P05 workspace-check cache lifecycle characterization 1086328 is implemented, tested, reviewed and published after installed-app characterization 16a6ff2. Earlier cache/scratch increments retain their published status. Documentation publication is bound separately by the linked final readback. Further Mac work and qualification remain frozen and do not gate Windows cleanup. Full P05 closure and operational/release acceptance are not declared; implemented, tested, published and acceptance remain separate.
 Status: the selected CL source cleanup is signed off through CL-8, with retained
 contracts, explicit deferrals and the historical P05 exclusion. The later
 [P05 cache increment](#p05-source-build-cache-publication-2026-11-04) has its own
@@ -2900,9 +2900,58 @@ publication alone does not require another test/build. The validation's
 `committed=false` and `pushed=false` fields retain capture-time meaning;
 publication readback supersedes those fields for publication status.
 
-Next minimum proposal, requiring separate approval: read-only comparison of
+At this installed-app checkpoint, the next proposal was a read-only comparison of
 the remaining active Windows cache/temp wrappers against their execution tests.
 Choose one concrete uncovered failure path, or retain the existing coverage
 if sufficient. Do not infer a production defect or start implementation, a full
 build, installer, activation or trial. Preserve the Mac freeze and unrelated
 Sidecar config/experiments.
+
+## P05 workspace-check cache lifecycle characterization (2026-11-05)
+
+This synchronization records the separately approved wrapper analysis, test-only
+implementation, review and publication completed on 2026-11-04. It does not rerun
+testing or remotely re-query publication. The preceding published documentation is Sidecar
+`6a68c653108a9842bf64197c8d5172416f518bde`; publication of this update is
+bound separately by the [documentation publication readback](../../AkuBrowser/build/p05-windows-source-review-20261105/roadmap-publication-readback.json).
+
+| Dimension | Current status and evidence |
+| --- | --- |
+| Implemented | Browser `1086328f47893e30b00054579b6ca4b9571542a1` adds only `scripts/test-check-cache-lifecycle.ps1`. Complete production `check.ps1` and `source-cache.ps1` copies execute inside isolated child PowerShell processes. No production code, protocol, identity/release metadata or guard changes |
+| Tested | Two real-wrapper cases pass: generated owned scratch and caller-provided GOTMPDIR/cache overrides. Two fixture-only copies with the wrapper cleanup call disabled fail at the expected environment-restoration assertion. All eight environment variables are checked after catch in the same child process, before harness teardown. Owned scratch is removed; caller scratch, shared-cache sentinels, artifact sentinel and pre-existing scratch sibling are preserved |
+| Published | Browser 1086328 was pushed to Origin/main; remote SHA was verified as 1086328f47893e30b00054579b6ca4b9571542a1 on 2026-11-04. The linked publication receipt establishes test-suite publication only. The 2026-11-05 documentation publication is bound separately by the linked final readback |
+| Acceptance | Scoped review and staged-payload checks found no blocker. The actual wrapper's cleanup after a controlled failure at its first identity Node port is covered. Identity-checker execution, downstream workspace checks, successful full build, installer and operational/release acceptance are not established. Full P05 stays open; Mac stays frozen. No activation or live trial |
+
+Canonical command from AkuBrowser:
+`pwsh -NoProfile -File scripts/test-check-cache-lifecycle.ps1`.
+The controlled Node port checks its exact two arguments and returns exit 17.
+The wrapper retains `Runtime identity contract check failed.` and stops before
+downstream Go/npm checks. Unexpected Node, Go, Git and npm execution is rejected.
+Mutations affect copies only. Project-local GUID fixture directories are removed
+only after verifying containment and immediate-parent ownership.
+
+Ignored local Browser receipts:
+[validation](../../AkuBrowser/build/p05-check-cache-lifecycle-20261104/validation.json),
+[two passes and two expected failures](../../AkuBrowser/build/p05-check-cache-lifecycle-20261104/integration.log),
+and [publication readback](../../AkuBrowser/build/p05-check-cache-lifecycle-20261104/publication-readback.json).
+They may be absent in another checkout. Suite SHA-256:
+`61421e1b8344e9965f2fc5bf2b687c81e3289994f230a480fa798cbf41c0d92d`.
+Exact committed test bytes match the tested suite. Current wrapper/helper bytes
+match the validation hashes; their committed content matches after Git CRLF/LF
+normalization. Existing passing evidence is reused without another test/build.
+The validation's pre-publication `committed=false` and `pushed=false` fields
+retain capture-time meaning; publication readback supersedes them for source
+publication status, not for publication of this documentation synchronization.
+
+The installed-app and workspace-check suites have separate two-pass/two-mutation
+receipts; no new combined cohort was run. Other Windows wrappers retain their
+existing helper/source/contract evidence. They are not automatically declared
+obsolete, execution-tested or defective by this increment.
+
+Next minimum proposal, requiring separate approval: read-only reconciliation of
+the Windows P05 source exit criteria against the cache/helper and both wrapper
+receipts. Decide whether a real active-path gap remains or the other wrappers
+should retain existing coverage with concrete return triggers. Keep full-build,
+installer and operational acceptance separate, and do not use frozen Mac
+qualification as a Windows cleanup gate. No additional implementation, deletion,
+build, installer, activation or trial is authorized by this record.
