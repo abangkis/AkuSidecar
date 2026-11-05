@@ -29,7 +29,7 @@ func (p *acquisitionExecutionProvider) Analyze(ctx context.Context, run domain.R
 // Exercise the existing process entry point before and after extraction. SQL
 // triggers affect only disposable fixture data and observe durable effect order.
 func TestEngineAcquisitionExecutionCharacterizationModel(t *testing.T) {
-	for _, mode := range []string{"finish", "follow-up", "continuation-not-ready", "stage-failure", "queue-failure", "receipt-failure", "follow-up-receipt-failure", "telemetry-failure", "incomplete", "untyped-failure", "authentication-failure", "joined-cancellation", "joined-deadline", "caller-cancellation"} {
+	for _, mode := range []string{"finish", "follow-up", "continuation-not-ready", "continuation-not-ready-headless", "stage-failure", "queue-failure", "receipt-failure", "follow-up-receipt-failure", "telemetry-failure", "incomplete", "untyped-failure", "authentication-failure", "joined-cancellation", "joined-deadline", "caller-cancellation"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newBridgeCommandFixture(t, domain.SourceX)
 			settings, err := f.state.GetSettings(context.Background())
@@ -43,6 +43,11 @@ func TestEngineAcquisitionExecutionCharacterizationModel(t *testing.T) {
 			command := f.claim(t)
 			obs := acquisitionPolicyObservation(domain.SourceX)
 			obs.Coverage["captureQuality"] = map[string]any{"verdict": "usable_degraded"}
+			obs.Coverage["captureMode"] = "browser"
+			if mode == "continuation-not-ready-headless" {
+				obs.Coverage["captureMode"] = "headless_worker"
+				mode = "continuation-not-ready"
+			}
 			if mode == "continuation-not-ready" {
 				obs.Coverage["frontier"].(map[string]any)["continuationReady"] = false
 			}
@@ -137,6 +142,10 @@ func TestEngineAcquisitionExecutionCharacterizationModel(t *testing.T) {
 			wantOrder := "acquisition_planning,telemetry,receipt,candidate_evaluation"
 			wantCommands, wantPlan, wantAnalyze, wantTelemetry := 1, 1, 1, 1
 			receipt, _ := stored.Coverage["acquisitionPlanning"].(map[string]any)
+			if mode == "continuation-not-ready" {
+				wantPlan, wantTelemetry = 0, 0
+				wantOrder = "receipt,candidate_evaluation"
+			}
 			switch mode {
 			case "stage-failure":
 				wantOrder = ""
@@ -192,8 +201,8 @@ func TestEngineAcquisitionExecutionCharacterizationModel(t *testing.T) {
 			if mode == "incomplete" && (receipt["mode"] != "fallback" || receipt["decision"] != "finish" || receipt["fallbackPolicy"] != "evaluate_captured_skip_follow_up") {
 				t.Fatal("partial planner decision was used", receipt)
 			}
-			if mode == "continuation-not-ready" && (receipt["decision"] != "request_follow_up" || receipt["followUpQueued"] != false) {
-				t.Fatal("missing continuation queued work", receipt)
+			if mode == "continuation-not-ready" && (receipt["mode"] != "local_frontier" || receipt["decision"] != "finish" || receipt["followUpQueued"] != false) {
+				t.Fatal("missing continuation did not finish locally", receipt)
 			}
 			if wantCommands == 2 && stored.Status != "waiting_for_bridge" {
 				t.Fatal("durable follow-up lost", stored)

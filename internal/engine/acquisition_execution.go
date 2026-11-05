@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
@@ -24,6 +25,11 @@ func (e *Engine) executeAcquisitionPlanning(ctx context.Context, runID string, r
 		} else {
 			localReason, localFinish = localAcquisitionCompletionReason(run.Source, observations[0], observationCandidateCount(merged))
 		}
+		continuation := continuationFrom(merged)
+		if !localFinish && continuation == nil {
+			localReason = "No navigable continuation is available; evaluate the accepted capture without an extra acquisition round."
+			localFinish = true
+		}
 		if localFinish {
 			receipt := map[string]any{
 				"mode":                  localMode,
@@ -37,7 +43,6 @@ func (e *Engine) executeAcquisitionPlanning(ctx context.Context, runID string, r
 				return false, fmt.Errorf("save local acquisition planning receipt: %w", err)
 			}
 		} else if localReason, localFollowUp := localXFollowUpReason(run.Source, observations[0]); localFollowUp {
-			continuation := continuationFrom(merged)
 			payload, payloadErr := e.ownedCapturePayload(run, run.SessionID, settings, 2, continuation, localReason)
 			if payloadErr != nil {
 				return false, payloadErr
@@ -63,14 +68,23 @@ func (e *Engine) executeAcquisitionPlanning(ctx context.Context, runID string, r
 			}
 			plan, telemetry, planErr := e.planWithProfile(ctx, run, merged, nil, settings.ReasoningAcquisitionProfile)
 			_ = e.store.SaveTelemetry(context.Background(), telemetry)
+			var failureCode string
 			if planErr != nil {
 				failure, typed := reasoning.ProviderFailureFrom(planErr)
-				if ctx.Err() != nil || errors.Is(planErr, context.Canceled) || errors.Is(planErr, context.DeadlineExceeded) || !typed || failure.Code != "incomplete_response" || failure.Category != "response_missing" {
+				if ctx.Err() != nil || errors.Is(planErr, context.Canceled) || errors.Is(planErr, context.DeadlineExceeded) || !typed {
 					return false, planErr
 				}
-				// Acquisition planning is optional. Never use the partial model
-				// answer; retain accepted evidence and omit the extra capture.
-				plan = reasoning.AcquisitionPlan{Decision: "finish", Reason: "The optional acquisition planner returned an incomplete response; evaluate the accepted capture without an extra acquisition round."}
+				var reason string
+				switch {
+				case failure.Code == "incomplete_response" && failure.Category == "response_missing":
+					reason = "The optional acquisition planner returned an incomplete response; evaluate the accepted capture without an extra acquisition round."
+				case failure.ProviderStatus == http.StatusServiceUnavailable:
+					reason = "The optional acquisition planner received HTTP 503; evaluate the accepted capture without an extra acquisition round."
+				default:
+					return false, planErr
+				}
+				failureCode = failure.Code
+				plan = reasoning.AcquisitionPlan{Decision: "finish", Reason: reason}
 			}
 			receipt := map[string]any{
 				"mode":                  "model",
@@ -82,21 +96,18 @@ func (e *Engine) executeAcquisitionPlanning(ctx context.Context, runID string, r
 			if planErr != nil {
 				receipt["mode"] = "fallback"
 				receipt["plannerStatus"] = "failed"
-				receipt["failureCode"] = "incomplete_response"
+				receipt["failureCode"] = failureCode
 				receipt["fallbackPolicy"] = "evaluate_captured_skip_follow_up"
 			}
 			if plan.Decision == "request_follow_up" {
-				continuation := continuationFrom(merged)
-				if continuation != nil {
-					payload, payloadErr := e.ownedCapturePayload(run, run.SessionID, settings, 2, continuation, plan.Reason)
-					if payloadErr != nil {
-						return false, payloadErr
-					}
-					if _, err = e.store.QueueFollowUp(ctx, runID, payload); err != nil {
-						return false, err
-					}
-					receipt["followUpQueued"] = true
+				payload, payloadErr := e.ownedCapturePayload(run, run.SessionID, settings, 2, continuation, plan.Reason)
+				if payloadErr != nil {
+					return false, payloadErr
 				}
+				if _, err = e.store.QueueFollowUp(ctx, runID, payload); err != nil {
+					return false, err
+				}
+				receipt["followUpQueued"] = true
 			}
 			merged.Coverage["acquisitionPlanning"] = receipt
 			if err := e.store.SetRunCoverageField(ctx, runID, "acquisitionPlanning", receipt); err != nil {

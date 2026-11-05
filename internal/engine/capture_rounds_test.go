@@ -401,8 +401,12 @@ func TestEngineCaptureRoundsCharacterizationProcess(t *testing.T) {
 				}
 				return
 			}
-			if len(provider.planned) != 1 {
-				t.Fatalf("planner calls=%d", len(provider.planned))
+			wantPlanned := 1
+			if mode == "not-ready" {
+				wantPlanned = 0
+			}
+			if len(provider.planned) != wantPlanned {
+				t.Fatalf("planner calls=%d want=%d", len(provider.planned), wantPlanned)
 			}
 			var count int
 			if queryErr := f.db.QueryRow(`SELECT COUNT(*) FROM bridge_commands WHERE run_id=?`, f.run.ID).Scan(&count); queryErr != nil {
