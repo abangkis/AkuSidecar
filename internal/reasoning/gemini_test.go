@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/aidetector"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/eventengine"
@@ -166,7 +167,6 @@ func repositoryGeminiTestConfig(t *testing.T) config.Config {
 
 func TestRepositoryGeminiProfileUsesWorkloadModels(t *testing.T) {
 	const planningModel = "gemini-3.1-flash-lite"
-	const otherModel = "gemini-3.5-flash-lite"
 	cfg := repositoryGeminiTestConfig(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/models/"+planningModel {
@@ -208,7 +208,7 @@ func TestRepositoryGeminiProfileUsesWorkloadModels(t *testing.T) {
 		{"planning", cfg.Reasoning.Planning, planningModel},
 		{"evaluation", cfg.Reasoning.Evaluation, "gemini-3.1-flash-lite"},
 		{"semantic event", cfg.Reasoning.SemanticEvent, "gemini-3.1-flash-lite"},
-		{"AI detection", cfg.Reasoning.AIDetection, otherModel},
+		{"AI detection", cfg.Reasoning.AIDetection, "gemini-3.1-flash-lite"},
 	} {
 		resolved := test.base.WithProfileSelection(profile)
 		if resolved.StableModelID() != test.want || resolved.ExactReasoningOption() != "high" || resolved.MaxOutputTokens != test.base.MaxOutputTokens || resolved.Assurance != test.base.Assurance {
@@ -263,6 +263,54 @@ func TestRepositoryGeminiSemanticResolverUsesFlashLite31(t *testing.T) {
 	result, usage, _, err := resolver.ResolveWithProfile(context.Background(), candidates, nil, "gemini_high")
 	if err != nil || usage.ProviderModel != modelID || len(result.Decisions) != 1 || result.Decisions[0].Relation != "new_event" {
 		t.Fatalf("semantic resolution=%+v model=%q error=%v", result, usage.ProviderModel, err)
+	}
+}
+
+func TestRepositoryGeminiAIDeepResolverUsesFlashLite31(t *testing.T) {
+	const modelID = "gemini-3.1-flash-lite"
+	const output = `{"assessments":[{
+		"status":"insufficient_evidence","confidenceBand":"low","evidenceCodes":["insufficient_content"],
+		"assessedObject":"social_post","signalScope":"none","rationale":"The post is too short."
+	}]}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/models/"+modelID:
+			_, _ = fmt.Fprintf(w, `{"name":%q}`, "models/"+modelID)
+		case r.Method == http.MethodPost && r.URL.Path == "/interactions":
+			var request struct {
+				Model string `json:"model"`
+				Input string `json:"input"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Model != modelID || !strings.Contains(request.Input, "bounded AI-origin evidence reviewer") {
+				t.Errorf("unexpected AI Deep Detection request model=%q, error=%v", request.Model, err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			_, _ = fmt.Fprintf(w, `{"id":"ai-deep-fixture","model":%q,"status":"completed","output_text":%q}`, modelID, output)
+		default:
+			t.Errorf("unexpected Gemini request %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	cfg := repositoryGeminiTestConfig(t)
+	cfg.Reasoning.Endpoint = server.URL
+	provider, err := newGemini(cfg, staticCredentialResolver("gemini-test-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer provider.Close()
+	resolver, err := aidetector.NewStructuredResolver(cfg.Root, provider, cfg.Reasoning.AIDetection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := []domain.TimelineItem{{
+		ID: "short-post", SessionID: "test-session", Source: domain.SourceX,
+		Evidence: &domain.Block{Text: "Interesting.", ContentKind: "post"},
+	}}
+	result, usage, _, err := resolver.ResolveWithProfile(context.Background(), items, "gemini_high")
+	if err != nil || usage.ProviderModel != modelID || len(result.Assessments) != 1 || result.Assessments[0].Status != "insufficient_evidence" {
+		t.Fatalf("AI Deep Detection result=%+v model=%q error=%v", result, usage.ProviderModel, err)
 	}
 }
 

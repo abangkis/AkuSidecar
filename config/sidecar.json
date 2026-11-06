@@ -100,7 +100,7 @@
           "maxOutputTokens": 8192
         },
         "aiDetection": {
-          "modelId": "gemini-3.5-flash-lite",
+          "modelId": "gemini-3.1-flash-lite",
           "minReasoningTier": "high",
           "reasoningOptionId": "high",
           "assurance": "provider_strict",
