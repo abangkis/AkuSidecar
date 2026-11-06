@@ -15,6 +15,7 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	"github.com/abangkis/AkuSidecar/internal/eventengine"
 	"github.com/abangkis/ai4u-inference-sdk-go/inference"
 )
 
@@ -206,7 +207,7 @@ func TestRepositoryGeminiProfileUsesWorkloadModels(t *testing.T) {
 	}{
 		{"planning", cfg.Reasoning.Planning, planningModel},
 		{"evaluation", cfg.Reasoning.Evaluation, "gemini-3.1-flash-lite"},
-		{"semantic event", cfg.Reasoning.SemanticEvent, otherModel},
+		{"semantic event", cfg.Reasoning.SemanticEvent, "gemini-3.1-flash-lite"},
 		{"AI detection", cfg.Reasoning.AIDetection, otherModel},
 	} {
 		resolved := test.base.WithProfileSelection(profile)
@@ -220,6 +221,48 @@ func TestRepositoryGeminiProfileUsesWorkloadModels(t *testing.T) {
 	plan, telemetry, err := provider.PlanWithModel(context.Background(), run, observation, nil, string(ExecutionProfilePlanning), model)
 	if err != nil || plan != (AcquisitionPlan{Decision: "finish", Reason: "continuation_blocked"}) || telemetry.Model != planningModel {
 		t.Fatalf("planning result=%+v model=%q error=%v", plan, telemetry.Model, err)
+	}
+}
+
+func TestRepositoryGeminiSemanticResolverUsesFlashLite31(t *testing.T) {
+	const modelID = "gemini-3.1-flash-lite"
+	const output = `{"decisions":[{"candidateAlias":"candidate_001","relation":"new_event","targetAlias":null,"confidence":0.95,"reason":"Distinct launch","event":{"canonicalClaim":"Acme launched Finch","actor":"Acme","action":"launched","object":"Finch","eventKind":"launch","eventStart":null,"eventEnd":null,"aliases":[]}}]}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/models/"+modelID:
+			_, _ = fmt.Fprintf(w, `{"name":%q}`, "models/"+modelID)
+		case r.Method == http.MethodPost && r.URL.Path == "/interactions":
+			var request struct {
+				Model string `json:"model"`
+				Input string `json:"input"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Model != modelID || !strings.Contains(request.Input, "high-precision semantic event resolver") {
+				t.Errorf("unexpected Semantic Event request model=%q, error=%v", request.Model, err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			_, _ = fmt.Fprintf(w, `{"id":"semantic-fixture","model":%q,"status":"completed","output_text":%q}`, modelID, output)
+		default:
+			t.Errorf("unexpected Gemini request %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	cfg := repositoryGeminiTestConfig(t)
+	cfg.Reasoning.Endpoint = server.URL
+	provider, err := newGemini(cfg, staticCredentialResolver("gemini-test-key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer provider.Close()
+	resolver, err := eventengine.NewStructuredResolver(cfg.Root, provider, cfg.Reasoning.SemanticEvent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidates := []domain.SemanticCandidate{{Alias: "candidate_001", Source: domain.SourceX, WhatChanged: "Acme launched Finch"}}
+	result, usage, _, err := resolver.ResolveWithProfile(context.Background(), candidates, nil, "gemini_high")
+	if err != nil || usage.ProviderModel != modelID || len(result.Decisions) != 1 || result.Decisions[0].Relation != "new_event" {
+		t.Fatalf("semantic resolution=%+v model=%q error=%v", result, usage.ProviderModel, err)
 	}
 }
 
