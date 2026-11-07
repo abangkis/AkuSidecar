@@ -341,6 +341,41 @@ func TestEngineCaptureRoundsCharacterizationContinuation(t *testing.T) {
 	}
 }
 
+func TestLinkedInHeadlessContinuationUsesRetainedCheckpoint(t *testing.T) {
+	for _, mode := range []string{"overlap", "legacy", "malformed", "missing-frontier"} {
+		t.Run(mode, func(t *testing.T) {
+			frontier := map[string]any{
+				"continuationReady": true,
+				"scrollY":           float64(210),
+				"anchorKeys":        []any{"terminal"},
+			}
+			value := domain.Observation{
+				Source: domain.SourceLinkedIn,
+				Snapshots: []domain.Snapshot{
+					{ScrollY: 105, Blocks: []domain.Block{{PlatformID: "filtered-candidate"}}},
+					{ScrollY: 210, Blocks: []domain.Block{{PlatformID: "terminal"}}},
+				},
+				Coverage: map[string]any{"captureMode": "headless_worker", "frontier": frontier},
+			}
+			var want map[string]any
+			switch mode {
+			case "overlap":
+				frontier["continuationCheckpoint"] = map[string]any{"scrollY": float64(0), "anchorKeys": []any{"old", "new"}}
+				want = map[string]any{"startScrollY": int64(0), "anchorKeys": []string{"old", "new"}, "settleMs": 900}
+			case "legacy":
+				want = map[string]any{"startScrollY": int64(210), "anchorKeys": []string{"terminal"}, "settleMs": 900}
+			case "malformed":
+				frontier["continuationCheckpoint"] = map[string]any{"scrollY": float64(0), "anchorKeys": []any{"old", 1}}
+			case "missing-frontier":
+				delete(value.Coverage, "frontier")
+			}
+			if got := continuationFrom(value); !reflect.DeepEqual(got, want) {
+				t.Fatalf("continuation=%v want=%v", got, want)
+			}
+		})
+	}
+}
+
 type roundsCharacterizationProvider struct {
 	reasoning.Deterministic
 	planned  []domain.Observation

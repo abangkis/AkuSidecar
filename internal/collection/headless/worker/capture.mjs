@@ -101,7 +101,8 @@ export function continuationMatches(state, source, requestedUrl, continuation) {
   if (!Number.isSafeInteger(start) || start < 0 || !Number.isSafeInteger(settle) || settle < 0
       || !Array.isArray(anchors) || anchors.length < 1 || anchors.length > 3
       || anchors.some(anchor => typeof anchor !== 'string' || !anchor || anchor.length > 512)) return false;
-  return start === state.frontier.scrollY && sameStrings(anchors, state.frontier.anchorKeys);
+  const checkpoint = state.frontier.continuationCheckpoint ?? state.frontier;
+  return start === checkpoint.scrollY && sameStrings(anchors, checkpoint.anchorKeys);
 }
 
 function sameStrings(left, right) {
@@ -399,9 +400,23 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
     const landedKey = browser.backend === 'headless_worker' && !options.explicitPageUrl &&
       freshnessContract.matchesFeedURL?.(requestedUrl) && freshnessContract.matchesFeedURL(last.url)
       ? pageKey(source, last.url) : null;
+    if (source === 'linkedin' && landedKey) {
+      // Resume from a captured overlap on the retained feed, keeping the last
+      // snapshot's frontier metrics available for acquisition planning.
+      for (let index = snapshots.length - 2; index >= 0; index--) {
+        const earlier = snapshots[index];
+        if (!Number.isFinite(earlier.scroll?.y) || !freshnessContract.matchesFeedURL(earlier.url) ||
+            pageKey(source, earlier.url) !== landedKey) continue;
+        const anchors = [...new Set(earlier.posts.map(post => canonicalPostId(source, post)).filter(Boolean))].slice(0, 3);
+        if (!anchors.length) continue;
+        frontier.continuationCheckpoint = { scrollY: Math.max(0, Math.trunc(earlier.scroll.y)), anchorKeys: anchors };
+        break;
+      }
+    }
     // Keep the request binding distinct from the route the owned tab retained.
+    const needsFeedCheck = source === 'linkedin' || landedKey !== pageUrl;
     sourceFrontiers.set(source, { source, requestedUrl, pageUrl, frontier,
-      retainedFeedKey: landedKey !== pageUrl ? landedKey : null });
+      retainedFeedKey: needsFeedCheck ? landedKey : null });
   } else sourceFrontiers.delete(source);
   if (options.restoreScroll) await page.evaluate(`globalThis.XHeadlessPoC?.scrollSourceTo ? globalThis.XHeadlessPoC.scrollSourceTo(${originalScrollY}) : window.scrollTo({top:${originalScrollY},behavior:'instant'})`, timeLeft(deadline)).catch(() => {});
   try {

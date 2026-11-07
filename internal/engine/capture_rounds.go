@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"math"
 	"strings"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -82,7 +83,23 @@ func observationEvidenceKeys(source domain.Source, snapshots []domain.Snapshot) 
 func continuationFrom(value domain.Observation) map[string]any {
 	startScrollY := 0.0
 	anchors := continuationAnchors(value.Coverage)
-	if frontier, ok := value.Coverage["frontier"].(map[string]any); ok {
+	frontier, hasFrontier := value.Coverage["frontier"].(map[string]any)
+	if value.Source == domain.SourceLinkedIn && value.Coverage["captureMode"] == "headless_worker" {
+		if len(value.Snapshots) == 0 || frontier["continuationReady"] != true {
+			return nil
+		}
+		// The retained checkpoint's anchors survive candidate dedup.
+		// Older workers retained only the terminal frontier.
+		if checkpoint, exists := frontier["continuationCheckpoint"]; exists {
+			var ok bool
+			frontier, ok = checkpoint.(map[string]any)
+			if !ok {
+				return nil
+			}
+		}
+		return retainedHeadlessContinuation(frontier)
+	}
+	if hasFrontier {
 		if readiness, explicit := frontier["continuationReady"]; explicit {
 			if ready, valid := readiness.(bool); !valid || !ready {
 				return nil
@@ -139,6 +156,39 @@ func continuationFrom(value domain.Observation) map[string]any {
 		return nil
 	}
 	return map[string]any{"startScrollY": int(startScrollY), "anchorKeys": anchors, "settleMs": 900}
+}
+
+func retainedHeadlessContinuation(checkpoint map[string]any) map[string]any {
+	scrollY, ok := checkpoint["scrollY"].(float64)
+	if !ok || scrollY < 0 || scrollY > float64(1<<53-1) || scrollY != math.Trunc(scrollY) {
+		return nil
+	}
+	// Preserve the worker's anchor order and values exactly across JSON.
+	var anchors []string
+	switch raw := checkpoint["anchorKeys"].(type) {
+	case []any:
+		if len(raw) > 3 {
+			return nil
+		}
+		for _, entry := range raw {
+			anchor, ok := entry.(string)
+			if !ok {
+				return nil
+			}
+			anchors = append(anchors, anchor)
+		}
+	case []string:
+		anchors = raw
+	}
+	if len(anchors) == 0 || len(anchors) > 3 {
+		return nil
+	}
+	for _, anchor := range anchors {
+		if strings.TrimSpace(anchor) == "" || len(anchor) > 512 {
+			return nil
+		}
+	}
+	return map[string]any{"startScrollY": int64(scrollY), "anchorKeys": anchors, "settleMs": 900}
 }
 
 func snapshotContinuationAnchors(snapshot domain.Snapshot) []string {

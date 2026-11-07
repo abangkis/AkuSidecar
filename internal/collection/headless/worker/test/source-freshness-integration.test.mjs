@@ -17,9 +17,9 @@ const linkedInAssets=(await sourceAssets(bridge,'linkedin')).filter(asset=>[
 const linkedInFeed='https://www.linkedin.com/feed/';
 const linkedInAlias='https://www.linkedin.com/feed/foryou/';
 const oldID='2106867448746021278',newID='2106867448746021279';
-function fixture({pending=true,routeChange=false,source='x',pendingLabel='Show 2 posts',landedURL,activationURL}={}){
+function fixture({pending=true,routeChange=false,source='x',pendingLabel='Show 2 posts',landedURL,activationURL,postsAt}={}){
   const contract=sourceFreshnessContractFor(adapterAssets,source);
-  const state={clicks:0,navigations:0,scrolls:0,freshnessEvaluations:0,posts:[oldID],url:'about:blank'};
+  const state={clicks:0,navigations:0,scrolls:0,scrollY:0,freshnessEvaluations:0,posts:[oldID],url:'about:blank'};
   const sourcePost=id=>({
     x:{id,permalink:'https://x.com/example/status/'+id},
     linkedin:{id:'linkedin:activity:'+id,permalink:'https://www.linkedin.com/feed/update/urn:li:activity:'+id+'/'},
@@ -34,12 +34,14 @@ function fixture({pending=true,routeChange=false,source='x',pendingLabel='Show 2
   const button=new Element();
   const candidate={contains:()=>false,get innerText(){return state.posts.join('|');},getBoundingClientRect:()=>({width:200,height:100,bottom:100,top:0,right:200,left:0})};
   const location={get href(){return state.url;},get hostname(){return new URL(state.url).hostname;}};
-  const context=vm.createContext({Element,URL,Date,setTimeout,clearTimeout,location,window:{location,innerHeight:900,innerWidth:1280,scrollY:0,scrollTo(){state.scrolls++;}},
+  const context=vm.createContext({Element,URL,Date,setTimeout,clearTimeout,location,innerHeight:900,
+    window:{location,innerHeight:900,innerWidth:1280,get scrollY(){return state.scrollY;},
+      scrollTo({top}){state.scrolls++;state.scrollY=top;},scrollBy(_x,y){state.scrolls++;state.scrollY+=y;}},
     document:{visibilityState:'visible',querySelector:()=>null,
       querySelectorAll:selector=>selector==='button,[role="button"]'&&pending&&button.isConnected?[button]:[]},
     getComputedStyle:()=>({display:'block',visibility:'visible',opacity:'1'}),
     AkuSourceAdapters:{get:()=>({matchesPage:()=>state.url.startsWith(source==='linkedin'?'https://www.linkedin.com/':'https://x.com/'),freshness:{version:`${source}-freshness-v1`,headless:contract,revealSupported:true,rejectInsideFeedCandidate:true,pendingContentPattern:source==='linkedin'?/^(?:new posts?|show new posts?)$/i:/^show \d+ posts$/i},discoverCandidates:()=>({candidates:[]})})},
-    XHeadlessPoC:{collect:()=>({url:state.url,posts:state.posts.map(id=>({...sourcePost(id),author:'Example',text:'Native post '+id,limitations:[],media:[]})),scroll:{y:0,viewportHeight:900,height:2000},documentReady:true})}});
+    XHeadlessPoC:{collect:()=>({url:state.url,posts:(postsAt?.(state)??state.posts).map(id=>({...sourcePost(id),author:'Example',text:'Native post '+id,limitations:[],media:[]})),scroll:{y:state.scrollY,viewportHeight:900,height:2000},documentReady:true})}});
   const page={async navigate(url){state.requestedUrl=url;state.url=landedURL??url;state.navigations++;return {};},async evaluate(expression){
     if(/runtime\.(?:probe|activatePending)/.test(expression))state.freshnessEvaluations++;
     if(activationURL&&expression.includes('runtime.activatePending('))state.url=activationURL;
@@ -116,6 +118,27 @@ test('LinkedIn round two rejects a different landed route before restoring scrol
     {code:'source_frontier_unavailable'});
   assert.equal(f.state.scrolls,before);
   assert.equal(f.state.clicks,1);
+  assert.equal(f.state.navigations,1);
+});
+test('LinkedIn retains the preceding same-feed checkpoint for a scrolled round two',async()=>{
+  const f=fixture({source:'linkedin',pending:false,landedURL:linkedInAlias,
+    postsAt:state=>state.scrollY>0||state.hideAnchor?[newID]:[oldID]});
+  const first=await capture(f.browser,f.assets,'linkedin',{...payload,scrolls:1,scrollSettleMs:100});
+  const {frontier}=first.coverage;
+  assert.equal(frontier.scrollY,675);
+  assert.deepEqual(frontier.anchorKeys,['linkedin:activity:'+newID]);
+  assert.deepEqual(frontier.continuationCheckpoint,{scrollY:0,anchorKeys:['linkedin:activity:'+oldID]});
+  const second={...payload,acquisitionRound:2,
+    continuation:{startScrollY:0,anchorKeys:frontier.continuationCheckpoint.anchorKeys,settleMs:0}};
+  await assert.rejects(capture(f.browser,f.assets,'linkedin',{...second,
+    continuation:{startScrollY:675,anchorKeys:frontier.anchorKeys,settleMs:0}}),{code:'unsupported_continuation'});
+  f.state.hideAnchor=true;
+  await assert.rejects(capture(f.browser,f.assets,'linkedin',second),{code:'source_frontier_unavailable'});
+  f.state.hideAnchor=false;
+  const resumed=await capture(f.browser,f.assets,'linkedin',second);
+  assert.equal(resumed.snapshots[0].scrollY,0);
+  assert.equal(resumed.coverage.freshness.workerStatus,'preserved');
+  assert.equal(f.state.clicks,0);
   assert.equal(f.state.navigations,1);
 });
 test('all sources stage shared freshness after their adapter with generic controller provenance',async()=>{
