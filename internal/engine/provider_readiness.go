@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/codexruntime"
@@ -42,9 +43,23 @@ func (e *Engine) ReasoningProviderReadiness(ctx context.Context) ([]config.Provi
 	}
 	summaries := e.ReasoningProviders()
 	ollamaSnapshots := map[string]ollamaReadinessSnapshot{}
+	// Independent Gemini metadata checks share a deadline window rather than
+	// making a slow model delay checks for every other model in Settings.
+	var geminiChecks sync.WaitGroup
+	var otherChecks []int
 	for index := range summaries {
+		if config.IsGeminiProvider(summaries[index].Name) {
+			geminiChecks.Go(func() {
+				summaries[index] = e.probeReasoningProvider(ctx, summaries[index], settings, nil)
+			})
+		} else {
+			otherChecks = append(otherChecks, index)
+		}
+	}
+	for _, index := range otherChecks {
 		summaries[index] = e.probeReasoningProvider(ctx, summaries[index], settings, ollamaSnapshots)
 	}
+	geminiChecks.Wait()
 	return summaries, nil
 }
 

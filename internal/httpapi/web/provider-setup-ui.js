@@ -4,18 +4,22 @@ import { providerCanActivate, providerReadinessFeedback, providerRequiresSecureC
 export function createProviderSetupUi({
   $, getONBOARDING_PROVIDER_COPY, api, completeOnboarding, renderActiveReasoningProvider, renderReasoningProcesses, renderReasoningProviderControl, getSettingsDirty, state
 }) {
+  function providerCopy(entry) {
+    const copy = getONBOARDING_PROVIDER_COPY();
+    return copy[entry?.name] || (entry?.name?.startsWith("gemini-") ? copy["gemini-flash-lite"] : null);
+  }
+
   function onboardingProviderEntries() {
-    return (state.bootstrap?.reasoningProviders || []).slice().sort((a, b) => {
-      const order = { "codex-app-server": 0, "gemini-flash-lite": 1, "ollama-nemotron": 2, "ollama-qwen": 3 };
-      return (order[a.name] ?? 9) - (order[b.name] ?? 9);
-    });
+    const order = { "codex-app-server": 0, "gemini-flash-lite": 1, "ollama-nemotron": 2, "ollama-qwen": 3 };
+    const rank = (entry) => order[entry.name] ?? (entry.name.startsWith("gemini-") ? 1 : 9);
+    return (state.bootstrap?.reasoningProviders || []).slice().sort((a, b) => rank(a) - rank(b));
   }
 
   function renderOnboardingProviderOptions() {
     const container = $("#onboarding-provider-options");
     const selected = state.onboardingProviderChoice;
     container.replaceChildren(...onboardingProviderEntries().map((entry) => {
-      const copy = getONBOARDING_PROVIDER_COPY()[entry.name] || { tag: entry.runtimeKind, description: "" };
+      const copy = providerCopy(entry) || { tag: entry.runtimeKind, description: "" };
       const label = document.createElement("label");
       label.className = "onboarding-provider-option";
       const input = document.createElement("input");
@@ -66,7 +70,7 @@ export function createProviderSetupUi({
     const credentialSetup = $("#onboarding-provider-credential");
     const requiresSecureCredential = providerRequiresSecureCredential(choice);
     const showCredentialSetup = Boolean(choice) && (choice.configured === false || requiresSecureCredential);
-    const copy = getONBOARDING_PROVIDER_COPY()[choice?.name] || {};
+    const copy = providerCopy(choice) || {};
     const settingsMode = state.providerDialogMode === "settings";
     $("#onboarding-provider-dialog").classList.toggle("has-provider-context", Boolean(choice));
     $("#onboarding-provider-dialog").classList.toggle("provider-switch-mode", settingsMode);

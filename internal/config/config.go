@@ -262,7 +262,13 @@ func ProviderLabel(name string) string {
 		return "Groq · GPT-OSS 120B"
 	case "gemini-flash-lite":
 		return "Gemini · Flash-Lite"
-	case "gemini-flash":
+	case "gemini-3-1-flash-lite":
+		return "Gemini · 3.1 Flash-Lite"
+	case "gemini-3-5-flash-lite":
+		return "Gemini · 3.5 Flash-Lite"
+	case "gemini-3-6-flash":
+		return "Gemini · 3.6 Flash"
+	case "gemini-flash", "gemini-3-7-flash":
 		return "Gemini · 3.7 Flash"
 	case "deterministic":
 		return "Local deterministic"
@@ -295,17 +301,22 @@ func (r ReasoningConfig) ProviderSummary() []ProviderSummary {
 	sort.Strings(names)
 	summaries := make([]ProviderSummary, 0, len(names))
 	for _, name := range names {
-		if r.Providers[name].HideFromSettings {
+		entry := r.Providers[name]
+		if entry.HideFromSettings {
 			continue
 		}
 		runtimeKind := ProviderRuntimeKind(name)
 		requiresAvailability := runtimeKind == "executable" || runtimeKind == "local_endpoint" || IsGeminiProvider(name)
-		summaries = append(summaries, ProviderSummary{
+		summary := ProviderSummary{
 			Name: name, Label: ProviderLabel(name), RuntimeKind: runtimeKind,
 			Configured: true, ConfigurationStatus: "ready",
 			AvailabilityRequired: requiresAvailability, AvailabilityStatus: "unchecked",
 			OutputTokenLimitEnforced: name == "groq" || IsGeminiProvider(name) || IsOllamaProvider(name),
-		})
+		}
+		if name == geminiFlashLiteProvider && entry.usesOnlyGeminiModel("gemini-3.1-flash-lite") {
+			summary.Label = ProviderLabel("gemini-3-1-flash-lite")
+		}
+		summaries = append(summaries, summary)
 	}
 	return summaries
 }
@@ -522,6 +533,7 @@ func Load(options Options) (Config, error) {
 			cfg.Reasoning.Providers[cfg.Reasoning.ActiveProvider] = entry
 		}
 	}
+	cfg.Reasoning.addGeminiSettingsProviders()
 	if options.Provider != "" {
 		cfg.Reasoning.ActiveProvider = options.Provider
 		cfg.Reasoning.ProviderOverride = true

@@ -189,6 +189,8 @@ export function createSettingsFeature({
   }
 
   function formatReasoningProvider(value) {
+    const label = state.bootstrap?.reasoningProviders?.find((entry) => entry.name === value)?.label;
+    if (label) return label;
     if (value === "codex-app-server") return "Codex App Server";
     if (value === "deterministic") return "Local deterministic";
     if (value === "ollama-nemotron") return "Ollama · Nemotron 3.5 Lightning";
