@@ -23,7 +23,7 @@ func xDailyNativeStartupFail(cause error, stage, condition string, broker *nativ
 			code := carrier.dailyFailureCode()
 			detail, hasDetail = nativePilotInitialCode(code)
 			if !hasDetail {
-				result.origin, _ = nativePilotSeedOrigin(code)
+				result.origin, result.enrollmentCleanup, _ = nativePilotSeedDetails(code)
 			}
 		}
 	}

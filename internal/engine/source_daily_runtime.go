@@ -315,6 +315,10 @@ func (d dailyController) queue(run domain.Run, payload map[string]any) error {
 				}
 				if detail := d.status().StartupDiagnostic; detail != nil {
 					e.logger.Printf(string(d.source)+"_daily_startup stage=%s condition=%s cause=%s broker_reason=%s %s", detail.Stage, detail.Condition, detail.Cause, detail.BrokerReason, detail.Origin)
+					if cleanup := detail.EnrollmentCleanup; cleanup != nil {
+						e.logger.Printf(string(d.source)+"_daily_enrollment_cleanup observer_attachment=%s runtime_disable=%s observer_detach=%s context_continuity=%s seed_guard=%s",
+							cleanup.ObserverAttachment, cleanup.RuntimeDisable, cleanup.ObserverDetach, cleanup.ContextContinuity, cleanup.SeedGuard)
+					}
 				}
 			}
 			if detail := d.status().CleanupDiagnostic; detail != nil {

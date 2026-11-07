@@ -13,7 +13,7 @@ export class ManualEnrollmentCapture {
   #scope;#send;#snapshot;#projectEvent;#now;#started;#last;
   #used=false;#state='idle';#failure=null;#candidate=null;#capture;
   #frame=null;#document=null;#mainContext=null;#observerContext=null;
-  #observer=null;#attachAttempted=false;#observerRuntime=false;#closing=false;#closePromise=null;#closeFailed=false;
+  #observer=null;#attachAttempted=false;#observerRuntime=false;#closing=false;#closePromise=null;#cleanupDiagnostic;
   #reload=false;#issuingReload=false;#navigations=new Set();#instrumentation=null;
   constructor({scope,send,snapshot,projectEvent,now=()=>performance.now()}={}){
     if(!exact(scope,scopeKeys)||!Number.isSafeInteger(scope.pid)||scope.pid<1||!scopeKeys.slice(1).every(k=>ref(scope[k]))||![send,snapshot,projectEvent,now].every(v=>typeof v==='function'))throw manualSeedFailure('frame_before','rejected');
@@ -161,17 +161,28 @@ export class ManualEnrollmentCapture {
     if(this.#state!=='handoff'||this.#candidate===null)throw this.#failure??manualSeedFailure('frame_after','rejected');
     this.#pinned();return true;
   }
+  cleanupDiagnostic(){return this.#cleanupDiagnostic;}
   close(){
     if(this.#closePromise)return this.#closePromise;
     this.#closePromise=(async()=>{
       const alreadyFailed=this.#failure!==null;
       this.#closing=true;
-      if(this.#attachAttempted&&!this.#observer)this.#closeFailed=true;
-      if(this.#observerRuntime){try{await this.#send('Runtime.disable',{},this.#observer);}catch{this.#closeFailed=true;}}
-      if(this.#observer){try{await this.#send('Target.detachFromTarget',{sessionId:this.#observer},undefined);}catch{this.#closeFailed=true;}}
-      if(!alreadyFailed&&this.#failure!==null)this.#closeFailed=true;
+      const detail={
+        observerAttachment:this.#observer?'verified':this.#attachAttempted?'uncertain':'not_needed',
+        runtimeDisable:'not_needed',observerDetach:'not_needed',contextContinuity:'not_needed',
+      };
+      if(this.#observerRuntime){
+        try{await this.#send('Runtime.disable',{},this.#observer);detail.runtimeDisable='verified';}
+        catch{detail.runtimeDisable='uncertain';}
+      }
+      if(this.#observer){
+        try{await this.#send('Target.detachFromTarget',{sessionId:this.#observer},undefined);detail.observerDetach='verified';}
+        catch{detail.observerDetach='uncertain';}
+      }
+      if(!alreadyFailed&&this.#attachAttempted)detail.contextContinuity=this.#failure===null?'verified':'uncertain';
       this.#candidate=null;this.#state='closed';
-      if(this.#closeFailed)throw manualSeedFailure('enrollment_cleanup','unavailable');
+      this.#cleanupDiagnostic=Object.freeze(detail);
+      if(Object.values(detail).includes('uncertain'))throw manualSeedFailure('enrollment_cleanup','unavailable');
       return true;
     })();return this.#closePromise;
   }

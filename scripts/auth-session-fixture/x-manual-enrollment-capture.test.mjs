@@ -6,7 +6,7 @@ import {projectCDPEvent,manualStartupStateReady} from './x-native-metadata-probe
 import {createRetainedManualSetup,manualSeedDiagnostic} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-retained-setup.mjs';
 import {MANUAL_TIMING} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-timing-policy.mjs';
 const ID='1908123456789012345';
-function fixture(fault){
+function fixture(fault,cleanupFault=fault){
   const scope={pid:1,profileId:'offline-profile',targetId:'offline-target',sessionId:'offline-main'};
   const observer='offline-observer',frame='offline-frame';
   const startup={...scope,earlyAttempted:false,qualificationAttempted:false,manualSeeded:false,gate:{observationStarted:false,loginVisible:true},shortFeasibility:{closed:false,contextId:'collector-context',sessionId:'collector-session'}};
@@ -70,10 +70,11 @@ function fixture(fault){
       return actor.project(method,fault==='evaluation'?{exceptionDetails:{text:'PRIVATE_BODY'}}:{result:{type:'object',value}});
     }
     if(method==='Runtime.disable'&&sessionId===scope.sessionId&&fault==='capture-cleanup')throw new Error('PRIVATE_DISABLE');
+    if(method==='Runtime.disable'&&sessionId===observer&&cleanupFault==='disable')throw new Error('PRIVATE_OBSERVER_DISABLE');
     if(method==='Target.detachFromTarget'){
       closed++;
-      if(fault==='detach')throw new Error('PRIVATE_DETACH');
-      if(fault==='cleanup-context-loss')emit('Runtime.executionContextDestroyed',{executionContextId:2},observer);
+      if(cleanupFault==='detach')throw new Error('PRIVATE_DETACH');
+      if(cleanupFault==='cleanup-context-loss')emit('Runtime.executionContextDestroyed',{executionContextId:2},observer);
     }
     return actor.project(method,{});
   };
@@ -83,8 +84,8 @@ function fixture(fault){
   }});
   return {actor,scope,startup,observer,frame,emit,operations,context,counts:()=>({evaluations,reloads,closed}),loseOwner:()=>{alive=false;}};
 }
-function seedFixture(fault,event){
-  const f=fixture(fault);let reads=0,writes=0;
+function seedFixture(fault,event,cleanupFault){
+  const f=fixture(fault,cleanupFault);let reads=0,writes=0;
   const run=createRetainedManualSetup({enabled:true,transferAllowed:true,now:()=>0,
     ownership:async()=>{if(reads)await f.actor.check();return{readerPID:1,readerProfile:'r',collectorPID:2,collectorProfile:'c'};},
     readEnrollment:()=>f.actor.run(),
@@ -138,8 +139,26 @@ for(const fault of ['detach','cleanup-context-loss']){
     const f=seedFixture(fault);
     await assert.rejects(f.run(),error=>{assert.deepEqual(manualSeedDiagnostic(error),{phase:'enrollment_cleanup',reason:'unavailable',write:'acknowledged'});return true;});
     assert.deepEqual(f.transfer(),{reads:1,writes:1});await assert.rejects(f.actor.close());
+    assert.deepEqual(f.actor.cleanupDiagnostic(),{
+      observerAttachment:'verified',runtimeDisable:'verified',
+      observerDetach:fault==='detach'?'uncertain':'verified',
+      contextContinuity:fault==='cleanup-context-loss'?'uncertain':'verified',
+    });
   });
 }
+test('pre-seed document loss keeps its own cause when observer cleanup also fails',async()=>{
+  const f=seedFixture('context-during-read',undefined,'disable');
+  await assert.rejects(f.run(),error=>{
+    assert.deepEqual(manualSeedDiagnostic(error),{phase:'frame_after',reason:'document_changed',write:'not_attempted'});
+    return true;
+  });
+  assert.deepEqual(f.transfer(),{reads:0,writes:0});
+  await assert.rejects(f.actor.close());
+  assert.deepEqual(f.actor.cleanupDiagnostic(),{
+    observerAttachment:'verified',runtimeDisable:'uncertain',observerDetach:'verified',contextContinuity:'not_needed',
+  });
+  assert.equal(f.counts().closed,1);
+});
 test('foreign and late events cannot create a candidate or broaden exact enrollment commands',async()=>{
   const f=fixture();
   assert.equal(f.actor.observe({method:'Runtime.executionContextCreated',sessionId:'foreign',params:{context:{id:2}}}),false);

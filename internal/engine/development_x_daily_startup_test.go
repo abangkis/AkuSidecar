@@ -75,6 +75,11 @@ func TestXDailyNativeStartupSeedOriginIsClosed(t *testing.T) {
 		{"manual_seed_owner_after_ownership_changed_acknowledged", "seed_phase=owner_after seed_reason=ownership_changed seed_write=acknowledged"},
 		{"manual_seed_private_secret", ""},
 		{"manual_seed_seed_write_PRIVATE_unknown", ""},
+		{"manual_seed_v3_12100_frame_after_document_changed_not_attempted", "seed_phase=frame_after seed_reason=document_changed seed_write=not_attempted"},
+		{"manual_seed_v3_12900_frame_after_document_changed_not_attempted", ""},
+		{"manual_seed_v3_1210_frame_after_document_changed_not_attempted", ""},
+		{"manual_seed_v3_12100_frame_after_PRIVATE_not_attempted", ""},
+		{"manual_seed_v3_12100_v3_12100_frame_after_document_changed_not_attempted", ""},
 		{"manual_seed_v2_09_3_0_v6_0_8_7_0_19_0_0_0_0_0_8_6_20_1_3_2_1_4", ""},
 		{"manual_seed_v2_9_3_0_v6_0_8_7_0_19_0_0_0_0_0_8_6_20_1_3_2_1_4_extra", ""},
 		{strings.Repeat("private", nativePilotSeedCodeMax), ""},
@@ -98,7 +103,7 @@ func TestXDailyNativeStartupSeedOriginIsClosed(t *testing.T) {
 }
 
 func TestXDailyNativeStartupSeedStatusPreservesFirstCauseAndCleanup(t *testing.T) {
-	private := syntheticDailyCodeError("manual_seed_seed_write_unavailable_unknown")
+	private := syntheticDailyCodeError("manual_seed_v3_12100_frame_after_document_changed_not_attempted")
 	broker := &nativePilotBroker{initial: nativePilotInitialDetail{role: "collector", phase: "cleanup", reason: "cleanup_unverified"}}
 	first := xDailyNativeStartupFail(private, "seed_rpc", "rpc", broker, nativePilotDiagnostic{})
 	e := &Engine{}
@@ -107,16 +112,23 @@ func TestXDailyNativeStartupSeedStatusPreservesFirstCauseAndCleanup(t *testing.T
 	e.rememberXDailyFailure(errors.New("PRIVATE_LATER_FAILURE"), "cleanup")
 	e.rememberXDailyCleanup(xDailyCleanupFail(errors.New("PRIVATE_CLEANUP"), "batch_end", "unverified"))
 	status := e.XCaptureStatus()
-	if status.StartupDiagnostic == nil || status.StartupDiagnostic.Origin != "seed_phase=seed_write seed_reason=unavailable seed_write=unknown" ||
+	if status.StartupDiagnostic == nil || status.StartupDiagnostic.Origin != "seed_phase=frame_after seed_reason=document_changed seed_write=not_attempted" ||
 		status.FailureCode != "daily_startup_seed_rpc_rpc_unavailable" || status.FailurePhase != "startup" ||
 		status.CleanupDiagnostic == nil || status.CleanupDiagnostic.Stage != "batch_end" || dailyTransientClass(first) != "" {
 		t.Fatal("seed status lost its first cause or mixed cleanup and retry authority")
+	}
+	want := XDailyEnrollmentCleanupDiagnostic{
+		ObserverAttachment: "verified", RuntimeDisable: "uncertain", ObserverDetach: "verified",
+		ContextContinuity: "not_needed", SeedGuard: "not_needed",
+	}
+	if got := status.StartupDiagnostic.EnrollmentCleanup; got == nil || *got != want {
+		t.Fatal("seed cleanup steps were lost")
 	}
 	if xDailyNativeStartupFail(fmt.Errorf("PRIVATE_CLEANUP: %w", first), "runtime", "runtime", nil, nativePilotDiagnostic{}) != first {
 		t.Fatal("later wrapper replaced seed failure")
 	}
 	raw, err := json.Marshal(status)
-	if err != nil || strings.Contains(string(raw), "PRIVATE") {
+	if err != nil || strings.Contains(string(raw), "PRIVATE") || !strings.Contains(string(raw), `"enrollmentCleanup":{"observerAttachment":"verified","runtimeDisable":"uncertain","observerDetach":"verified","contextContinuity":"not_needed","seedGuard":"not_needed"}`) {
 		t.Fatal("private cause escaped seed status")
 	}
 }

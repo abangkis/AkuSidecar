@@ -8,11 +8,22 @@ import (
 // XDailyStartupDiagnostic contains only application-owned catalog values. It
 // cannot contain account IDs, cookies, paths, worker replies or exception text.
 type XDailyStartupDiagnostic struct {
-	Stage        string `json:"stage"`
-	Condition    string `json:"condition"`
-	Cause        string `json:"cause"`
-	Origin       string `json:"origin,omitempty"`
-	BrokerReason string `json:"brokerReason,omitempty"`
+	Stage             string                             `json:"stage"`
+	Condition         string                             `json:"condition"`
+	Cause             string                             `json:"cause"`
+	Origin            string                             `json:"origin,omitempty"`
+	BrokerReason      string                             `json:"brokerReason,omitempty"`
+	EnrollmentCleanup *XDailyEnrollmentCleanupDiagnostic `json:"enrollmentCleanup,omitempty"`
+}
+
+// Enrollment cleanup is recorded separately from the first seed failure and
+// from the later batch-wide resource cleanup.
+type XDailyEnrollmentCleanupDiagnostic struct {
+	ObserverAttachment string `json:"observerAttachment"`
+	RuntimeDisable     string `json:"runtimeDisable"`
+	ObserverDetach     string `json:"observerDetach"`
+	ContextContinuity  string `json:"contextContinuity"`
+	SeedGuard          string `json:"seedGuard"`
 }
 
 var xDailyStartupStages = []string{
@@ -40,7 +51,7 @@ func xDailyStartupMember(value string, catalog []string, fallback string) string
 
 func (d XDailyStartupDiagnostic) closed() XDailyStartupDiagnostic {
 	// Only the tagged native adapter can supply validated origin metadata.
-	d.Origin, d.BrokerReason = "", ""
+	d.Origin, d.BrokerReason, d.EnrollmentCleanup = "", "", nil
 	d.Stage = xDailyStartupMember(d.Stage, xDailyStartupStages, "admission")
 	d.Condition = xDailyStartupMember(d.Condition, xDailyStartupConditions, "unavailable")
 	d.Cause = xDailyStartupMember(d.Cause, []string{"unavailable", "canceled", "deadline", "rejected"}, "unavailable")
@@ -48,10 +59,11 @@ func (d XDailyStartupDiagnostic) closed() XDailyStartupDiagnostic {
 }
 
 type xDailyStartupError struct {
-	detail       XDailyStartupDiagnostic
-	cause        error  // Private operational cause; never formatted or serialized.
-	origin       string // Produced only from the existing closed native catalog.
-	brokerReason string
+	detail            XDailyStartupDiagnostic
+	cause             error  // Private operational cause; never formatted or serialized.
+	origin            string // Produced only from the existing closed native catalog.
+	brokerReason      string
+	enrollmentCleanup *XDailyEnrollmentCleanupDiagnostic
 }
 
 func (e *xDailyStartupError) Error() string {
@@ -107,5 +119,9 @@ func xDailyStartupDetail(err error) *XDailyStartupDiagnostic {
 	}
 	d := known.detail.closed()
 	d.Origin, d.BrokerReason = known.origin, known.brokerReason
+	if known.enrollmentCleanup != nil {
+		cleanup := *known.enrollmentCleanup
+		d.EnrollmentCleanup = &cleanup
+	}
 	return &d
 }

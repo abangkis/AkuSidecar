@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ManualStartupCookieGuard} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-cookie-guard.mjs';
-import {createRetainedManualSetup,manualSeedFailure,manualSeedDiagnostic,manualSeedDiagnosticCode,MANUAL_SEED_CODE_MAX_BYTES} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-retained-setup.mjs';
+import {createRetainedManualSetup,manualSeedFailure,manualSeedDiagnostic,manualSeedDiagnosticCode,MANUAL_SEED_CODE_MAX_BYTES,recordManualSeedEnrollmentCleanup} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-retained-setup.mjs';
 import vm from 'node:vm';
 import {createXManualOwnerPort} from '../../internal/collection/headless/worker/native-pilot/shared/x-native-manual-owner-port.mjs';
 import {startupRootControls} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-root-controls.mjs';
@@ -140,15 +140,16 @@ async function guardedSeedScenario(role,fault){
     async check(){checks++;if(fault==='before-export'&&checks===1||fault==='before-write'&&checks===3)poison();}
     assertCurrent(){if(fault==='pre-dispatch')poison();}
     async close(){closed++;if(fault==='cleanup')poison();}
+    cleanupDiagnostic(){return {observerAttachment:'verified',runtimeDisable:'verified',observerDetach:'verified',contextContinuity:'verified'};}
   }
   try{
     for(const name of names)process.env[name]='1';
     const setup=options=>{const run=createRetainedManualSetup(options);return async()=>{const result=await run();if(fault==='after-setup')poison();return result;};};
-    const seed=new Function('requireOwner','qualificationMode','driverMode','retainedQAScope','createRetainedManualSetup','ManualEnrollmentCapture','startManualCookieObservation','send','exactKeys','manualSeedFailure','childExited','cdpFailure','projectCDPEvent','qaCookieRequest','startupFailure',seedSource+';return seedRetainedManualPilot;')(
-      ()=>current,()=>true,'retained_source_qualification',{reuse:true},setup,Enrollment,()=>harness.start(),transport,()=>{},manualSeedFailure,false,null,()=>{},()=>({urls:['https://api.x.com/1.1/account/settings.json']}),startupFailure);
+    const seed=new Function('requireOwner','qualificationMode','driverMode','retainedQAScope','createRetainedManualSetup','ManualEnrollmentCapture','startManualCookieObservation','send','exactKeys','manualSeedFailure','childExited','cdpFailure','projectCDPEvent','qaCookieRequest','startupFailure','recordManualSeedEnrollmentCleanup',seedSource+';return seedRetainedManualPilot;')(
+      ()=>current,()=>true,'retained_source_qualification',{reuse:true},setup,Enrollment,()=>harness.start(),transport,()=>{},manualSeedFailure,false,null,()=>{},()=>({urls:['https://api.x.com/1.1/account/settings.json']}),startupFailure,recordManualSeedEnrollmentCleanup);
     let error,result;
     try{result=await seed({id:1,op:'manual_seed_bootstrap',owner:1});}catch(e){error=e;}
-    return{error,result,reads,writes,enrollments,closed,methods,diagnostic:manualSeedDiagnostic(error),code:manualSeedDiagnosticCode(error),first:current.manualCookieDiagnostics?.current(),seeded:current.manualSeeded};
+    return{error,result,reads,writes,enrollments,closed,methods,diagnostic:manualSeedDiagnostic(error),code:manualSeedDiagnosticCode(error),dailyCode:manualSeedDiagnosticCode(error,true),first:current.manualCookieDiagnostics?.current(),seeded:current.manualSeeded};
   }finally{names.forEach((key,i)=>{if(prior[i]===undefined)delete process.env[key];else process.env[key]=prior[i];});}
 }
 
@@ -182,6 +183,7 @@ for(const role of ['reader','collector'])for(const fault of ['cache-ack','cache-
       assert.equal(r.first.trace.guardEpoch,['ack-batch','cleanup','after-setup'].includes(fault)?'post_seed':'before_seed');
       assert.match(r.code,/^manual_seed_v2_/);assert.ok(Buffer.byteLength(r.code)<=MANUAL_SEED_CODE_MAX_BYTES);
     }
+    if(fault==='cleanup'||fault==='after-setup')assert.match(r.dailyCode,/^manual_seed_v3_11112_v2_/);
     assert.equal(JSON.stringify({code:r.code,first:r.first}).includes('PRIVATE'),false);
   });
 }
@@ -457,9 +459,10 @@ test('actual seed acknowledgment dispatch starts both baselines before same-batc
         observe(){}
         async run(){assert.ok(methods.includes('reader:Network.enable'));assert.ok(methods.includes('collector:Network.enable'));assert.equal(methods.some(v=>v.endsWith('Page.navigate')),false);request('preseed');emit('preseed','ct0=x; Path=/');request('pending');return'123456';}
         async check(){} assertCurrent(){} async close(){if(when==='cleanup')emit('pending','ct0=; Path=/');}
+        cleanupDiagnostic(){return {observerAttachment:'verified',runtimeDisable:'verified',observerDetach:'verified',contextContinuity:'verified'};}
       }
-      const seed=new Function('requireOwner','qualificationMode','driverMode','retainedQAScope','createRetainedManualSetup','ManualEnrollmentCapture','startManualCookieObservation','send','exactKeys','manualSeedFailure','childExited','cdpFailure','projectCDPEvent','qaCookieRequest','startupFailure',seedSource+';return seedRetainedManualPilot;')(
-        ()=>current,()=>true,'retained_source_qualification',{reuse:true},createRetainedManualSetup,Enrollment,()=>harness.start(),transport,()=>{},manualSeedFailure,false,null,()=>{},()=>({urls:['https://api.x.com/1.1/account/settings.json']}),startupFailure);
+      const seed=new Function('requireOwner','qualificationMode','driverMode','retainedQAScope','createRetainedManualSetup','ManualEnrollmentCapture','startManualCookieObservation','send','exactKeys','manualSeedFailure','childExited','cdpFailure','projectCDPEvent','qaCookieRequest','startupFailure','recordManualSeedEnrollmentCleanup',seedSource+';return seedRetainedManualPilot;')(
+        ()=>current,()=>true,'retained_source_qualification',{reuse:true},createRetainedManualSetup,Enrollment,()=>harness.start(),transport,()=>{},manualSeedFailure,false,null,()=>{},()=>({urls:['https://api.x.com/1.1/account/settings.json']}),startupFailure,recordManualSeedEnrollmentCleanup);
       if(when==='none')await seed({id:1,op:'manual_seed_bootstrap',owner:1});
       else await assert.rejects(seed({id:1,op:'manual_seed_bootstrap',owner:1}),error=>manualSeedDiagnostic(error)?.write==='acknowledged');
       assert.equal(seedCalls,1);assert.equal(methods.some(v=>v.endsWith('Network.disable')),false);

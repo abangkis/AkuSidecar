@@ -35,7 +35,7 @@ import {QA_LIVE_SELF_EXPRESSION} from './shared/x-qa-live-self.mjs';
 import {qaLiveSelfCommand} from './shared/x-qa-live-self-transport.mjs';
 import {createManualStartupOwner} from './shared/x-manual-startup-owner.mjs';
 import {createXManualOwnerPort, manualOwnerOperation} from './shared/x-native-manual-owner-port.mjs';
-import {createRetainedManualSetup, manualSeedFailure, manualSeedDiagnosticCode} from './shared/x-manual-retained-setup.mjs';
+import {createRetainedManualSetup, manualSeedFailure, manualSeedDiagnosticCode, recordManualSeedEnrollmentCleanup} from './shared/x-manual-retained-setup.mjs';
 import {ManualEnrollmentCapture} from './shared/x-manual-enrollment-capture.mjs';
 import {ManualStartupObservation} from './shared/x-manual-startup-cookie-guard.mjs';
 import {startupFailure, startupFailureLatch, requireBoundStartup, startupInspectionFailure, startupPrepareFailure, startupDiagnostic} from './shared/x-manual-startup-diagnostic.mjs';
@@ -55,8 +55,8 @@ const MAX_NETWORK_EVENTS = 4_096;
 const MAX_TOTAL_NETWORK_BUFFER_BYTES = 1_000_000;
 const MAX_RESOURCE_NETWORK_BUFFER_BYTES = 100_000;
 
-export function manualSeedRPCCode(error){
-  return manualSeedDiagnosticCode(error)??'manual_seed_preconditions_unavailable_unknown';
+export function manualSeedRPCCode(error,includeEnrollmentCleanup=false){
+  return manualSeedDiagnosticCode(error,includeEnrollmentCleanup)??'manual_seed_preconditions_unavailable_unknown';
 }
 
 // Own the command binding across await: the ingress parser clears its local
@@ -999,6 +999,12 @@ export function createNativeOwnerRuntime(){
           startupFailure(role,'bound_finish',guard.failureReason(),false,undefined,{firstCause:reason,...guard.trace()}),role,'bound_finish',guard.failureReason());
       }
     };
+    let seedGuardCleanup='not_needed';
+    const verifyCleanupGuards=()=>{
+      seedGuardCleanup='uncertain';
+      assertGuards();
+      seedGuardCleanup='verified';
+    };
     current.manualSetup=createRetainedManualSetup({enabled:true,transferAllowed:true,
       ownership:async()=>{
         if(current.manualEnrollment){await current.manualEnrollment.check();assertGuards();}
@@ -1039,13 +1045,19 @@ export function createNativeOwnerRuntime(){
         });}catch(error){assertGuards();throw error;}
         assertGuards();return true;
       },
-      cleanupEnrollment:async()=>{if(current.manualEnrollment){await current.manualEnrollment.close();assertGuards();}},
+      cleanupEnrollment:async()=>{if(current.manualEnrollment){await current.manualEnrollment.close();verifyCleanupGuards();}},
     });
     // homeReady retains the earlier fixed UI check's meaning; the enrollment
     // reload does not assert a new UI check or grant identity/login authority.
-    const result=await current.manualSetup();
-    try{assertGuards();}catch(error){throw manualSeedFailure('enrollment_cleanup','rejected','acknowledged',error);}
-    current.manualSeeded=true;return result;
+    try{
+      const result=await current.manualSetup();
+      try{verifyCleanupGuards();}catch(error){throw manualSeedFailure('enrollment_cleanup','rejected','acknowledged',error);}
+      current.manualSeeded=true;return result;
+    }catch(error){
+      const cleanup=current.manualEnrollment?.cleanupDiagnostic();
+      if(cleanup||!current.manualEnrollment)recordManualSeedEnrollmentCleanup(error,cleanup,seedGuardCleanup);
+      throw error;
+    }
   }
 
   async function openRetainedManualReader(message){

@@ -10,6 +10,9 @@ export const MANUAL_SEED_WRITES=Object.freeze(['not_attempted','unknown','acknow
 export const MANUAL_SEED_CODE_MAX_BYTES=160;
 const diagnostics=new WeakMap();
 const initialFailures=new WeakMap();
+const enrollmentCleanups=new WeakMap();
+// Daily wire v3 uses one index per step, in the order below, then a v1/v2 seed tail.
+const cleanupOutcomes=['not_needed','verified','uncertain'];
 export function manualSeedFailure(phase,reason,write='not_attempted',cause){
   if(!MANUAL_SEED_PHASES.includes(phase)||!MANUAL_SEED_REASONS.includes(reason)||!MANUAL_SEED_WRITES.includes(write)){
     phase='preconditions';reason='unavailable';write='unknown';
@@ -22,14 +25,26 @@ export function manualSeedFailure(phase,reason,write='not_attempted',cause){
   return error;
 }
 export function manualSeedDiagnostic(error){return error!==null&&(typeof error==='object'||typeof error==='function')?diagnostics.get(error)??null:null;}
-export function manualSeedDiagnosticCode(error){
+export function recordManualSeedEnrollmentCleanup(error,{observerAttachment='not_needed',runtimeDisable='not_needed',observerDetach='not_needed',contextContinuity='not_needed'}={},seedGuard='not_needed'){
+  if(!manualSeedDiagnostic(error))return;
+  const indices=[observerAttachment,runtimeDisable,observerDetach,contextContinuity,seedGuard].map(outcome=>cleanupOutcomes.indexOf(outcome));
+  if(indices.every(index=>index>=0))enrollmentCleanups.set(error,indices.join(''));
+}
+export function manualSeedDiagnosticCode(error,includeEnrollmentCleanup=false){
   const value=manualSeedDiagnostic(error);
-  const initial=value?initialFailures.get(error):null;
+  if(!value)return null;
+  const initial=initialFailures.get(error);
+  let tail=`${value.phase}_${value.reason}_${value.write}`;
   if(initial&&startupDiagnostic(initial)?.trace){
-    const tail=startupRPCCode(initial).slice('manual_initial_'.length);
-    return `manual_seed_v2_${MANUAL_SEED_PHASES.indexOf(value.phase)}_${MANUAL_SEED_REASONS.indexOf(value.reason)}_${MANUAL_SEED_WRITES.indexOf(value.write)}_${tail}`;
+    const trace=startupRPCCode(initial).slice('manual_initial_'.length);
+    tail=`v2_${MANUAL_SEED_PHASES.indexOf(value.phase)}_${MANUAL_SEED_REASONS.indexOf(value.reason)}_${MANUAL_SEED_WRITES.indexOf(value.write)}_${trace}`;
   }
-  return value?`manual_seed_${value.phase}_${value.reason}_${value.write}`:null;
+  const cleanup=includeEnrollmentCleanup?enrollmentCleanups.get(error):null;
+  if(cleanup){
+    const code=`manual_seed_v3_${cleanup}_${tail}`;
+    if(Buffer.byteLength(code)<=MANUAL_SEED_CODE_MAX_BYTES)return code;
+  }
+  return `manual_seed_${tail}`;
 }
 const keys=['readerPID','readerProfile','collectorPID','collectorProfile'];
 function checkedOwnership(value){
@@ -75,7 +90,11 @@ export function createRetainedManualSetup({enabled=false,transferAllowed=false,o
       throw firstFailure;
     }finally{
       selected=null;
-      try{await cleanupEnrollment();}catch(error){throw manualSeedFailure('enrollment_cleanup','unavailable',write,firstFailure??error);}
+      try{await cleanupEnrollment();}catch(error){
+        // The owner reports cleanup independently. Keep the first seed error
+        // if both failed, while still rejecting a cleanup-only failure.
+        if(!firstFailure)throw manualSeedFailure('enrollment_cleanup','unavailable',write,error);
+      }
       if(successful){phase='enrollment_cleanup';tick();}
     }
   };

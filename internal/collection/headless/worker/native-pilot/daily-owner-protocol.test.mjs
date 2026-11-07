@@ -4,6 +4,8 @@ import {PassThrough} from 'node:stream';
 import {serveDailyOwnerPipe,DAILY_OWNER_SCHEMA} from './daily-owner-protocol.mjs';
 import {applicationPostOperation} from './shared/x-application-reader-post.mjs';
 import {manualCaptureFailure} from './shared/x-native-manual-capture.mjs';
+import {manualSeedFailure,recordManualSeedEnrollmentCleanup} from './shared/x-manual-retained-setup.mjs';
+import {ownerErrorReply} from './owner-protocol.mjs';
 
 async function fixture(t,overrides={}){
   const input=new PassThrough(),output=new PassThrough(),events=[],waiting=[];let buffer='',id=0;
@@ -35,6 +37,17 @@ test('overlapping batch and seed replay fail closed',async t=>{
  assert.equal((await f.request('daily_batch_end',{generation:1})).ok,true);
  assert.equal((await f.request('daily_batch_begin',{generation:2,collectorProfile:'c2'})).ok,false);
  assert.deepEqual(f.calls.seed,[1]);
+});
+test('daily seed failure reports cleanup steps without granting retry or changing the manual wire',async t=>{
+ const failure=manualSeedFailure('frame_after','document_changed');
+ recordManualSeedEnrollmentCleanup(failure,{observerAttachment:'verified',runtimeDisable:'uncertain',observerDetach:'verified'});
+ const f=await fixture(t,{seed:async()=>{throw failure;}});
+ await f.request('daily_batch_begin',{generation:1,collectorProfile:'c'});
+ assert.deepEqual(await f.request('daily_batch_seed',{generation:1,owner:2}),
+   {id:3,ok:false,code:'manual_seed_v3_12100_frame_after_document_changed_not_attempted'});
+ assert.equal(ownerErrorReply({id:3,op:'native_owner_seed'},failure).code,'manual_seed_frame_after_document_changed_not_attempted');
+ assert.equal((await f.request('daily_batch_end',{generation:1})).result.retryReady,undefined);
+ assert.equal((await f.request('daily_batch_begin',{generation:2,collectorProfile:'next'})).ok,false);
 });
 test('stale generation cannot cancel or execute against next collector',async t=>{
  const f=await fixture(t);for(const generation of [1,2]){await f.request('daily_batch_begin',{generation,collectorProfile:'c'+generation});await f.request('daily_batch_seed',{generation,owner:generation+1});if(generation===1)await f.request('daily_batch_end',{generation});}

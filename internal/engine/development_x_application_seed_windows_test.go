@@ -145,10 +145,14 @@ func TestXApplicationSeedNodeDiagnosticLength(t *testing.T) {
 		project = filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
 	}
 	const source = `import {STARTUP_TRACE,STARTUP_AGES,startupFailure} from './internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
-import {manualSeedFailure,manualSeedDiagnosticCode,MANUAL_SEED_CODE_MAX_BYTES} from './internal/collection/headless/worker/native-pilot/shared/x-manual-retained-setup.mjs';
+import {manualSeedFailure,manualSeedDiagnosticCode,MANUAL_SEED_CODE_MAX_BYTES,recordManualSeedEnrollmentCleanup} from './internal/collection/headless/worker/native-pilot/shared/x-manual-retained-setup.mjs';
 const traces=STARTUP_TRACE.firstCause.map(firstCause=>({firstCause}));
 traces.push({...Object.fromEntries(Object.entries(STARTUP_TRACE).map(([key,values])=>[key,values.at(-1)])),...Object.fromEntries(STARTUP_AGES.map(key=>[key,60000]))});
-const codes=traces.map(trace=>manualSeedDiagnosticCode(manualSeedFailure('owner_after','clock_regressed','acknowledged',startupFailure('unknown','guard_bind','time_invalid',true,undefined,trace))));
+const codes=traces.map(trace=>{
+  const error=manualSeedFailure('owner_after','clock_regressed','acknowledged',startupFailure('unknown','guard_bind','time_invalid',true,undefined,trace));
+  recordManualSeedEnrollmentCleanup(error,{observerAttachment:'verified',runtimeDisable:'uncertain',observerDetach:'verified'});
+  return manualSeedDiagnosticCode(error,true);
+});
 console.log(JSON.stringify({maxBytes:MANUAL_SEED_CODE_MAX_BYTES,codes}));`
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -167,8 +171,8 @@ console.log(JSON.stringify({maxBytes:MANUAL_SEED_CODE_MAX_BYTES,codes}));`
 		t.Fatal("Node-Go seed length contract disagrees")
 	}
 	for _, code := range payload.Codes {
-		if len(code) <= 80 || len(code) > nativePilotSeedCodeMax {
-			t.Fatal("V10 seed did not exercise the expanded byte bound")
+		if len(code) <= 80 || len(code) > nativePilotSeedCodeMax || !strings.HasPrefix(code, "manual_seed_v3_12100_v2_") {
+			t.Fatal("V3 seed with V10 trace did not fit the byte bound")
 		}
 		if got, ok := nativePilotSeedCode(code); !ok || got != code {
 			t.Fatal("valid Node seed diagnostic rejected")
@@ -176,7 +180,8 @@ console.log(JSON.stringify({maxBytes:MANUAL_SEED_CODE_MAX_BYTES,codes}));`
 		failure := xDailyNativeStartupFail(&xApplicationRPCError{code: code}, "seed_rpc", "rpc", nil, nativePilotDiagnostic{})
 		projected := xDailyStartupDetail(failure)
 		if projected == nil || !strings.HasPrefix(projected.Origin, "seed_phase=owner_after seed_reason=clock_regressed seed_write=acknowledged initial=(role=unknown phase=guard_bind reason=time_invalid kind=peer ") ||
-			projected.Stage != "seed_rpc" || projected.Condition != "rpc" || projected.Cause != "unavailable" {
+			projected.Stage != "seed_rpc" || projected.Condition != "rpc" || projected.Cause != "unavailable" ||
+			projected.EnrollmentCleanup == nil || projected.EnrollmentCleanup.RuntimeDisable != "uncertain" {
 			t.Fatal("Node seed diagnostic lost its closed metadata in daily status")
 		}
 	}

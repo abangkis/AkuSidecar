@@ -33,6 +33,7 @@ export function ownerOperation(value){
 }
 export function ownerErrorReply(message,error){
   if(message.op==='manual_capture')return {id:message.id,ok:false,code:manualCaptureRPCCode(error),...(manualCaptureRPCDiagnostic(error)?{diagnostic:manualCaptureRPCDiagnostic(error)}:{})};
+  if(message.op==='daily_batch_seed')return {id:message.id,ok:false,code:manualSeedRPCCode(error,true)};
   const code=message.op==='native_owner_seed'?manualSeedRPCCode(error):message.op.startsWith('manual_')?startupRPCCode(error):'application_owner_failed';
   return{id:message.id,ok:false,code};
 }
