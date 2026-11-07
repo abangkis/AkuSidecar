@@ -14,6 +14,8 @@ export function sourceFreshnessContractFor(assets, source) {
   const context = createContext({ URL });
   let result = disabled();
   try {
+    const feedRoutes = assets.find(entry => entry.relative === 'AkuBridge/source-feed-routes.js');
+    if (feedRoutes) runInContext(feedRoutes.content, context, { timeout: 1000, filename: feedRoutes.relative });
     for (const relative of ['AkuBridge/capture-primitives.js', 'AkuBridge/source-adapter-runtime.js',
       `AkuBridge/adapters/${source}-adapter.js`]) {
       const asset = assets.find(entry => entry.relative === relative);

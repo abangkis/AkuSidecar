@@ -46,6 +46,16 @@ export async function sourceAssets(bridgePath, source) {
     { relative: 'AkuBridge/capture-primitives.js', path: resolve(bridge, 'capture-primitives.js'), execute: true },
     { relative: 'AkuBridge/source-adapter-runtime.js', path: resolve(bridge, 'source-adapter-runtime.js'), execute: true },
   ];
+  if (source === 'linkedin') {
+    const routePolicy = resolve(bridge, 'source-feed-routes.js');
+    try {
+      await stat(routePolicy);
+      shared.push({ relative: 'AkuBridge/source-feed-routes.js', path: routePolicy, execute: true });
+    } catch (error) {
+      // An older Bridge still supplies its own canonical-only route matcher.
+      if (error?.code !== 'ENOENT') throw error;
+    }
+  }
   const selected = source === 'x'
     ? [
         { relative: 'AkuBridge/x-response-evidence-adapter.js', path: resolve(bridge, 'x-response-evidence-adapter.js'), execute: false, newDocument: true },

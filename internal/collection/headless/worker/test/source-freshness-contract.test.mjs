@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {sourceFreshnessContractFor} from '../source-freshness-contract.mjs';
 
 const sources=['x','linkedin','instagram','facebook'];
-const assets=await Promise.all(['capture-primitives.js','source-adapter-runtime.js',...sources.map(source=>`adapters/${source}-adapter.js`)].map(async name=>({
+const assets=await Promise.all(['capture-primitives.js','source-adapter-runtime.js','source-feed-routes.js',...sources.map(source=>`adapters/${source}-adapter.js`)].map(async name=>({
   relative:'AkuBridge/'+name,content:await readFile(new URL('../../../../../../AkuBridge/'+name,import.meta.url),'utf8')})));
 
 test('X source contract uses actual adapter route and primary identity rules',()=>{
@@ -24,13 +24,15 @@ test('X source contract uses actual adapter route and primary identity rules',()
     {id:123,permalink:'https://x.com/a/status/123'}])assert.equal(contract.primaryIdentity(post),null);
 });
 
-test('LinkedIn source contract requires its canonical feed route',()=>{
+test('LinkedIn source contract accepts the catalog feed and managed alias',()=>{
   const contract=sourceFreshnessContractFor(assets,'linkedin');
   assert.equal(contract.enabled,true);
   assert.equal(contract.version,'linkedin-headless-freshness-v1');
   assert.equal(contract.matchesFeedURL('https://www.linkedin.com/feed/'),true);
   assert.equal(contract.matchesFeedURL('https://www.linkedin.com/feed/?trk=feed'),true);
   assert.equal(contract.matchesFeedURL('https://www.linkedin.com/feed/#top'),true);
+  for(const url of ['https://www.linkedin.com/feed/foryou','https://www.linkedin.com/feed/foryou/',
+    'https://www.linkedin.com/feed/foryou/?trk=feed#top']) assert.equal(contract.matchesFeedURL(url),true,url);
   for(const url of [
     'https://www.linkedin.com/feed',
     'http://www.linkedin.com/feed/',
@@ -38,6 +40,9 @@ test('LinkedIn source contract requires its canonical feed route',()=>{
     'https://www.linkedin.com/in/person/',
     'https://www.linkedin.com/feed/update/urn:li:activity:123456789/',
     'https://www.linkedin.com/feed/../feed/',
+    'https://www.linkedin.com/feed/foryou/extra',
+    'https://www.linkedin.com/feed/foryou-other/',
+    'https://www.linkedin.com/feed/%66oryou/',
     'https://linkedin.com/feed/',
     'https://evil.test/feed/',
     'https://www.linkedin.com.evil.test/feed/',
@@ -93,6 +98,8 @@ test('missing, malformed or unknown adapter capabilities never enable recovery',
   assert.equal(sourceFreshnessContractFor(broken,'x').enabled,false);
   const brokenLinkedIn=assets.map(asset=>asset.relative==='AkuBridge/adapters/linkedin-adapter.js'?{...asset,content:'throw new Error("invalid adapter");'}:asset);
   assert.equal(sourceFreshnessContractFor(brokenLinkedIn,'linkedin').enabled,false);
+  const missingRoutes=assets.filter(asset=>asset.relative!=='AkuBridge/source-feed-routes.js');
+  assert.equal(sourceFreshnessContractFor(missingRoutes,'linkedin').matchesFeedURL('https://www.linkedin.com/feed/'),false);
   assert.equal(sourceFreshnessContractFor(assets,'x'),sourceFreshnessContractFor(assets,'x'));
   assert.equal(sourceFreshnessContractFor(assets,'linkedin'),sourceFreshnessContractFor(assets,'linkedin'));
 });

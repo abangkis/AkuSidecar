@@ -5,7 +5,7 @@ import {recoverHeadlessFreshness} from '../headless-freshness.mjs';
 import {sourceFreshnessContractFor} from '../source-freshness-contract.mjs';
 
 const feedUrl='https://www.linkedin.com/feed/?trk=home';
-const assets=await Promise.all(['capture-primitives.js','source-adapter-runtime.js','adapters/linkedin-adapter.js'].map(async name=>({
+const assets=await Promise.all(['capture-primitives.js','source-adapter-runtime.js','source-feed-routes.js','adapters/linkedin-adapter.js'].map(async name=>({
   relative:`AkuBridge/${name}`,
   content:await readFile(new URL(`../../../../../../AkuBridge/${name}`,import.meta.url),'utf8'),
 })));

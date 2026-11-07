@@ -11,10 +11,15 @@ const bridge=fileURLToPath(new URL('../../../../../../AkuBridge/',import.meta.ur
 const runtime=await readFile(new URL('../../../../../../AkuBridge/source-freshness-runtime.js',import.meta.url),'utf8');
 const adapterAssets=await Promise.all(['capture-primitives.js','source-adapter-runtime.js',...['x','linkedin','instagram','facebook'].map(source=>`adapters/${source}-adapter.js`)].map(async name=>({
   relative:'AkuBridge/'+name,execute:false,content:await readFile(new URL('../../../../../../AkuBridge/'+name,import.meta.url),'utf8'),sha256:'a'.repeat(64)})));
+const linkedInAssets=(await sourceAssets(bridge,'linkedin')).filter(asset=>[
+  'capture-primitives.js','source-adapter-runtime.js','source-feed-routes.js','adapters/linkedin-adapter.js','source-freshness-runtime.js',
+].some(path=>asset.relative===`AkuBridge/${path}`));
+const linkedInFeed='https://www.linkedin.com/feed/';
+const linkedInAlias='https://www.linkedin.com/feed/foryou/';
 const oldID='2106867448746021278',newID='2106867448746021279';
-function fixture({pending=true,routeChange=false,source='x',pendingLabel='Show 2 posts'}={}){
+function fixture({pending=true,routeChange=false,source='x',pendingLabel='Show 2 posts',landedURL,activationURL}={}){
   const contract=sourceFreshnessContractFor(adapterAssets,source);
-  const state={clicks:0,navigations:0,freshnessEvaluations:0,posts:[oldID],url:'about:blank'};
+  const state={clicks:0,navigations:0,scrolls:0,freshnessEvaluations:0,posts:[oldID],url:'about:blank'};
   const sourcePost=id=>({
     x:{id,permalink:'https://x.com/example/status/'+id},
     linkedin:{id:'linkedin:activity:'+id,permalink:'https://www.linkedin.com/feed/update/urn:li:activity:'+id+'/'},
@@ -28,15 +33,20 @@ function fixture({pending=true,routeChange=false,source='x',pendingLabel='Show 2
   }
   const button=new Element();
   const candidate={contains:()=>false,get innerText(){return state.posts.join('|');},getBoundingClientRect:()=>({width:200,height:100,bottom:100,top:0,right:200,left:0})};
-  const location={get href(){return state.url;}};
-  const context=vm.createContext({Element,URL,Date,setTimeout,clearTimeout,location,window:{innerHeight:900,innerWidth:1280,scrollY:0,scrollTo(){}},
-    document:{visibilityState:'visible',querySelectorAll:()=>pending&&button.isConnected?[button]:[]},
+  const location={get href(){return state.url;},get hostname(){return new URL(state.url).hostname;}};
+  const context=vm.createContext({Element,URL,Date,setTimeout,clearTimeout,location,window:{location,innerHeight:900,innerWidth:1280,scrollY:0,scrollTo(){state.scrolls++;}},
+    document:{visibilityState:'visible',querySelector:()=>null,
+      querySelectorAll:selector=>selector==='button,[role="button"]'&&pending&&button.isConnected?[button]:[]},
     getComputedStyle:()=>({display:'block',visibility:'visible',opacity:'1'}),
     AkuSourceAdapters:{get:()=>({matchesPage:()=>state.url.startsWith(source==='linkedin'?'https://www.linkedin.com/':'https://x.com/'),freshness:{version:`${source}-freshness-v1`,headless:contract,revealSupported:true,rejectInsideFeedCandidate:true,pendingContentPattern:source==='linkedin'?/^(?:new posts?|show new posts?)$/i:/^show \d+ posts$/i},discoverCandidates:()=>({candidates:[]})})},
     XHeadlessPoC:{collect:()=>({url:state.url,posts:state.posts.map(id=>({...sourcePost(id),author:'Example',text:'Native post '+id,limitations:[],media:[]})),scroll:{y:0,viewportHeight:900,height:2000},documentReady:true})}});
-  const page={async navigate(url){state.url=url;state.navigations++;return {};},async evaluate(expression){if(/runtime\.(?:probe|activatePending)/.test(expression))state.freshnessEvaluations++;return vm.runInContext(expression,context);},async send(){return {};}};
+  const page={async navigate(url){state.requestedUrl=url;state.url=landedURL??url;state.navigations++;return {};},async evaluate(expression){
+    if(/runtime\.(?:probe|activatePending)/.test(expression))state.freshnessEvaluations++;
+    if(activationURL&&expression.includes('runtime.activatePending('))state.url=activationURL;
+    return vm.runInContext(expression,context);
+  },async send(){return {};}};
   const asset={relative:'AkuBridge/source-freshness-runtime.js',execute:true,content:runtime,sha256:createHash('sha256').update(runtime).digest('hex')};
-  const assets={[source]:[...adapterAssets,asset]};
+  const assets={[source]:source==='linkedin'?linkedInAssets:[...adapterAssets,asset]};
   return {state,browser:{backend:'headless_worker',forSource:async()=>page},assets};
 }
 const payload={scrolls:0,sourceHydrationTimeoutMs:1000,captureTimeoutMs:6000};
@@ -75,9 +85,10 @@ test('Facebook and Instagram retain disabled contracts while preserving read-onl
     assert.equal(f.state.clicks,0,source);assert.equal(f.state.freshnessEvaluations,0,source);
   }
 });
-test('LinkedIn uses its adapter contract to reveal a verified first-round primary and preserves round two',async()=>{
-  const f=fixture({source:'linkedin',pendingLabel:'Show new posts'});
+test('LinkedIn clicks Show new posts on For You and preserves that route in round two',async()=>{
+  const f=fixture({source:'linkedin',pendingLabel:'Show new posts',landedURL:linkedInAlias});
   const first=await capture(f.browser,f.assets,'linkedin',payload);
+  assert.equal(f.state.requestedUrl,linkedInFeed);
   assert.equal(f.state.clicks,1);
   assert.ok(first.snapshots[0].blocks.some(b=>b.platformId==='linkedin:activity:'+newID));
   assert.equal(first.coverage.freshness.workerStatus,'verified');
@@ -88,6 +99,24 @@ test('LinkedIn uses its adapter contract to reveal a verified first-round primar
   assert.equal(next.coverage.freshness.workerStatus,'preserved');
   assert.equal(next.coverage.freshness.activationCount,0);
   assert.equal(f.state.clicks,1);
+  assert.equal(f.state.navigations,1);
+});
+test('LinkedIn refuses a different route before clicking even when the route is also approved',async()=>{
+  const f=fixture({source:'linkedin',pendingLabel:'Show new posts',landedURL:linkedInAlias,activationURL:linkedInFeed});
+  await assert.rejects(capture(f.browser,f.assets,'linkedin',payload),{code:'source_route_changed'});
+  assert.equal(f.state.clicks,0);
+});
+test('LinkedIn round two rejects a different landed route before restoring scroll',async()=>{
+  const f=fixture({source:'linkedin',pendingLabel:'Show new posts',landedURL:linkedInAlias});
+  const first=await capture(f.browser,f.assets,'linkedin',payload);
+  f.state.url=linkedInFeed;
+  const before=f.state.scrolls;
+  await assert.rejects(capture(f.browser,f.assets,'linkedin',{...payload,acquisitionRound:2,
+    continuation:{startScrollY:first.coverage.frontier.scrollY,anchorKeys:first.coverage.frontier.anchorKeys,settleMs:0}}),
+    {code:'source_frontier_unavailable'});
+  assert.equal(f.state.scrolls,before);
+  assert.equal(f.state.clicks,1);
+  assert.equal(f.state.navigations,1);
 });
 test('all sources stage shared freshness after their adapter with generic controller provenance',async()=>{
   for(const source of ['x','linkedin','instagram','facebook']){

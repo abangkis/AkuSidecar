@@ -153,12 +153,18 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
   const page = typeof browser.forSource === 'function' ? await browser.forSource(source) : browser;
   const assets = assetsBySource?.[source];
   if (!Array.isArray(assets) || assets.length < 3) throw captureError('worker_not_ready', 'source assets are unavailable');
+  const freshnessContract = sourceFreshnessContractFor(assets, source);
   const provenance = sourceProvenance(assets);
   const startedAt = Date.now();
   const capturedAt = new Date(startedAt).toISOString();
   let requestedUrl = options.pageUrl;
   let resumeScrollY = 0;
-  let frontierUrlMismatch = false;
+  let retainedFeedKey = null;
+  const assertRetainedFeed = url => {
+    if (retainedFeedKey && (freshnessContract.matchesFeedURL?.(url) !== true || pageKey(source, url) !== retainedFeedKey)) {
+      throw captureError('source_frontier_unavailable', 'the retained source tab navigated away from its frontier');
+    }
+  };
   if (source === 'x') await prepareXPassiveEvidence({browser, page, assets, deadlineAt: deadline});
 
   if (options.acquisitionRound === 1) {
@@ -177,7 +183,11 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
       throw captureError('unsupported_continuation', 'continuation does not match the retained source page frontier');
     }
     const actualUrl = await page.evaluate('location.href', timeLeft(deadline));
-    frontierUrlMismatch = pageKey(source, actualUrl) !== state.pageUrl;
+    retainedFeedKey = state.retainedFeedKey;
+    assertRetainedFeed(actualUrl);
+    if (!retainedFeedKey && pageKey(source, actualUrl) !== state.pageUrl) {
+      throw captureError('source_frontier_unavailable', 'the retained source tab navigated away from its frontier');
+    }
     resumeScrollY = options.continuation.startScrollY;
     if (source === 'x') {
       await inject(page, assets, deadline);
@@ -250,9 +260,8 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
       throw captureError('target_unavailable', 'Facebook reports that this post is unavailable in the current session');
     }
   }
-  if (frontierUrlMismatch) throw captureError('source_frontier_unavailable', 'the retained source tab navigated away from its frontier');
-
   if (options.acquisitionRound === 2) {
+    assertRetainedFeed(snapshot.url);
     const visible = new Set(snapshot.posts.map(post => canonicalPostId(source, post)));
     if (!options.continuation.anchorKeys.some(anchor => visible.has(anchor))) {
       throw captureError('source_frontier_unavailable', 'retained source page did not show a continuation anchor after restoration');
@@ -261,7 +270,7 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
 
   let freshness;
   {
-    const recovered = await recoverHeadlessFreshness({source, contract: sourceFreshnessContractFor(assets, source),
+    const recovered = await recoverHeadlessFreshness({source, contract: freshnessContract,
       page, snapshot, options, deadlineAt: deadline,
       backend: browser.backend, collectSnapshot: async (phaseDeadline) => {
         await inject(page, assets, phaseDeadline);
@@ -329,6 +338,7 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
         snapshot = applyQuoteRecovery(snapshot, quoteRecovery);
         const nextError = sourceStateError(snapshot);
         if (nextError) throw nextError;
+        assertRetainedFeed(snapshot.url);
         snapshot = await resolveSnapshotStructuredMedia(page, source, snapshot, assets, deadline, browser);
         if(photoResolution) snapshot=await bindPhotoParentSnapshot(page,snapshot,photoResolution,deadline);
         const currentScrollY = Number.isFinite(snapshot?.scroll?.y) ? Math.trunc(snapshot.scroll.y) : null;
@@ -384,8 +394,15 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
   const continuationReady = !anchorKeys.length ? false : scrollPositionRecorded ? true : null;
   const frontier = { scrollY, anchorKeys, newCandidateCount: lastNewCandidateCount,
     hasMoreCandidateSignal, continuationReady };
-  if (continuationReady === true) sourceFrontiers.set(source, { source, requestedUrl, pageUrl: pageKey(source, requestedUrl), frontier });
-  else sourceFrontiers.delete(source);
+  if (continuationReady === true) {
+    const pageUrl = pageKey(source, requestedUrl);
+    const landedKey = browser.backend === 'headless_worker' && !options.explicitPageUrl &&
+      freshnessContract.matchesFeedURL?.(requestedUrl) && freshnessContract.matchesFeedURL(last.url)
+      ? pageKey(source, last.url) : null;
+    // Keep the request binding distinct from the route the owned tab retained.
+    sourceFrontiers.set(source, { source, requestedUrl, pageUrl, frontier,
+      retainedFeedKey: landedKey !== pageUrl ? landedKey : null });
+  } else sourceFrontiers.delete(source);
   if (options.restoreScroll) await page.evaluate(`globalThis.XHeadlessPoC?.scrollSourceTo ? globalThis.XHeadlessPoC.scrollSourceTo(${originalScrollY}) : window.scrollTo({top:${originalScrollY},behavior:'instant'})`, timeLeft(deadline)).catch(() => {});
   try {
     const observation=toObservation({
