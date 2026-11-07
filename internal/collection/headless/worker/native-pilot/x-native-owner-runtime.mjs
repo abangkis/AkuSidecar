@@ -35,7 +35,7 @@ import {QA_LIVE_SELF_EXPRESSION} from './shared/x-qa-live-self.mjs';
 import {qaLiveSelfCommand} from './shared/x-qa-live-self-transport.mjs';
 import {createManualStartupOwner} from './shared/x-manual-startup-owner.mjs';
 import {createXManualOwnerPort, manualOwnerOperation} from './shared/x-native-manual-owner-port.mjs';
-import {createRetainedManualSetup, manualSeedFailure, manualSeedDiagnosticCode, recordManualSeedEnrollmentCleanup} from './shared/x-manual-retained-setup.mjs';
+import {createRetainedManualSetup, manualSeedFailure, manualSeedDiagnosticCode, recordManualSeedCDPFailure, recordManualSeedEnrollmentCleanup} from './shared/x-manual-retained-setup.mjs';
 import {ManualEnrollmentCapture} from './shared/x-manual-enrollment-capture.mjs';
 import {ManualStartupObservation} from './shared/x-manual-startup-cookie-guard.mjs';
 import {startupFailure, startupFailureLatch, requireBoundStartup, startupInspectionFailure, startupPrepareFailure, startupDiagnostic} from './shared/x-manual-startup-diagnostic.mjs';
@@ -55,8 +55,8 @@ const MAX_NETWORK_EVENTS = 4_096;
 const MAX_TOTAL_NETWORK_BUFFER_BYTES = 1_000_000;
 const MAX_RESOURCE_NETWORK_BUFFER_BYTES = 100_000;
 
-export function manualSeedRPCCode(error,includeEnrollmentCleanup=false){
-  return manualSeedDiagnosticCode(error,includeEnrollmentCleanup)??'manual_seed_preconditions_unavailable_unknown';
+export function manualSeedRPCCode(error,includeDailyDiagnostics=false){
+  return manualSeedDiagnosticCode(error,includeDailyDiagnostics)??'manual_seed_preconditions_unavailable_unknown';
 }
 
 // Own the command binding across await: the ingress parser clears its local
@@ -94,6 +94,7 @@ export function createNativeOwnerRuntime(){
   let childExited = false;
   let cdpFailure = null;
   let cdpFirstCause = null;
+  let seedCDP = null;
   let protocolOwner = 0;
   let nextOwner = 0;
   let nextCommandId = 0;
@@ -135,7 +136,11 @@ export function createNativeOwnerRuntime(){
   function cdpWrite(message) {
     if (cdpFailure) throw probeError(cdpFailure);
     if (borrowedMainTransport) {
-      if (message.method === 'Browser.close' || !borrowedMainTransport.alive()) throw probeError('borrowed_reader_unavailable');
+      if (message.method === 'Browser.close') throw probeError('borrowed_reader_unavailable');
+      if (!borrowedMainTransport.alive()) {
+        rememberSeedCDPFailure(message.method, 'cdp_transport_closed');
+        throw probeError('borrowed_reader_unavailable');
+      }
       void borrowedMainTransport.call(message.method,message.params,message.sessionId??'',COMMAND_TIMEOUT_MS)
         .then(result=>{
           if(message.method==='Target.createTarget')borrowedMainTransport.reserveTarget?.(result.targetId);
@@ -144,7 +149,7 @@ export function createNativeOwnerRuntime(){
           if(message.method==='Target.detachFromTarget')borrowedMainTransport.releaseSession?.(message.params.sessionId);
           dispatchCDP({id:message.id,result,...(message.sessionId?{sessionId:message.sessionId}:{})});
         })
-        .catch(error=>failCDP('borrowed_reader_command_failed',error));
+        .catch(error=>failCDP('borrowed_reader_command_failed',error,message.method));
       return;
     }
     if (!child || childExited || !child.stdio?.[3] || pending.size >= MAX_PENDING_COMMANDS) throw probeError('cdp_unavailable');
@@ -154,10 +159,11 @@ export function createNativeOwnerRuntime(){
     try {
       child.stdio[3].write(line, error => {
         line.fill(0);
-        if (error) failCDP('cdp_write_failed');
+        if (error) failCDP('cdp_write_failed',undefined,message.method);
       });
     } catch {
       line.fill(0);
+      rememberSeedCDPFailure(message.method, 'cdp_pipe_failure');
       throw probeError('cdp_write_failed');
     }
   }
@@ -285,7 +291,7 @@ export function createNativeOwnerRuntime(){
     if (!Number.isSafeInteger(id) || id <= 0) return Promise.reject(probeError('cdp_command_limit'));
     return new Promise((resolvePromise, rejectPromise) => {
       const timer = setTimeout(() => {
-        if (pending.has(id)) failCDP(`${CDP_METHODS[method]}_timeout`);
+        if (pending.has(id)) failCDP(`${CDP_METHODS[method]}_timeout`,undefined,method);
       }, COMMAND_TIMEOUT_MS);
       pending.set(id, { method, projectionKind, sessionId: sessionId ?? null, resolve: resolvePromise, reject: rejectPromise, timer });
       try { cdpWrite({ id, method, params, ...(sessionId ? { sessionId } : {}) }); }
@@ -319,8 +325,15 @@ export function createNativeOwnerRuntime(){
     }
   }
 
-  function failCDP(code,error) {
-    if(!cdpFailure)cdpFirstCause=startupCDPFailureCategory(code,error);
+  function rememberSeedCDPFailure(method,category) {
+    if (seedCDP && method) seedCDP.firstFailure ??= {method,category};
+  }
+
+  function failCDP(code,error,method) {
+    if (!cdpFailure) {
+      cdpFirstCause=startupCDPFailureCategory(code,error);
+      rememberSeedCDPFailure(method,cdpFirstCause);
+    }
     active?.manualEnrollment?.invalidate();
     active?.manualStartupPort?.invalidate(cdpFirstCause);
     active?.bound?.binder?.invalidate();
@@ -418,6 +431,7 @@ export function createNativeOwnerRuntime(){
     pending.delete(raw.id);
     clearTimeout(item.timer);
     if (hasError) {
+      rememberSeedCDPFailure(item.method,'cdp_command_rejected');
       item.reject(probeError(`${CDP_METHODS[item.method]}_failed`));
       return;
     }
@@ -1049,6 +1063,7 @@ export function createNativeOwnerRuntime(){
     });
     // homeReady retains the earlier fixed UI check's meaning; the enrollment
     // reload does not assert a new UI check or grant identity/login authority.
+    seedCDP={firstFailure:null};
     try{
       const result=await current.manualSetup();
       try{verifyCleanupGuards();}catch(error){throw manualSeedFailure('enrollment_cleanup','rejected','acknowledged',error);}
@@ -1056,7 +1071,10 @@ export function createNativeOwnerRuntime(){
     }catch(error){
       const cleanup=current.manualEnrollment?.cleanupDiagnostic();
       if(cleanup||!current.manualEnrollment)recordManualSeedEnrollmentCleanup(error,cleanup,seedGuardCleanup);
+      recordManualSeedCDPFailure(error,seedCDP.firstFailure);
       throw error;
+    }finally{
+      seedCDP=null;
     }
   }
 

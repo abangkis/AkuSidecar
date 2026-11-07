@@ -8,6 +8,9 @@ import {createXManualOwnerPort} from '../../internal/collection/headless/worker/
 import {startupRootControls} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-root-controls.mjs';
 import {pathToFileURL} from 'node:url';
 import {resolve} from 'node:path';
+import {PassThrough} from 'node:stream';
+import {createMainCDP} from '../../internal/collection/headless/worker/native-pilot/main-browser-transport-protocol.mjs';
+import {ownerErrorReply} from '../../internal/collection/headless/worker/native-pilot/owner-protocol.mjs';
 import {createManualV2BoundObservation,projectBoundBootstrap} from '../../internal/collection/headless/worker/native-pilot/shared/x-qa-bound-observation.mjs';
 import {requireBoundStartup,startupDiagnostic,startupFailureLatch,startupFailure} from '../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-diagnostic.mjs';
 const path=resolve('internal/collection/headless/worker/native-pilot/x-native-owner-runtime.mjs');
@@ -18,19 +21,64 @@ const boundary=code.indexOf('  // Trusted fixture composition');
 assert(boundary>0);
 code=code.slice(0,boundary).replace('export function createNativeOwnerRuntime(){\n','').replace(/^  /gmu,'');
 // Extract the production seed function before registering any async test.
-const permissions='let applicationScope=null;\n'+['manualStartupAllowed','retainedTransferAllowed','shortTransferAllowed'].map(name=>{
+const permissions='let applicationScope=null,seedCDP=null;\n'+['manualStartupAllowed','retainedTransferAllowed','shortTransferAllowed'].map(name=>{
   const declaration=code.match(new RegExp('^const '+name+'=.*;$','mu'));
   assert(declaration,`missing runtime permission ${name}`);return declaration[0];
 }).join('\n')+'\n';
-const seedSource=permissions+code.slice(code.indexOf('async function seedRetainedManualPilot('),code.indexOf('\nasync function openRetainedManualReader('));
+const seedSource=permissions+'const recordManualSeedCDPFailure=()=>{};\n'+code.slice(code.indexOf('async function seedRetainedManualPilot('),code.indexOf('\nasync function openRetainedManualReader('));
 const provenanceSource=code.slice(code.indexOf('const manualProvenance='),code.indexOf('const manualEnrollment=')).replace('const manualProvenance=','return ');
 const allowProvenance=new Function('active','method','params','sessionId','purpose','qualificationMode','driverMode','MAX_TOTAL_NETWORK_BUFFER_BYTES','MAX_RESOURCE_NETWORK_BUFFER_BYTES',permissions+provenanceSource);
 code=code.replace(/from '(\.{1,2}\/[^']+)'/g,(_,p)=>`from '${new URL(p,pathToFileURL(path)).href}'`);
+const borrowedSeedCode=code+`
+export async function borrowedSeed(transport){
+  active={pid:11,owner:1,profileId:'fixture-reader',targetId:'root',sessionId:'r',gate:{loginVisible:true,observationStarted:false},
+    shortFeasibility:{sessionId:'cs',transport:{ownership:()=>({alive:true,pid:22,profileId:'fixture-collector'}),subscribe:()=>()=>{},
+      send:async(method,_params,_session,project)=>project(method==='Page.getFrameTree'?{frameTree:{frame:{id:'cf'}}}:{})}}};
+  registerFreshStartupSession(active,'r','reader');
+  registerFreshStartupSession(active.shortFeasibility,'cs','collector');
+  borrowedMainTransport=transport;
+  const off=transport.subscribe(dispatchCDP);
+  retainedQAScope={reuse:true};
+  driverMode='retained_source_qualification';
+  applicationScope={seedGrant:createApplicationSeedGrant({runSeed:seedRetainedManualPilot})};
+  try{
+    await applicationScope.seedGrant.run({id:1,op:'manual_seed_bootstrap',owner:1});
+  }finally{off();}
+}`;
 code+=`\nimport {createStartupWaitBudget} from '${new URL('../../internal/collection/headless/worker/native-pilot/shared/x-manual-startup-wait-budget.mjs',import.meta.url).href}';
 const realSend=send;export async function offlineControlGate(enabled=true,malformed=false){const current={owner:1,sessionId:'s',targetId:'t',manualStartupSelected:true,bound:{running:true}};active=current;driverMode='retained_source_qualification';registerFreshStartupSession(current,'s','reader');const writes=[];cdpWrite=message=>{writes.push(message);dispatchCDP({id:message.id,sessionId:message.sessionId,result:malformed?{unexpected:true}:{}});};const previous=process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED;process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED=enabled?'1':'0';try{const controls=startupRootControls(current,realSend,'reader');await controls.apply();await controls.restore();return writes.map(v=>[v.method,v.params]);}finally{if(previous===undefined)delete process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED;else process.env.AKU_X_NATIVE_MANUAL_STARTUP_ALLOWED=previous;}}
 export const offlineUnsettled=mustRetireStartupOwner;export const offlineRetire=retireManualReader;
 export function offlineHarness(current,transport){registerFreshStartupSession(current,current.sessionId,'reader');if(current.shortFeasibility?.sessionId)registerFreshStartupSession(current.shortFeasibility,current.shortFeasibility.sessionId,'collector');active=current;send=transport;return {dispatch:dispatchCDP,start:()=>startManualCookieObservation(current),run:(options,factory)=>{const budget=createStartupWaitBudget(2000,{role:'reader'});return boundCheckpoint(current,false,options,undefined,()=>{},undefined,factory,undefined,promise=>budget.wait(promise));},collector:factory=>{const budget=createStartupWaitBudget(2000,{role:'collector'});return collectorShortCheckpoint(current,undefined,()=>{},()=>{},undefined,factory,undefined,promise=>budget.wait(promise));}};}\n`;
 const driver=await import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
+
+test('borrowed reader seed reports the first rejected CDP command alongside enrollment cleanup',async()=>{
+  for(const [method,index,cleanup] of [['Target.attachToTarget',1,'20000'],['Page.enable',8,'10200'],['Runtime.enable',23,'12200']]){
+    const {borrowedSeed}=await import('data:text/javascript;base64,'+Buffer.from(borrowedSeedCode+`\n// ${index}`).toString('base64'));
+    const input=new PassThrough(),output=new PassThrough(),commands=[];
+    output.on('data',bytes=>{
+      const request=JSON.parse(bytes.toString().slice(0,-1));
+      commands.push(request.method);
+      const reply={id:request.id,...(request.sessionId?{sessionId:request.sessionId}:{})};
+      if(request.method===method)reply.error={code:-32000,message:'PRIVATE_CHROME_ERROR'};
+      else if(request.method==='Page.getFrameTree')reply.result={frameTree:{frame:{id:'f',loaderId:'old',url:'https://x.com/home'}}};
+      else if(request.method==='Target.attachToTarget')reply.result={sessionId:'obs'};
+      else reply.result={};
+      input.write(JSON.stringify(reply)+'\0');
+    });
+    const transport=createMainCDP({input,output});
+    try{
+      await assert.rejects(borrowedSeed(transport),error=>{
+        assert.equal(ownerErrorReply({id:1,op:'daily_batch_seed'},error).code,
+          `manual_seed_v4_${index}_0_v3_${cleanup}_frame_after_document_changed_not_attempted`);
+        assert.equal(ownerErrorReply({id:1,op:'native_owner_seed'},error).code,'manual_seed_frame_after_document_changed_not_attempted');
+        return true;
+      });
+      assert.equal(commands.at(-1),method);
+      assert.equal(commands.some(command=>['Network.getCookies','Network.setCookies'].includes(command)),false);
+      assert.equal(transport.alive(),true);
+    }finally{transport.close();}
+  }
+});
 // Expose only the production transport's event dispatcher in memory. No launch,
 // profile validation, native send or process creation is invoked by these tests.
 const collectorPath=resolve('internal/collection/headless/worker/native-pilot/shared/x-qa-feasibility-collector.mjs');

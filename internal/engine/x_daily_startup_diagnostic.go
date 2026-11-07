@@ -13,7 +13,14 @@ type XDailyStartupDiagnostic struct {
 	Cause             string                             `json:"cause"`
 	Origin            string                             `json:"origin,omitempty"`
 	BrokerReason      string                             `json:"brokerReason,omitempty"`
+	SeedCDP           *XDailySeedCDPFailure              `json:"seedCDP,omitempty"`
 	EnrollmentCleanup *XDailyEnrollmentCleanupDiagnostic `json:"enrollmentCleanup,omitempty"`
+}
+
+// XDailySeedCDPFailure identifies the first failed reader command during seed.
+type XDailySeedCDPFailure struct {
+	Method   string `json:"method"`
+	Category string `json:"category"`
 }
 
 // Enrollment cleanup is recorded separately from the first seed failure and
@@ -51,7 +58,7 @@ func xDailyStartupMember(value string, catalog []string, fallback string) string
 
 func (d XDailyStartupDiagnostic) closed() XDailyStartupDiagnostic {
 	// Only the tagged native adapter can supply validated origin metadata.
-	d.Origin, d.BrokerReason, d.EnrollmentCleanup = "", "", nil
+	d.Origin, d.BrokerReason, d.SeedCDP, d.EnrollmentCleanup = "", "", nil, nil
 	d.Stage = xDailyStartupMember(d.Stage, xDailyStartupStages, "admission")
 	d.Condition = xDailyStartupMember(d.Condition, xDailyStartupConditions, "unavailable")
 	d.Cause = xDailyStartupMember(d.Cause, []string{"unavailable", "canceled", "deadline", "rejected"}, "unavailable")
@@ -63,6 +70,7 @@ type xDailyStartupError struct {
 	cause             error  // Private operational cause; never formatted or serialized.
 	origin            string // Produced only from the existing closed native catalog.
 	brokerReason      string
+	seedCDP           *XDailySeedCDPFailure
 	enrollmentCleanup *XDailyEnrollmentCleanupDiagnostic
 }
 
@@ -119,6 +127,10 @@ func xDailyStartupDetail(err error) *XDailyStartupDiagnostic {
 	}
 	d := known.detail.closed()
 	d.Origin, d.BrokerReason = known.origin, known.brokerReason
+	if known.seedCDP != nil {
+		cdp := *known.seedCDP
+		d.SeedCDP = &cdp
+	}
 	if known.enrollmentCleanup != nil {
 		cleanup := *known.enrollmentCleanup
 		d.EnrollmentCleanup = &cleanup

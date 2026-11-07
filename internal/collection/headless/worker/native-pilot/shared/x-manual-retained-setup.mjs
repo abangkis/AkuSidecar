@@ -3,6 +3,7 @@
 import {performance} from 'node:perf_hooks';
 import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 import {startupDiagnostic,startupRPCCode} from './x-manual-startup-diagnostic.mjs';
+import {CDP_METHODS} from './x-native-cdp-command-policy.mjs';
 export const MANUAL_SEED_PHASES=Object.freeze(['preconditions','owner_before','frame_before','enrollment_evaluate','enrollment_project','enrollment_cleanup','frame_after','cookie_read','cookie_select','seed_write','owner_after']);
 export const MANUAL_SEED_REASONS=Object.freeze(['disabled','replay','unavailable','rejected','candidate_absent','bootstrap_missing','bootstrap_invalid','wrong_page','inspection_failed','document_changed','ownership_changed','deadline','clock_regressed']);
 export const MANUAL_SEED_WRITES=Object.freeze(['not_attempted','unknown','acknowledged']);
@@ -11,6 +12,11 @@ export const MANUAL_SEED_CODE_MAX_BYTES=160;
 const diagnostics=new WeakMap();
 const initialFailures=new WeakMap();
 const enrollmentCleanups=new WeakMap();
+const firstCDPFailures=new WeakMap();
+// V4 prefixes the optional cleanup and seed tail with two append-only indices.
+// Their order is mirrored in development_x_seed_diagnostic.go.
+const cdpMethods=Object.keys(CDP_METHODS);
+const cdpCategories=['cdp_command_rejected','cdp_request_rejected','cdp_reply_invalid','cdp_transport_closed','cdp_timeout','cdp_borrowed_unclassified','cdp_pipe_failure'];
 // Daily wire v3 uses one index per step, in the order below, then a v1/v2 seed tail.
 const cleanupOutcomes=['not_needed','verified','uncertain'];
 export function manualSeedFailure(phase,reason,write='not_attempted',cause){
@@ -30,7 +36,12 @@ export function recordManualSeedEnrollmentCleanup(error,{observerAttachment='not
   const indices=[observerAttachment,runtimeDisable,observerDetach,contextContinuity,seedGuard].map(outcome=>cleanupOutcomes.indexOf(outcome));
   if(indices.every(index=>index>=0))enrollmentCleanups.set(error,indices.join(''));
 }
-export function manualSeedDiagnosticCode(error,includeEnrollmentCleanup=false){
+export function recordManualSeedCDPFailure(error,failure){
+  if(!manualSeedDiagnostic(error)||!failure||firstCDPFailures.has(error))return;
+  const method=cdpMethods.indexOf(failure.method),category=cdpCategories.indexOf(failure.category);
+  if(method>=0&&category>=0)firstCDPFailures.set(error,`${method}_${category}`);
+}
+export function manualSeedDiagnosticCode(error,includeDailyDiagnostics=false){
   const value=manualSeedDiagnostic(error);
   if(!value)return null;
   const initial=initialFailures.get(error);
@@ -39,11 +50,13 @@ export function manualSeedDiagnosticCode(error,includeEnrollmentCleanup=false){
     const trace=startupRPCCode(initial).slice('manual_initial_'.length);
     tail=`v2_${MANUAL_SEED_PHASES.indexOf(value.phase)}_${MANUAL_SEED_REASONS.indexOf(value.reason)}_${MANUAL_SEED_WRITES.indexOf(value.write)}_${trace}`;
   }
-  const cleanup=includeEnrollmentCleanup?enrollmentCleanups.get(error):null;
-  if(cleanup){
-    const code=`manual_seed_v3_${cleanup}_${tail}`;
-    if(Buffer.byteLength(code)<=MANUAL_SEED_CODE_MAX_BYTES)return code;
-  }
+  const cleanup=includeDailyDiagnostics?enrollmentCleanups.get(error):null;
+  const cdp=includeDailyDiagnostics?firstCDPFailures.get(error):null;
+  const envelope=`${cdp?`v4_${cdp}_`:''}${cleanup?`v3_${cleanup}_`:''}`;
+  const dailyCode=`manual_seed_${envelope}${tail}`;
+  if(Buffer.byteLength(dailyCode)<=MANUAL_SEED_CODE_MAX_BYTES)return dailyCode;
+  // If a future trace grows, retain the seed outcome and both daily diagnostics.
+  if(cdp)return `manual_seed_${envelope}${value.phase}_${value.reason}_${value.write}`;
   return `manual_seed_${tail}`;
 }
 const keys=['readerPID','readerProfile','collectorPID','collectorProfile'];

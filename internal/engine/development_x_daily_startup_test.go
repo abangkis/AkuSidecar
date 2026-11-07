@@ -103,7 +103,7 @@ func TestXDailyNativeStartupSeedOriginIsClosed(t *testing.T) {
 }
 
 func TestXDailyNativeStartupSeedStatusPreservesFirstCauseAndCleanup(t *testing.T) {
-	private := syntheticDailyCodeError("manual_seed_v3_12100_frame_after_document_changed_not_attempted")
+	private := syntheticDailyCodeError("manual_seed_v4_23_0_v3_12100_frame_after_document_changed_not_attempted")
 	broker := &nativePilotBroker{initial: nativePilotInitialDetail{role: "collector", phase: "cleanup", reason: "cleanup_unverified"}}
 	first := xDailyNativeStartupFail(private, "seed_rpc", "rpc", broker, nativePilotDiagnostic{})
 	e := &Engine{}
@@ -124,11 +124,16 @@ func TestXDailyNativeStartupSeedStatusPreservesFirstCauseAndCleanup(t *testing.T
 	if got := status.StartupDiagnostic.EnrollmentCleanup; got == nil || *got != want {
 		t.Fatal("seed cleanup steps were lost")
 	}
+	if got := status.StartupDiagnostic.SeedCDP; got == nil || *got != (XDailySeedCDPFailure{Method: "Runtime.enable", Category: "cdp_command_rejected"}) {
+		t.Fatal("later cleanup replaced or dropped the first seed CDP failure")
+	}
 	if xDailyNativeStartupFail(fmt.Errorf("PRIVATE_CLEANUP: %w", first), "runtime", "runtime", nil, nativePilotDiagnostic{}) != first {
 		t.Fatal("later wrapper replaced seed failure")
 	}
 	raw, err := json.Marshal(status)
-	if err != nil || strings.Contains(string(raw), "PRIVATE") || !strings.Contains(string(raw), `"enrollmentCleanup":{"observerAttachment":"verified","runtimeDisable":"uncertain","observerDetach":"verified","contextContinuity":"not_needed","seedGuard":"not_needed"}`) {
-		t.Fatal("private cause escaped seed status")
+	if err != nil || strings.Contains(string(raw), "PRIVATE") ||
+		!strings.Contains(string(raw), `"seedCDP":{"method":"Runtime.enable","category":"cdp_command_rejected"}`) ||
+		!strings.Contains(string(raw), `"enrollmentCleanup":{"observerAttachment":"verified","runtimeDisable":"uncertain","observerDetach":"verified","contextContinuity":"not_needed","seedGuard":"not_needed"}`) {
+		t.Fatal("seed status did not expose only the closed diagnostics")
 	}
 }
