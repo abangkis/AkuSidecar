@@ -66,7 +66,19 @@ export function readXPassiveEvidenceInPage(owners) {
     candidates.push({candidateId: owner.candidateId, media,
       ...(avatarUrl ? {avatarUrl} : {}), ...(replyToId ? {replyToId} : {})});
   }
-  return {type: 'AKU_X_RESPONSE_MEDIA_EVIDENCE', runtimeRevision: 'x-response-evidence-v2', candidates};
+  const observer = runtime.responseDiagnostics?.();
+  const diagnostics = observer && {
+    observerReady: observer.observerReady,
+    fetchHookActive: observer.fetchHookActive,
+    xhrHookActive: observer.xhrHookActive,
+    graphqlResponseCount: observer.graphqlResponseCount,
+    filteredOperationCount: observer.filteredOperationCount,
+    unsuccessfulResponseCount: observer.unsuccessfulResponseCount,
+    observedResponseCount: observer.observedResponseCount,
+    parsedResponseCount: observer.parsedResponseCount,
+    rejectedResponseCount: observer.rejectedResponseCount,
+  };
+  return {type: 'AKU_X_RESPONSE_MEDIA_EVIDENCE', runtimeRevision: 'x-response-evidence-v2', candidates, diagnostics};
 }
 
 function ownerFor(post, api, primitives) {
@@ -129,7 +141,7 @@ export async function finalizeXReplyEvidence({browser, page, assets, snapshots, 
   }
 }
 
-export async function resolveXPassiveEvidence({browser, page, assets, posts, deadlineAt}) {
+export async function resolveXPassiveEvidence({browser, page, assets, posts, deadlineAt, onDiagnostics}) {
   if (browser?.backend !== 'headless_worker' || !Array.isArray(assets) || !installations.get(page)?.identifier) return posts;
   let store;
   try { store = storeFor(assets); } catch { return posts; }
@@ -153,6 +165,7 @@ export async function resolveXPassiveEvidence({browser, page, assets, posts, dea
         Math.min(900, deadlineAt - Date.now()));
       if (result && Buffer.byteLength(JSON.stringify(result)) <= MAX_RESPONSE_BYTES
           && store.api.validResponseEvidenceEnvelope(result)) {
+        if (result.diagnostics) onDiagnostics?.(result.diagnostics);
         const counts = new Map();
         for (const candidate of result.candidates) counts.set(candidate.candidateId, (counts.get(candidate.candidateId) || 0) + 1);
         for (const candidate of result.candidates) {

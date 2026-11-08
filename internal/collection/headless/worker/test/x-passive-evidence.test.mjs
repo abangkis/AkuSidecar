@@ -331,6 +331,11 @@ async function captureGraphQLReply(afterSnapshotRead) {
   const browser = {backend: 'headless_worker', forSource: async () => page};
   const output = await capture(browser, {x: value}, 'x', {scrolls: 0, captureTimeoutMs: 3000, sourceHydrationTimeoutMs: 1000});
   const block = output.snapshots[0].blocks[0];
+  const observer = output.coverage.xResponseObserver;
+  assert.equal(observer.registration, 'registered');
+  assert.equal(observer.diagnostics.observerReady, true);
+  assert.equal(observer.diagnostics.fetchHookActive, true);
+  assert.equal(observer.diagnostics.parsedResponseCount, afterSnapshotRead ? 0 : 1);
   assert.deepEqual(events, afterSnapshotRead
     ? ['register', 'navigate', 'collect', 'snapshot read', 'response', 'final read']
     : ['register', 'navigate', 'collect', 'response', 'snapshot read', 'final read']);

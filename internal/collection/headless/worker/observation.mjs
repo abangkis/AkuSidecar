@@ -319,6 +319,10 @@ export function toObservation({ source, requestedUrl, snapshots, provenance, cap
       documentReady: last.documentReady === true,
       ...projectSourceReadiness(last),
       ...(source === 'x' ? projectDOMShadow(last) : {}),
+      ...(source === 'x' && last.xObserverRegistration ? { xResponseObserver: {
+        registration: last.xObserverRegistration,
+        diagnostics: last.xResponseObserver ?? null,
+      } } : {}),
       structuredMediaResolution,
       ...(first.quoteIdentityProbe ? { quoteIdentityProbe: structuredClone(first.quoteIdentityProbe) } : {}),
       ...(frontier ? { frontier: structuredClone(frontier) } : {}),

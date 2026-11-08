@@ -8,6 +8,8 @@ import { resolveStructuredMedia, structuredMediaRequest } from '../structured-me
 import { toObservation } from '../observation.mjs';
 import { sourceAssets } from '../worker.mjs';
 import { sourceProvenance } from '../provenance.mjs';
+import '../../../../../../AkuBridge/capture-primitives.js';
+import '../../../../../../AkuBridge/shared-dom-engine/browser-runtime.js';
 import { resolveXStructuredMediaInMainWorld } from '../../../../../../AkuBridge/x-main-world-media-resolver.js';
 import { resolveFacebookStructuredMediaInMainWorld } from '../../../../../../AkuBridge/facebook-main-world-media-resolver.js';
 
@@ -28,6 +30,11 @@ function xArticle(id, poster, playback, mediaType) {
   const permalink = `https://x.com/fixture/status/${id}`;
   const anchor = { href: permalink, getAttribute: () => permalink, closest: () => null };
   const article = {
+    tagName: 'ARTICLE',
+    parentElement: {
+      matches: selector => selector === '[role="link"][data-href]',
+      getAttribute: name => name === 'data-href' ? `/fixture/status/${id}` : null,
+    },
     querySelectorAll(selector) {
       if (selector === 'time') return [];
       if (selector.includes('a[')) return [anchor];

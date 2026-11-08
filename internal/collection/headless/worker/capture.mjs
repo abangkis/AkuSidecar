@@ -168,7 +168,9 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
       throw captureError('source_frontier_unavailable', 'the retained source tab navigated away from its frontier');
     }
   };
-  if (source === 'x') await prepareXPassiveEvidence({browser, page, assets, deadlineAt: deadline});
+  const xObserverRegistration = source === 'x'
+    ? await prepareXPassiveEvidence({browser, page, assets, deadlineAt: deadline})
+    : null;
 
   if (options.acquisitionRound === 1) {
     // Any fresh navigation invalidates the prior source checkpoint, including failed captures.
@@ -370,7 +372,9 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
       if (evidenceLimitReached && posts.length === 0) { stopReason = 'evidence_size_limit'; scrollStopReason = 'evidence_size_limit'; break; }
       for (const post of posts) seenIds.add(post.id);
       lastNewCandidateCount = seenIds.size - previousCount;
-      snapshots.push({ ...snapshot, posts, capturedAt: new Date().toISOString(), ...(scroll === 0 && quoteIdentityProbe ? { quoteIdentityProbe } : {}) });
+      snapshots.push({ ...snapshot, posts, capturedAt: new Date().toISOString(),
+        ...(xObserverRegistration ? { xObserverRegistration } : {}),
+        ...(scroll === 0 && quoteIdentityProbe ? { quoteIdentityProbe } : {}) });
       unchangedRounds = seenIds.size === previousCount ? unchangedRounds + 1 : 0;
       if (evidenceLimitReached) { stopReason = 'evidence_size_limit'; scrollStopReason = 'evidence_size_limit'; break; }
       if (noMovement || movementUnknown) break;
@@ -573,9 +577,11 @@ async function resolveSnapshotStructuredMedia(page, source, snapshot, assets, de
     feedResolver: assets?.structuredFeedResolver,
     deadlineAt: deadline,
   });
+  let xResponseObserver = null;
   const posts = source === 'x' ? await resolveXPassiveEvidence({browser, page, assets,
-    posts: resolution.posts, deadlineAt: deadline}) : resolution.posts;
-  return { ...snapshot, posts, structuredMediaResolution: resolution.summary };
+    posts: resolution.posts, deadlineAt: deadline, onDiagnostics: value => { xResponseObserver = value; },
+  }) : resolution.posts;
+  return { ...snapshot, posts, structuredMediaResolution: resolution.summary, xResponseObserver };
 }
 
 function sourceStateError(snapshot) {
