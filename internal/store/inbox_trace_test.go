@@ -125,6 +125,9 @@ func TestInboxRunTraceDeduplicatesSnapshotsAndExplainsFinalOutcomes(t *testing.T
 	if trace.Total != 4 || len(trace.Items) != 2 || trace.Items[0].Outcome != "captured_only" || trace.Items[1].Outcome != "not_selected" {
 		t.Fatalf("captured trace=%+v", trace)
 	}
+	if trace.Items[1].SelectionDecision != nil || trace.Items[1].Reason != "Assessment rationale 2" {
+		t.Fatalf("legacy row lost its rationale or gained an inferred selection decision: %+v", trace.Items[1])
+	}
 	publicTrace, _ := json.Marshal(trace)
 	if strings.Contains(string(publicTrace), "evidenceKey") || strings.Contains(string(publicTrace), keys[0]) {
 		t.Fatalf("trace API leaked internal evidence identity: %s", publicTrace)

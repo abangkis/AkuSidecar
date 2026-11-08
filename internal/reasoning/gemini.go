@@ -286,7 +286,7 @@ func (g *Gemini) AnalyzeWithModel(ctx context.Context, run domain.Run, observati
 			wrapped := fmt.Errorf("decode Gemini reasoning result for chunk %d/%d: %w", chunkIndex+1, chunkCount, err)
 			return domain.ReasoningResult{}, g.telemetry(run, "candidate_evaluation", model, aggregateDuration, aggregateUsage, wrapped), wrapped
 		}
-		if err := bindEvidenceKeysByPosition(&chunkResult, request.evidenceKeys); err != nil {
+		if err := bindEvidenceKeysByAlias(&chunkResult, request.evidenceAliases, request.evidenceKeys); err != nil {
 			wrapped := fmt.Errorf("bind Gemini reasoning result for chunk %d/%d: %w", chunkIndex+1, chunkCount, err)
 			return domain.ReasoningResult{}, g.telemetry(run, "candidate_evaluation", model, aggregateDuration, aggregateUsage, wrapped), wrapped
 		}

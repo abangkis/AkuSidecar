@@ -6,7 +6,6 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/preference"
-	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
 func TestColdStartPreservesSourceOrderAndFiniteBudget(t *testing.T) {
@@ -29,13 +28,18 @@ func TestGuardedLiveCanPromoteReplaceAndSuppressOrdinaryCandidates(t *testing.T)
 	values := []domain.CandidateAssessment{
 		assessment("x:000000000000000000000001", "sports", .65, .8),
 		assessment("x:000000000000000000000002", "other", .62, .8),
-		assessment("x:000000000000000000000003", "ai_models", .25, .8),
+		assessment("x:000000000000000000000003", "ai_models", .20, .8),
 	}
 	result := Select(values, profile, 2, "guarded_live")
 	selected := selectedKeys(result)
 	if contains(selected, values[0].EvidenceKey) || !contains(selected, values[1].EvidenceKey) || !contains(selected, values[2].EvidenceKey) {
 		t.Fatalf("selected=%v", selected)
 	}
+	assertSelectionReasons(t, result, map[string]domain.SelectionReason{
+		values[0].EvidenceKey: domain.SelectionPreferenceSuppressed,
+		values[1].EvidenceKey: domain.SelectionBaseline,
+		values[2].EvidenceKey: domain.SelectionPreferencePromotion,
+	})
 }
 
 func TestProtectedMaterialUpdateCannotBeSuppressed(t *testing.T) {
@@ -61,10 +65,16 @@ func TestGuardedLiveKeepsOneDiscoveryLane(t *testing.T) {
 		assessment("x:000000000000000000000021", "ai_models", .68, .8),
 		assessment("x:000000000000000000000022", "other", .6, .8),
 	}
-	selected := selectedKeys(Select(values, profile, 2, "guarded_live"))
+	result := Select(values, profile, 2, "guarded_live")
+	selected := selectedKeys(result)
 	if !contains(selected, values[2].EvidenceKey) {
 		t.Fatalf("discovery candidate missing: %v", selected)
 	}
+	assertSelectionReasons(t, result, map[string]domain.SelectionReason{
+		values[0].EvidenceKey: domain.SelectionBaseline,
+		values[1].EvidenceKey: domain.SelectionDisplacedByDiscovery,
+		values[2].EvidenceKey: domain.SelectionDiscovery,
+	})
 }
 
 func TestPreviouslyDeliveredEvidenceIsAlwaysExcluded(t *testing.T) {
@@ -85,6 +95,54 @@ func TestZeroAdditionsIsValidWhenNothingClearsAdmission(t *testing.T) {
 	}
 }
 
+func TestSelectionDistinguishesGuardsFromBudget(t *testing.T) {
+	values := []domain.CandidateAssessment{
+		assessment("baseline", "other", .7, .8),
+		assessment("budget", "other", .65, .8),
+		assessment("delivered", "other", .9, .9),
+		assessment("weak", "other", .9, .2),
+		assessment("below", "other", .05, .4),
+	}
+	result := SelectWithOptions(values, preference.Profile{}, Options{
+		Limit: 1, Mode: "rank_only", ExcludedEvidence: map[string]bool{"delivered": true},
+	})
+	assertSelectionReasons(t, result, map[string]domain.SelectionReason{
+		"baseline": domain.SelectionBaseline, "budget": domain.SelectionBudgetExhausted,
+		"delivered": domain.SelectionPreviouslyDelivered, "weak": domain.SelectionInsufficientEvidence,
+		"below": domain.SelectionBelowAdmission,
+	})
+}
+
+func TestProtectedReplacementKeepsEarlierCandidateOnScoreTie(t *testing.T) {
+	values := []domain.CandidateAssessment{
+		assessment("earlier", "other", .7, .8),
+		assessment("later", "other", .7, .8),
+		assessment("update", "other", .2, .8),
+	}
+	result := SelectWithOptions(values, preference.Profile{}, Options{
+		Limit: 2, Mode: "guarded_live", ProtectedEvidence: map[string]bool{"update": true},
+	})
+	if selected := selectedKeys(result); len(selected) != 2 || selected[0] != "earlier" || selected[1] != "update" {
+		t.Fatalf("selected=%v, want earlier then update", selected)
+	}
+	assertSelectionReasons(t, result, map[string]domain.SelectionReason{
+		"earlier": domain.SelectionBaseline, "later": domain.SelectionDisplacedByProtection, "update": domain.SelectionProtected,
+	})
+}
+
+func assertSelectionReasons(t *testing.T, values []domain.ScoredAssessment, want map[string]domain.SelectionReason) {
+	t.Helper()
+	if len(values) != len(want) {
+		t.Fatalf("decisions=%d, want %d", len(values), len(want))
+	}
+	for _, value := range values {
+		key := value.Assessment.EvidenceKey
+		if decision := value.Decision; decision == nil || decision.Reason != want[key] || decision.PolicyVersion == "" || decision.Selected != value.Selected {
+			t.Errorf("%s decision=%+v, want reason %q and selected=%v", key, decision, want[key], value.Selected)
+		}
+	}
+}
+
 func assessment(key, facet string, materiality, evidence float64) domain.CandidateAssessment {
 	return domain.CandidateAssessment{
 		EvidenceKey: key, TopicTags: []string{facet}, TopicFacets: []string{facet}, Materiality: materiality,
@@ -92,7 +150,7 @@ func assessment(key, facet string, materiality, evidence float64) domain.Candida
 	}
 }
 
-func selectedKeys(values []store.ScoredAssessment) []string {
+func selectedKeys(values []domain.ScoredAssessment) []string {
 	var result []string
 	for _, value := range values {
 		if value.Selected {

@@ -155,6 +155,7 @@ func planningAnchorCount(value any) *int {
 
 type evaluationRequest struct {
 	prompt           string
+	evidenceAliases  []string
 	evidenceKeys     []string
 	knowledgeCount   int
 	knowledgeBytes   int
@@ -269,7 +270,7 @@ func buildEvaluationRequestFromCompactForProvider(provider promptProvider, run d
 	prior := relevantKnowledge(observation, knowledge)
 	knowledgeJSON, observationJSON := mustJSON(prior), mustJSON(compact)
 	prompt := composeEvaluationPrompt(provider, run, allowed, knowledgeJSON, observationJSON)
-	return evaluationRequest{prompt: prompt, evidenceKeys: evidenceKeys, knowledgeCount: len(prior), knowledgeBytes: len(knowledgeJSON), observationBytes: len(observationJSON)}
+	return evaluationRequest{prompt: prompt, evidenceAliases: allowed, evidenceKeys: evidenceKeys, knowledgeCount: len(prior), knowledgeBytes: len(knowledgeJSON), observationBytes: len(observationJSON)}
 }
 
 func buildEvaluationPrompt(run domain.Run, observation domain.Observation, knowledge []domain.ReasonedItem) string {
@@ -299,18 +300,68 @@ func evaluationPromptObservation(value domain.Observation) (evaluationObservatio
 	return result, evidenceKeys
 }
 
-func bindEvidenceKeysByPosition(result *domain.ReasoningResult, evidenceKeys []string) error {
+// bindEvidenceKeysByAlias resolves only aliases from this exact request. Each
+// response array is checked independently before either is changed, then both
+// are restored to request order. Chunked requests retain their original aliases.
+func bindEvidenceKeysByAlias(result *domain.ReasoningResult, aliases, evidenceKeys []string) error {
+	if len(aliases) != len(evidenceKeys) {
+		return fmt.Errorf("evaluation request has %d aliases for %d candidates", len(aliases), len(evidenceKeys))
+	}
 	if len(result.Items) != len(evidenceKeys) {
 		return fmt.Errorf("model returned %d items for %d candidates", len(result.Items), len(evidenceKeys))
 	}
 	if len(result.CandidateAssessments) != len(evidenceKeys) {
 		return fmt.Errorf("model returned %d assessments for %d candidates", len(result.CandidateAssessments), len(evidenceKeys))
 	}
-	for index, evidenceKey := range evidenceKeys {
-		result.Items[index].ID = evidenceKey
-		result.Items[index].EvidenceKey = evidenceKey
-		result.CandidateAssessments[index].EvidenceKey = evidenceKey
+	if len(evidenceKeys) == 0 {
+		return nil
 	}
+	positions := make(map[string]int, len(aliases))
+	keys := make(map[string]bool, len(evidenceKeys))
+	for index, alias := range aliases {
+		if alias == "" || evidenceKeys[index] == "" {
+			return fmt.Errorf("evaluation request has an empty alias or evidence key at position %d", index)
+		}
+		if _, exists := positions[alias]; exists {
+			return fmt.Errorf("evaluation request has duplicate alias %q", alias)
+		}
+		if keys[evidenceKeys[index]] {
+			return fmt.Errorf("evaluation request has duplicate evidence key at position %d", index)
+		}
+		positions[alias] = index
+		keys[evidenceKeys[index]] = true
+	}
+	items := make([]domain.ReasonedItem, len(result.Items))
+	seenItems := make([]bool, len(aliases))
+	for offset, item := range result.Items {
+		index, exists := positions[item.EvidenceKey]
+		if !exists {
+			return fmt.Errorf("model item references unknown candidate alias at response position %d", offset+1)
+		}
+		if seenItems[index] {
+			return fmt.Errorf("model returned duplicate item alias %q", item.EvidenceKey)
+		}
+		seenItems[index] = true
+		item.ID = evidenceKeys[index]
+		item.EvidenceKey = evidenceKeys[index]
+		items[index] = item
+	}
+	assessments := make([]domain.CandidateAssessment, len(result.CandidateAssessments))
+	seenAssessments := make([]bool, len(aliases))
+	for offset, assessment := range result.CandidateAssessments {
+		index, exists := positions[assessment.EvidenceKey]
+		if !exists {
+			return fmt.Errorf("model assessment references unknown candidate alias at response position %d", offset+1)
+		}
+		if seenAssessments[index] {
+			return fmt.Errorf("model returned duplicate assessment alias %q", assessment.EvidenceKey)
+		}
+		seenAssessments[index] = true
+		assessment.EvidenceKey = evidenceKeys[index]
+		assessments[index] = assessment
+	}
+	result.Items = items
+	result.CandidateAssessments = assessments
 	return nil
 }
 

@@ -320,26 +320,6 @@ func TestRelevantKnowledgeIsDeterministicBoundedAndFindsOlderMaterialOverlap(t *
 
 func stringPointer(value string) *string { return &value }
 
-func TestBindEvidenceKeysByPositionOverridesModelIdentity(t *testing.T) {
-	result := domain.ReasoningResult{
-		Items:                []domain.ReasonedItem{{ID: "invented", EvidenceKey: "x:invented"}},
-		CandidateAssessments: []domain.CandidateAssessment{{EvidenceKey: "linkedin:invented"}},
-	}
-	if err := bindEvidenceKeysByPosition(&result, []string{"x:real"}); err != nil {
-		t.Fatal(err)
-	}
-	if result.Items[0].ID != "x:real" || result.Items[0].EvidenceKey != "x:real" || result.CandidateAssessments[0].EvidenceKey != "x:real" {
-		t.Fatalf("model identity was not replaced: %+v", result)
-	}
-}
-
-func TestBindEvidenceKeysByPositionRejectsCardinalityMismatch(t *testing.T) {
-	result := domain.ReasoningResult{Items: []domain.ReasonedItem{{}}, CandidateAssessments: nil}
-	if err := bindEvidenceKeysByPosition(&result, []string{"x:key"}); err == nil {
-		t.Fatal("expected assessment cardinality mismatch to fail")
-	}
-}
-
 func filepathRoot(t *testing.T) string {
 	t.Helper()
 	current, err := os.Getwd()

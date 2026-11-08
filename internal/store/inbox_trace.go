@@ -14,6 +14,7 @@ import (
 type inboxTraceAssessment struct {
 	value    domain.CandidateAssessment
 	selected bool
+	decision *domain.SelectionDecision
 }
 
 type inboxTraceTimeline struct {
@@ -98,14 +99,15 @@ func (s *Store) InboxRunTrace(ctx context.Context, runID, stage string, limit, o
 		}
 
 		item := domain.InboxFlowItem{
-			EvidenceKey: key,
-			Author:      strings.TrimSpace(block.Author),
-			Excerpt:     compactInboxTraceText(block.Text, 220),
-			SourceURL:   strings.TrimSpace(block.Permalink),
-			Captured:    true,
-			Evaluated:   evaluated,
-			Selected:    selected,
-			Added:       added,
+			EvidenceKey:       key,
+			Author:            strings.TrimSpace(block.Author),
+			Excerpt:           compactInboxTraceText(block.Text, 220),
+			SourceURL:         strings.TrimSpace(block.Permalink),
+			Captured:          true,
+			Evaluated:         evaluated,
+			Selected:          selected,
+			Added:             added,
+			SelectionDecision: assessment.decision,
 		}
 		if hasContinuity && continuityDecision.Status != "fresh" {
 			item.ContinuityStatus = continuityDecision.Status
@@ -218,11 +220,11 @@ func (s *Store) inboxTraceAssessments(ctx context.Context, runID string) (map[st
 		if err := rows.Scan(&key, &raw, &selected); err != nil {
 			return nil, err
 		}
-		var assessment domain.CandidateAssessment
+		var assessment storedCandidateAssessment
 		if err := json.Unmarshal([]byte(raw), &assessment); err != nil {
 			return nil, err
 		}
-		values[key] = inboxTraceAssessment{value: assessment, selected: selected == 1}
+		values[key] = inboxTraceAssessment{value: assessment.CandidateAssessment, selected: selected == 1, decision: assessment.SelectionDecision}
 	}
 	return values, rows.Err()
 }

@@ -473,6 +473,10 @@ type geminiChunkCapture struct {
 }
 
 func geminiEvaluationChunkServer(t *testing.T, modelID string, failCall int) (*httptest.Server, *geminiChunkCapture) {
+	return geminiEvaluationChunkServerWithOutput(t, modelID, failCall, nil)
+}
+
+func geminiEvaluationChunkServerWithOutput(t *testing.T, modelID string, failCall int, changeOutput func(int, map[string]any)) (*httptest.Server, *geminiChunkCapture) {
 	t.Helper()
 	calls := &geminiChunkCapture{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -514,6 +518,9 @@ func geminiEvaluationChunkServer(t *testing.T, modelID string, failCall int) (*h
 			return
 		}
 		output := geminiEvaluationChunkOutput(callNumber, size)
+		if changeOutput != nil {
+			changeOutput(callNumber, output)
+		}
 		raw, _ := json.Marshal(output)
 		fullSchema, schemaErr := readSchema(filepathRoot(t) + "/schemas/reasoning-result.schema.json")
 		if schemaErr != nil {
@@ -533,6 +540,63 @@ func geminiEvaluationChunkServer(t *testing.T, modelID string, failCall int) (*h
 	}))
 	t.Cleanup(server.Close)
 	return server, calls
+}
+
+func TestGeminiCandidateEvaluationBindsRequestAliasesAcrossChunks(t *testing.T) {
+	for _, invalidSecondChunk := range []bool{false, true} {
+		t.Run(fmt.Sprintf("invalid-second-chunk=%t", invalidSecondChunk), func(t *testing.T) {
+			server, calls := geminiEvaluationChunkServerWithOutput(t, "gemini-3.5-flash-lite", 0, func(call int, output map[string]any) {
+				items := output["items"].([]map[string]any)
+				assessments := output["candidateAssessments"].([]map[string]any)
+				if call == 1 {
+					// Independent permutations must preserve the payload's candidate
+					// identity, not merely restore plausible-looking native keys.
+					for left, right := 0, len(items)-1; left < right; left, right = left+1, right-1 {
+						items[left], items[right] = items[right], items[left]
+					}
+					for _, assessment := range assessments {
+						assessment["rationale"] = assessment["evidenceKey"]
+					}
+					output["candidateAssessments"] = append(assessments[1:], assessments[0])
+				} else if invalidSecondChunk {
+					// Schema-valid but absent from this chunk's exact request.
+					assessments[0]["evidenceKey"] = "candidate_001"
+				}
+			})
+			provider, err := newGemini(geminiTestConfig(t, server.URL), staticCredentialResolver("gemini-test-key"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer provider.Close()
+			run, observation := sevenCandidateGeminiInput()
+			result, telemetry, err := provider.Analyze(context.Background(), run, observation, nil)
+			if invalidSecondChunk {
+				if err == nil || !strings.Contains(err.Error(), "chunk 2/2") || !strings.Contains(err.Error(), "unknown candidate alias") {
+					t.Fatalf("error=%v, want second-chunk alias rejection", err)
+				}
+				if len(result.Items) != 0 || len(result.CandidateAssessments) != 0 || telemetry.Status != "failed" {
+					t.Fatalf("alias rejection returned partial success: result=%+v telemetry=%+v", result, telemetry)
+				}
+			} else {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(result.Items) != 7 || len(result.CandidateAssessments) != 7 {
+					t.Fatalf("result=%+v", result)
+				}
+				for index := range result.Items {
+					key, alias := fmt.Sprintf("x:candidate-%d", index+1), fmt.Sprintf("candidate_%03d", index+1)
+					item, assessment := result.Items[index], result.CandidateAssessments[index]
+					if item.EvidenceKey != key || item.WhatChanged != alias || assessment.EvidenceKey != key || (index < 6 && assessment.Rationale != alias) {
+						t.Fatalf("candidate %d misbound: item=%+v assessment=%+v", index, item, assessment)
+					}
+				}
+			}
+			if fmt.Sprint(calls.sizes) != "[6 1]" || telemetry.InputTokens == nil || *telemetry.InputTokens != 30 || telemetry.OutputTokens == nil || *telemetry.OutputTokens != 9 {
+				t.Fatalf("chunk execution or usage changed: calls=%v telemetry=%+v", calls.sizes, telemetry)
+			}
+		})
+	}
 }
 
 func geminiEvaluationChunkOutput(callNumber, size int) map[string]any {

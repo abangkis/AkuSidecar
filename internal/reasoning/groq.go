@@ -139,7 +139,7 @@ func (g *Groq) AnalyzeWithModel(ctx context.Context, run domain.Run, observation
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
 		return domain.ReasoningResult{}, telemetry, fmt.Errorf("decode Groq reasoning result: %w", err)
 	}
-	if err := bindEvidenceKeysByPosition(&result, request.evidenceKeys); err != nil {
+	if err := bindEvidenceKeysByAlias(&result, request.evidenceAliases, request.evidenceKeys); err != nil {
 		return domain.ReasoningResult{}, telemetry, err
 	}
 	return result, telemetry, nil

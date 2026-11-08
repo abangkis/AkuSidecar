@@ -1077,7 +1077,15 @@ export function createInboxUi({
     const reason = document.createElement("p");
     reason.className = "inbox-flow-reason";
     reason.textContent = item.reason || "No additional rationale recorded.";
-    row.append(heading, excerpt, reason);
+    row.append(heading, excerpt);
+    const selectionReason = inboxSelectionReasonLabel(item.selectionDecision?.reason);
+    if (selectionReason) {
+      const selection = document.createElement("p");
+      selection.className = "inbox-flow-reason";
+      selection.textContent = `Selection policy · ${selectionReason}`;
+      row.append(selection);
+    }
+    row.append(reason);
     const actions = document.createElement("div");
     actions.className = "inbox-flow-item-actions";
     const sourceUrl = safeSourceUrl(item.sourceUrl, source);
@@ -1137,6 +1145,23 @@ export function createInboxUi({
     }
     if (actions.children.length) row.append(actions);
     return row;
+  }
+
+  function inboxSelectionReasonLabel(reason) {
+    const labels = {
+      baseline: "Met the standard selection threshold.",
+      preference_promotion: "Promoted by your preferences.",
+      protected: "Qualified for protected priority.",
+      discovery: "Selected for discovery.",
+      previously_delivered: "This post had already been delivered.",
+      insufficient_evidence: "Evidence was below the minimum required.",
+      below_admission: "Did not meet the selection threshold.",
+      preference_suppressed: "Suppressed by your preferences.",
+      budget_exhausted: "Qualified, but this source had no selection slots left.",
+      displaced_by_protection: "A protected candidate took this slot.",
+      displaced_by_discovery: "A discovery candidate took this slot.",
+    };
+    return Object.hasOwn(labels, reason) ? labels[reason] : "";
   }
 
   function inboxFlowOutcomeLabel(outcome) {

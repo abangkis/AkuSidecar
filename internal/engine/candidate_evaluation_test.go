@@ -281,12 +281,25 @@ func TestEngineCandidateEvaluationCharacterizationSelection(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := 1
+			wantReason := domain.SelectionProtected
 			switch mode {
-			case "prior-delivered", "prior-delivered-material", "weak-evidence-material":
+			case "prior-delivered", "prior-delivered-material":
 				want = 0
+				wantReason = domain.SelectionPreviouslyDelivered
+			case "weak-evidence-material":
+				want = 0
+				wantReason = domain.SelectionInsufficientEvidence
 			}
 			if got := candidateEvaluationCount(t, f, `SELECT selected FROM candidate_assessments WHERE run_id=?`, f.run.ID); got != want {
 				t.Fatalf("selected=%d want=%d", got, want)
+			}
+			trace, err := f.state.InboxRunTrace(context.Background(), f.run.ID, "evaluated", 5, 0)
+			if err != nil || len(trace.Items) != 1 {
+				t.Fatalf("evaluated trace=%+v err=%v", trace, err)
+			}
+			decision := trace.Items[0].SelectionDecision
+			if decision == nil || decision.PolicyVersion == "" || decision.Reason != wantReason || decision.Selected != (want == 1) {
+				t.Fatalf("persisted decision=%+v, want %q and selected=%v", decision, wantReason, want == 1)
 			}
 			if mode == "reused-event-label" {
 				if got := candidateEvaluationCount(t, f, `SELECT COUNT(*) FROM timeline_items WHERE run_id=? AND evidence_key='linkedin:evaluation'`, f.run.ID); got != 1 {

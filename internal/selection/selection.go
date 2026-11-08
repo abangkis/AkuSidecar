@@ -6,7 +6,6 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/preference"
-	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
 const (
@@ -17,6 +16,7 @@ const (
 	promotionThreshold       = 0.25
 	suppressionThreshold     = -0.25
 	discoveryAlignmentWindow = 0.15
+	policyVersion            = "selection-v1"
 )
 
 type Options struct {
@@ -27,17 +27,17 @@ type Options struct {
 }
 
 type candidate struct {
-	index            int
-	scored           store.ScoredAssessment
-	alignment        float64
+	scored           domain.ScoredAssessment
+	excluded         bool
 	baselineEligible bool
 	protected        bool
 	promotable       bool
 	suppressed       bool
 	discovery        bool
+	displaced        domain.SelectionReason
 }
 
-func Select(assessments []domain.CandidateAssessment, profile preference.Profile, limit int, mode string) []store.ScoredAssessment {
+func Select(assessments []domain.CandidateAssessment, profile preference.Profile, limit int, mode string) []domain.ScoredAssessment {
 	return SelectWithOptions(assessments, profile, Options{Limit: limit, Mode: mode})
 }
 
@@ -49,12 +49,12 @@ func Select(assessments []domain.CandidateAssessment, profile preference.Profile
 // Exact previously-delivered evidence is excluded before every layer. In
 // guarded_live, direct feedback may promote, replace, demote, and suppress
 // ordinary candidates, but it cannot suppress protected material updates.
-func SelectWithOptions(assessments []domain.CandidateAssessment, profile preference.Profile, options Options) []store.ScoredAssessment {
+func SelectWithOptions(assessments []domain.CandidateAssessment, profile preference.Profile, options Options) []domain.ScoredAssessment {
 	if options.Limit < 0 {
 		options.Limit = 0
 	}
 	candidates := make([]candidate, 0, len(assessments))
-	for index, assessment := range assessments {
+	for _, assessment := range assessments {
 		base := baseScore(assessment)
 		alignment := 0.0
 		if profile.AuthorityReady {
@@ -68,12 +68,11 @@ func SelectWithOptions(assessments []domain.CandidateAssessment, profile prefere
 		suppressed := options.Mode == "guarded_live" && profile.SuppressionReady && alignment <= suppressionThreshold && !protected
 		discovery := baseline && !suppressed && math.Abs(alignment) <= discoveryAlignmentWindow
 		candidates = append(candidates, candidate{
-			index: index,
-			scored: store.ScoredAssessment{
+			scored: domain.ScoredAssessment{
 				Assessment: assessment,
 				BaseScore:  base, PreferenceScore: pref, FinalScore: base + pref,
 			},
-			alignment: alignment, baselineEligible: baseline, protected: protected,
+			excluded: excluded, baselineEligible: baseline, protected: protected,
 			promotable: promotable, suppressed: suppressed, discovery: discovery,
 		})
 	}
@@ -88,14 +87,14 @@ func SelectWithOptions(assessments []domain.CandidateAssessment, profile prefere
 		})
 	}
 
-	selected := map[int]bool{}
+	selected := map[int]domain.SelectionReason{}
 	pick := func(predicate func(candidate) bool) {
 		for _, index := range order {
 			if len(selected) >= options.Limit {
 				return
 			}
-			if !selected[index] && predicate(candidates[index]) {
-				selected[index] = true
+			if selected[index] == "" && predicate(candidates[index]) {
+				selected[index] = candidates[index].admissionReason()
 			}
 		}
 	}
@@ -114,47 +113,78 @@ func SelectWithOptions(assessments []domain.CandidateAssessment, profile prefere
 		pick(func(value candidate) bool { return value.baselineEligible })
 	}
 
-	selectedOrder := make([]int, 0, len(selected))
+	result := make([]domain.ScoredAssessment, 0, len(candidates))
 	for _, index := range order {
-		if selected[index] {
-			selectedOrder = append(selectedOrder, index)
+		if reason := selected[index]; reason != "" {
+			result = append(result, candidates[index].withDecision(true, reason))
 		}
 	}
-	result := make([]store.ScoredAssessment, 0, len(candidates))
-	for _, index := range selectedOrder {
-		value := candidates[index].scored
-		value.Selected = true
-		result = append(result, value)
-	}
 	for index := range candidates {
-		if !selected[index] {
-			result = append(result, candidates[index].scored)
+		if selected[index] == "" {
+			value := candidates[index]
+			result = append(result, value.withDecision(false, value.rejectionReason(options.Mode)))
 		}
 	}
 	return result
 }
 
-func enforceProtected(candidates []candidate, selected map[int]bool, limit int) {
+func (c candidate) admissionReason() domain.SelectionReason {
+	if c.protected {
+		return domain.SelectionProtected
+	}
+	if c.baselineEligible {
+		return domain.SelectionBaseline
+	}
+	return domain.SelectionPreferencePromotion
+}
+
+func (c candidate) rejectionReason(mode string) domain.SelectionReason {
+	allowsPromotion := mode == "guarded_live" || mode == "promote_unused_budget"
+	switch {
+	case c.displaced != "":
+		return c.displaced
+	case c.excluded:
+		return domain.SelectionPreviouslyDelivered
+	case c.scored.Assessment.EvidenceStrength < minimumEvidence:
+		return domain.SelectionInsufficientEvidence
+	case c.suppressed:
+		return domain.SelectionPreferenceSuppressed
+	case !c.baselineEligible && !(allowsPromotion && c.promotable):
+		return domain.SelectionBelowAdmission
+	default:
+		return domain.SelectionBudgetExhausted
+	}
+}
+
+func (c candidate) withDecision(selected bool, reason domain.SelectionReason) domain.ScoredAssessment {
+	result := c.scored
+	result.Selected = selected
+	result.Decision = &domain.SelectionDecision{PolicyVersion: policyVersion, Reason: reason, Selected: selected}
+	return result
+}
+
+func enforceProtected(candidates []candidate, selected map[int]domain.SelectionReason, limit int) {
 	if limit == 0 {
 		return
 	}
 	for index, value := range candidates {
-		if !value.protected || selected[index] {
+		if !value.protected || selected[index] != "" {
 			continue
 		}
 		if len(selected) < limit {
-			selected[index] = true
+			selected[index] = domain.SelectionProtected
 			continue
 		}
 		replace := weakestSelected(candidates, selected, func(candidate candidate) bool { return !candidate.protected })
 		if replace >= 0 {
 			delete(selected, replace)
-			selected[index] = true
+			candidates[replace].displaced = domain.SelectionDisplacedByProtection
+			selected[index] = domain.SelectionProtected
 		}
 	}
 }
 
-func enforceDiscovery(candidates []candidate, selected map[int]bool, limit int) {
+func enforceDiscovery(candidates []candidate, selected map[int]domain.SelectionReason, limit int) {
 	if limit == 0 {
 		return
 	}
@@ -165,7 +195,7 @@ func enforceDiscovery(candidates []candidate, selected map[int]bool, limit int) 
 	}
 	best := -1
 	for index, value := range candidates {
-		if !value.discovery || selected[index] {
+		if !value.discovery || selected[index] != "" {
 			continue
 		}
 		if best < 0 || value.scored.BaseScore > candidates[best].scored.BaseScore {
@@ -176,7 +206,7 @@ func enforceDiscovery(candidates []candidate, selected map[int]bool, limit int) 
 		return
 	}
 	if len(selected) < limit {
-		selected[best] = true
+		selected[best] = domain.SelectionDiscovery
 		return
 	}
 	replace := weakestSelected(candidates, selected, func(candidate candidate) bool {
@@ -184,14 +214,16 @@ func enforceDiscovery(candidates []candidate, selected map[int]bool, limit int) 
 	})
 	if replace >= 0 {
 		delete(selected, replace)
-		selected[best] = true
+		candidates[replace].displaced = domain.SelectionDisplacedByDiscovery
+		selected[best] = domain.SelectionDiscovery
 	}
 }
 
-func weakestSelected(candidates []candidate, selected map[int]bool, allowed func(candidate) bool) int {
+func weakestSelected(candidates []candidate, selected map[int]domain.SelectionReason, allowed func(candidate) bool) int {
 	result := -1
-	for index := range selected {
-		if !allowed(candidates[index]) {
+	// At equal scores, keep the earlier input candidate, as the stable ranker does.
+	for index := len(candidates) - 1; index >= 0; index-- {
+		if selected[index] == "" || !allowed(candidates[index]) {
 			continue
 		}
 		if result < 0 || candidates[index].scored.FinalScore < candidates[result].scored.FinalScore {

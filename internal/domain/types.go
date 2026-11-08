@@ -1048,20 +1048,21 @@ type InboxFlowTrace struct {
 }
 
 type InboxFlowItem struct {
-	EvidenceKey      string               `json:"-"`
-	CandidateRef     string               `json:"candidateRef,omitempty"`
-	Author           string               `json:"author,omitempty"`
-	Excerpt          string               `json:"excerpt"`
-	SourceURL        string               `json:"sourceUrl,omitempty"`
-	Outcome          string               `json:"outcome"`
-	ContinuityStatus string               `json:"continuityStatus,omitempty"`
-	ContinuityDetail string               `json:"continuityDetail,omitempty"`
-	Reason           string               `json:"reason,omitempty"`
-	Captured         bool                 `json:"captured"`
-	Evaluated        bool                 `json:"evaluated"`
-	Selected         bool                 `json:"selected"`
-	Added            bool                 `json:"added"`
-	Correction       *SelectionCorrection `json:"correction,omitempty"`
+	EvidenceKey       string               `json:"-"`
+	CandidateRef      string               `json:"candidateRef,omitempty"`
+	Author            string               `json:"author,omitempty"`
+	Excerpt           string               `json:"excerpt"`
+	SourceURL         string               `json:"sourceUrl,omitempty"`
+	Outcome           string               `json:"outcome"`
+	ContinuityStatus  string               `json:"continuityStatus,omitempty"`
+	ContinuityDetail  string               `json:"continuityDetail,omitempty"`
+	Reason            string               `json:"reason,omitempty"`
+	Captured          bool                 `json:"captured"`
+	Evaluated         bool                 `json:"evaluated"`
+	Selected          bool                 `json:"selected"`
+	Added             bool                 `json:"added"`
+	Correction        *SelectionCorrection `json:"correction,omitempty"`
+	SelectionDecision *SelectionDecision   `json:"selectionDecision,omitempty"`
 }
 
 type SelectionCorrection struct {

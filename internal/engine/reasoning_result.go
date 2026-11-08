@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
-	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
 func bindReasoningSourceURLs(observation domain.Observation, result *domain.ReasoningResult) {
@@ -56,7 +55,7 @@ func validateReasoning(observation domain.Observation, result domain.ReasoningRe
 	return nil
 }
 
-func selectedItems(run domain.Run, result domain.ReasoningResult, scored []store.ScoredAssessment, coverage map[string]any) []domain.TimelineItem {
+func selectedItems(run domain.Run, result domain.ReasoningResult, scored []domain.ScoredAssessment, coverage map[string]any) []domain.TimelineItem {
 	itemsByKey := map[string]domain.ReasonedItem{}
 	for _, item := range result.Items {
 		itemsByKey[item.EvidenceKey] = item

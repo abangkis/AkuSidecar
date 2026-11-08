@@ -42,10 +42,13 @@ func (s *Store) SetRunPipelineStage(ctx context.Context, runID, stage string) er
 	return err
 }
 
-type ScoredAssessment struct {
-	Assessment                             domain.CandidateAssessment
-	BaseScore, PreferenceScore, FinalScore float64
-	Selected                               bool
+type ScoredAssessment = domain.ScoredAssessment
+
+// Keep model fields in their existing JSON shape for readers of old and new
+// rows. Only the candidate assessment record carries the selection decision.
+type storedCandidateAssessment struct {
+	domain.CandidateAssessment
+	SelectionDecision *domain.SelectionDecision `json:"selectionDecision,omitempty"`
 }
 
 func (s *Store) CompleteRun(ctx context.Context, run domain.Run, result domain.ReasoningResult, scored []ScoredAssessment, items []domain.TimelineItem, coverage map[string]any) error {
@@ -71,7 +74,7 @@ func (s *Store) CompleteRun(ctx context.Context, run domain.Run, result domain.R
 	}
 	for _, value := range scored {
 		byKey[value.Assessment.EvidenceKey] = value
-		raw, _ := json.Marshal(value.Assessment)
+		raw, _ := json.Marshal(storedCandidateAssessment{CandidateAssessment: value.Assessment, SelectionDecision: value.Decision})
 		itemRaw, _ := json.Marshal(itemsByKey[value.Assessment.EvidenceKey])
 		selected := 0
 		if value.Selected {
