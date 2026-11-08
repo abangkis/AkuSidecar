@@ -53,7 +53,14 @@ func (s *Store) failCommand(ctx context.Context, commandID, runID string, failur
 		return false, err
 	}
 	if source == domain.SourceX && domain.IsAccessChallenge(failure.Code) {
+		navigation := safeWindowedNavigation(failure.Details["windowedNavigation"])
 		failure = domain.SafeXChallenge(failure)
+		if navigation != nil {
+			if failure.Details == nil {
+				failure.Details = make(map[string]any)
+			}
+			failure.Details["windowedNavigation"] = navigation
+		}
 	}
 	raw, _ := json.Marshal(failure)
 	result, err := tx.ExecContext(ctx, `UPDATE bridge_commands SET status='failed',completed_at=?,error_json=? WHERE id=? AND run_id=? AND status=?`, now, string(raw), commandID, runID, expectedStatus)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -33,7 +34,19 @@ func TestSourceCapturePausePersistsAndRejectsOldWorkAfterRecovery(t *testing.T) 
 	if _, err = s.StartRun(ctx, other.ID, map[string]any{}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.FailCommand(ctx, command.ID, x.ID, domain.Failure{Code: "challenge_required", Message: "untrusted page text", Retryable: true, Details: map[string]any{"challengeCategory": "cloudflare", "secret": "must be discarded"}}); err != nil {
+	failure := domain.Failure{
+		Code: "challenge_required", Message: "untrusted page text", Retryable: true,
+		Details: map[string]any{
+			"challengeCategory": "cloudflare",
+			"secret":            "must be discarded",
+			"windowedNavigation": map[string]any{
+				"state": "matched", "httpStatus": float64(403), "httpStatusSource": "navigation_timing",
+				"protocol": "h2", "userAgentHeadless": false, "tabOpenedForCapture": true,
+				"redirectCount": float64(1.5), "deliveryType": "untrusted", "cookie": "must be discarded",
+			},
+		},
+	}
+	if _, err = s.FailCommand(ctx, command.ID, x.ID, failure); err != nil {
 		t.Fatal(err)
 	}
 	pause, err := s.SourceCapturePause(ctx)
@@ -44,8 +57,15 @@ func TestSourceCapturePausePersistsAndRejectsOldWorkAfterRecovery(t *testing.T) 
 		t.Fatal("safe category lost")
 	}
 	stored, _ := s.GetRun(ctx, x.ID)
-	if stored.Error == nil || len(stored.Error.Details) != 1 || stored.Error.Details["secret"] != nil {
-		t.Fatal("untrusted details persisted")
+	wantDetails := map[string]any{
+		"challengeCategory": "cloudflare",
+		"windowedNavigation": map[string]any{
+			"state": "matched", "httpStatus": float64(403), "httpStatusSource": "navigation_timing",
+			"protocol": "h2", "userAgentHeadless": false, "tabOpenedForCapture": true,
+		},
+	}
+	if stored.Error == nil || !reflect.DeepEqual(stored.Error.Details, wantDetails) {
+		t.Fatal("expected only the safe challenge and navigation fields")
 	}
 	if _, err = s.ClaimCommand(ctx, x.ID, "fixture"); !errors.Is(err, ErrSourceCapturePaused) {
 		t.Fatalf("claim admitted: %v", err)
