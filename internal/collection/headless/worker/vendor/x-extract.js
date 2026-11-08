@@ -39,6 +39,8 @@
     if (globalThis.AkuHeadlessCapturePolicy?.allowContentExpansion === false) return;
     if (primitives.detectXAccessChallenge(document, location)) return;
     const quote = adapter.findQuotedRoot(container);
+    const identity = adapter.resolveIdentity?.(container, quote);
+    if (identity && identity.status !== 'identified') return;
     const ownLink = [...container.querySelectorAll('time')].find(t => !quote?.contains(t))?.closest('a[href]')?.href;
     if (location.hostname === 'x.com' && canonical(location.href) !== canonical(ownLink)) return;
     if (expansionStates.has(container)) return;
@@ -120,6 +122,10 @@
       for (const container of adapter.discoverCandidates(helpers).candidates) {
         const quote = adapter.findQuotedRoot(container);
         if (!quote) continue;
+        const identity = adapter.resolveIdentity?.(container, quote);
+        if (identity && identity.permalink?.match(/\/status\/(\d+)$/)?.[1] !== primaryId) continue;
+        const quoteIdentity = adapter.resolveIdentity?.(quote, undefined, true);
+        if (quoteIdentity?.status === 'conflicting' || quoteIdentity?.permalink?.match(/\/status\/(\d+)$/)?.[1] === primaryId) continue;
         const ownIds = [...container.querySelectorAll('time')].filter(t => !quote.contains(t))
           .map(t => canonical(t.closest('a[href]')?.href)?.match(/\/status\/(\d+)/)?.[1]).filter(Boolean);
         if (new Set(ownIds).size !== 1 || ownIds[0] !== primaryId) continue;
@@ -155,24 +161,32 @@
         const quote = adapter.findQuotedRoot(container);
         const times = [...container.querySelectorAll('time')].filter(t => !quote?.contains(t));
         const urls = [...new Set(times.map(t => canonical(t.closest('a[href]')?.href)).filter(Boolean))];
-        const identity = primitives.resolvePrimaryIdentity({ permalinks: urls });
+        const legacyIdentity = primitives.resolvePrimaryIdentity({ permalinks: urls });
+        const sharedIdentity = adapter.resolveIdentity?.(container, quote);
+        const identity = sharedIdentity ?? legacyIdentity;
         const author = adapter.findAuthor(container, helpers);
-        if (urls.length !== 1 || !author) {
+        if (identity.status !== 'identified' || !author) {
           rejected++;
-          rejectionReasons[!urls.length ? 'missing_identity' : urls.length > 1 ? 'ambiguous_identity' : 'missing_author']++;
+          rejectionReasons[identity.status === 'missing' ? 'missing_identity'
+            : identity.status !== 'identified' ? 'ambiguous_identity' : 'missing_author']++;
           return [];
         }
-        const permalink = urls[0];
+        const permalink = identity.permalink;
+        const id = permalink.match(/\/status\/(\d+)$/)[1];
         const selectedTextRoot = container.querySelector(adapter.contentRootSelector);
         const textRoots = [...(container.querySelectorAll?.(adapter.contentRootSelector) || [])];
         if (!textRoots.length && selectedTextRoot) textRoots.push(selectedTextRoot);
-        const primaryTextRoot = textRoots.find(root => !quote?.contains(root)) || null;
+        const primaryTextRoot = adapter.resolveContentRoot?.(container) ?? textRoots.find(root => !quote?.contains(root)) ?? null;
         const text = primaryTextRoot
           ? adapter.extractText(primaryTextRoot, helpers)
           : quote ? '' : adapter.extractText(container, helpers);
         const links = authoredLinks(primaryTextRoot, quote);
         const semantics = adapter.extractSemantics(container, helpers);
         const presentation = adapter.extractPresentation?.(container, helpers) || {};
+        if (sharedIdentity) {
+          presentation.primaryIdentity = sharedIdentity;
+          presentation.permalinkSource = sharedIdentity.source;
+        }
         const avatar = adapter.findAvatar(container, helpers);
         const media = findMedia(adapter, container, quote);
         const mediaExpected = adapter.mediaAcquisition.detectExpectedKinds(container, { ...helpers, excludeRoot: quote });
@@ -180,12 +194,15 @@
         const textCollapsed = ownControls(container, quote, adapter.contentExpansion)
           .some(button => primitives.expansionLabel(compactText(button), 'more'));
         if (quotedPost) {
-          const identity = globalThis.XHeadlessQuoteIdentity.resolve(container, permalink.match(/\/status\/(\d+)/)[1], quotedPost.permalink);
-          quotedPost.permalink = identity.permalink;
-          quotedPost.identityStatus = identity.status;
-          quotedPost.identityProvenance = identity.provenance;
-          quotedPost.identityEvidence = identity.evidence;
-          semantics.parentPermalink = identity.permalink;
+          const quoteIdentity = quotedPost.identityConflictReason
+            ? { permalink: null, status: 'conflicting_identity', provenance: null,
+                evidence: { conflictReason: quotedPost.identityConflictReason } }
+            : globalThis.XHeadlessQuoteIdentity.resolve(container, id, quotedPost.permalink);
+          quotedPost.permalink = quoteIdentity.permalink;
+          quotedPost.identityStatus = quoteIdentity.status;
+          quotedPost.identityProvenance = quoteIdentity.provenance;
+          quotedPost.identityEvidence = quoteIdentity.evidence;
+          semantics.parentPermalink = quoteIdentity.permalink;
           quotedPost.mediaExpected = [...new Set(adapter.mediaAcquisition.detectExpectedKinds(quote, helpers))];
           quotedPost.mediaEvidence = mediaEvidence(quotedPost.media, quotedPost.mediaExpected);
           quotedPost.textCollapsed = [...quote.querySelectorAll(adapter.contentExpansion.buttonSelector)]
@@ -195,17 +212,22 @@
         }
         const directContext = typeof adapter.extractDirectContext === 'function'
           ? adapter.extractDirectContext(container, { ...helpers, permalink, quotedPost }) : [];
-        if (!text && !media.length && !quote && !mediaExpected.length) { rejected++; rejectionReasons.empty_evidence++; return []; }
-        return [{ id: permalink.match(/\/status\/(\d+)/)[1], permalink, author, avatar,
+        if (!text && !media.length && !mediaExpected.length &&
+            !(quote && (!sharedIdentity || !adapter.captureReadinessRejections(container, helpers)))) {
+          rejected++;
+          rejectionReasons.empty_evidence++;
+          return [];
+        }
+        return [{ id, permalink, author, avatar,
           text, publishedAt: times.find(t => canonical(t.closest('a[href]')?.href) === permalink)?.dateTime || null,
           ...semantics, presentation, links, media, mediaExpected: [...new Set(mediaExpected)], mediaEvidence: mediaEvidence(media, [...new Set(mediaExpected)]),
           directContext: Array.isArray(directContext) ? directContext.slice(0, 8) : [],
-          avatarEvidenceKeys: [`x:status:${permalink.match(/\/status\/(\d+)/)[1]}`,
+          avatarEvidenceKeys: [`x:status:${id}`,
             globalThis.AkuXMediaEvidence?.avatarKeyFromContainer?.(container)].filter(Boolean).slice(0, 2),
           quotedPostObserved: Boolean(quote),
           quotedPost, textCollapsed,
-          identityComparison: { legacyDecision: 'identified', sharedDecision: identity.status,
-            agrees: identity.status === 'identified' && identity.permalink === permalink },
+          identityComparison: { legacyDecision: legacyIdentity.status, sharedDecision: identity.status,
+            agrees: legacyIdentity.permalink === permalink },
           textCompleteness: primitives.textCompleteness({ collapsed: textCollapsed,
             textStatus: expansionStates.get(container) || (textCollapsed ? 'requires_permalink_capture' : 'visible_text_no_collapse_control') }),
           textStatus: textCollapsed ? expansionStates.get(container) || 'requires_permalink_capture'
@@ -227,14 +249,20 @@
       const loginRequired = adapter.loginRequired() || (!posts.length && location.pathname === '/home' && loginLink);
       const loading = Boolean(document.querySelector('[aria-busy="true"], .artdeco-loader, [data-test-id*="loading" i]'));
       const feedRoot = adapter.feedRootPresent?.() === true;
-      const sourceReadiness = primitives.sourceReadinessState({
+      const sharedIdentityActive = typeof globalThis.AkuXDOMShadow?.resolveIdentity === 'function';
+      const visibleStructuralCandidateCount = structural.filter(visible).length;
+      const baseReadiness = primitives.sourceReadinessState({
         loginRequired,
-        visibleCandidateCount: discovery.candidates.filter(visible).length,
-        visibleStructuralCandidateCount: structural.filter(visible).length,
+        visibleCandidateCount: sharedIdentityActive ? posts.length : discovery.candidates.filter(visible).length,
+        visibleStructuralCandidateCount,
         loading,
         documentReady: document.readyState === 'complete', candidateCount: discovery.candidates.length,
         structuralCandidateCount: structural.length, feedRootPresent: feedRoot,
       });
+      const sourceReadiness = sharedIdentityActive ? adapter.assessReadiness?.({
+        state: baseReadiness, visibleStructuralCandidateCount, feedRootPresent: feedRoot,
+        documentReadyState: document.readyState, structuralCandidateCount: structural.length,
+      })?.state ?? baseReadiness : baseReadiness;
       return { sourceReadiness, adapterVersion: adapter.version, visibility: document.visibilityState,
         url: location.href, title: document.title, candidateCount: discovery.candidates.length,
         discoveryStrategy: discovery.strategy, rejected, rejectionReasons, posts,

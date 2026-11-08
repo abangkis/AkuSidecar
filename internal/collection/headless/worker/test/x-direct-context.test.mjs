@@ -8,7 +8,8 @@ import {contentContextKnownTypes} from '../../../../httpapi/web/timeline-content
 
 const bridge = new URL('../../../../../../AkuBridge/', import.meta.url);
 const sources = await Promise.all([
-  ...['capture-primitives.js', 'source-adapter-runtime.js', 'adapters/x-adapter.js'].map(name => readFile(new URL(name, bridge), 'utf8')),
+  ...['capture-primitives.js', 'source-adapter-runtime.js', 'adapters/x-adapter.js',
+    'shared-dom-engine/browser-runtime.js', 'adapters/x-dom-shadow.js'].map(name => readFile(new URL(name, bridge), 'utf8')),
   ...['x-quote-identity.js', 'x-extract.js'].map(name => readFile(new URL('../vendor/' + name, import.meta.url), 'utf8')),
 ]);
 const ownID = '2106867448746021278';
@@ -50,6 +51,7 @@ function article(id, body, {markers = [], quote = null, media = [], surfaceText}
     },
     querySelectorAll(selector) {
       if (selector === 'time') return [time, ...(quote?.querySelectorAll('time') ?? [])];
+      if (selector === '[data-testid="User-Name"]') return [author, ...(quote?.querySelectorAll(selector) ?? [])];
       if (selector.includes('tweetPhoto')) return [...media, ...(quote?.querySelectorAll(selector) ?? [])];
       if (selector.includes('tweetText')) {
         return [...(text ? [text] : []), ...(quote?.querySelectorAll(selector) ?? [])];

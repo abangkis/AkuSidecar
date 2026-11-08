@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 const SOURCE_READINESS_STATES = new Set(['source_unavailable', 'login_required',
-  'feed_ready', 'feed_empty', 'loading', 'feed_not_visible', 'selector_mismatch', 'page_shell']);
+  'feed_ready', 'feed_empty', 'feed_hydrating', 'loading', 'feed_not_visible', 'selector_mismatch', 'page_shell']);
 
 // Observational base classification, not sourceReadiness/account/empty proof.
 // Omit absent or unknown values, preserving the older serialized contract.

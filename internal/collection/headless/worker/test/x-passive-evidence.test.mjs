@@ -9,7 +9,7 @@ import {MAX_SINGLE_POST_BYTES, toObservation} from '../observation.mjs';
 
 const bridge = new URL('../../../../../../AkuBridge/', import.meta.url);
 const names = ['x-response-evidence-adapter.js', 'x-media-evidence-runtime.js', 'capture-primitives.js',
-  'source-adapter-runtime.js', 'adapters/x-adapter.js'];
+  'source-adapter-runtime.js', 'adapters/x-adapter.js', 'shared-dom-engine/browser-runtime.js', 'adapters/x-dom-shadow.js'];
 const templates = await Promise.all(names.map(async name => ({relative: 'AkuBridge/' + name,
   execute: !name.startsWith('x-'), content: await readFile(new URL(name, bridge), 'utf8')})));
 for (const name of ['x-quote-identity.js', 'x-extract.js']) templates.push({relative: 'worker/vendor/' + name,
@@ -269,9 +269,15 @@ function domArticle() {
     getAttribute: name => name === 'data-testid' ? 'tweetText' : null,
     querySelector: () => null, querySelectorAll: () => [], closest: () => null};
   const time = {dateTime: '2026-10-12T00:00:00Z', closest: () => ({href: native})};
+  const author = {innerText: 'Owner'};
   return {innerText: 'DOM caption', getClientRects: () => [{}], getBoundingClientRect: () => ({height: 200, top: 0, bottom: 200}),
-    querySelector: selector => selector === '[data-testid="User-Name"]' ? {innerText: 'Owner'} : selector.includes('tweetText') ? text : null,
-    querySelectorAll: selector => selector === 'time' ? [time] : selector === '[data-testid="tweetText"]' ? [text] : []};
+    querySelector: selector => selector === '[data-testid="User-Name"]' ? author : selector.includes('tweetText') ? text : null,
+    querySelectorAll(selector) {
+      if (selector === 'time') return [time];
+      if (selector === '[data-testid="tweetText"]') return [text];
+      if (selector === '[data-testid="User-Name"]') return [author];
+      return [];
+    }};
 }
 
 async function captureGraphQLReply(afterSnapshotRead) {

@@ -49,6 +49,17 @@ const cases = [
   ['hydration_before', '<div aria-busy="true">' + placeholder + '</div>'],
   ['hydration_after', wrappedPost],
   ['conflicting_identity', legacy('1234500000000000006', { extra: timestamp('other', '1234500000000000007') })],
+  ['wrapper_timestamp_agreement', wrapped('1234500000000000002', { extra: timestamp('wrapped', '1234500000000000002') })],
+  ['wrapper_timestamp_conflict', wrapped('1234500000000000002', { extra: timestamp('other', '1234500000000000007') })],
+  ['quote_cannot_identify_owner', '<article data-testid="tweet"><div data-testid="User-Name">owner</div>' +
+    '<div data-testid="tweetText">Owner body</div>' + quote + '</article>'],
+  ['quote_identity_conflict', legacy('1234500000000000003', { extra: wrapped(quoteId, {
+    handle: 'quote', text: 'Quoted fixture body', extra: timestamp('other', '1234500000000000007'),
+  }) })],
+  ['quote_direct_link', legacy('1234500000000000003', { extra: `<div data-testid="quoteTweet">
+    <a href="/quote/status/${quoteId}">Quoted post</a><div data-testid="tweetText">Quote body</div></div>` })],
+  ['quote_authored_link', legacy('1234500000000000003', { extra: `<div data-testid="quoteTweet">
+    <div data-testid="tweetText"><a href="/quote/status/${quoteId}">A link in the quote body</a></div></div>` })],
   ['empty', '<p>No posts to display</p>'],
   ['login_required', '<input name="password" aria-label="Fixture password">'],
   ['challenge_required', '<section id="challenge-running">Fixture challenge</section>'],
@@ -69,7 +80,7 @@ function browserBaseline({ cases, assets, gate, mode }) {
   if (shadow) {
     const observer = new MutationObserver(() => {});
     observer.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
-    globalThis.AkuXDOMShadow = { assess(sample) {
+    globalThis.AkuXDOMShadow = { ...shadow, assess(sample) {
       observer.takeRecords();
       shadowCalls++;
       const result = shadow.assess(sample);
@@ -81,6 +92,7 @@ function browserBaseline({ cases, assets, gate, mode }) {
   const request = (message) => new Promise((resolve) => receive(message, null, resolve));
   const compactPost = (post) => ({
     id: post.platformId ?? (post.id ? `x:status:${post.id}` : null),
+    permalink: post.permalink,
     identity: post.presentation?.primaryIdentity?.status ?? post.identityComparison?.sharedDecision ?? null,
     author: post.author,
     text: post.text,
@@ -202,26 +214,40 @@ try {
     shadowMutations: windowedResult.shadowMutations + headlessResult.shadowMutations,
   };
   const get = name => data.rows.find(row => row.name === name);
+  for (const { name, windowed, headless } of data.rows) {
+    assert.deepEqual(headless.posts, windowed.posts, name);
+    assert.equal(headless.readiness, windowed.readiness, name);
+  }
   for (const mode of ['windowed', 'headless']) {
     assert.equal(get('legacy')[mode].posts[0].id, 'x:status:1234500000000000001');
     assert.equal(get('legacy_quote')[mode].posts[0].quoteId, quoteId);
+    assert.equal(get('wrapped_quote')[mode].posts[0].quoteId, quoteId);
+    assert.equal(get('wrapped_without_time')[mode].posts[0].permalink, 'https://x.com/wrapped/status/1234500000000000002');
+    assert.equal(get('mixed_layouts')[mode].posts.length, 2);
     assert.equal(get('media_only')[mode].posts[0].media, 1);
+    assert.equal(get('placeholder')[mode].posts.length, 0);
+    assert.equal(get('hydration_before')[mode].posts.length, 0);
+    assert.equal(get('hydration_after')[mode].posts.length, 1);
+    assert.equal(get('conflicting_identity')[mode].posts.length, 0);
+    assert.equal(get('wrapper_timestamp_conflict')[mode].posts.length, 0);
+    assert.equal(get('wrapper_timestamp_agreement')[mode].posts.length, 1);
+    assert.equal(get('quote_cannot_identify_owner')[mode].posts.length, 0);
+    assert.equal(get('quote_identity_conflict')[mode].posts[0].quoteId, null);
+    assert.equal(get('quote_direct_link')[mode].posts[0].quoteId, quoteId);
+    assert.equal(get('quote_authored_link')[mode].posts[0].quoteId, null);
     assert.equal(get('login_required')[mode].readiness, 'login_required');
     assert.equal(get('challenge_required')[mode].readiness, 'challenge_required');
   }
-  assert.equal(get('wrapped_without_time').windowed.posts[0].id, 'x:status:1234500000000000002');
-  assert.equal(get('wrapped_without_time').headless.readiness, 'feed_ready');
-  assert.equal(get('wrapped_without_time').headless.posts.length, 0);
-  assert.equal(get('wrapped_without_time').headless.rejections.missing_identity, 1);
-  assert.equal(get('wrapped_quote').windowed.posts[0].quoteId, quoteId);
   assert.equal(get('placeholder').windowed.readiness, 'feed_hydrating');
   assert.equal(get('hydration_after').windowed.readiness, 'feed_ready');
-  assert.equal(get('conflicting_identity').windowed.posts[0].identity, 'conflicting');
   assert.equal(get('conflicting_identity').headless.rejections.ambiguous_identity, 1);
   const expectedShadowCodes = {
     legacy: 'ready', wrapped_without_time: 'ready', mixed_layouts: 'ready', legacy_quote: 'ready',
     wrapped_quote: 'ready', media_only: 'ready', placeholder: 'no_valid_candidates',
     hydration_before: 'hydrating', hydration_after: 'ready', conflicting_identity: 'no_valid_candidates',
+    wrapper_timestamp_agreement: 'ready', wrapper_timestamp_conflict: 'no_valid_candidates',
+    quote_cannot_identify_owner: 'no_valid_candidates', quote_identity_conflict: 'ready',
+    quote_direct_link: 'ready', quote_authored_link: 'ready',
     empty: 'empty_unverified', login_required: 'login_required', challenge_required: 'challenge_required',
   };
   for (const { name, windowed, headless } of data.rows) {
@@ -235,11 +261,14 @@ try {
   let baselineSha256;
   if (baselinePath) {
     const baseline = await readFile(resolve(baselinePath), 'utf8');
-    const legacy = ({ sharedDOMShadow, ...result }) => result;
-    const baselineRows = JSON.parse(baseline).rows;
-    assert.equal(data.rows.length, baselineRows.length);
-    for (const [index, { name, windowed, headless }] of data.rows.entries()) {
-      assert.deepEqual({ name, windowed: legacy(windowed), headless: legacy(headless) }, baselineRows[index], name);
+    const before = new Map(JSON.parse(baseline).rows.map(row => [row.name, row]));
+    const comparable = ({ adapter, sharedDOMShadow, posts, ...result }) => ({
+      ...result, posts: posts.map(({ permalink, ...post }) => post),
+    });
+    for (const name of ['legacy', 'legacy_quote', 'media_only', 'empty', 'login_required', 'challenge_required']) {
+      for (const mode of ['windowed', 'headless']) {
+        assert.deepEqual(comparable(get(name)[mode]), comparable(before.get(name)[mode]), `${name} ${mode}`);
+      }
     }
     baselineSha256 = digest(baseline);
   }

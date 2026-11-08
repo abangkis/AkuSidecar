@@ -89,6 +89,7 @@ function xFixture({ quoteId = '2222222222222222', ambiguous = false } = {}) {
       return null;
     },
     querySelectorAll(selector) {
+      if (selector === 'time') return [quoteTime];
       if (selector === 'a[href*="/status/"]') return [quoteStatusAnchor];
       return [];
     },
