@@ -2,6 +2,28 @@
 
 Source audit: 5 October 2026. Windowed refers to AkuBridge's visible-browser capture pipeline; native reader display alone is not a capture pipeline. Quiet/hidden browser is a separate backend. This comparison focuses on the X text incident and the shared capture boundaries, not a live parity certification for every source.
 
+## X wrapped feed markup, 8 November 2026
+
+In the Windowed capture profile, DevTools confirmed that X rendered complete
+posts with status routes on `role="link"` wrappers around `main article`.
+The legacy tweet, author, and body markers were missing. AkuBridge `x-dom-v24`
+recognizes this layout alongside the legacy layout and preserves primary and
+quoted evidence separately. Offline checks included a wrapped placeholder and
+verified that its URL alone does not make it ready.
+
+The development Windowed trial (`session_c5bbfbb40dcd77f96f1a375b74de4c38`)
+reached `feed_ready` and saved one X item to Timeline from four evaluated
+candidates. SQLite confirmed the observation and item. Smart dedup stayed
+enabled and both Native collectors stayed disabled. The development Bridge
+heartbeat remained compatible with Sidecar and reported an adapter-version
+warning against its `x-dom-v23` release reference.
+
+The Headless X collector still requires an own timestamp anchor for primary
+identity. Loading the updated shared adapter alone leaves wrapped posts without
+that anchor ineligible. Headless needs to consume the shared identity evidence
+and retain its existing ambiguity and continuation guards before this layout can
+be qualified in that backend.
+
 ## Five approved source parity improvements, 12 October 2026
 
 The follow-up implementation closes all five source gaps identified below.
@@ -149,13 +171,18 @@ and the capture/frontier integration. Existing stored posts are not rewritten.
 
 ## Shared contracts and separate controllers
 
-Headless injects AkuBridge's source-adapter runtime and adapters. X uses the same `x-dom-v23` selector, text/quote parser, expansion policy (12 attempts at 40 ms), and expected-media rules. Headless does not execute the complete `AkuBridge/content-script.js` controller. It supplies separate discovery, admission, hydration, navigation, recovery and serialization in its worker.
+Headless injects AkuBridge's source-adapter runtime and adapters, including
+shared X selectors, text and quote parsing, expansion policy (12 attempts at
+40 ms), and expected-media rules. Its worker owns admission, hydration,
+navigation, recovery, and serialization separately from the Windowed
+`AkuBridge/content-script.js` controller. The X wrapped-markup update above
+identifies a remaining identity admission difference.
 
 | Capability | Windowed AkuBridge | Headless worker | Difference / reuse boundary |
 | --- | --- | --- | --- |
 | Text extraction and expansion | `content-script.js` uses shared primitives before extracting each block and records expansion state; restorable adapters restore their controls. | X expands only on the matching native detail route; Instagram/LinkedIn use shared expansion on an authorized first-round own content root. Unresolved collapse remains partial. | Expansion rules are shared; backend authority, deadline and recovery navigation remain separate. |
 | Full X text recovery | The examined Bridge path expands the visible block. Its `recoverPermalinks` hook recovers identity URLs, not full text through a second page. | `x-text-recovery.mjs` navigates an owned temporary page, checks exact identity and accepts only longer, resolved text. | This is an additional headless capability with its own latency budget and failure modes. |
-| Primary and quoted identity | Shared X adapter extracts timestamp permalink, quoted fields and reply semantics. | Adds exactly-one-own-permalink admission and `XHeadlessQuoteIdentity` evidence/probing. | Reuse adapter parsers; do not remove headless identity safeguards in pursuit of parity. |
+| Primary and quoted identity | X adapter extracts legacy timestamp permalinks or the wrapped post route, quoted fields, and reply semantics. | Adds exactly-one-own-permalink admission and `XHeadlessQuoteIdentity` evidence/probing. Primary admission still reads timestamp anchors. | Use shared identity evidence while preserving Headless identity safeguards. |
 | Media | Adapter media rules plus Bridge's media/quality recovery and persistent evidence integrations. | Shared selectors/expected kinds, worker DOM observations, structured-media resolution and bounded passive X response fallback. | Headless response caches stay in worker memory; this does not establish identical recovery, persistence or playback verification. |
 | Quality and retry | `content-script.js` evaluates per-block quality and retries within `qualityRetryBudget` and operation deadline. | Observation keeps explicit limitations; X text recovery has its own bounded retry and outcome cache. | Quality pipelines and diagnostic schemas differ. |
 | Freshness | Source adapter wake/reveal policies are executed by Bridge, including wake/reveal observations. | X and LinkedIn initial headless feed capture probe the shared pending control, activate it once when allowed, and qualify primary identity/content changes. Facebook/Instagram remain unverified. | Qualification covers supported controls and within-capture changes; it does not establish global feed freshness or full Bridge wake parity. |
