@@ -87,6 +87,10 @@
     return { status: expectedWithoutUrl.length ? 'missing_expected_url' : media.length ? 'observed_urls_partial' : 'no_media_observed',
       expectedWithoutUrl, notReady: media.filter(m => !m.loaded).length };
   }
+  function xDOMShadow(sample) {
+    const diagnostic = globalThis.AkuXDOMShadow?.assess(sample);
+    return diagnostic ? { sharedDOMShadow: diagnostic } : {};
+  }
   function challengeSnapshot(adapter, challenge) {
     return {
       adapterVersion: adapter.version,
@@ -104,6 +108,7 @@
       challengeDetected: true,
       challengeCategory: challenge.category,
       challengeMessage: challenge.message,
+      ...xDOMShadow({ access: 'challenge_required' }),
       documentReady: document.readyState === 'complete',
       authenticatedUiObserved: false,
     };
@@ -219,19 +224,24 @@
       const visible = element => { const box = element.getBoundingClientRect();
         return box.height > 0 && box.bottom > 0 && box.top < innerHeight; };
       const structural = discovery.readinessCandidates ?? discovery.candidates;
+      const loginRequired = adapter.loginRequired() || (!posts.length && location.pathname === '/home' && loginLink);
+      const loading = Boolean(document.querySelector('[aria-busy="true"], .artdeco-loader, [data-test-id*="loading" i]'));
+      const feedRoot = adapter.feedRootPresent?.() === true;
       const sourceReadiness = primitives.sourceReadinessState({
-        loginRequired: adapter.loginRequired() || (!posts.length && location.pathname === '/home' && loginLink),
+        loginRequired,
         visibleCandidateCount: discovery.candidates.filter(visible).length,
         visibleStructuralCandidateCount: structural.filter(visible).length,
-        loading: Boolean(document.querySelector('[aria-busy="true"], .artdeco-loader, [data-test-id*="loading" i]')),
+        loading,
         documentReady: document.readyState === 'complete', candidateCount: discovery.candidates.length,
-        structuralCandidateCount: structural.length, feedRootPresent: adapter.feedRootPresent?.() === true,
+        structuralCandidateCount: structural.length, feedRootPresent: feedRoot,
       });
       return { sourceReadiness, adapterVersion: adapter.version, visibility: document.visibilityState,
         url: location.href, title: document.title, candidateCount: discovery.candidates.length,
         discoveryStrategy: discovery.strategy, rejected, rejectionReasons, posts,
         scroll: { y: scrollY, height: document.scrollingElement?.scrollHeight ?? null, viewportWidth: innerWidth, viewportHeight: innerHeight },
-        loginRequired: adapter.loginRequired() || (!posts.length && location.pathname === '/home' && loginLink),
+        loginRequired,
+        ...xDOMShadow({ adapter, candidates: structural, visible, loading, feedRoot,
+          access: loginRequired ? 'login_required' : 'available' }),
         challengeDetected: false, documentReady: document.readyState === 'complete',
         authenticatedUiObserved: Boolean(document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]')),
       };

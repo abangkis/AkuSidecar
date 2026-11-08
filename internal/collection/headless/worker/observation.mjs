@@ -12,6 +12,33 @@ export function projectSourceReadiness(snapshot) {
     ? {sourceReadinessState: state} : {};
 }
 
+const DOM_SHADOW_CODES = new Set([
+  'ready', 'hydrating', 'empty_observed', 'dom_contract_suspected', 'inconclusive',
+  'incomplete_sample', 'offscreen', 'no_valid_candidates', 'empty_unverified',
+  'invalid_evidence', 'unsupported_schema', 'probe_failed', 'unknown', 'wrong_route',
+  'login_required', 'challenge_required', 'unavailable', 'navigation_failed',
+]);
+const DOM_SHADOW_REJECTIONS = [
+  'candidate_probe_failed', 'missing_identity', 'identity_conflict', 'unexpected_identity',
+  'ownership_conflict', 'unknown_layout', 'missing_required_field', 'missing_content',
+];
+
+export function projectDOMShadow(snapshot) {
+  const value = snapshot?.sharedDOMShadow;
+  if (!DOM_SHADOW_CODES.has(value?.code)) return {};
+  const isCount = count => Number.isSafeInteger(count) && count >= 0 && count <= 64;
+  const counts = {};
+  for (const key of ['candidates', 'visibleStructural', 'accepted', 'rejected', 'offscreen']) {
+    if (!isCount(value.counts?.[key])) return {};
+    counts[key] = value.counts[key];
+  }
+  const rejections = {};
+  for (const key of DOM_SHADOW_REJECTIONS) {
+    if (isCount(value.rejections?.[key])) rejections[key] = value.rejections[key];
+  }
+  return { sharedDOMShadow: { code: value.code, counts, rejections } };
+}
+
 const X_POST = /^\/([^/]+)\/status\/(\d+)(?:\/.*)?$/;
 const MAX_STRUCTURED_MEDIA_DIAGNOSTIC_SNAPSHOTS = 8;
 export const MAX_SINGLE_POST_BYTES = 96 * 1024;
@@ -291,6 +318,7 @@ export function toObservation({ source, requestedUrl, snapshots, provenance, cap
       authenticatedUiObserved: last.authenticatedUiObserved === true,
       documentReady: last.documentReady === true,
       ...projectSourceReadiness(last),
+      ...(source === 'x' ? projectDOMShadow(last) : {}),
       structuredMediaResolution,
       ...(first.quoteIdentityProbe ? { quoteIdentityProbe: structuredClone(first.quoteIdentityProbe) } : {}),
       ...(frontier ? { frontier: structuredClone(frontier) } : {}),

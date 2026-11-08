@@ -79,6 +79,18 @@ export async function sourceAssets(bridgePath, source) {
       ];
   selected.splice(selected.findIndex(asset => asset.relative === `AkuBridge/adapters/${source}-adapter.js`) + 1, 0,
     { relative: 'AkuBridge/source-freshness-runtime.js', path: resolve(bridge, 'source-freshness-runtime.js'), execute: true });
+  if (source === 'x') {
+    // Older Bridge packages do not carry shadow diagnostics. Load the complete pair when available.
+    const shadow = ['shared-dom-engine/browser-runtime.js', 'adapters/x-dom-shadow.js'].map(name => ({
+      relative: `AkuBridge/${name}`, path: resolve(bridge, name), execute: true,
+    }));
+    try {
+      const files = await Promise.all(shadow.map(asset => stat(asset.path)));
+      if (files.every(file => file.isFile() && file.size <= 1024 * 1024)) shared.push(...shadow);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+  }
   const workerModules = ['capture-primitives.mjs', 'capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'structured-media.mjs', 'additional-source-media.mjs', 'photo-recapture.mjs', 'x-text-recovery.mjs', 'x-passive-evidence.mjs', 'headless-freshness.mjs', 'source-freshness-contract.mjs', 'source-concurrent-adapter.mjs', 'worker.mjs', 'package.json']
     .map(name => ({ relative: `worker/${name}`, path: resolve(root, name), execute: false }));
   const assets = [];

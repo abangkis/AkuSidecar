@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { emptyCaptureDiagnostics, facebookTargetUnavailable } from '../capture.mjs';
+import { projectDOMShadow } from '../observation.mjs';
 
 test('native Facebook unavailable notice excludes live posts, loading shells and quoted prose',()=>{
   const probe=(text,{post=false,ready='complete',main=true}={})=>vm.runInNewContext(`(${facebookTargetUnavailable.toString()})()`,{
@@ -40,6 +41,20 @@ test('dialog diagnostics preserve readiness states without copying untrusted lab
     {dialogScope:{status:'private-label',candidateCount:-1}}]);
   assert.deepEqual(result.samples[0].dialogScope,{status:'dialog_pending_identity',candidateCount:0});
   assert.deepEqual(result.samples[1].dialogScope,{status:null,candidateCount:null});
+});
+
+test('DOM shadow diagnostics keep bounded engine codes and strip untrusted candidate data', () => {
+  const counts = { candidates: 1, visibleStructural: 1, accepted: 0, rejected: 1, offscreen: 0 };
+  const diagnostic = { code: 'no_valid_candidates', counts, rejections: { identity_conflict: 1 } };
+  const snapshot = { sharedDOMShadow: { ...diagnostic,
+    counts: { ...counts, private_id: 123 },
+    rejections: { ...diagnostic.rejections, private_text: 1 },
+    candidates: ['private locator'],
+  } };
+  assert.deepEqual(projectDOMShadow(snapshot), { sharedDOMShadow: diagnostic });
+  assert.deepEqual(emptyCaptureDiagnostics([snapshot]).samples[0].sharedDOMShadow, diagnostic);
+  assert.deepEqual(projectDOMShadow({ sharedDOMShadow: { ...diagnostic, code: 'private label' } }), {});
+  assert.deepEqual(projectDOMShadow({ sharedDOMShadow: { ...diagnostic, counts: { ...counts, candidates: 65 } } }), {});
 });
 
 test('distinguishes no discovered post from rejected candidates without copying page labels',()=>{
