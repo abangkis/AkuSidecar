@@ -7,7 +7,7 @@ import { photoRecaptureObservation } from './photo-recapture.mjs';
 import { createXTextRecovery } from './x-text-recovery.mjs';
 import { recoverHeadlessFreshness } from './headless-freshness.mjs';
 import { sourceFreshnessContractFor } from './source-freshness-contract.mjs';
-import { prepareXPassiveEvidence, resolveXPassiveEvidence } from './x-passive-evidence.mjs';
+import { finalizeXReplyEvidence, prepareXPassiveEvidence, resolveXPassiveEvidence } from './x-passive-evidence.mjs';
 
 const MAX_CAPTURE_MS = 90000;
 const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
@@ -420,6 +420,8 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
   } else sourceFrontiers.delete(source);
   if (options.restoreScroll) await page.evaluate(`globalThis.XHeadlessPoC?.scrollSourceTo ? globalThis.XHeadlessPoC.scrollSourceTo(${originalScrollY}) : window.scrollTo({top:${originalScrollY},behavior:'instant'})`, timeLeft(deadline)).catch(() => {});
   try {
+    if (source === 'x') await finalizeXReplyEvidence({browser, page, assets, snapshots, deadlineAt: deadline,
+      remainingBytes: MAX_POST_EVIDENCE_BYTES - postEvidenceBytes});
     const observation=toObservation({
       source, requestedUrl, snapshots, provenance, capturedAt, stopReason,
       performedScrolls: performedScrollsKnown ? performedScrolls : undefined, scrollStopReason,

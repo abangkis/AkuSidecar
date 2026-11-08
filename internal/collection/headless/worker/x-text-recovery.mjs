@@ -1,5 +1,5 @@
 import { capturePrimitivesFor } from './capture-primitives.mjs';
-import { mergeXReplyDirectContext, prepareXPassiveEvidence } from './x-passive-evidence.mjs';
+import { prepareXPassiveEvidence } from './x-passive-evidence.mjs';
 
 const MAX_TARGETS = 3;
 // Reserve half of each target's bounded budget for one transient retry.
@@ -189,7 +189,7 @@ export function createXTextRecovery({ browser, assets, deadlineAt, perTargetMs =
         outcomes.set(target.key, outcome);
       }
       if (outcome && preservesCurrentText(post, outcome)) {
-        posts.push(outcome.kind === 'verified' ? mergeXReplyDirectContext(post, outcome.directContext) : post);
+        posts.push(outcome.kind === 'verified' ? helpers().mergeXReplyDirectContext(post, outcome.directContext) : post);
       } else {
         posts.push(outcome ? applyOutcome(post, outcome, helpers()) : post);
       }
@@ -261,7 +261,7 @@ function applyOutcome(post, outcome, primitives) {
       textCollapsed: false,
       limitations: unique(limitations.filter(value => !['text_may_be_collapsed', 'text_may_be_truncated', 'text_truncated'].includes(value))),
     };
-    return mergeXReplyDirectContext(recovered, outcome.directContext);
+    return primitives.mergeXReplyDirectContext(recovered, outcome.directContext);
   }
   const textLimitations = outcome.kind === 'truncated'
     ? ['text_may_be_truncated', 'text_truncated'] : [outcome.limitation];

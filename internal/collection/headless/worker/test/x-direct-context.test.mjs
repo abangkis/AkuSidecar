@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
 import {toObservation} from '../observation.mjs';
-import {mergeXReplyDirectContext} from '../x-passive-evidence.mjs';
+import {capturePrimitivesFor} from '../capture-primitives.mjs';
 import {contentContextKnownTypes} from '../../../../httpapi/web/timeline-content-context-state.js';
 
 const bridge = new URL('../../../../../../AkuBridge/', import.meta.url);
@@ -12,6 +12,7 @@ const sources = await Promise.all([
   ...['x-quote-identity.js', 'x-extract.js'].map(name => readFile(new URL('../vendor/' + name, import.meta.url), 'utf8')),
 ]);
 const ownID = '2106867448746021278';
+const {mergeXReplyDirectContext} = capturePrimitivesFor([{relative: 'AkuBridge/capture-primitives.js', content: sources[0]}]);
 const parentID = '2106867448746021279';
 const url = id => `https://x.com/owner/status/${id}`;
 const plain = value => JSON.parse(JSON.stringify(value));

@@ -32,6 +32,25 @@ reply edges.
 
 ## Validation boundary
 
+The `0.9.3` / `source-adapters-v119` source candidate finalizes exact X reply
+evidence before submitting an observation in both capture controllers. Windowed
+capture performs its final cache lookup independently of deferred-media results.
+Owned headless performs a bounded, reply-only lookup after its last snapshot
+read and recovery work, immediately before observation serialization. Both use
+the same Bridge-owned identity validation and reply merge rules. This is not
+an authority to navigate, fetch another response, or guess a parent from text.
+
+Repeated observations across scroll snapshots may corroborate the same child;
+duplicate identities inside one snapshot remain ambiguous. Existing quote
+semantics, relation limits, capture deadlines and headless evidence-size limits
+still apply. Borrowed Quiet pages do not install or read an additional passive
+observer. The final lookup cannot recover evidence that never reached the cache
+or arrived after its deadline. Contradictions against retained reply evidence
+remain ambiguous; this change does not add response-history storage.
+
+The source candidate requires a separately authorized runtime activation. It
+does not rewrite retained observations or repair previously captured posts.
+
 The v116 worker retains exact parent IDs arriving through the existing passive
 response observer after the DOM snapshot. A response-created relation carries
 no parent body. A verified detail-page snapshot can also contribute its exact

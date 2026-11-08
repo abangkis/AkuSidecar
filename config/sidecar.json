@@ -170,10 +170,9 @@
       "temporaryBackoffBaseMs": 20000,
       "temporaryBackoffMaxMs": 180000
     },
-    "xMode": "concurrent",
-    "xReaderSource": "main",
-    "instagramMode": "concurrent",
-    "instagramTrial": true
+    "xMode": "exclusive",
+    "instagramMode": "browser",
+    "instagramTrial": false
   },
   "bridge": {
     "trustedExtensionOrigins": []

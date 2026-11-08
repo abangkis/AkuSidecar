@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
-import {mergeXReplyDirectContext, prepareXPassiveEvidence, resolveXPassiveEvidence} from '../x-passive-evidence.mjs';
+import {capturePrimitivesFor} from '../capture-primitives.mjs';
+import {finalizeXReplyEvidence, prepareXPassiveEvidence, resolveXPassiveEvidence} from '../x-passive-evidence.mjs';
 import {capture} from '../capture.mjs';
-import {toObservation} from '../observation.mjs';
+import {MAX_SINGLE_POST_BYTES, toObservation} from '../observation.mjs';
 
 const bridge = new URL('../../../../../../AkuBridge/', import.meta.url);
 const names = ['x-response-evidence-adapter.js', 'x-media-evidence-runtime.js', 'capture-primitives.js',
@@ -137,9 +138,9 @@ test('late exact reply evidence is added to the requested post and serialized wi
   const [merged] = await resolveXPassiveEvidence({browser, page, assets: value, posts: [input], deadlineAt: Date.now() + 1000});
   assert.equal(merged.relationshipType, 'quote');
   assert.equal(merged.parentPermalink, quoteParent, 'reply enrichment must preserve the quote legacy edge');
-  assert.deepEqual(merged.directContext.map(relation => relation.kind), ['quotes', 'replies_to']);
+  assert.deepEqual(Array.from(merged.directContext, relation => relation.kind), ['quotes', 'replies_to']);
   assert.equal(merged.directContext[0].target.id, quoteID);
-  assert.deepEqual(merged.directContext[1], {
+  assert.deepEqual(structuredClone(merged.directContext[1]), {
     kind: 'replies_to', provenance: 'observed_response', capturedAt: merged.directContext[1].capturedAt,
     target: {kind: 'post', id: parentID, permalink: `https://x.com/i/status/${parentID}`,
       text: '', author: '', availability: 'reference_only'},
@@ -223,7 +224,7 @@ test('malformed optional reply evidence cannot erase a valid existing edge', () 
   const original = post({relationshipType: 'reply', parentPermalink: existing.target.permalink,
     directContext: [existing]});
   for (const incoming of [[malformed], [existing, malformed]]) {
-    const merged = mergeXReplyDirectContext(original, incoming);
+    const merged = capturePrimitivesFor(templates).mergeXReplyDirectContext(original, incoming);
     assert.deepEqual(merged, original);
     assert.equal(merged.directContext[0].target.id, parentID);
     assert.equal(merged.parentPermalink, existing.target.permalink);
@@ -273,7 +274,7 @@ function domArticle() {
     querySelectorAll: selector => selector === 'time' ? [time] : selector === '[data-testid="tweetText"]' ? [text] : []};
 }
 
-test('real GraphQL observer carries a reply that arrives after DOM collection through capture', async () => {
+async function captureGraphQLReply(afterSnapshotRead) {
   const value = assets(), article = domArticle(), listeners = [], events = [];
   let context, boot, responseSent = false;
   const graphURL = 'https://x.com/i/api/graphql/query/HomeTimeline';
@@ -302,11 +303,15 @@ test('real GraphQL observer carries a reply that arrives after DOM collection th
     },
     async evaluate(expression) {
       const evaluated = await vm.runInContext(expression, context);
-      if (expression.includes('XHeadlessPoC.collect()') && !responseSent) {
+      if (expression.includes('XHeadlessPoC.collect()')) {
         const beforeResponse = JSON.parse(evaluated);
         assert.equal(beforeResponse.posts[0].directContext.some(relation => relation.kind === 'replies_to'), false,
           'the DOM snapshot must be collected before the response edge arrives');
         events.push('collect');
+      }
+      if (expression.includes('readXPassiveEvidenceInPage')) events.push('snapshot read');
+      if (expression.includes('readFinalXReplyIdsInPage')) events.push('final read');
+      if (!responseSent && expression.includes(afterSnapshotRead ? 'readXPassiveEvidenceInPage' : 'XHeadlessPoC.collect()')) {
         responseSent = true;
         await vm.runInContext(`fetch(${JSON.stringify(graphURL)})`, context);
         await new Promise(resolve => setTimeout(resolve, 30));
@@ -320,14 +325,57 @@ test('real GraphQL observer carries a reply that arrives after DOM collection th
   const browser = {backend: 'headless_worker', forSource: async () => page};
   const output = await capture(browser, {x: value}, 'x', {scrolls: 0, captureTimeoutMs: 3000, sourceHydrationTimeoutMs: 1000});
   const block = output.snapshots[0].blocks[0];
-  assert.deepEqual(events.slice(0, 2), ['register', 'navigate']);
-  assert.deepEqual(events.slice(2, 4), ['collect', 'response']);
+  assert.deepEqual(events, afterSnapshotRead
+    ? ['register', 'navigate', 'collect', 'snapshot read', 'response', 'final read']
+    : ['register', 'navigate', 'collect', 'response', 'snapshot read', 'final read']);
+  assert.equal(block.directContext.length, 1);
   assert.equal(block.directContext[0].target.id, parentID);
   assert.equal(block.directContext[0].provenance, 'observed_response');
   assert.equal(block.directContext[0].target.availability, 'reference_only');
   assert.equal(block.relationshipType, 'reply');
   assert.equal(block.parentPermalink, `https://x.com/i/status/${parentID}`);
-  assert.equal(block.avatarUrl, avatar);
+  if (!afterSnapshotRead) assert.equal(block.avatarUrl, avatar);
   assert.equal(block.text, 'DOM caption');
   assert.equal(JSON.stringify(output).includes('PRIVATE_GRAPHQL_BODY'), false);
+}
+
+test('real GraphQL observer carries a reply that arrives after DOM collection through capture', () => captureGraphQLReply(false));
+test('final serialized observation carries a reply that arrived after the last per-snapshot read', () => captureGraphQLReply(true));
+
+test('final reread respects snapshot identity, earlier conflicting evidence, and the output byte budget', async () => {
+  const {browser, page, value, state} = await registered();
+  const existing = capturePrimitivesFor(value).mergeXResponseReply(post(), '33333');
+  const duplicate = post();
+  const snapshots = [
+    {posts: [post()]}, {posts: [post()]}, {posts: [duplicate, post()]}, {posts: [existing]},
+    {posts: [post({presentation: {directContextStatus: 'ambiguous'}})]},
+  ];
+  state.result = [[ownID, parentID]];
+  const finalize = (changes = {}) => finalizeXReplyEvidence({browser, page, assets: value, snapshots,
+    deadlineAt: Date.now() + 1000, remainingBytes: 8000, ...changes});
+  await finalize({browser: {backend: 'browser_quiet_hidden'}});
+  await finalize({deadlineAt: Date.now() - 1});
+  assert.equal(state.reads, 0);
+  await finalize({remainingBytes: 0});
+  assert.ok(snapshots.slice(0, 2).every(snapshot => !snapshot.posts[0].directContext));
+  assert.equal(snapshots[3].posts[0].presentation.directContextStatus, 'ambiguous');
+  await finalize();
+  for (const {posts} of snapshots.slice(0, 2)) {
+    assert.equal(posts[0].directContext.length, 1);
+    assert.equal(posts[0].directContext[0].target.id, parentID);
+  }
+  assert.ok(snapshots[2].posts.every(value => !value.directContext));
+  assert.ok(snapshots.slice(3).every(snapshot => !snapshot.posts[0].directContext?.length));
+  assert.equal(snapshots[3].posts[0].parentPermalink, '');
+  assert.equal(state.reads, 2);
+  const fullPost = post({padding: ''});
+  fullPost.padding = 'x'.repeat(MAX_SINGLE_POST_BYTES - Buffer.byteLength(JSON.stringify(fullPost)));
+  const fullSnapshot = {posts: [fullPost]};
+  await finalize({snapshots: [fullSnapshot]});
+  assert.equal(fullSnapshot.posts[0], fullPost, 'optional evidence must fit the individual serialized post');
+  const output = toObservation({source: 'x', requestedUrl: 'https://x.com/home',
+    snapshots: [fullSnapshot], provenance: {}, capturedAt: '2026-10-12T00:00:00.000Z'});
+  assert.equal(output.snapshots[0].blocks[0].platformId, 'x:status:' + ownID);
+  await finalize({page: Object.assign(page, {evaluate: async () => {throw Error('CDP unavailable');}})});
+  assert.equal(snapshots[0].posts[0].directContext.length, 1);
 });

@@ -14,6 +14,7 @@ export function projectSourceReadiness(snapshot) {
 
 const X_POST = /^\/([^/]+)\/status\/(\d+)(?:\/.*)?$/;
 const MAX_STRUCTURED_MEDIA_DIAGNOSTIC_SNAPSHOTS = 8;
+export const MAX_SINGLE_POST_BYTES = 96 * 1024;
 const STRUCTURED_MEDIA_DIAGNOSTIC_COUNTS = [
   'requestedCandidates', 'eligibleCandidates', 'returnedCandidates',
   'resolverCandidateCount', 'returnedExactCandidateCount', 'noExactReturnedCandidateCount',
@@ -126,7 +127,7 @@ function validatePost(source, post) {
   }
   if (Array.from(post.text).length > 4000) throw captureError('evidence_too_large', 'post text exceeds the 4000 character observation limit');
   const encodedSize = Buffer.byteLength(JSON.stringify(post), 'utf8');
-  if (encodedSize > 96 * 1024) throw captureError('evidence_too_large', 'post evidence exceeds the 96 KiB observation limit');
+  if (encodedSize > MAX_SINGLE_POST_BYTES) throw captureError('evidence_too_large', 'post evidence exceeds the 96 KiB observation limit');
   return platformId;
 }
 

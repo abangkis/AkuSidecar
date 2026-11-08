@@ -94,7 +94,7 @@ test('verified detail text recovery retains an exact reply edge from its bounded
   const original = feedPost(id, {directContext: [quote]});
   const result = (await recovery.recoverSnapshot({posts: [original]})).posts[0];
   assert.equal(result.textStatus, 'permalink_text_verified');
-  assert.deepEqual(result.directContext.map(relation => relation.kind), ['quotes', 'replies_to']);
+  assert.deepEqual(Array.from(result.directContext, relation => relation.kind), ['quotes', 'replies_to']);
   assert.equal(result.directContext[0].target.id, quoteID);
   assert.equal(result.directContext[1].target.id, parentID);
   assert.equal(result.directContext[1].target.availability, 'reference_only');
@@ -103,7 +103,7 @@ test('verified detail text recovery retains an exact reply edge from its bounded
   const preserved = (await recovery.recoverSnapshot({posts: [laterComplete]})).posts[0];
   assert.equal(preserved.text, laterComplete.text, 'a cached verified relation must not replace later complete text');
   assert.equal(preserved.textStatus, laterComplete.textStatus);
-  assert.deepEqual(preserved.directContext.map(relation => relation.kind), ['quotes', 'replies_to']);
+  assert.deepEqual(Array.from(preserved.directContext, relation => relation.kind), ['quotes', 'replies_to']);
   assert.equal(preserved.directContext[1].target.id, parentID);
   await recovery.close();
 });

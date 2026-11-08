@@ -1,5 +1,6 @@
 import {createContext, runInContext} from 'node:vm';
-import {canonicalSourceURL} from './observation.mjs';
+import {capturePrimitivesFor} from './capture-primitives.mjs';
+import {MAX_SINGLE_POST_BYTES} from './observation.mjs';
 import {resolveStructuredMedia} from './structured-media.mjs';
 
 const installations = new WeakMap();
@@ -68,135 +69,9 @@ export function readXPassiveEvidenceInPage(owners) {
   return {type: 'AKU_X_RESPONSE_MEDIA_EVIDENCE', runtimeRevision: 'x-response-evidence-v2', candidates};
 }
 
-export function mergeXReplyDirectContext(post, incomingRelations) {
-  const incoming = (Array.isArray(incomingRelations) ? incomingRelations : [])
-    .filter(relation => relation?.kind === 'replies_to');
-  if (!incoming.length) return post;
-  const ownerId = statusIdForPost(post);
-  if (!ownerId) return post;
-  const directContext = Array.isArray(post.directContext) ? post.directContext : [];
-  const existing = directContext.filter(relation => relation?.kind === 'replies_to');
-  const retained = directContext.filter(relation => relation?.kind !== 'replies_to');
-  if (incoming.length !== 1) {
-    const validIncomingIds = incoming.map(relation => exactReplyIdentity(relation, ownerId)).filter(Boolean);
-    const existingId = existing.length === 1 ? exactReplyIdentity(existing[0], ownerId) : null;
-    const hasMalformed = validIncomingIds.length < incoming.length;
-    if (existingId && (!validIncomingIds.length
-        || (hasMalformed && validIncomingIds.length === 1 && validIncomingIds[0] === existingId))) return post;
-    return markReplyContextAmbiguous(post, retained);
-  }
-  const incomingId = exactReplyIdentity(incoming[0], ownerId);
-  if (!incomingId) {
-    const existingId = existing.length === 1 ? exactReplyIdentity(existing[0], ownerId) : null;
-    return existingId ? post : markReplyContextAmbiguous(post, retained);
-  }
-  if (conflictingReplyParentPermalink(post, incomingId)) return markReplyContextAmbiguous(post, retained);
-  if (existing.length > 1) return markReplyContextAmbiguous(post, retained);
-  if (existing.length === 1) {
-    const existingId = exactReplyIdentity(existing[0], ownerId);
-    if (existingId === incomingId) return withResolvedReplySemantics(post, incoming[0]);
-    if (!existingId && isUnresolvedDomReply(existing[0])) {
-      const relation = {...incoming[0],
-        ...(typeof existing[0].observedText === 'string' && existing[0].observedText.length <= 500
-          ? {observedText: existing[0].observedText} : {}),
-      };
-      return withResolvedReplySemantics({...post, directContext: [...retained, relation]}, relation);
-    }
-    if (existingId) return markReplyContextAmbiguous(post, retained);
-    return withResolvedReplySemantics({...post, directContext: [...retained, incoming[0]]}, incoming[0]);
-  }
-  if (directContext.length >= 8) return post;
-  return withResolvedReplySemantics({...post, directContext: [...directContext, incoming[0]]}, incoming[0]);
-}
-
-export function markXReplyContextAmbiguous(post) {
-  const directContext = Array.isArray(post?.directContext) ? post.directContext : [];
-  return markReplyContextAmbiguous(post, directContext.filter(relation => relation?.kind !== 'replies_to'));
-}
-
-function responseReplyRelation(ownerId, replyToId) {
-  if (!/^\d{5,30}$/.test(replyToId || '') || replyToId === ownerId) return null;
-  return {kind: 'replies_to', provenance: 'observed_response', capturedAt: new Date().toISOString(),
-    target: {kind: 'post', id: replyToId, permalink: `https://x.com/i/status/${replyToId}`,
-      text: '', author: '', availability: 'reference_only'}};
-}
-
-function markReplyContextAmbiguous(post, retained) {
-  const clearReplyParent = post?.relationshipType === 'reply' && !isQuotePost(post);
-  return {...post, directContext: retained,
-    presentation: {...(post.presentation && typeof post.presentation === 'object' ? post.presentation : {}),
-      directContextStatus: 'ambiguous'},
-    ...(clearReplyParent ? {parentPermalink: ''} : {})};
-}
-
-function withResolvedReplySemantics(post, relation) {
-  if (isQuotePost(post)) return post;
-  return {...post, relationshipType: 'reply', parentPermalink: relation.target.permalink};
-}
-
-function isQuotePost(post) {
-  return post?.relationshipType === 'quote' || post?.quotedPostObserved === true
-    || Boolean(post?.quotedPost) || (Array.isArray(post?.directContext)
-      && post.directContext.some(relation => relation?.kind === 'quotes'));
-}
-
-function statusIdForPost(post) {
-  const id = /^(?:x:status:)?(\d{5,30})$/.exec(post?.id || '')?.[1];
-  const permalink = canonicalSourceURL('x', post?.permalink);
-  const permalinkId = permalink && new URL(permalink).pathname.match(/\/status\/(\d+)$/)?.[1];
-  return id && id === permalinkId ? id : null;
-}
-
-function conflictingReplyParentPermalink(post, replyToId) {
-  if (post?.relationshipType !== 'reply' || !post.parentPermalink) return false;
-  const permalink = canonicalSourceURL('x', post.parentPermalink);
-  const permalinkId = permalink && new URL(permalink).pathname.match(/\/status\/(\d+)$/)?.[1];
-  return permalinkId !== replyToId;
-}
-
-function exactReplyIdentity(relation, ownerId) {
-  if (!relation || relation.kind !== 'replies_to'
-      || !['observed_dom', 'observed_response'].includes(relation.provenance)
-      || !isCanonicalCaptureTime(relation.capturedAt)) return null;
-  const target = relation.target;
-  if (!target || target.kind !== 'post' || typeof target.id !== 'string'
-      || !/^\d{5,30}$/.test(target.id) || target.id === ownerId
-      || typeof target.permalink !== 'string') return null;
-  const permalink = canonicalSourceURL('x', target.permalink);
-  const permalinkId = permalink && new URL(permalink).pathname.match(/\/status\/(\d+)$/)?.[1];
-  if (!permalinkId || permalinkId !== target.id) return null;
-  if (!['captured', 'reference_only'].includes(target.availability)
-      || typeof target.text !== 'string' || target.text.length > 4000
-      || typeof target.author !== 'string' || target.author.length > 300) return null;
-  const hasMedia = target.hasMedia === true;
-  if (target.availability === 'reference_only' && (target.text || hasMedia)) return null;
-  // The adapter can know the exact reply edge from a response while getting the
-  // bounded parent body from the one matching DOM article. Response-created
-  // relations themselves stay reference-only with an empty body.
-  if (target.availability === 'captured' && (!target.text && !hasMedia)) return null;
-  if (typeof relation.observedText === 'string' && relation.observedText.length > 500) return null;
-  return target.id;
-}
-
-function isUnresolvedDomReply(relation) {
-  const target = relation?.target;
-  return relation?.kind === 'replies_to' && relation.provenance === 'observed_dom'
-    && isCanonicalCaptureTime(relation.capturedAt) && target?.kind === 'post'
-    && target.id === '' && target.permalink === '' && target.availability === 'reference_only'
-    && typeof target.text === 'string' && !target.text && typeof target.author === 'string' && !target.author
-    && (!relation.observedText || typeof relation.observedText === 'string' && relation.observedText.length <= 500);
-}
-
-function isCanonicalCaptureTime(value) {
-  if (typeof value !== 'string') return false;
-  const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
-}
-
-function ownerFor(post, api) {
-  const id = /^(?:x:status:)?(\d{5,30})$/.exec(post?.id || '')?.[1];
-  const permalink = canonicalSourceURL('x', post?.permalink);
-  if (!id || !permalink || new URL(permalink).pathname.match(/\/status\/(\d+)$/)?.[1] !== id) return null;
+function ownerFor(post, api, primitives) {
+  const id = primitives.xReplyOwnerId(post);
+  if (!id) return null;
   const candidateId = `x:status:${id}`;
   const keys = [candidateId, ...(Array.isArray(post.avatarEvidenceKeys) ? post.avatarEvidenceKeys : [])]
     .map(key => api.normalizeAvatarKey(key))
@@ -204,12 +79,63 @@ function ownerFor(post, api) {
   return {post, candidateId, keys: [...new Set(keys)].slice(0, 2)};
 }
 
+// Only the requested owners' parent IDs cross CDP. Use one bounded read after
+// scroll/detail recovery so every retained viewport sees the same cache state.
+function readFinalXReplyIdsInPage(ids) {
+  if (globalThis.location?.origin !== 'https://x.com') return null;
+  const runtime = globalThis.AkuXMediaEvidenceRuntime;
+  if (typeof runtime?.lookupReplyTo !== 'function') return null;
+  const replies = [];
+  for (const id of ids) {
+    const parent = runtime.lookupReplyTo('x:status:' + id);
+    if (typeof parent === 'string' && /^\d{5,30}$/.test(parent)) replies.push([id, parent]);
+  }
+  return replies;
+}
+
+export async function finalizeXReplyEvidence({browser, page, assets, snapshots, deadlineAt, remainingBytes}) {
+  if (browser?.backend !== 'headless_worker' || !installations.get(page)?.identifier || deadlineAt <= Date.now()) return;
+  const primitives = capturePrimitivesFor(assets);
+  const owners = snapshots.map(snapshot => primitives.xReplySnapshotOwners(snapshot.posts));
+  const ids = [...new Set(owners.flatMap(indices => [...indices.keys()]))];
+  if (!ids.length) return;
+  let parents;
+  try {
+    const timeoutMs = Math.min(900, deadlineAt - Date.now());
+    if (timeoutMs <= 0) return;
+    parents = await page.evaluate(`(${readFinalXReplyIdsInPage.toString()})(${JSON.stringify(ids)})`, timeoutMs);
+  } catch { return; }
+  if (!Array.isArray(parents) || parents.length > ids.length || deadlineAt <= Date.now()) return;
+  const requested = new Set(ids);
+  const byId = new Map();
+  for (const pair of parents) {
+    if (!Array.isArray(pair) || pair.length !== 2 || !requested.has(pair[0])) return;
+    const [id, parent] = pair;
+    byId.set(id, byId.has(id) ? null : parent);
+  }
+  for (const [snapshotIndex, indices] of owners.entries()) {
+    const {posts} = snapshots[snapshotIndex];
+    for (const [id, index] of indices) {
+      const post = posts[index];
+      const merged = primitives.mergeXResponseReply(post, byId.get(id));
+      if (merged === post) continue;
+      const mergedBytes = Buffer.byteLength(JSON.stringify(merged));
+      if (mergedBytes > MAX_SINGLE_POST_BYTES) continue;
+      const delta = mergedBytes - Buffer.byteLength(JSON.stringify(post));
+      if (delta > remainingBytes) continue;
+      posts[index] = merged;
+      remainingBytes -= delta;
+    }
+  }
+}
+
 export async function resolveXPassiveEvidence({browser, page, assets, posts, deadlineAt}) {
   if (browser?.backend !== 'headless_worker' || !Array.isArray(assets) || !installations.get(page)?.identifier) return posts;
   let store;
   try { store = storeFor(assets); } catch { return posts; }
   if (!store) return posts;
-  const bindings = (Array.isArray(posts) ? posts : []).map(post => ownerFor(post, store.api)).filter(Boolean);
+  const primitives = capturePrimitivesFor(assets);
+  const bindings = (Array.isArray(posts) ? posts : []).map(post => ownerFor(post, store.api, primitives)).filter(Boolean);
   const owners = bindings.map(({candidateId, keys}) => ({candidateId, keys})).slice(0, 16);
   const requested = new Set(owners.map(owner => owner.candidateId));
   const seen = new Set();
@@ -269,10 +195,9 @@ export async function resolveXPassiveEvidence({browser, page, assets, posts, dea
     const recovered = next.media?.some((item, index) => post.media?.[index]?.kind === 'video_poster'
       && item.kind === 'video' && item.playbackUrl);
     if (!recovered) next = post;
-    if (ambiguousReplyEvidence.has(owner.candidateId)) next = markXReplyContextAmbiguous(next);
+    if (ambiguousReplyEvidence.has(owner.candidateId)) next = primitives.markXReplyContextAmbiguous(next);
     const replyToId = replyEvidence.get(owner.candidateId);
-    const reply = replyToId ? responseReplyRelation(owner.candidateId.slice('x:status:'.length), replyToId) : null;
-    if (reply) next = mergeXReplyDirectContext(next, [reply]);
+    if (replyToId) next = primitives.mergeXResponseReply(next, replyToId);
     const currentAvatar = store.api.safeXAvatarUrl(post.avatar);
     if (currentAvatar) for (const key of owner.keys) store.avatars.put(key, currentAvatar);
     const cachedAvatar = owner.keys.map(key => store.avatars.get(key)).find(Boolean);
