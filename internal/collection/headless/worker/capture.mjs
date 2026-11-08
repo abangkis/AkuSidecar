@@ -15,6 +15,36 @@ const MAX_POST_EVIDENCE_BYTES = 6 * 1024 * 1024;
 const sourceFrontiers = new Map();
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+const chromeNavigationCategories = new Map([
+  ['net::ERR_ABORTED', 'aborted'],
+  ['net::ERR_NAME_NOT_RESOLVED', 'dns'],
+  ['net::ERR_NAME_RESOLUTION_FAILED', 'dns'],
+  ['net::ERR_CONNECTION_CLOSED', 'connection'],
+  ['net::ERR_CONNECTION_RESET', 'connection'],
+  ['net::ERR_CONNECTION_REFUSED', 'connection'],
+  ['net::ERR_CONNECTION_FAILED', 'connection'],
+  ['net::ERR_INTERNET_DISCONNECTED', 'connection'],
+  ['net::ERR_NETWORK_CHANGED', 'connection'],
+  ['net::ERR_TIMED_OUT', 'timeout'],
+  ['net::ERR_CONNECTION_TIMED_OUT', 'timeout'],
+  ['net::ERR_SSL_PROTOCOL_ERROR', 'tls'],
+  ['net::ERR_CERT_AUTHORITY_INVALID', 'tls'],
+  ['net::ERR_CERT_COMMON_NAME_INVALID', 'tls'],
+  ['net::ERR_CERT_DATE_INVALID', 'tls'],
+  ['net::ERR_BLOCKED_BY_CLIENT', 'blocked'],
+  ['net::ERR_BLOCKED_BY_ADMINISTRATOR', 'blocked'],
+  ['net::ERR_BLOCKED_BY_RESPONSE', 'blocked'],
+]);
+
+function sourceNavigationError(browser, errorText, message) {
+  const error = captureError('navigation_failed', message);
+  if (browser.backend === 'headless_worker') {
+    error.cdpCommand = 'Page.navigate';
+    error.chromeErrorCategory = chromeNavigationCategories.get(errorText) ?? 'other';
+  }
+  return error;
+}
+
 // Owner declarations, never request-supplied authority. X's guard covers one
 // requested document; quote clicks and detail pages need a different owner proof.
 export const NATIVE_CAPTURE_CAPABILITIES = Object.freeze({
@@ -172,7 +202,7 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
     // Any fresh navigation invalidates the prior source checkpoint, including failed captures.
     sourceFrontiers.delete(source);
     const navigation = await page.navigate(requestedUrl, timeLeft(deadline));
-    if (navigation.errorText) throw captureError('navigation_failed', 'Chrome could not navigate to the requested source page');
+    if (navigation.errorText) throw sourceNavigationError(browser, navigation.errorText, 'Chrome could not navigate to the requested source page');
   } else {
     const state = sourceFrontiers.get(source);
     if (!state) throw captureError('source_frontier_unavailable', 'the source tab has no retained round-1 frontier');
@@ -228,7 +258,7 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
         photoResolution={...parent,photoUrl:requestedUrl};
         requestedUrl=parent.url;
         const navigation=await page.navigate(requestedUrl,timeLeft(deadline));
-        if(navigation.errorText)throw captureError('navigation_failed','Chrome could not navigate to the verified parent');
+        if (navigation.errorText) throw sourceNavigationError(browser, navigation.errorText, 'Chrome could not navigate to the verified parent');
         snapshot=null;
         readinessDeadline=Math.min(deadline,Date.now()+options.hydrationMs);
         continue;

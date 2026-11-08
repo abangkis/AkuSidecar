@@ -562,6 +562,12 @@ func internalCollectorFailure(err error, collector string) domain.Failure {
 	if collector == collection.BackendQuiet {
 		failure.Code = "quiet_" + failure.Code[len("headless_"):]
 	}
+	if collector == collection.BackendHeadless && typed != nil && typed.Code == "navigation_failed" && typed.CDPCommand == "Page.navigate" {
+		switch typed.ChromeErrorCategory {
+		case "aborted", "dns", "connection", "timeout", "tls", "blocked", "other":
+			failure.Details = map[string]any{"cdpCommand": typed.CDPCommand, "chromeErrorCategory": typed.ChromeErrorCategory}
+		}
+	}
 	return failure
 }
 

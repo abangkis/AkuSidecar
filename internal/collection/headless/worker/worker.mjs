@@ -329,6 +329,8 @@ export async function runWorker({
         message: String(error?.message || 'worker request failed').slice(0, 500),
         ...(error?.code === 'challenge_required' && ['cloudflare','x_human_verification'].includes(error.challengeCategory)
           ? { challengeCategory: error.challengeCategory } : {}),
+        ...(ownedBackend && error?.code === 'navigation_failed' && error.cdpCommand === 'Page.navigate'
+          ? { cdpCommand: error.cdpCommand, chromeErrorCategory: error.chromeErrorCategory } : {}),
         ...(['empty_unverified','invalid_observation'].includes(error?.code) && error.diagnostics ? {diagnostics:error.diagnostics} : {}),
       };
       await write(responseFor(id, false, undefined, safe));
