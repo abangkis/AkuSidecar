@@ -19,3 +19,6 @@ Stages are ordered. Review shadow evidence before switching X admission to the
 shared result. Review the X pilot before onboarding the next source. SI tracking
 approval records the roadmap. Implementation, live runs, and production
 deployment follow their own authorization boundaries.
+
+[Stage 04 verification](shared-dom-engine-stage-04-verification.md) records the
+offline fixture and guard results alongside the two authorized live X runs.
