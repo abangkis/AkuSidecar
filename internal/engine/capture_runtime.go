@@ -546,7 +546,10 @@ func headlessFailure(err error) domain.Failure {
 	var typed *headless.CaptureError
 	if errors.As(err, &typed) {
 		failure.Code = "headless_" + typed.Code
-		if typed.Code == "login_required" || typed.Code == "challenge_required" || typed.Code == "challenge_detected" || typed.Code == "unsupported_source" || typed.Code == "unsupported_continuation" || typed.Code == "source_access_revoked" || typed.Code == "target_unavailable" {
+		switch typed.Code {
+		case "login_required", "challenge_required", "challenge_detected", "unsupported_source",
+			"unsupported_continuation", "source_access_revoked", "target_unavailable",
+			"windowed_identity_unavailable", "windowed_identity_override_failed":
 			failure.Retryable = false
 		}
 	}

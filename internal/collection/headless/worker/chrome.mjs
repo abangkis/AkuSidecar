@@ -4,6 +4,7 @@ import { constants } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
 import { promisify } from 'node:util';
 import {createChromeCommandSender,settleChromeCommandReply} from './chrome-command-queue.mjs';
+import {windowedIdentityForSource} from './windowed-identity.mjs';
 
 const CDP_TIMEOUT_MS = 15000;
 const TARGET_CLEANUP_TIMEOUT_MS = 1000;
@@ -22,7 +23,7 @@ export const CAPTURE_PLAYBACK_GUARD_SOURCE = `(() => {
   document.addEventListener('playing', stopPlayback, true);
 })();`;
 
-export async function createTemporaryPage({ send, subscribe, browserSessionId, closeTargetAndWait, timeoutMs = CDP_TIMEOUT_MS, retainLateResources = false }) {
+export async function createTemporaryPage({ send, subscribe, browserSessionId, closeTargetAndWait, timeoutMs = CDP_TIMEOUT_MS, retainLateResources = false, userAgentOverride }) {
   let targetId;
   let allocationsPending=0,targetRetired=false;
   const streams=new Set();
@@ -67,6 +68,16 @@ export async function createTemporaryPage({ send, subscribe, browserSessionId, c
     await send('Page.enable', {}, sessionId, setupTimeLeft());
     await send('Runtime.enable', {}, sessionId, setupTimeLeft());
     await send('Network.enable', {}, sessionId, setupTimeLeft());
+    if (userAgentOverride) {
+      const timeout = setupTimeLeft();
+      try {
+        await send('Emulation.setUserAgentOverride', userAgentOverride, sessionId, timeout);
+      } catch {
+        throw Object.assign(new Error('Chrome rejected the Windowed User-Agent and Client Hints override.'), {
+          code: 'windowed_identity_override_failed',
+        });
+      }
+    }
     await send('Page.addScriptToEvaluateOnNewDocument', { source: CAPTURE_PLAYBACK_GUARD_SOURCE }, sessionId, setupTimeLeft());
     await send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId, setupTimeLeft());
     await send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false }, sessionId, setupTimeLeft());
@@ -110,7 +121,8 @@ export async function createTemporaryPage({ send, subscribe, browserSessionId, c
   }
 }
 
-export async function launchChrome({ chromePath, profilePath, profileDirectory = 'Default', retainLateResources = false }) {
+export async function launchChrome({ chromePath, profilePath, profileDirectory = 'Default', retainLateResources = false,
+  windowedIdentitySources = [], windowedIdentity }) {
   if (!isAbsolute(chromePath) || !isAbsolute(profilePath)) throw new Error('Chrome and profile paths must be absolute.');
   const executable = await realpath(chromePath);
   await access(executable, constants.X_OK).catch(() => access(executable));
@@ -136,7 +148,7 @@ export async function launchChrome({ chromePath, profilePath, profileDirectory =
     windowsHide: true,
     stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'],
   });
-  return connectOwnedChrome(child, executable, userData,retainLateResources);
+  return connectOwnedChrome(child, executable, userData, retainLateResources, windowedIdentitySources, windowedIdentity);
 }
 
 async function assertProfileUnowned(profilePath) {
@@ -165,7 +177,7 @@ async function assertProfileUnowned(profilePath) {
   }
 }
 
-function connectOwnedChrome(child, executable, profilePath,retainLateResources=false) {
+function connectOwnedChrome(child, executable, profilePath, retainLateResources, windowedIdentitySources, windowedIdentity) {
   const pending = new Map();
   const listeners = new Set();
   const subscribe = listener => { if(closed||typeof listener!=='function'||listeners.size>=32)throw new Error('Owned browser subscription unavailable.');listeners.add(listener);return()=>listeners.delete(listener); };
@@ -257,6 +269,7 @@ function connectOwnedChrome(child, executable, profilePath,retainLateResources=f
       const version = await send('Browser.getVersion');
       const { sessionId: browserSessionId } = await send('Target.attachToBrowserTarget');
       const sourceContexts = new Map();
+      const userAgentOverride = source => windowedIdentityForSource(source, version.product, windowedIdentitySources, windowedIdentity);
       async function closeTargetAndWait(targetId) {
         await send('Target.closeTarget', { targetId }, browserSessionId, TARGET_CLEANUP_TIMEOUT_MS);
         const deadline = Date.now() + TARGET_CLEANUP_VERIFY_TIMEOUT_MS;
@@ -268,8 +281,9 @@ function connectOwnedChrome(child, executable, profilePath,retainLateResources=f
         }
         throw new Error('Chrome did not release its temporary target.');
       }
-      async function createPageContext() {
-        const owned = await createTemporaryPage({ send, subscribe, browserSessionId, closeTargetAndWait });
+      async function createPageContext(source) {
+        const owned = await createTemporaryPage({ send, subscribe, browserSessionId, closeTargetAndWait,
+          userAgentOverride: userAgentOverride(source) });
         const { close, ...context } = owned;
         void close; // Source targets are released together with the owned Chrome process.
         return context;
@@ -283,12 +297,13 @@ function connectOwnedChrome(child, executable, profilePath,retainLateResources=f
         async forSource(source) {
           if (!['x', 'facebook', 'instagram', 'linkedin'].includes(source)) throw new Error('Unsupported Chrome source context.');
           if (sourceContexts.has(source)) return sourceContexts.get(source);
-          const context = await createPageContext();
+          const context = await createPageContext(source);
           sourceContexts.set(source, context);
           return context;
         },
-        createTemporaryPage(timeoutMs) {
-          return createTemporaryPage({ send, subscribe, browserSessionId, closeTargetAndWait, timeoutMs, retainLateResources });
+        createTemporaryPage(timeoutMs, source) {
+          return createTemporaryPage({ send, subscribe, browserSessionId, closeTargetAndWait, timeoutMs, retainLateResources,
+            userAgentOverride: userAgentOverride(source) });
         },
         close,
         exited,

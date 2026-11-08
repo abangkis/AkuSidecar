@@ -349,7 +349,7 @@ export function createInstagramVideoRecovery({browser,resolver,feedResolver,insp
   const fail=outcome=>({outcome});
 
   async function targetPage(at) {
-    pagePromise ??= Promise.resolve().then(()=>browser.createTemporaryPage(nativeTimeLeft(at))).then(async page=>{
+    pagePromise ??= Promise.resolve().then(()=>browser.createTemporaryPage(nativeTimeLeft(at),'instagram')).then(async page=>{
       if(!page || typeof page.navigate!=='function' || typeof page.evaluate!=='function' || typeof page.close!=='function') {
         if(typeof page?.close==='function') {
           try {await page.close();} catch {throw Object.assign(new Error('incomplete temporary Instagram page cleanup failed'),{code:'temporary_target_cleanup_failed'});}

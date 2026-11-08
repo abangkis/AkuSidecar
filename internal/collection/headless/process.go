@@ -20,7 +20,11 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
-type Options struct{ Node, Worker, Pin, Chrome, Profile, ProfileDirectory, BridgePath string }
+type Options struct {
+	Node, Worker, Pin, Chrome, Profile, ProfileDirectory, BridgePath string
+	WindowedIdentitySources                                          []domain.Source
+	WindowedIdentity                                                 json.RawMessage
+}
 type Process struct {
 	owner         *appshell.OwnedCommand
 	input         io.WriteCloser
@@ -129,11 +133,17 @@ func Launch(ctx context.Context, options Options) (*Process, error) {
 			}
 		}
 	}()
-	metadata, err := p.call(ctx, map[string]any{"type": "init", "chrome": options.Chrome, "profile": options.Profile, "profileDirectory": options.ProfileDirectory, "bridgePath": options.BridgePath})
+	init := map[string]any{"type": "init", "chrome": options.Chrome, "profile": options.Profile, "profileDirectory": options.ProfileDirectory, "bridgePath": options.BridgePath}
+	if len(options.WindowedIdentitySources) > 0 {
+		init["windowedIdentitySources"] = options.WindowedIdentitySources
+		init["windowedIdentity"] = options.WindowedIdentity
+	}
+	metadata, err := p.call(ctx, init)
 	if err == nil {
 		var initialized struct {
-			IdleReleaseVersion int `json:"idleReleaseVersion"`
-			WorkerDriver       struct {
+			IdleReleaseVersion      int `json:"idleReleaseVersion"`
+			WindowedIdentityVersion int `json:"windowedIdentityVersion"`
+			WorkerDriver            struct {
 				ProtocolVersion int `json:"protocolVersion"`
 			} `json:"workerDriver"`
 		}
@@ -141,6 +151,8 @@ func Launch(ctx context.Context, options Options) (*Process, error) {
 			err = errors.New("headless worker protocol mismatch")
 		} else if initialized.IdleReleaseVersion != 1 {
 			err = errors.New("headless worker lacks idle lease support; rebuild the matching packaged worker")
+		} else if len(options.WindowedIdentitySources) > 0 && initialized.WindowedIdentityVersion != 1 {
+			err = errors.New("headless worker lacks Windowed identity support; rebuild the matching packaged worker")
 		}
 	}
 	// Return the owned worker even on failure so cleanup can be verified by its

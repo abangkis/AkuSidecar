@@ -598,7 +598,11 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 		if !filepath.IsAbs(headlessOptions.BridgePath) {
 			headlessOptions.BridgePath, _ = filepath.Abs(headlessOptions.BridgePath)
 		}
-		bindQuiet := func(ctx context.Context, window *appshell.Window, generation uint64) error {
+		headlessOptions.WindowedIdentitySources = []domain.Source{domain.SourceX}
+		// The manager serializes retirement and replacement. Each headed owner
+		// supplies its own sample before giving up the signed-in profile.
+		var windowedIdentity json.RawMessage
+		bindQuiet := func(ctx context.Context, window *appshell.Window, generation uint64, hostURL string) error {
 			targets, err := quiet.NewTargets(ctx, window.CaptureProtocol())
 			if err != nil {
 				if targets != nil {
@@ -612,15 +616,23 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 				return err
 			}
 			worker := quiet.NewWorker(targets, headlessOptions)
+			sampled := false
 			if err := window.SetCaptureHandoff(func(ctx context.Context) error {
 				if err := worker.Retire(ctx); err != nil {
 					return err
+				}
+				if !sampled {
+					sampled = true
+					identityCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+					windowedIdentity, _ = appshell.ReadWindowedIdentity(identityCtx, window.CaptureProtocol(), hostURL)
+					cancel()
 				}
 				return server.CloseSplitCaptureHost(ctx)
 			}); err != nil {
 				_ = worker.Retire(ctx)
 				return err
 			}
+			windowedIdentity = nil
 			collector.SetBrowserCollector(generation, worker)
 			return nil
 		}
@@ -633,7 +645,9 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 				return nil, err
 			}
 			if mode == "headless" {
-				return headless.Launch(ctx, headlessOptions)
+				options := headlessOptions
+				options.WindowedIdentity = windowedIdentity
+				return headless.Launch(ctx, options)
 			}
 			if mode == "native_reader" {
 				origin := strings.TrimRight(target, "/")
@@ -664,7 +678,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 			if err != nil {
 				return process, err
 			}
-			if err := bindQuiet(ctx, process, generation); err != nil {
+			if err := bindQuiet(ctx, process, generation, url); err != nil {
 				return process, err
 			}
 			containment, err := process.StartCaptureContainment(logger)
@@ -698,14 +712,14 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 			logger.Printf("capture_transition_timing stage=%s elapsed_ms=%d", stage, elapsed.Milliseconds())
 		})
 		initializeCapture = func(ctx context.Context) error {
-			if !cfg.Capture.XUsesMainProfile() {
-				if err := bindQuiet(ctx, capture, captureManager.Snapshot().Generation); err != nil {
-					return err
-				}
-			}
 			url, err := server.SplitCaptureLaunchURL(target)
 			if err != nil {
 				return err
+			}
+			if !cfg.Capture.XUsesMainProfile() {
+				if err := bindQuiet(ctx, capture, captureManager.Snapshot().Generation, url); err != nil {
+					return err
+				}
 			}
 			return appshell.NavigateCaptureHost(ctx, capture.CaptureProtocol(), url)
 		}

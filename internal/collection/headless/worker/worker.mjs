@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { StringDecoder } from 'node:string_decoder';
 import { launchChrome } from './chrome.mjs';
+import { parseWindowedIdentity, validateIdentitySources } from './windowed-identity.mjs';
 import { createBorrowedChrome, createBorrowedRPC } from './borrowed.mjs';
 import { capture } from './capture.mjs';
 import { sourceProvenance } from './provenance.mjs';
@@ -318,7 +319,7 @@ export async function runWorker({
           pid: browser.pid,
           chromeVersion: browser.version,
           workerDriver: { name: borrowed ? 'aku-quiet-worker' : 'aku-headless-worker', version: WORKER_VERSION, protocolVersion: PROTOCOL_VERSION },
-          ...(!borrowed ? { idleReleaseVersion: 1 } : {}),
+          ...(!borrowed ? { idleReleaseVersion: 1, windowedIdentityVersion: 1 } : {}),
         };
         await write(responseFor(id, true, result));
         return;
@@ -411,7 +412,12 @@ export function validateInit(request) {
       || !/^[A-Za-z0-9 _-]{1,64}$/.test(value.profileDirectory))) {
     throw requestError('invalid_init', 'profileDirectory must be a simple Chrome profile name');
   }
-  return { chromePath: value.chrome, profilePath: value.profile, bridgePath: value.bridgePath, profileDirectory: value.profileDirectory };
+  const sources = validateIdentitySources(value.windowedIdentitySources);
+  return {
+    chromePath: value.chrome, profilePath: value.profile, bridgePath: value.bridgePath,
+    profileDirectory: value.profileDirectory,
+    ...(sources.length ? { windowedIdentitySources: sources, windowedIdentity: parseWindowedIdentity(value.windowedIdentity) } : {}),
+  };
 }
 
 export function validateBorrowedInit(request) {

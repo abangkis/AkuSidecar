@@ -28,7 +28,7 @@ export function createXTextRecovery({ browser, assets, deadlineAt, perTargetMs =
   async function getPage(at) {
     if (page) return page;
     if (!pagePromise) {
-      pagePromise = Promise.resolve().then(() => browser.createTemporaryPage(remaining(at)))
+      pagePromise = Promise.resolve().then(() => browser.createTemporaryPage(remaining(at), 'x'))
         .then(async created => {
           if (!created || typeof created.navigate !== 'function' || typeof created.evaluate !== 'function' || typeof created.close !== 'function') {
             throw new Error('temporary page API is incomplete');

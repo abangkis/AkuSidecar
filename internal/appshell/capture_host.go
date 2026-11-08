@@ -14,6 +14,26 @@ func NavigateCaptureHost(ctx context.Context, protocol CaptureProtocol, launchUR
 	if protocol == nil || launchURL == "" {
 		return errors.New("capture host protocol unavailable")
 	}
+	targetID, err := findCaptureHost(ctx, protocol, launchURL)
+	if err != nil {
+		return err
+	}
+	return withCaptureHost(ctx, protocol, targetID, func(sessionID string) error {
+		raw, err := protocol.Call(ctx, "Page.navigate", map[string]string{"url": launchURL}, sessionID)
+		if err != nil {
+			return errors.New("capture host navigation command failed")
+		}
+		var navigation struct {
+			ErrorText string `json:"errorText"`
+		}
+		if json.Unmarshal(raw, &navigation) != nil || navigation.ErrorText != "" {
+			return errors.New("capture host navigation rejected")
+		}
+		return nil
+	})
+}
+
+func findCaptureHost(ctx context.Context, protocol CaptureProtocol, launchURL string) (string, error) {
 	lookupCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	ticker := time.NewTicker(25 * time.Millisecond)
@@ -22,7 +42,7 @@ func NavigateCaptureHost(ctx context.Context, protocol CaptureProtocol, launchUR
 	for targetID == "" {
 		raw, err := protocol.Call(lookupCtx, "Target.getTargets", nil, "")
 		if err != nil {
-			return errors.New("capture host target lookup failed")
+			return "", errors.New("capture host target lookup failed")
 		}
 		var result struct {
 			TargetInfos []struct {
@@ -32,25 +52,29 @@ func NavigateCaptureHost(ctx context.Context, protocol CaptureProtocol, launchUR
 			} `json:"targetInfos"`
 		}
 		if json.Unmarshal(raw, &result) != nil {
-			return errors.New("capture host target response invalid")
+			return "", errors.New("capture host target response invalid")
 		}
 		for _, target := range result.TargetInfos {
 			if target.Type != "page" || target.URL != launchURL {
 				continue
 			}
 			if targetID != "" {
-				return errors.New("capture host target identity ambiguous")
+				return "", errors.New("capture host target identity ambiguous")
 			}
 			targetID = target.ID
 		}
 		if targetID == "" {
 			select {
 			case <-lookupCtx.Done():
-				return errors.New("capture host target unavailable")
+				return "", errors.New("capture host target unavailable")
 			case <-ticker.C:
 			}
 		}
 	}
+	return targetID, nil
+}
+
+func withCaptureHost(ctx context.Context, protocol CaptureProtocol, targetID string, call func(string) error) error {
 	raw, err := protocol.Call(ctx, "Target.attachToTarget", map[string]any{"targetId": targetID, "flatten": true}, "")
 	if err != nil {
 		return errors.New("capture host session attach failed")
@@ -66,15 +90,5 @@ func NavigateCaptureHost(ctx context.Context, protocol CaptureProtocol, launchUR
 		defer cancel()
 		_, _ = protocol.Call(detachCtx, "Target.detachFromTarget", map[string]string{"sessionId": attached.SessionID}, "")
 	}()
-	raw, err = protocol.Call(ctx, "Page.navigate", map[string]string{"url": launchURL}, attached.SessionID)
-	if err != nil {
-		return errors.New("capture host navigation command failed")
-	}
-	var navigation struct {
-		ErrorText string `json:"errorText"`
-	}
-	if json.Unmarshal(raw, &navigation) != nil || navigation.ErrorText != "" {
-		return errors.New("capture host navigation rejected")
-	}
-	return nil
+	return call(attached.SessionID)
 }
