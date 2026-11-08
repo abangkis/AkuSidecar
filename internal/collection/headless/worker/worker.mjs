@@ -342,7 +342,8 @@ export async function runWorker({
         ...(error?.code === 'challenge_required' && ['cloudflare','x_human_verification'].includes(error.challengeCategory)
           ? { challengeCategory: error.challengeCategory } : {}),
         ...(ownedBackend && error?.code === 'navigation_failed' && error.cdpCommand === 'Page.navigate'
-          ? { cdpCommand: error.cdpCommand, chromeErrorCategory: error.chromeErrorCategory } : {}),
+          ? { cdpCommand: error.cdpCommand, chromeErrorCategory: error.chromeErrorCategory,
+              chromeErrorCode: error.chromeErrorCode, mainDocument: error.mainDocument } : {}),
         ...(['empty_unverified','invalid_observation'].includes(error?.code) && error.diagnostics ? {diagnostics:error.diagnostics} : {}),
       };
       await write(responseFor(id, false, undefined, safe));

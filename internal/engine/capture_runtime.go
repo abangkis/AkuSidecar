@@ -562,10 +562,14 @@ func internalCollectorFailure(err error, collector string) domain.Failure {
 	if collector == collection.BackendQuiet {
 		failure.Code = "quiet_" + failure.Code[len("headless_"):]
 	}
-	if collector == collection.BackendHeadless && typed != nil && typed.Code == "navigation_failed" && typed.CDPCommand == "Page.navigate" {
-		switch typed.ChromeErrorCategory {
-		case "aborted", "dns", "connection", "timeout", "tls", "blocked", "other":
-			failure.Details = map[string]any{"cdpCommand": typed.CDPCommand, "chromeErrorCategory": typed.ChromeErrorCategory}
+	if collector == collection.BackendHeadless && typed != nil {
+		failure.Details = typed.NavigationDetails()
+		document, _ := failure.Details["mainDocument"].(map[string]any)
+		const httpResponseFailure = "net::ERR_HTTP_RESPONSE_CODE_FAILURE"
+		if typed.ChromeErrorCode == httpResponseFailure && document["errorCode"] == httpResponseFailure &&
+			document["httpStatus"] == 403 {
+			failure.Message = "Headless navigation to the source was refused (HTTP 403)."
+			failure.Retryable = false
 		}
 	}
 	return failure

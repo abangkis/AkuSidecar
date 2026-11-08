@@ -36,11 +36,13 @@ type reply struct {
 	Error  json.RawMessage `json:"error"`
 }
 type CaptureError struct {
-	Code                string `json:"code"`
-	Message             string `json:"message"`
-	ChallengeCategory   string `json:"challengeCategory,omitempty"`
-	CDPCommand          string `json:"cdpCommand,omitempty"`
-	ChromeErrorCategory string `json:"chromeErrorCategory,omitempty"`
+	Code                string          `json:"code"`
+	Message             string          `json:"message"`
+	ChallengeCategory   string          `json:"challengeCategory,omitempty"`
+	CDPCommand          string          `json:"cdpCommand,omitempty"`
+	ChromeErrorCategory string          `json:"chromeErrorCategory,omitempty"`
+	ChromeErrorCode     string          `json:"chromeErrorCode,omitempty"`
+	MainDocument        json.RawMessage `json:"mainDocument,omitempty"`
 }
 
 func (e *CaptureError) Error() string { return e.Code + ": " + e.Message }

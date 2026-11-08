@@ -84,7 +84,24 @@ test('validates Bridge production capture fields and enforces the worker deadlin
 test('round 2 resumes its per-source page frontier after another source is captured', async () => {
   class FakePage {
     constructor(source) { this.source = source; this.url = 'about:blank'; this.y = 0; this.navigations = 0; }
-    async navigate(url) { this.url = url; this.y = 0; this.navigations++; return {}; }
+    on(listener) {
+      this.navigationListener = listener;
+      return () => { this.navigationListener = undefined; };
+    }
+    async navigate(url) {
+      this.url = url;
+      this.y = 0;
+      this.navigations++;
+      const document = { requestId: 'request', frameId: 'main', loaderId: 'loader', type: 'Document' };
+      this.navigationListener?.({ method: 'Network.requestWillBeSent', params: {
+        ...document, request: { url, headers: { 'User-Agent': 'Mozilla/5.0 HeadlessChrome/157.0.0.0',
+          'sec-ch-ua': '"Chromium";v="157"', Cookie: 'fixture-secret' } },
+      } });
+      this.navigationListener?.({ method: 'Network.responseReceived', params: {
+        ...document, response: { url, status: 200 },
+      } });
+      return { frameId: document.frameId, loaderId: document.loaderId };
+    }
     async send() { return {}; }
     async evaluate(expression) {
       if (expression === 'location.href') return this.url;
@@ -104,7 +121,10 @@ test('round 2 resumes its per-source page frontier after another source is captu
     }
   }
   const pages = new Map();
-  const browser = { async forSource(source) { if (!pages.has(source)) pages.set(source, new FakePage(source)); return pages.get(source); } };
+  const browser = { backend: 'headless_worker', async forSource(source) {
+    if (!pages.has(source)) pages.set(source, new FakePage(source));
+    return pages.get(source);
+  } };
   const makeAssets = () => ['runtime', 'adapter', 'extractor'].map((name, i) => ({ relative: name, sha256: String(i).repeat(64), execute: false }));
   const assets = { x: makeAssets(), facebook: makeAssets() };
   const first = await capture(browser, assets, 'facebook', { acquisitionRound: 1, scrolls: 0, sourceHydrationTimeoutMs: 1000, captureTimeoutMs: 3000 });
@@ -119,6 +139,12 @@ test('round 2 resumes its per-source page frontier after another source is captu
   const x = await capture(browser, assets, 'x', { acquisitionRound: 1, scrolls: 3, scrollSettleMs: 100,
     sourceHydrationTimeoutMs: 1000, captureTimeoutMs: 3000 });
   assert.equal(x.source, 'x');
+  assert.deepEqual(x.coverage.headlessNavigation, {
+    state: 'matched', httpStatus: 200, httpStatusSource: 'response_received',
+    userAgentHeadless: true, clientHintsHeadless: false, requestMetadataSource: 'request_will_be_sent',
+  });
+  assert.equal(first.coverage.headlessNavigation, undefined);
+  assert.equal(pages.get('x').navigationListener, undefined);
   assert.equal(x.snapshots.length, 4, 'maxBlocksPerSnapshot must not be treated as a total post limit');
   assert.equal(x.coverage.performedScrolls, 3);
   assert.equal(x.coverage.scrollStopReason, 'budget_exhausted');

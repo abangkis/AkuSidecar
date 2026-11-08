@@ -8,42 +8,13 @@ import { createXTextRecovery } from './x-text-recovery.mjs';
 import { recoverHeadlessFreshness } from './headless-freshness.mjs';
 import { sourceFreshnessContractFor } from './source-freshness-contract.mjs';
 import { finalizeXReplyEvidence, prepareXPassiveEvidence, resolveXPassiveEvidence } from './x-passive-evidence.mjs';
+import { navigateSourcePage } from './navigation-diagnostic.mjs';
 
 const MAX_CAPTURE_MS = 90000;
 const MAX_SNAPSHOT_BYTES = 4 * 1024 * 1024;
 const MAX_POST_EVIDENCE_BYTES = 6 * 1024 * 1024;
 const sourceFrontiers = new Map();
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-const chromeNavigationCategories = new Map([
-  ['net::ERR_ABORTED', 'aborted'],
-  ['net::ERR_NAME_NOT_RESOLVED', 'dns'],
-  ['net::ERR_NAME_RESOLUTION_FAILED', 'dns'],
-  ['net::ERR_CONNECTION_CLOSED', 'connection'],
-  ['net::ERR_CONNECTION_RESET', 'connection'],
-  ['net::ERR_CONNECTION_REFUSED', 'connection'],
-  ['net::ERR_CONNECTION_FAILED', 'connection'],
-  ['net::ERR_INTERNET_DISCONNECTED', 'connection'],
-  ['net::ERR_NETWORK_CHANGED', 'connection'],
-  ['net::ERR_TIMED_OUT', 'timeout'],
-  ['net::ERR_CONNECTION_TIMED_OUT', 'timeout'],
-  ['net::ERR_SSL_PROTOCOL_ERROR', 'tls'],
-  ['net::ERR_CERT_AUTHORITY_INVALID', 'tls'],
-  ['net::ERR_CERT_COMMON_NAME_INVALID', 'tls'],
-  ['net::ERR_CERT_DATE_INVALID', 'tls'],
-  ['net::ERR_BLOCKED_BY_CLIENT', 'blocked'],
-  ['net::ERR_BLOCKED_BY_ADMINISTRATOR', 'blocked'],
-  ['net::ERR_BLOCKED_BY_RESPONSE', 'blocked'],
-]);
-
-function sourceNavigationError(browser, errorText, message) {
-  const error = captureError('navigation_failed', message);
-  if (browser.backend === 'headless_worker') {
-    error.cdpCommand = 'Page.navigate';
-    error.chromeErrorCategory = chromeNavigationCategories.get(errorText) ?? 'other';
-  }
-  return error;
-}
 
 // Owner declarations, never request-supplied authority. X's guard covers one
 // requested document; quote clicks and detail pages need a different owner proof.
@@ -189,6 +160,7 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
   const startedAt = Date.now();
   const capturedAt = new Date(startedAt).toISOString();
   let requestedUrl = options.pageUrl;
+  let headlessNavigation;
   let resumeScrollY = 0;
   let retainedFeedKey = null;
   const assertRetainedFeed = url => {
@@ -201,8 +173,9 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
   if (options.acquisitionRound === 1) {
     // Any fresh navigation invalidates the prior source checkpoint, including failed captures.
     sourceFrontiers.delete(source);
-    const navigation = await page.navigate(requestedUrl, timeLeft(deadline));
-    if (navigation.errorText) throw sourceNavigationError(browser, navigation.errorText, 'Chrome could not navigate to the requested source page');
+    headlessNavigation = await navigateSourcePage(browser, page, requestedUrl, timeLeft(deadline),
+      'Chrome could not navigate to the requested source page',
+      {collectRequestMetadata: source === 'x' && !options.explicitPageUrl});
   } else {
     const state = sourceFrontiers.get(source);
     if (!state) throw captureError('source_frontier_unavailable', 'the source tab has no retained round-1 frontier');
@@ -257,8 +230,7 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
       if(parent){
         photoResolution={...parent,photoUrl:requestedUrl};
         requestedUrl=parent.url;
-        const navigation=await page.navigate(requestedUrl,timeLeft(deadline));
-        if (navigation.errorText) throw sourceNavigationError(browser, navigation.errorText, 'Chrome could not navigate to the verified parent');
+        await navigateSourcePage(browser, page, requestedUrl, timeLeft(deadline), 'Chrome could not navigate to the verified parent');
         snapshot=null;
         readinessDeadline=Math.min(deadline,Date.now()+options.hydrationMs);
         continue;
@@ -459,6 +431,7 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
       frontier,
       freshness,
     });
+    if (headlessNavigation) observation.coverage.headlessNavigation = headlessNavigation;
     if(photoResolution) observation.coverage.photoParentResolution={status:'verified',photoId:photoResolution.photoId,
       parentPlatformId:photoResolution.nativeId,provenance:'structured_photo_parent_and_matching_native_post'};
     return observation;
