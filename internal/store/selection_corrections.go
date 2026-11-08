@@ -183,10 +183,5 @@ func (s *Store) SaveSelectionCorrectionKnowledge(ctx context.Context, correction
 	if duplicate == 1 || eventKey == "" {
 		return nil
 	}
-	_, err = s.db.ExecContext(ctx, `
-		INSERT INTO knowledge_events(id,source,event_key,evidence_key,item_json,first_seen_at,last_seen_at)
-		VALUES(?,?,?,?,?,?,?)
-		ON CONFLICT(source,event_key) DO UPDATE SET evidence_key=excluded.evidence_key,item_json=excluded.item_json,last_seen_at=excluded.last_seen_at
-		WHERE excluded.last_seen_at >= knowledge_events.last_seen_at`, domain.NewID("knowledge"), source, eventKey, evidenceKey, itemRaw, createdAt, createdAt)
-	return err
+	return saveKnowledgeEvidence(ctx, s.db, source, evidenceKey, itemRaw, createdAt)
 }

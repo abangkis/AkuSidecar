@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"strings"
 
@@ -56,29 +57,19 @@ func (s *Store) PreviouslyDeliveredEvidence(ctx context.Context, source domain.S
 	return result, rows.Err()
 }
 
-func (s *Store) PreviouslyKnownEvents(ctx context.Context, source domain.Source, eventKeys []string) (map[string]bool, error) {
-	result := map[string]bool{}
-	if len(eventKeys) == 0 {
-		return result, nil
-	}
-	placeholders := make([]string, len(eventKeys))
-	args := make([]any, 0, len(eventKeys)+1)
-	args = append(args, source)
-	for index, key := range eventKeys {
-		placeholders[index] = "?"
-		args = append(args, key)
-	}
-	rows, err := s.db.QueryContext(ctx, `SELECT event_key FROM knowledge_events WHERE source=? AND event_key IN (`+strings.Join(placeholders, ",")+`)`, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var key string
-		if err := rows.Scan(&key); err != nil {
-			return nil, err
-		}
-		result[key] = true
-	}
-	return result, rows.Err()
+type knowledgeWriter interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+// Keep reasoning context keyed by source evidence. Semantic event identity is
+// stored separately, and model event labels must not overwrite other posts.
+func saveKnowledgeEvidence(ctx context.Context, writer knowledgeWriter, source domain.Source, evidenceKey, itemRaw, createdAt string) error {
+	// The slash keeps new storage keys outside the legacy model-label format.
+	key := "evidence/" + evidenceKey
+	_, err := writer.ExecContext(ctx, `
+		INSERT INTO knowledge_events(id,source,event_key,evidence_key,item_json,first_seen_at,last_seen_at)
+		VALUES(?,?,?,?,?,?,?)
+		ON CONFLICT(source,event_key) DO UPDATE SET evidence_key=excluded.evidence_key,item_json=excluded.item_json,last_seen_at=excluded.last_seen_at
+		WHERE excluded.last_seen_at >= knowledge_events.last_seen_at`, domain.NewID("knowledge"), source, key, evidenceKey, itemRaw, createdAt, createdAt)
+	return err
 }

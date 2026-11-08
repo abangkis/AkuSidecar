@@ -46,26 +46,14 @@ func (e *Engine) evaluateCandidatesAndCompleteRun(ctx context.Context, runID str
 		}
 	}
 	protected := map[string]bool{}
-	eventKeys := make([]string, 0, len(result.Items))
-	for _, item := range result.Items {
-		if item.EventKey != "" {
-			eventKeys = append(eventKeys, item.EventKey)
-		}
-	}
-	priorEvents, err := e.store.PreviouslyKnownEvents(ctx, run.Source, eventKeys)
-	if err != nil {
-		return err
-	}
+	// Evaluation event keys are model labels. Cross-run identity comes from
+	// source evidence here and the Semantic Event resolver during finalization.
 	for _, item := range result.Items {
 		if excluded[item.EvidenceKey] {
 			continue
 		}
 		if item.KnowledgeDelta == "material_update" || item.KnowledgeDelta == "contradiction" {
 			protected[item.EvidenceKey] = true
-			continue
-		}
-		if item.EventKey != "" && priorEvents[item.EventKey] {
-			excluded[item.EvidenceKey] = true
 		}
 	}
 	selectionStarted := time.Now()

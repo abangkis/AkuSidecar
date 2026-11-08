@@ -1329,17 +1329,6 @@ func TestPreviouslyDeliveredEvidenceIsSourceScoped(t *testing.T) {
 	if err != nil || other[evidence] {
 		t.Fatalf("other=%v err=%v", other, err)
 	}
-	if _, err := state.db.ExecContext(ctx, `INSERT INTO knowledge_events(id,source,event_key,evidence_key,item_json,first_seen_at,last_seen_at) VALUES(?,?,?,?,?,?,?)`, "knowledge-test", domain.SourceX, "event-test", evidence, string(itemRaw), domain.Now(), domain.Now()); err != nil {
-		t.Fatal(err)
-	}
-	events, err := state.PreviouslyKnownEvents(ctx, domain.SourceX, []string{"event-test", "event-missing"})
-	if err != nil || !events["event-test"] || events["event-missing"] {
-		t.Fatalf("events=%v err=%v", events, err)
-	}
-	otherEvents, err := state.PreviouslyKnownEvents(ctx, domain.SourceLinkedIn, []string{"event-test"})
-	if err != nil || otherEvents["event-test"] {
-		t.Fatalf("other events=%v err=%v", otherEvents, err)
-	}
 }
 
 func TestPreferenceSignalsUseLatestCanonicalSourceEvidenceLabel(t *testing.T) {

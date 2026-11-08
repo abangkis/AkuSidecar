@@ -76,7 +76,7 @@ func candidateEvaluationCount(t *testing.T, f bridgeCommandFixture, query string
 // Characterize process before extraction; the fixture records real SQLite
 // effects and injects failures without adding a production seam.
 func TestEngineCandidateEvaluationCharacterizationEffects(t *testing.T) {
-	for _, mode := range []string{"success", "knowledge-failure", "stage-failure", "provider-failure", "validation-failure", "preference-load-failure", "preference-save-failure", "evidence-lookup-failure", "event-lookup-failure", "completion-failure", "telemetry-failure", "timing-failure", "caller-cancellation"} {
+	for _, mode := range []string{"success", "knowledge-failure", "stage-failure", "provider-failure", "validation-failure", "preference-load-failure", "preference-save-failure", "evidence-lookup-failure", "completion-failure", "telemetry-failure", "timing-failure", "caller-cancellation"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newCandidateEvaluationFixture(t)
 			f.exec(t, `CREATE TABLE evaluation_effects(sequence INTEGER PRIMARY KEY,effect TEXT NOT NULL)`)
@@ -128,8 +128,6 @@ func TestEngineCandidateEvaluationCharacterizationEffects(t *testing.T) {
 					// the subsequent evidence lookup evaluates the failing expression.
 					f.exec(t, `ALTER TABLE timeline_items RENAME TO evaluation_original_timeline`)
 					f.exec(t, `CREATE VIEW timeline_items AS SELECT 'prior-id' AS id,'linkedin' AS source,'{}' AS assessment_json,json_extract('invalid-json','$') AS evidence_key`)
-				case "event-lookup-failure":
-					f.exec(t, `DROP TABLE knowledge_events`)
 				case "caller-cancellation":
 					cancel()
 				}
@@ -170,7 +168,7 @@ func TestEngineCandidateEvaluationCharacterizationEffects(t *testing.T) {
 				if err == nil || !strings.Contains(err.Error(), "evaluation preference rejected") {
 					t.Fatal(err)
 				}
-			case "evidence-lookup-failure", "event-lookup-failure":
+			case "evidence-lookup-failure":
 				want = want[:4]
 				wantAssessments, wantItems = 0, 0
 				if err == nil || candidateEvaluationCount(t, f, `SELECT COUNT(*) FROM preference_model`) != 1 {
@@ -231,7 +229,7 @@ func TestEngineCandidateEvaluationCharacterizationEffects(t *testing.T) {
 }
 
 func TestEngineCandidateEvaluationCharacterizationSelection(t *testing.T) {
-	for _, mode := range []string{"known-event", "material-update", "contradiction", "prior-delivered", "prior-delivered-material", "resurfaced-changed", "resurfaced-after-cooldown", "foreign-source-event", "weak-evidence-material"} {
+	for _, mode := range []string{"reused-event-label", "material-update", "contradiction", "prior-delivered", "prior-delivered-material", "resurfaced-changed", "resurfaced-after-cooldown", "foreign-source-event", "weak-evidence-material"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newCandidateEvaluationFixture(t)
 			if strings.HasPrefix(mode, "prior-delivered") || strings.HasPrefix(mode, "resurfaced-") {
@@ -261,6 +259,9 @@ func TestEngineCandidateEvaluationCharacterizationSelection(t *testing.T) {
 				result, telemetry, err := candidateEvaluationResult(ctx, run, obs, knowledge)
 				result.Items[0].EventKey = "known-event"
 				switch mode {
+				case "reused-event-label":
+					f.exec(t, `UPDATE knowledge_events SET event_key='event_003' WHERE source='linkedin'`)
+					result.Items[0].EventKey = "event_003"
 				case "material-update", "prior-delivered-material", "weak-evidence-material":
 					result.Items[0].KnowledgeDelta = "material_update"
 				case "contradiction":
@@ -281,11 +282,19 @@ func TestEngineCandidateEvaluationCharacterizationSelection(t *testing.T) {
 			}
 			want := 1
 			switch mode {
-			case "known-event", "prior-delivered", "prior-delivered-material", "weak-evidence-material":
+			case "prior-delivered", "prior-delivered-material", "weak-evidence-material":
 				want = 0
 			}
 			if got := candidateEvaluationCount(t, f, `SELECT selected FROM candidate_assessments WHERE run_id=?`, f.run.ID); got != want {
 				t.Fatalf("selected=%d want=%d", got, want)
+			}
+			if mode == "reused-event-label" {
+				if got := candidateEvaluationCount(t, f, `SELECT COUNT(*) FROM timeline_items WHERE run_id=? AND evidence_key='linkedin:evaluation'`, f.run.ID); got != 1 {
+					t.Fatal("unrelated historical label kept new evidence out of the Timeline")
+				}
+				if got := candidateEvaluationCount(t, f, `SELECT COUNT(*) FROM knowledge_events WHERE source='linkedin' AND (event_key='event_003' AND evidence_key='linkedin:known' OR evidence_key='linkedin:evaluation')`); got != 2 {
+					t.Fatal("new evidence overwrote the unrelated historical knowledge entry")
+				}
 			}
 		})
 	}

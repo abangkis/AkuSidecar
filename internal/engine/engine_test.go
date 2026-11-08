@@ -18,6 +18,7 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
+	"github.com/abangkis/AkuSidecar/internal/eventengine"
 	"github.com/abangkis/AkuSidecar/internal/preference"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/AkuSidecar/internal/store"
@@ -841,7 +842,13 @@ func (provider *continuityProvider) Analyze(_ context.Context, run domain.Run, o
 	call := provider.calls
 	provider.mu.Unlock()
 	block := observation.Snapshots[0].Blocks[0]
-	delta := []string{"new_event", "context", "material_update"}[call-1]
+	delta := []string{"new_event", "context", "material_update", "new_event"}[call-1]
+	claim := []string{
+		"Moonshot launched the Kimi K3 open-weight model.",
+		"A second reporter confirmed the Moonshot Kimi K3 model launch.",
+		"Moonshot expanded the Kimi K3 model launch to additional regions.",
+		"Jakarta restored its commuter rail service after flooding.",
+	}[call-1]
 	materiality := .6
 	if delta == "material_update" {
 		materiality = .1
@@ -849,9 +856,9 @@ func (provider *continuityProvider) Analyze(_ context.Context, run domain.Run, o
 	result := domain.ReasoningResult{
 		Summary: "continuity fixture",
 		Items: []domain.ReasonedItem{{
-			ID: domain.NewID("item"), WhatChanged: "Changed", WhyItMatters: "Fixture",
+			ID: domain.NewID("item"), WhatChanged: claim, WhyItMatters: "Fixture",
 			Source: run.Source, SourceURL: "https://example.test/post", SourceURLKind: "native_post",
-			EvidenceKey: block.EvidenceKey, EventKey: "shared-event", KnowledgeDelta: delta,
+			EvidenceKey: block.EvidenceKey, EventKey: "event_003", KnowledgeDelta: delta,
 			Author: "author", Confidence: .9, EvidenceState: "primary",
 		}},
 		CandidateAssessments: []domain.CandidateAssessment{{
@@ -865,15 +872,40 @@ func (provider *continuityProvider) Analyze(_ context.Context, run domain.Run, o
 	return result, telemetry, nil
 }
 
-func TestKnownEventRequiresMaterialDelta(t *testing.T) {
+func TestHistoricalSemanticEventSeparatesDuplicatesUpdatesAndReusedLabels(t *testing.T) {
 	ctx := context.Background()
 	provider := &continuityProvider{}
 	runtime, state := singleSourceEngine(t, provider)
-	wantItems := []int{1, 0, 1}
+	settings, err := state.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.SemanticEventMode, settings.AIDetectionEnabled = "hide", false
+	if err := state.SaveSettings(ctx, settings); err != nil {
+		t.Fatal(err)
+	}
+	var launchEventID string
+	resolver := &semanticAcceptanceResolver{resolve: func(candidates []domain.SemanticCandidate, events []domain.SemanticEvent) domain.SemanticResolution {
+		if len(candidates) != 1 || len(events) != 1 || events[0].ID != launchEventID {
+			t.Errorf("expected one candidate and the historical launch, got %d candidates and %d events", len(candidates), len(events))
+			return domain.SemanticResolution{}
+		}
+		relation := "duplicate_report"
+		if candidates[0].Item.KnowledgeDelta == "material_update" {
+			relation = "material_update"
+		}
+		target := "event_001" // Resolver alias for the shortlisted historical event.
+		return domain.SemanticResolution{Decisions: []domain.SemanticDecision{{
+			CandidateAlias: candidates[0].Alias, Relation: relation, TargetAlias: &target, Confidence: .99,
+		}}}
+	}}
+	runtime.events = eventengine.New(state, resolver)
+	wantRelations := []string{"new_event", "duplicate_report", "material_update", "new_event"}
 	for index, evidence := range []string{
 		"x:000000000000000000000411",
 		"x:000000000000000000000412",
 		"x:000000000000000000000413",
+		"x:000000000000000000000414",
 	} {
 		session, err := runtime.StartVisibleUpdate(ctx, "What changed?")
 		if err != nil {
@@ -881,9 +913,18 @@ func TestKnownEventRequiresMaterialDelta(t *testing.T) {
 		}
 		completeActiveRun(t, runtime, state, session.ID, domain.SourceX, evidence)
 		session = waitSession(t, runtime, session.ID, func(value domain.Session) bool { return value.Status == "completed" })
-		if len(session.Items) != wantItems[index] {
-			t.Fatalf("session %d delta items=%d want=%d", index, len(session.Items), wantItems[index])
+		if len(session.Items) != 1 || session.Items[0].SemanticEvent == nil || session.Items[0].SemanticEvent.Relation != wantRelations[index] {
+			t.Fatalf("session %d: expected %s, got %+v", index, wantRelations[index], session.Items)
 		}
+		id := session.Items[0].SemanticEvent.EventID
+		if index == 0 {
+			launchEventID = id
+		} else if (id == launchEventID) != (index < 3) {
+			t.Fatalf("session %d: unexpected semantic event ID %q (launch %q)", index, id, launchEventID)
+		}
+	}
+	if items := acceptanceTimeline(t, runtime); len(items) != 3 || resolver.callCount() != 2 {
+		t.Fatalf("visible items=%d, resolver calls=%d; want 3 and 2", len(items), resolver.callCount())
 	}
 }
 
