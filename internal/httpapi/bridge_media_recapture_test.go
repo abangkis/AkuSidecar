@@ -326,18 +326,27 @@ func TestBridgeMediaRecaptureCharacterizationRejectedObservations(t *testing.T) 
 }
 
 func TestBridgeXRecapturePersistsRejectedRouteAndCandidateMatching(t *testing.T) {
-	for _, tc := range []struct{ name, kind, source, wantKind, wantSource string }{
-		{"final tab", "target_status", "tab", "target_status", "tab"},
-		{"fallback observation", "feed", "observation", "feed", "observation"},
-		{"missing or unsafe", "https://x.com/private?token=secret-marker", "unknown", "unavailable", "unavailable"},
+	for _, tc := range []struct{ name, pageURL, kind, source, wantKind, wantSource, wantMetadata string }{
+		{"prefer final tab", "https://x.com/home", "target_status", "tab", "target_status", "tab", "reported"},
+		{"Bridge observation", "https://x.com/private", "feed", "observation", "feed", "observation", "reported"},
+		{"missing metadata with target", "https://x.com/i/web/status/1234567890123456789?token=secret-marker", "", "", "target_status", "observation", "missing"},
+		{"missing metadata with another post", "https://x.com/other/status/9999999999999999999#secret-marker", "", "", "other_status", "observation", "missing"},
+		{"unavailable tab with feed", "https://x.com/home?token=secret-marker", "unavailable", "unavailable", "feed", "observation", "unavailable"},
+		{"invalid metadata with login", "https://x.com/i/flow/login?token=secret-marker", "https://x.com/private?token=secret-marker", "unknown", "login", "observation", "invalid"},
+		{"challenge route", "https://x.com/account/access", "", "", "challenge", "observation", "missing"},
+		{"outside X", "https://x.com.example/home", "", "", "outside_x", "observation", "missing"},
+		{"other X route", "https://x.com/private", "", "", "other_x", "observation", "missing"},
+		{"invalid observation route", "/home", "", "", "unavailable", "unavailable", "missing"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newBridgeMediaRecaptureFixture(t, "x")
 			if _, err := f.s.store.ClaimMediaRecapture(context.Background(), f.job.ID, "fixture"); err != nil {
 				t.Fatal(err)
 			}
-			f.observation.PageURL = "https://x.com/private?token=secret-marker"
-			f.observation.Coverage["xRecaptureRoute"] = map[string]any{"kind": tc.kind, "source": tc.source, "url": f.observation.PageURL}
+			f.observation.PageURL = tc.pageURL
+			if tc.kind != "" || tc.source != "" {
+				f.observation.Coverage["xRecaptureRoute"] = map[string]any{"kind": tc.kind, "source": tc.source, "url": tc.pageURL}
+			}
 			f.observation.Snapshots[0].Blocks = []domain.Block{
 				{EvidenceKey: "secret-marker", PlatformID: "x:status:1234567890123456789",
 					Permalink: "https://x.com/renamed/status/1234567890123456789", Text: "secret-marker"},
@@ -363,7 +372,8 @@ func TestBridgeXRecapturePersistsRejectedRouteAndCandidateMatching(t *testing.T)
 				t.Fatalf("job=%+v", job)
 			}
 			route, _ := job.Error.Details["xRecaptureRoute"].(map[string]any)
-			if route["kind"] != tc.wantKind || route["source"] != tc.wantSource || len(route) != 2 {
+			if route["kind"] != tc.wantKind || route["source"] != tc.wantSource ||
+				route["bridgeMetadata"] != tc.wantMetadata || len(route) != 3 {
 				t.Fatalf("route=%v", route)
 			}
 			counts, _ := job.Error.Details["candidateMatching"].(map[string]any)

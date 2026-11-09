@@ -15,9 +15,12 @@ import (
 )
 
 var (
-	xCandidateIdentity = regexp.MustCompile(`^x:status:([0-9]{5,30})$`)
-	xNumericIdentity   = regexp.MustCompile(`^[0-9]{5,30}$`)
-	xStatusPath        = regexp.MustCompile(`/status/([0-9]{5,30})(?:\b|/|$)`)
+	xCandidateIdentity      = regexp.MustCompile(`^x:status:([0-9]{5,30})$`)
+	xNumericIdentity        = regexp.MustCompile(`^[0-9]{5,30}$`)
+	xStatusPath             = regexp.MustCompile(`/status/([0-9]{5,30})(?:\b|/|$)`)
+	xRecapturePostPath      = regexp.MustCompile(`^/(?:[a-z0-9_]{1,15}|i/web)/status/([0-9]{5,30})(?:/|$)`)
+	xRecaptureLoginPath     = regexp.MustCompile(`^/(?:login|i/flow/(?:login|signup))(?:/|$)`)
+	xRecaptureChallengePath = regexp.MustCompile(`^/(?:account/access|i/flow/challenge)(?:/|$)`)
 )
 
 const passiveXMediaEngineVersion = "passive-x-media-enrichment-v2"
@@ -868,18 +871,6 @@ func recapturedBlock(observation domain.Observation, job domain.MediaRecapture) 
 }
 
 func xRecaptureMismatchDetails(observation domain.Observation, job domain.MediaRecapture) map[string]any {
-	route, _ := observation.Coverage["xRecaptureRoute"].(map[string]any)
-	kind, _ := route["kind"].(string)
-	source, _ := route["source"].(string)
-	switch kind {
-	case "target_status", "other_status", "feed", "login", "challenge", "other_x", "outside_x", "unavailable":
-	default:
-		kind = "unavailable"
-	}
-	if source != "tab" && source != "observation" {
-		source, kind = "unavailable", "unavailable"
-	}
-
 	targetStatus := normalizeXCandidateID(job.TargetURL)
 	counts := map[string]int{
 		"candidateCount": 0, "missingPermalink": 0, "evidenceKeyMatches": 0,
@@ -910,8 +901,64 @@ func xRecaptureMismatchDetails(observation domain.Observation, job domain.MediaR
 		}
 	}
 	return map[string]any{
-		"xRecaptureRoute":   map[string]string{"kind": kind, "source": source},
+		"xRecaptureRoute":   xRecaptureRouteDetails(observation, targetStatus),
 		"candidateMatching": counts,
+	}
+}
+
+func xRecaptureRouteDetails(observation domain.Observation, targetStatus string) map[string]string {
+	value, present := observation.Coverage["xRecaptureRoute"]
+	route, _ := value.(map[string]any)
+	kind, _ := route["kind"].(string)
+	source, _ := route["source"].(string)
+	metadata := "missing"
+	if present {
+		metadata = "invalid"
+	}
+	switch kind {
+	case "target_status", "other_status", "feed", "login", "challenge", "other_x", "outside_x":
+		if source == "tab" || source == "observation" {
+			return map[string]string{"kind": kind, "source": source, "bridgeMetadata": "reported"}
+		}
+	case "unavailable":
+		if source == "tab" || source == "observation" || source == "unavailable" {
+			metadata = "unavailable"
+		}
+	}
+
+	kind = xRecaptureObservationRoute(observation.PageURL, targetStatus)
+	source = "observation"
+	if kind == "unavailable" {
+		source = "unavailable"
+	}
+	return map[string]string{"kind": kind, "source": source, "bridgeMetadata": metadata}
+}
+
+func xRecaptureObservationRoute(pageURL, targetStatus string) string {
+	page, err := url.Parse(strings.TrimSpace(pageURL))
+	if err != nil || !page.IsAbs() {
+		return "unavailable"
+	}
+	if !strings.EqualFold(page.Scheme, "https") || !strings.EqualFold(page.Hostname(), "x.com") ||
+		page.User != nil || (page.Port() != "" && page.Port() != "443") {
+		return "outside_x"
+	}
+	path := strings.ToLower(page.EscapedPath())
+	if match := xRecapturePostPath.FindStringSubmatch(path); len(match) == 2 {
+		if "x:status:"+match[1] == targetStatus {
+			return "target_status"
+		}
+		return "other_status"
+	}
+	switch {
+	case path == "/home" || path == "/home/":
+		return "feed"
+	case xRecaptureLoginPath.MatchString(path):
+		return "login"
+	case xRecaptureChallengePath.MatchString(path):
+		return "challenge"
+	default:
+		return "other_x"
 	}
 }
 
