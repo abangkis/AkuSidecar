@@ -325,6 +325,65 @@ func TestBridgeMediaRecaptureCharacterizationRejectedObservations(t *testing.T) 
 	}
 }
 
+func TestBridgeXRecaptureSelectionCoverageContract(t *testing.T) {
+	t.Run("observation", func(t *testing.T) {
+		f := newBridgeMediaRecaptureFixture(t, "x")
+		bridgeCommandsJSON(t, bridgeCommandsServe(f.s, f.request("GET", "claim", "")), 200)
+		f.observation.PageURL = f.job.TargetURL
+		f.observation.Coverage["xRecaptureSelection"] = map[string]any{
+			"outcome": "target_captured", "targetMatchCount": 1,
+		}
+		f.observation.Coverage["xRecaptureRoute"] = map[string]any{"kind": "target_status", "source": "tab"}
+		const imageURL = "https://pbs.twimg.com/media/fixture.jpg"
+		block := &f.observation.Snapshots[0].Blocks[0]
+		block.PlatformID = "x:status:1234567890123456789"
+		block.Media = []map[string]any{{"kind": "image", "url": imageURL}}
+		body := f.body(t, map[string]any{"observation": f.observation})
+		value := bridgeCommandsJSON(t, bridgeCommandsServe(f.s, f.request("POST", "observation", body)), 200)
+		var job domain.MediaRecapture
+		if err := json.Unmarshal(value["recapture"], &job); err != nil || job.Status != "completed" || job.Outcome != "recovered" {
+			t.Fatalf("recapture result: %+v, %v", job, err)
+		}
+		var stored domain.Observation
+		var raw string
+		if err := f.db.QueryRow("SELECT result_json FROM media_recaptures WHERE id = ?", f.job.ID).Scan(&raw); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+			t.Fatal(err)
+		}
+		selection, _ := stored.Coverage["xRecaptureSelection"].(map[string]any)
+		if selection["outcome"] != "target_captured" || selection["targetMatchCount"] != float64(1) {
+			t.Fatalf("stored selection = %v", selection)
+		}
+		item, err := f.s.store.TimelineItem(context.Background(), f.job.TimelineID)
+		if err != nil || item.Evidence == nil || len(item.Evidence.Media) != 1 || item.Evidence.Media[0]["url"] != imageURL {
+			t.Fatalf("Timeline recapture evidence missing: %+v, %v", item, err)
+		}
+	})
+
+	t.Run("failure", func(t *testing.T) {
+		f := newBridgeMediaRecaptureFixture(t, "x")
+		bridgeCommandsJSON(t, bridgeCommandsServe(f.s, f.request("GET", "claim", "")), 200)
+		failure := domain.Failure{
+			Code: "recapture_target_not_observed", Stage: "capture",
+			Details: map[string]any{"xRecaptureSelection": map[string]any{
+				"outcome": "target_not_identified", "targetMatchCount": 0,
+			}},
+		}
+		body := f.body(t, map[string]any{"error": failure})
+		bridgeCommandsJSON(t, bridgeCommandsServe(f.s, f.request("POST", "failure", body)), 200)
+		job, err := f.s.store.MediaRecapture(context.Background(), f.job.ID)
+		if err != nil || job.Status != "failed" || job.Error == nil || job.Error.Code != failure.Code {
+			t.Fatalf("stored failure: %+v, %v", job, err)
+		}
+		selection, _ := job.Error.Details["xRecaptureSelection"].(map[string]any)
+		if selection["outcome"] != "target_not_identified" || selection["targetMatchCount"] != float64(0) {
+			t.Fatalf("stored failure selection = %v", selection)
+		}
+	})
+}
+
 func TestBridgeXRecapturePersistsRejectedRouteAndCandidateMatching(t *testing.T) {
 	for _, tc := range []struct{ name, pageURL, kind, source, wantKind, wantSource, wantMetadata string }{
 		{"prefer final tab", "https://x.com/home", "target_status", "tab", "target_status", "tab", "reported"},

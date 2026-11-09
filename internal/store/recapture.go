@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"path"
 	"regexp"
 	"strings"
 
@@ -21,6 +22,8 @@ var (
 	xRecapturePostPath      = regexp.MustCompile(`^/(?:[a-z0-9_]{1,15}|i/web)/status/([0-9]{5,30})(?:/|$)`)
 	xRecaptureLoginPath     = regexp.MustCompile(`^/(?:login|i/flow/(?:login|signup))(?:/|$)`)
 	xRecaptureChallengePath = regexp.MustCompile(`^/(?:account/access|i/flow/challenge)(?:/|$)`)
+	xHLSPosterPath          = regexp.MustCompile(`^/(amplify_video|ext_tw_video|tweet_video)_thumb/([0-9]{1,30})/`)
+	xHLSMasterPath          = regexp.MustCompile(`^/(amplify_video|ext_tw_video|tweet_video)/([0-9]{1,30})/(?:pu/)?pl/[A-Za-z0-9_.-]+\.m3u8$`)
 )
 
 const passiveXMediaEngineVersion = "passive-x-media-enrichment-v2"
@@ -671,7 +674,8 @@ func (s *Store) completeMediaRecapture(ctx context.Context, id string, observati
 			return domain.MediaRecapture{}, loadErr
 		}
 		failedPlaybackURL := stringValue(job.Payload, "failedPlaybackUrl")
-		if inlinePlaybackURL(block, job.Source, failedPlaybackURL) != "" {
+		if inlinePlaybackURL(block, job.Source, failedPlaybackURL) != "" ||
+			job.Source == domain.SourceX && hasInlineXHLSPlayback(block) {
 			outcome = "recovered"
 		}
 		recoveryMode := "background"
@@ -1006,6 +1010,43 @@ func inlinePlaybackURL(block domain.Block, source domain.Source, excluded string
 	return ""
 }
 
+func hasInlineXHLSPlayback(block domain.Block) bool {
+	for _, media := range block.Media {
+		if media["kind"] != "video" || media["playbackMode"] != "inline" {
+			continue
+		}
+		poster := stringValue(media, "posterUrl")
+		if poster == "" {
+			poster = stringValue(media, "url")
+		}
+		asset := xHLSPosterPath.FindStringSubmatch(xHLSCDNPath(poster, "pbs.twimg.com"))
+		master := xHLSMasterPath.FindStringSubmatch(xHLSCDNPath(stringValue(media, "playbackUrl"), "video.twimg.com"))
+		if asset != nil && master != nil && asset[1] == master[1] && asset[2] == master[2] {
+			return true
+		}
+	}
+	return false
+}
+
+func xHLSCDNPath(raw, host string) string {
+	if len(raw) > 2048 {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "https" || !strings.EqualFold(parsed.Host, host) || parsed.User != nil {
+		return ""
+	}
+	escaped := strings.ToLower(parsed.EscapedPath())
+	if strings.Contains(escaped, "%2f") || strings.Contains(escaped, "%5c") {
+		return ""
+	}
+	clean := path.Clean(parsed.Path)
+	if parsed.Path != clean && parsed.Path != clean+"/" {
+		return ""
+	}
+	return parsed.EscapedPath()
+}
+
 func videoExpectation(block domain.Block) []string {
 	expected := []string{"video"}
 	add := func(kind any) {
@@ -1029,7 +1070,7 @@ func videoExpectation(block domain.Block) []string {
 // A poster does not satisfy captured video playback. Admit only explicit video
 // evidence, and reject posts that already have a source-trusted inline URL.
 func unresolvedVideo(block domain.Block, source domain.Source) bool {
-	if inlinePlaybackURL(block, source, "") != "" {
+	if inlinePlaybackURL(block, source, "") != "" || source == domain.SourceX && hasInlineXHLSPlayback(block) {
 		return false
 	}
 	if block.ContentKind == "video" {

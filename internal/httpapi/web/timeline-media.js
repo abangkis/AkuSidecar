@@ -1,11 +1,13 @@
 import { boundedTimelineMedia, mediaViewerCanPan, mediaViewerPanPosition, moveTimelineCarouselIndex, normalizeTimelineCarouselIndex, shouldUseTimelineCarousel, timelineCarouselDotIndexes } from "./timeline-media-carousel.js";
 import { collectionModeState } from "./collection-mode.js";
 import { reserveMediaDimensions } from "./timeline-media-layout.js";
+import { attachXHls, xTimelineHlsUrl } from "./x-hls-playback.js";
 
 export function createTimelineMedia({
   $, configureNativePostLink, getPlaybackRecovery, recordUIActivity, safeMediaUrl, safePlaybackUrl, safeSourceUrl, showNotice, sourceDescriptor, sourceLabel, state
 }) {
   let inlineVideoVisibilityObserver = null;
+  const hlsPlaybackSessions = new WeakMap();
 
   function buildMedia(values, source, contentKind = "", nativePostUrl = "", entry = null) {
     const media = boundedTimelineMedia((Array.isArray(values) ? values : [])
@@ -15,6 +17,7 @@ export function createTimelineMedia({
         inlinePlaybackUrl: value.playbackMode === "inline"
           ? safePlaybackUrl(value.playbackUrl, source)
           : null,
+        hlsPlaylist: xTimelineHlsUrl(value, source),
       }))
       .filter((value) => value.displayUrl), undefined, source);
     if (!media.length) return null;
@@ -174,7 +177,8 @@ export function createTimelineMedia({
   function buildVideoMedia(value, source, nativePostUrl, entry = null) {
     const shell = document.createElement("div");
     shell.className = "source-layout-video-shell";
-    const canPlayInline = Boolean(value.inlinePlaybackUrl);
+    const hlsPlaylist = value.inlinePlaybackUrl ? null : value.hlsPlaylist;
+    const canPlayInline = Boolean(value.inlinePlaybackUrl || hlsPlaylist);
     const control = buildVideoPosterControl({
       width: value.width,
       height: value.height,
@@ -187,6 +191,7 @@ export function createTimelineMedia({
           width: value.width,
           height: value.height,
           playbackUrl: value.inlinePlaybackUrl,
+          hlsPlaylist,
           posterUrl: value.displayUrl,
           alt: value.alt,
           source,
@@ -237,7 +242,7 @@ export function createTimelineMedia({
     return control;
   }
 
-  function activateInlineVideo(shell, { playbackUrl, posterUrl, alt, source, nativePostUrl, width, height, entry = null }) {
+  function activateInlineVideo(shell, { playbackUrl, hlsPlaylist, posterUrl, alt, source, nativePostUrl, width, height, entry = null }) {
     if (!shell || shell.querySelector("video.source-layout-inline-video")) return;
     const control = shell.querySelector(".source-layout-media-item");
     if (!control) return;
@@ -273,7 +278,7 @@ export function createTimelineMedia({
         source,
         nativePostUrl,
       }));
-      queueInlinePlaybackRecovery(entry, source, playbackUrl);
+      if (!hlsPlaylist) queueInlinePlaybackRecovery(entry, source, playbackUrl);
     };
     video.addEventListener("error", useNativeFallback, { once: true });
 
@@ -281,7 +286,20 @@ export function createTimelineMedia({
     observeInlineVideoVisibility(video);
     // Assigning src only after the explicit click keeps Timeline rendering from
     // creating a passive request to the source video CDN.
-    video.src = playbackUrl;
+    if (hlsPlaylist) {
+      try {
+        const session = attachXHls(video, hlsPlaylist);
+        hlsPlaybackSessions.set(video, session);
+        session.finished.catch(error => {
+          if (error?.name !== "AbortError") useNativeFallback();
+        });
+      } catch {
+        useNativeFallback();
+        return;
+      }
+    } else {
+      video.src = playbackUrl;
+    }
     const playback = video.play();
     if (playback?.catch) {
       playback.catch(() => {
@@ -341,6 +359,8 @@ export function createTimelineMedia({
 
   function stopObservingInlineVideoVisibility(video) {
     inlineVideoVisibilityObserver?.unobserve(video);
+    hlsPlaybackSessions.get(video)?.dispose();
+    hlsPlaybackSessions.delete(video);
   }
 
   function stopObservingInlineVideoVisibilityWithin(root) {
