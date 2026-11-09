@@ -623,7 +623,21 @@ func (s *Store) completeMediaRecapture(ctx context.Context, id string, observati
 		block, ok = recapturedPhotoParent(observation, job, original)
 	}
 	if !ok {
-		return domain.MediaRecapture{}, errors.New("recapture did not return the requested native post")
+		const message = "recapture did not return the requested native post"
+		collector, _ := CaptureCollector(job.Payload)
+		if job.Source == domain.SourceX && !internalHeadless && collector == "bridge" {
+			failure := domain.Failure{
+				Code: "recapture_target_mismatch", Stage: "capture", Message: message,
+				Details: xRecaptureMismatchDetails(observation, job),
+			}
+			if err := writeMediaRecaptureFailure(ctx, tx, job.ID, failure, domain.Now()); err != nil {
+				return domain.MediaRecapture{}, err
+			}
+			if err := tx.Commit(); err != nil {
+				return domain.MediaRecapture{}, err
+			}
+		}
+		return domain.MediaRecapture{}, errors.New(message)
 	}
 	if job.Source == domain.SourceFacebook && block.MediaRecovery["photoParentResolution"] == nil {
 		// A later direct recapture must not erase an already verified relation.
@@ -734,9 +748,8 @@ func (s *Store) FailMediaRecapture(ctx context.Context, id string, failure domai
 	if job.Source == domain.SourceX && domain.IsAccessChallenge(failure.Code) {
 		failure = domain.SafeXChallenge(failure)
 	}
-	raw, _ := json.Marshal(failure)
 	now := domain.Now()
-	if _, err := tx.ExecContext(ctx, `UPDATE media_recaptures SET status='failed',error_json=?,completed_at=? WHERE id=? AND status IN ('queued','claimed')`, string(raw), now, id); err != nil {
+	if err := writeMediaRecaptureFailure(ctx, tx, id, failure, now); err != nil {
 		return domain.MediaRecapture{}, err
 	}
 	if job.Source == domain.SourceX && domain.IsAccessChallenge(failure.Code) {
@@ -751,6 +764,15 @@ func (s *Store) FailMediaRecapture(ctx context.Context, id string, failure domai
 	job.Error = &failure
 	job.CompletedAt = &now
 	return job, nil
+}
+
+func writeMediaRecaptureFailure(ctx context.Context, tx *sql.Tx, id string, failure domain.Failure, now string) error {
+	raw, err := json.Marshal(failure)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE media_recaptures SET status='failed',error_json=?,completed_at=? WHERE id=? AND status IN ('queued','claimed')`, string(raw), now, id)
+	return err
 }
 
 func (s *Store) MediaRecapture(ctx context.Context, id string) (domain.MediaRecapture, error) {
@@ -843,6 +865,54 @@ func recapturedBlock(observation domain.Observation, job domain.MediaRecapture) 
 		}
 	}
 	return domain.Block{}, false
+}
+
+func xRecaptureMismatchDetails(observation domain.Observation, job domain.MediaRecapture) map[string]any {
+	route, _ := observation.Coverage["xRecaptureRoute"].(map[string]any)
+	kind, _ := route["kind"].(string)
+	source, _ := route["source"].(string)
+	switch kind {
+	case "target_status", "other_status", "feed", "login", "challenge", "other_x", "outside_x", "unavailable":
+	default:
+		kind = "unavailable"
+	}
+	if source != "tab" && source != "observation" {
+		source, kind = "unavailable", "unavailable"
+	}
+
+	targetStatus := normalizeXCandidateID(job.TargetURL)
+	counts := map[string]int{
+		"candidateCount": 0, "missingPermalink": 0, "evidenceKeyMatches": 0,
+		"permalinkMatches": 0, "platformStatusMatches": 0, "permalinkStatusMatches": 0,
+	}
+	for _, snapshot := range observation.Snapshots {
+		for _, block := range snapshot.Blocks {
+			counts["candidateCount"]++
+			if strings.TrimSpace(block.Permalink) == "" {
+				counts["missingPermalink"]++
+			}
+			if block.EvidenceKey == job.EvidenceKey {
+				counts["evidenceKeyMatches"]++
+			}
+			if sameNativeURL(block.Permalink, job.TargetURL) {
+				counts["permalinkMatches"]++
+			}
+			platformStatus := normalizeXCandidateID(block.PlatformID)
+			if platformID := strings.TrimSpace(block.PlatformID); xNumericIdentity.MatchString(platformID) {
+				platformStatus = "x:status:" + platformID
+			}
+			if targetStatus != "" && platformStatus == targetStatus {
+				counts["platformStatusMatches"]++
+			}
+			if targetStatus != "" && normalizeXCandidateID(block.Permalink) == targetStatus {
+				counts["permalinkStatusMatches"]++
+			}
+		}
+	}
+	return map[string]any{
+		"xRecaptureRoute":   map[string]string{"kind": kind, "source": source},
+		"candidateMatching": counts,
+	}
 }
 
 func nativeSourceURL(source domain.Source, raw string) bool {

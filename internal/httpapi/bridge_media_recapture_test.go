@@ -43,6 +43,9 @@ func newBridgeMediaRecaptureFixture(t *testing.T, route string) bridgeMediaRecap
 	if route == "waiting" {
 		source, native = domain.SourceFacebook, "https://www.facebook.com/photo/?fbid=123456789012345"
 	}
+	if route == "x" {
+		source, native = domain.SourceX, "https://x.com/example/status/1234567890123456789"
+	}
 	key := string(source) + ":http-recapture"
 	block := domain.Block{EvidenceKey: key, PlatformID: "1234567890123456789", Permalink: native, Author: "Fixture", Text: "Offline recapture evidence", MediaRecovery: map[string]any{"outcome": "unavailable"}}
 	observation := domain.Observation{Source: source, CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{block}}}, Coverage: map[string]any{"quality": "complete"}}
@@ -317,6 +320,74 @@ func TestBridgeMediaRecaptureCharacterizationRejectedObservations(t *testing.T) 
 			bridgeCommandsError(t, bridgeCommandsServe(f.s, f.request("POST", "observation", f.body(t, map[string]any{"observation": f.observation}))), 400, "invalid_request", message)
 			if f.state(t) != before {
 				t.Fatal("rejected observation changed durable state")
+			}
+		})
+	}
+}
+
+func TestBridgeXRecapturePersistsRejectedRouteAndCandidateMatching(t *testing.T) {
+	for _, tc := range []struct{ name, kind, source, wantKind, wantSource string }{
+		{"final tab", "target_status", "tab", "target_status", "tab"},
+		{"fallback observation", "feed", "observation", "feed", "observation"},
+		{"missing or unsafe", "https://x.com/private?token=secret-marker", "unknown", "unavailable", "unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newBridgeMediaRecaptureFixture(t, "x")
+			if _, err := f.s.store.ClaimMediaRecapture(context.Background(), f.job.ID, "fixture"); err != nil {
+				t.Fatal(err)
+			}
+			f.observation.PageURL = "https://x.com/private?token=secret-marker"
+			f.observation.Coverage["xRecaptureRoute"] = map[string]any{"kind": tc.kind, "source": tc.source, "url": f.observation.PageURL}
+			f.observation.Snapshots[0].Blocks = []domain.Block{
+				{EvidenceKey: "secret-marker", PlatformID: "x:status:1234567890123456789",
+					Permalink: "https://x.com/renamed/status/1234567890123456789", Text: "secret-marker"},
+				{EvidenceKey: "missing", PlatformID: "1234567890123456789", Text: "secret-marker"},
+				{EvidenceKey: "different", Permalink: "https://x.com/other/status/9999999999999999999", Text: "secret-marker"},
+			}
+			body := f.body(t, map[string]any{"observation": f.observation})
+			bridgeCommandsError(t, bridgeCommandsServe(f.s, f.request("POST", "observation", body)), 400, "invalid_request",
+				"recapture did not return the requested native post")
+
+			status := bridgeCommandsServe(f.s, httptest.NewRequest(http.MethodGet, "/api/media-recaptures/"+f.job.ID, nil))
+			var response struct {
+				Recapture struct {
+					Status string         `json:"status"`
+					Error  domain.Failure `json:"error"`
+				} `json:"recapture"`
+			}
+			if status.Code != 200 || json.Unmarshal(status.Body.Bytes(), &response) != nil {
+				t.Fatalf("status response: %d %s", status.Code, status.Body.String())
+			}
+			job := response.Recapture
+			if job.Status != "failed" || job.Error.Code != "recapture_target_mismatch" || job.Error.Stage != "capture" {
+				t.Fatalf("job=%+v", job)
+			}
+			route, _ := job.Error.Details["xRecaptureRoute"].(map[string]any)
+			if route["kind"] != tc.wantKind || route["source"] != tc.wantSource || len(route) != 2 {
+				t.Fatalf("route=%v", route)
+			}
+			counts, _ := job.Error.Details["candidateMatching"].(map[string]any)
+			for key, want := range map[string]float64{
+				"candidateCount": 3, "missingPermalink": 1, "evidenceKeyMatches": 0, "permalinkMatches": 0,
+				"platformStatusMatches": 2, "permalinkStatusMatches": 1,
+			} {
+				if counts[key] != want {
+					t.Errorf("%s=%v; want %v", key, counts[key], want)
+				}
+			}
+			state := f.state(t)
+			if strings.Contains(state, "secret-marker") || !strings.Contains(state, `"result":null`) {
+				t.Fatalf("saved raw rejected evidence: %s", state)
+			}
+			item, err := f.s.store.TimelineItem(context.Background(), f.job.TimelineID)
+			if err != nil || item.Evidence == nil || len(item.Evidence.Media) != 0 {
+				t.Fatalf("Timeline item changed after rejected observation: %+v %v", item, err)
+			}
+			// Older Bridge code sends a generic failure after the HTTP rejection.
+			fallback := f.body(t, map[string]any{"error": domain.Failure{Code: "bridge_failure"}})
+			bridgeCommandsServe(f.s, f.request("POST", "failure", fallback))
+			if f.state(t) != state {
+				t.Fatal("fallback failure replaced the stored mismatch diagnostic")
 			}
 		})
 	}
