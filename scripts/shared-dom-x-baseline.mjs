@@ -14,20 +14,32 @@ const chrome = process.argv[2] ?? 'C:/Program Files/Google/Chrome/Application/ch
 const output = process.argv[3];
 const baselinePath = process.argv[4];
 
-function timestamp(handle, id) {
-  return `<a href="https://x.com/${handle}/status/${id}"><time datetime="2026-01-02T03:04:00Z">Fixture time</time></a>`;
+function timestamp(handle, id, label = 'Fixture time') {
+  return `<a href="https://x.com/${handle}/status/${id}"><time datetime="2026-01-02T03:04:00Z">${label}</time></a>`;
 }
 
-function legacy(id, { text = 'Legacy fixture body', extra = '', handle = 'legacy' } = {}) {
-  return `<article data-testid="tweet"><div data-testid="User-Name">${handle}</div>${timestamp(handle, id)}` +
+function legacy(id, { text = 'Legacy fixture body', extra = '', handle = 'legacy', authorHeader } = {}) {
+  const dateLink = authorHeader === undefined ? timestamp(handle, id) : '';
+  return `<article data-testid="tweet"><div data-testid="User-Name">${authorHeader ?? handle}</div>${dateLink}` +
     `<div data-testid="tweetText">${text}</div>${extra}</article>`;
 }
 
-function wrapped(id, { text = 'Wrapped fixture body', extra = '', handle = 'wrapped' } = {}) {
+function wrapped(id, { text = 'Wrapped fixture body', extra = '', handle = 'wrapped', author = handle } = {}) {
   return `<div role="link" data-href="/${handle}/status/${id}"><article class="group/post">` +
-    `<div class="x-middot-group"><a href="https://x.com/${handle}">${handle}</a></div>` +
+    `<div class="x-middot-group"><a href="https://x.com/${handle}">${author}</a></div>` +
     `<div dir="auto" class="whitespace-pre-wrap">${text}</div>${extra}</article></div>`;
 }
+
+// Sanitized from the same X post appearing with a 6h/7h legacy header and a wrapped profile label.
+const resurfaceId = '1234500000000000011';
+const resurfaceHandle = 'fixture_author';
+const resurfaceAuthor = 'Fixture Author · T3 2026';
+const resurfaceText = 'The same post links a chart comparing usage in a coding tool.';
+const resurfaceLegacy = age => legacy(resurfaceId, {
+  text: resurfaceText,
+  authorHeader: `<a href="/${resurfaceHandle}">${resurfaceAuthor}</a> ` +
+    `<a href="/${resurfaceHandle}">@${resurfaceHandle}</a> · ${timestamp(resurfaceHandle, resurfaceId, age)}`,
+});
 
 const placeholder = '<div role="link" data-href="/pending/status/1234500000000000009"><article></article></div>';
 const wrappedPost = wrapped('1234500000000000002');
@@ -42,6 +54,9 @@ const cases = [
   ['wrapped_quote', wrapped('1234500000000000003', {
     extra: wrapped(quoteId, { handle: 'quote', text: 'Quoted fixture body' }),
   })],
+  ['resurface_legacy_6h', resurfaceLegacy('6h')],
+  ['resurface_legacy_7h', resurfaceLegacy('7h')],
+  ['resurface_wrapped', wrapped(resurfaceId, { handle: resurfaceHandle, author: resurfaceAuthor, text: resurfaceText })],
   ['media_only', legacy('1234500000000000005', { text: '',
     extra: '<div data-testid="tweetPhoto"><img width="240" height="135" src="https://pbs.twimg.com/media/synthetic.png"></div>',
   })],
@@ -220,6 +235,10 @@ try {
   }
   for (const mode of ['windowed', 'headless']) {
     assert.equal(get('legacy')[mode].posts[0].id, 'x:status:1234500000000000001');
+    const firstCapture = get('resurface_legacy_6h')[mode].posts[0];
+    assert.equal(firstCapture.author, resurfaceAuthor);
+    assert.deepEqual(get('resurface_legacy_7h')[mode].posts[0], firstCapture);
+    assert.deepEqual(get('resurface_wrapped')[mode].posts[0], firstCapture);
     assert.equal(get('legacy_quote')[mode].posts[0].quoteId, quoteId);
     assert.equal(get('wrapped_quote')[mode].posts[0].quoteId, quoteId);
     assert.equal(get('wrapped_without_time')[mode].posts[0].permalink, 'https://x.com/wrapped/status/1234500000000000002');
@@ -243,7 +262,8 @@ try {
   assert.equal(get('conflicting_identity').headless.rejections.ambiguous_identity, 1);
   const expectedShadowCodes = {
     legacy: 'ready', wrapped_without_time: 'ready', mixed_layouts: 'ready', legacy_quote: 'ready',
-    wrapped_quote: 'ready', media_only: 'ready', placeholder: 'no_valid_candidates',
+    wrapped_quote: 'ready', resurface_legacy_6h: 'ready', resurface_legacy_7h: 'ready', resurface_wrapped: 'ready',
+    media_only: 'ready', placeholder: 'no_valid_candidates',
     hydration_before: 'hydrating', hydration_after: 'ready', conflicting_identity: 'no_valid_candidates',
     wrapper_timestamp_agreement: 'ready', wrapper_timestamp_conflict: 'no_valid_candidates',
     quote_cannot_identify_owner: 'no_valid_candidates', quote_identity_conflict: 'ready',
