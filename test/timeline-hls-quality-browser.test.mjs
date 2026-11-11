@@ -216,6 +216,8 @@ async function exerciseQuality() {
     generic = true;
     const genericVideo = document.createElement("video");
     genericVideo.muted = true;
+    genericVideo.width = 694;
+    genericVideo.height = 360;
     document.body.append(genericVideo);
     let fatal;
     const genericBufferStart = buffers.length;

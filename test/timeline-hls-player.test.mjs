@@ -61,3 +61,13 @@ test("fatal playback failure tears down before reporting and reports only once",
   engine.emit("error", { fatal: true, details: "decode" }); engine.emit("error", { fatal: true });
   assert.equal(engine.destroyCount, 1); assert.equal(errors.length, 1); assert.match(errors[0].message, /decode/);
 });
+
+test("engine codec filtering cannot leave a UHD-only Auto session after metadata admission", async () => {
+  const { engine, session, errors, states } = fixture();
+  engine.levels = [{ width: 3840, height: 2160, bitrate: 35000000 }];
+  engine.emit("manifest");
+  await assert.rejects(session.ready, /supported lower-quality fallback/);
+  assert.equal(engine.destroyCount, 1);
+  assert.equal(errors.length, 1);
+  assert.deepEqual(states, []);
+});

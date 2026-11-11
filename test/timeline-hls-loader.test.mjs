@@ -25,6 +25,69 @@ function run(Loader, context = fragment) {
 }
 const turn = () => new Promise(resolve => setImmediate(resolve));
 
+function streamedBytes(size, withLength = false) {
+  let sent = 0;
+  return new Response(new ReadableStream({
+    pull(controller) {
+      if (sent === size) { controller.close(); return; }
+      const length = Math.min(64 * 1024, size - sent);
+      const bytes = new Uint8Array(length);
+      bytes.fill(0x5a);
+      sent += length;
+      controller.enqueue(bytes);
+    },
+  }), { headers: withLength ? { "Content-Length": String(size) } : {} });
+}
+
+test("default loader accepts the measured Matt fragment and the exact 12 MiB boundary", async t => {
+  for (const size of [9_606_473, 12 * 1024 * 1024]) {
+    for (const withLength of [false, true]) {
+      await t.test(`${size} streamed bytes ${withLength ? "with" : "without"} Content-Length`, async t => {
+        t.mock.method(globalThis, "fetch", async () => streamedBytes(size, withLength));
+        const result = run(createTimelineHlsLoader({ policy }));
+        const { response, stats } = await result.finished;
+        assert.ok(response, "The complete supported fragment must reach HLS.");
+        assert.equal(response.data.byteLength, size);
+        assert.equal(stats.loaded, size);
+        assert.equal(stats.total, size);
+        assert.ok(stats.chunkCount > 1);
+        assert.equal(new Uint8Array(response.data)[size - 1], 0x5a);
+        assert.deepEqual(result.events, ["success"]);
+        result.loader.destroy();
+      });
+    }
+  }
+});
+
+test("a 12 MiB plus one byte stream is rejected even without Content-Length", async t => {
+  const size = 12 * 1024 * 1024 + 1;
+  t.mock.method(globalThis, "fetch", async () => {
+    const response = streamedBytes(size);
+    assert.equal(response.headers.get("content-length"), null);
+    return response;
+  });
+  const result = run(createTimelineHlsLoader({ policy }));
+  assert.match((await result.finished).error.text, /byte limit/);
+  assert.equal(result.loader.stats.loaded, size);
+  assert.deepEqual(result.events, ["error"]);
+  result.loader.destroy();
+});
+
+test("an oversized Content-Length is rejected before any response body read", async t => {
+  let reads = 0;
+  t.mock.method(globalThis, "fetch", async () => ({
+    ok: true,
+    headers: new Headers({ "Content-Length": String(12 * 1024 * 1024 + 1) }),
+    body: { getReader() { reads++; throw Error("An oversized body must not be read"); } },
+  }));
+  const result = run(createTimelineHlsLoader({ policy }));
+  assert.match((await result.finished).error.text, /byte limit/);
+  assert.equal(reads, 0);
+  assert.equal(result.loader.stats.loaded, 0);
+  assert.deepEqual(result.events, ["error"]);
+  result.loader.destroy();
+});
+
 test("generic loader supports a non-X source and preserves the stats reference used by ABR", async t => {
   t.mock.method(globalThis, "fetch", async (url, init) => {
     assert.equal(url, fragment.url);
