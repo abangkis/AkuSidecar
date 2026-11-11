@@ -1,0 +1,2 @@
+# Preserve the exact captured response bytes for SHA-256 evidence checks.
+*.m3u8 -text

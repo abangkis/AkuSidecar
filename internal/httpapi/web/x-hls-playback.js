@@ -33,7 +33,7 @@ function assetResource(value, playlist, assetPath, extension) {
   return url.href;
 }
 
-async function fetchBytes(url, limit, signal) {
+async function fetchBytes(url, limit, signal, budget) {
   const response = await fetch(url, {
     signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
     credentials: "omit",
@@ -50,6 +50,8 @@ async function fetchBytes(url, limit, signal) {
       if (done) break;
       size += value.byteLength;
       if (size > limit) throw new Error("X HLS resource exceeds its byte limit.");
+      if (value.byteLength > budget.remaining) throw new Error("X HLS playback exceeds its byte limit.");
+      budget.remaining -= value.byteLength;
       chunks.push(value);
     }
   } finally {
@@ -65,8 +67,8 @@ async function fetchBytes(url, limit, signal) {
   return bytes;
 }
 
-async function readPlaylist(url, signal) {
-  const bytes = await fetchBytes(url, playlistBytes, signal);
+async function readPlaylist(url, signal, budget) {
+  const bytes = await fetchBytes(url, playlistBytes, signal, budget);
   const lines = new TextDecoder().decode(bytes).split(/\r?\n/).map(line => line.trim()).filter(Boolean);
   if (lines[0] !== "#EXTM3U" || lines.some(line => /^#EXT-X-(?:KEY|SESSION-KEY|BYTERANGE|DISCONTINUITY|GAP|PART|SKIP|DEFINE|I-FRAMES-ONLY)(?::|$)/.test(line))) {
     throw new Error("Unsupported X HLS playlist.");
@@ -74,18 +76,51 @@ async function readPlaylist(url, signal) {
   return lines;
 }
 
+function attributes(line) {
+  const result = new Map();
+  let rest = line.slice(line.indexOf(":") + 1);
+  while (rest) {
+    const match = /^([A-Z0-9-]+)=(?:"([^"\r\n]*)"|([^,\s"]+))(,|$)/.exec(rest);
+    if (!match || result.has(match[1])) throw new Error("Unsupported X HLS attributes.");
+    result.set(match[1], match[2] ?? match[3]);
+    rest = rest.slice(match[0].length);
+    if (match[4] && !rest) throw new Error("Unsupported X HLS attributes.");
+  }
+  return result;
+}
+
 function selectVariant(lines, playlist, assetPath) {
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
-    if (!line.startsWith("#EXT-X-STREAM-INF:") || /(?:[:,])AUDIO=/.test(line)) continue;
-    const codecs = /(?:[:,])CODECS="([\w., -]{1,100})"/.exec(line)?.[1];
+    if (!line.startsWith("#EXT-X-STREAM-INF:")) continue;
+    const fields = attributes(line);
+    const codecs = fields.get("CODECS");
+    if (!codecs || !/^[\w., -]{1,100}$/.test(codecs)) continue;
+    if (fields.has("AUDIO")) {
+      const codecList = codecs.split(",").map(codec => codec.trim());
+      const videoCodecs = codecList.filter(codec => /^avc[13]\.[a-f\d]{6}$/i.test(codec));
+      const audioCodecs = codecList.filter(codec => /^mp4a\.40\.2$/.test(codec));
+      if (codecList.length !== 2 || videoCodecs.length !== 1 || audioCodecs.length !== 1) continue;
+      const videoMime = `video/mp4; codecs="${videoCodecs[0]}"`;
+      const audioMime = `audio/mp4; codecs="${audioCodecs[0]}"`;
+      if (!MediaSource.isTypeSupported(videoMime) || !MediaSource.isTypeSupported(audioMime)) continue;
+      const renditions = lines.filter(entry => entry.startsWith("#EXT-X-MEDIA:"))
+        .map(attributes).filter(entry => entry.get("TYPE") === "AUDIO" && entry.get("GROUP-ID") === fields.get("AUDIO"));
+      const audio = renditions.find(entry => entry.get("DEFAULT") === "YES") ??
+        renditions.find(entry => entry.get("AUTOSELECT") === "YES") ?? renditions[0];
+      if (!audio?.get("URI")) throw new Error("X HLS requires its matching audio rendition.");
+      return [
+        { mime: videoMime, url: assetResource(lines[index + 1], playlist, assetPath, /\.m3u8$/i) },
+        { mime: audioMime, url: assetResource(audio.get("URI"), playlist, assetPath, /\.m3u8$/i) },
+      ];
+    }
     const mime = `video/mp4; codecs="${codecs}"`;
-    if (codecs && MediaSource.isTypeSupported(mime)) {
+    if (MediaSource.isTypeSupported(mime)) {
       const url = assetResource(lines[index + 1], playlist, assetPath, /\.m3u8$/i);
-      return { mime, url };
+      return [{ mime, url }];
     }
   }
-  throw new Error("X HLS requires a compatible fMP4 variant without a separate audio playlist.");
+  throw new Error("X HLS requires compatible fMP4 tracks.");
 }
 
 function mediaResources(lines, playlist, assetPath) {
@@ -95,7 +130,7 @@ function mediaResources(lines, playlist, assetPath) {
   if (maps.length !== 1 || !init || !lines.includes("#EXT-X-ENDLIST") ||
       segments.length === 0 || segments.length > maxSegments ||
       lines.filter(line => !line.startsWith("#")).length !== segments.length) {
-    throw new Error("X HLS requires a bounded fMP4 video playlist.");
+    throw new Error("X HLS requires a bounded fMP4 media playlist.");
   }
   return [
     assetResource(init, playlist, assetPath, /\.mp4$/i),
@@ -132,17 +167,30 @@ export function attachXHls(video, playlist) {
   const objectUrl = URL.createObjectURL(media);
   const ready = waitForEvent(media, "sourceopen", signal, () => { video.src = objectUrl; });
   const finished = ready.then(async () => {
-    const master = await readPlaylist(playlist, signal);
-    const variant = selectVariant(master, playlist, assetPath);
-    const urls = mediaResources(await readPlaylist(variant.url, signal), variant.url, assetPath);
-    const buffer = media.addSourceBuffer(variant.mime);
-    let remaining = playbackBytes;
-    for (const url of urls) {
-      const bytes = await fetchBytes(url, Math.min(segmentBytes, remaining), signal);
-      remaining -= bytes.byteLength;
-      await waitForEvent(buffer, "updateend", signal, () => buffer.appendBuffer(bytes));
+    const budget = { remaining: playbackBytes };
+    const master = await readPlaylist(playlist, signal, budget);
+    const tracks = selectVariant(master, playlist, assetPath);
+    // Validate both playlists before appending either track. MP4 presentation
+    // timestamps share this MediaSource clock; do not reset either track's offset.
+    for (const track of tracks) {
+      track.urls = mediaResources(await readPlaylist(track.url, signal, budget), track.url, assetPath);
+      track.buffer = media.addSourceBuffer(track.mime);
+    }
+    for (let index = 0; tracks.some(track => index < track.urls.length); index++) {
+      for (const track of tracks) {
+        if (index >= track.urls.length) continue;
+        const bytes = await fetchBytes(track.urls[index], segmentBytes, signal, budget);
+        await waitForEvent(track.buffer, "updateend", signal, () => track.buffer.appendBuffer(bytes));
+      }
     }
     media.endOfStream();
+  }).catch(error => {
+    // A later audio failure must terminate an already-started video track too.
+    controller.abort(error);
+    if (media.readyState === "open") {
+      try { media.endOfStream("decode"); } catch { /* disposal may have detached it */ }
+    }
+    throw error;
   });
   return {
     finished,
