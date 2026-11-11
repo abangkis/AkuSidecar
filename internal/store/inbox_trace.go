@@ -138,7 +138,7 @@ func (s *Store) InboxRunTrace(ctx context.Context, runID, stage string, limit, o
 		}
 
 		switch {
-		case item.ContinuityStatus == "resurfaced_unchanged" && !evaluated:
+		case item.ContinuityStatus == "resurfaced_unchanged" && continuityDecision.Action == "fail_fast" && !evaluated:
 			item.Outcome = "resurfaced_unchanged"
 			item.Reason = item.ContinuityDetail
 		case hasTimeline && timelineValue.relation == "duplicate_report":
@@ -273,7 +273,7 @@ func mergeInboxTraceBlock(current, next domain.Block) domain.Block {
 func inboxTraceMatchesStage(item domain.InboxFlowItem, stage string) bool {
 	switch stage {
 	case "skipped":
-		return item.ContinuityStatus == "resurfaced_unchanged" && !item.Evaluated
+		return item.Outcome == "resurfaced_unchanged" && !item.Evaluated
 	case "evaluated":
 		return item.Evaluated
 	case "selected":

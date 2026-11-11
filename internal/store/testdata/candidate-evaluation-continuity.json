@@ -1,0 +1,164 @@
+{
+  "origin": "Read-only selected fields from persisted failed Candidate Evaluation runs; URL queries removed; no model call is replayed.",
+  "cases": [
+    {
+      "runId": "run_4f4b88579100361287ebb08277de96ad",
+      "source": "x",
+      "capturedAt": "2026-11-11T06:59:12.031Z",
+      "error": {
+        "code": "reasoning_failed",
+        "stage": "reasoning",
+        "httpStatus": 503
+      },
+      "assessmentCount": 0,
+      "block": {
+        "evidenceKey": "x:8678172310337febd66b505e",
+        "platformId": "x:status:2120410006273380750",
+        "permalink": "https://x.com/thsottiaux/status/2120410006273380750",
+        "author": "Tibo",
+        "text": "It’s been a while without resets. Maybe I should come back out of the basement",
+        "contentKind": "post",
+        "relationshipType": "original",
+        "parentPermalink": "",
+        "quotedPost": null
+      }
+    },
+    {
+      "runId": "run_4f4b88579100361287ebb08277de96ad",
+      "source": "x",
+      "capturedAt": "2026-11-11T06:59:12.031Z",
+      "error": {
+        "code": "reasoning_failed",
+        "stage": "reasoning",
+        "httpStatus": 503
+      },
+      "assessmentCount": 0,
+      "block": {
+        "evidenceKey": "x:112002fdc5edb81994aea6fc",
+        "platformId": "x:status:2120410480204525936",
+        "permalink": "https://x.com/thsottiaux/status/2120410480204525936",
+        "author": "Tibo",
+        "text": "Thursday is feeling codexy to me. Perhaps also a good time for a banked reset.",
+        "contentKind": "post",
+        "relationshipType": "original",
+        "parentPermalink": "",
+        "quotedPost": null
+      }
+    },
+    {
+      "runId": "run_a407aba203930310a7eeb111b0e2e161",
+      "source": "linkedin",
+      "capturedAt": "2026-11-11T11:42:23.930Z",
+      "error": {
+        "code": "reasoning_failed",
+        "stage": "reasoning",
+        "httpStatus": 503
+      },
+      "assessmentCount": 0,
+      "block": {
+        "evidenceKey": "linkedin:9a4068d9c79e59b03517b0b3",
+        "platformId": "linkedin:share:7526154400126644224",
+        "permalink": "https://www.linkedin.com/feed/update/urn:li:share:7526154400126644224/",
+        "author": "Animesh Gaitonde",
+        "text": "Spotify reduced Claude Code token usage by 90%. 🚀\n\nTeams relied on Claude Code for repetitive tasks such as reading large files, setting up boilerplate code, answering questions related to a large code base, etc.\n\nThese tasks resulted were I/O heavy and exchanged large number of tokens. Claude used its default frontier models that were optimized for reasoning and token costs shooted up. 🤯\n\nThe team solved the problem elegantly by:\n👉 Segregating tasks that require reasoning from the ones that don't.\n👉 Use an expensive frontier model for reasoning tasks.\n👉 Delegate non-reasoning tasks to a cheap model via sub-agents.\n\nSpotify had built a platform named Portal to provision and run agents at the run-time. They created two sub-agents:\n1️⃣ Bulk-reader - code analyst optimized to answer questions related to large files.\n2️⃣ Code-writer - code generator for creating tests, configs and scaffolding.\n\nInitially, the sub-agents were invoked by writing instructions in the Claude.md file. However, the instructions weren't enforced and were often ignored by the agent.\n\nTo tackle this, the team built the following three layers:\n🎯 Hooks - They created hooks before every large file read. It fired before every tool call.\n🎯 Scripts - Wrapped the portal CLI commands and invoked the sub-agents.\n🎯 Skills - Instructed Claude Code to redirect to the sub-agent by running the scripts.\n\nWith this setup, all the non-reasoning expensive tasks were delegated to a cheap model. This resulted in optimizing the context window and reduced the token costs by 90%. 🔥\n\nThey built a Claude code plugin named Shunt which was later used by all the developers. The savings would compound with the growth in the tool's adoption.\n\nThe trade-off of the solution was extra latency of 10-30 seconds involved in delegating the task to the sub-agent. While this was acceptable for large reads, it was counter-productive for small ones.\n\nAs a result, they had set a configurable threshold for the file size. Below a given file size, the overhead of delegation would exceed the savings.\n\nHave you used a similar pattern to optimize the token costs or solved it differently? If yes, what was your experience? Leave your thoughts in the comments below. 👇\n\nFind link to the post in the first comment. 👇\n\n#tech #softwareengineering #systemdesign",
+        "contentKind": "post",
+        "relationshipType": "original",
+        "parentPermalink": "",
+        "quotedPost": null
+      }
+    }
+  ],
+  "successes": [
+    {
+      "runId": "run_65e54c731dacf27585f4140754506e0e",
+      "source": "x",
+      "status": "completed",
+      "capturedAt": "2026-11-11T08:29:38.786Z",
+      "selected": false,
+      "assessment": {
+        "evidenceKey": "x:37963adda40c5402e0818a1c",
+        "topicTags": [
+          "claude",
+          "3d-animation",
+          "threejs",
+          "geospatial",
+          "aws"
+        ],
+        "topicFacets": [
+          "developer_tools",
+          "geospatial",
+          "software_engineering"
+        ],
+        "contentType": "tutorial",
+        "novelty": 0.7,
+        "urgency": 0.35,
+        "actionability": 0.8,
+        "materiality": 0.6,
+        "evidenceStrength": 0.9,
+        "knowledgeRelation": "new_information",
+        "rationale": "Provides a distinct technical tutorial on combining AI coding tools with geospatial open data for 3D animation.",
+        "selectionDecision": {
+          "policyVersion": "selection-v1",
+          "reason": "preference_suppressed",
+          "selected": false
+        }
+      },
+      "block": {
+        "evidenceKey": "x:37963adda40c5402e0818a1c",
+        "platformId": "x:status:2120235071508459629",
+        "permalink": "https://x.com/ElliotPadfield/status/2120235071508459629",
+        "author": "Elliot Padfield",
+        "text": "you can make 3d animations of real places with claude and free map data\n\nanimate your running route, show the neighbourhood around a property, or make a location intro for a video\n\ntwo useful sources:\nAWS Terrain Tiles → the shape of the land\nOverture Maps → buildings, roads and parks\ngive claude code the links and something like:\n\n“build a 3d scene of [place] using this data. i want to [animate a route / highlight a location / make a flyover]. fetch the area we need and help me animate it in three.js.”",
+        "contentKind": "video",
+        "relationshipType": "original",
+        "parentPermalink": "",
+        "quotedPost": null
+      }
+    },
+    {
+      "runId": "run_56e55c91f77a9866ae244ea8828c385e",
+      "source": "instagram",
+      "status": "completed",
+      "capturedAt": "2026-11-11T07:40:04.861Z",
+      "selected": true,
+      "assessment": {
+        "evidenceKey": "instagram:46f2b48596b1728e1dedf061",
+        "topicTags": [
+          "ecotourism",
+          "conservation",
+          "bogor",
+          "eiger_nature",
+          "travel"
+        ],
+        "topicFacets": [
+          "climate_energy",
+          "business"
+        ],
+        "contentType": "announcement",
+        "novelty": 0.85,
+        "urgency": 0.3,
+        "actionability": 0.4,
+        "materiality": 0.7,
+        "evidenceStrength": 0.95,
+        "knowledgeRelation": "new_information",
+        "rationale": "The post introduces EIGER Nature in Bogor as a new ecotourism and conservation destination, detailing its restoration efforts, sustainable initiatives, and recreational offerings.",
+        "selectionDecision": {
+          "policyVersion": "selection-v1",
+          "reason": "baseline",
+          "selected": true
+        }
+      },
+      "block": {
+        "evidenceKey": "instagram:46f2b48596b1728e1dedf061",
+        "platformId": "instagram:p:DfW-pGXH1wY",
+        "permalink": "https://www.instagram.com/p/DfW-pGXH1wY/",
+        "author": "kompascom",
+        "text": "Berlokasi di Megamendung, Bogor, EIGER Nature (@eigernature) hadir sebagai destinasi ekowisata yang tidak hanya menawarkan pengalaman petualangan di alam, tetapi juga menghadirkan makna, pembelajaran, serta dampak positif bagi alam, budaya, dan masyarakat. Kawasan ini dikembangkan melalui dua area yang saling terhubung, yakni lahan PTPN I Regional 2 seluas 73,23 hektare yang sebelumnya merupakan lahan kritis dan kini telah direstorasi, serta Zona Pemanfaatan Taman Nasional Gunung Gede Pangrango (TNGGP) seluas 253,66 hektare yang memiliki ekosistem hutan konservasi. Upaya pelestarian lingkungan dilakukan melalui penanaman lebih dari 120.000 pohon dan 8 juta semak serta tanaman penutup tanah. EIGER Nature juga melibatkan masyarakat sekitar, menjalankan program “Satu Tiket Satu Pohon”, dan mengalokasikan 5 persen laba bersih untuk program keberlanjutan. Pengunjung dapat menikmati beragam aktivitas, mulai dari melintasi Suspension Bridge sepanjang 543 meter, menjelajahi Tree House & Net Adventure, mengikuti Cultural Walk, hingga mencoba Playscape, Nature Walk, dan Forest Trekking. Selain aktivitas alam, tersedia pula pilihan kuliner di sejumlah restoran, kafe, dan kedai kopi, seperti Kampung Daun Bogor, MATARA by Javanegra, EIGER Cafe, Slasar, dan EIGER Coffee. Pengunjung juga bisa mampir ke EIGER Mart untuk melihat berbagai produk dan kebutuhan. Tertarik menjelajahi alam sekaligus menikmati pengalaman wisata yang berbeda? Dapatkan tiketnya sekarang di booking.eigernature.com #Ekowisata #Konservasi #PetualanganBermakna #EIGERNature #Kilas",
+        "contentKind": "post",
+        "relationshipType": "original",
+        "parentPermalink": "",
+        "quotedPost": null
+      }
+    }
+  ]
+}

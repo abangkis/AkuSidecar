@@ -447,6 +447,7 @@ func storedIdentityObservation(t *testing.T, state *Store, runID string) domain.
 
 func finishIdentityRun(t *testing.T, state *Store, run domain.Run) {
 	t.Helper()
+	completeContinuityRun(t, state, run)
 	now := domain.Now()
 	if _, err := state.db.ExecContext(context.Background(), `UPDATE runs SET status='completed',stage='completed',completed_at=? WHERE id=?`, now, run.ID); err != nil {
 		t.Fatal(err)

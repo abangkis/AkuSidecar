@@ -41,7 +41,7 @@ func (e *Engine) evaluateCandidatesAndCompleteRun(ctx context.Context, runID str
 		return err
 	}
 	for evidenceKey, decision := range continuity {
-		if decision.Action == "evaluate" && (decision.Status == "resurfaced_changed" || decision.Status == "resurfaced_after_cooldown") {
+		if decision.Action == "evaluate" && (decision.Status == "resurfaced_changed" || decision.Status == "resurfaced_after_cooldown" || decision.EvaluationPending) {
 			delete(excluded, evidenceKey)
 		}
 	}

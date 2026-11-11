@@ -42,6 +42,11 @@ func (s *Store) ClassifyContentContinuity(ctx context.Context, run domain.Run, o
 	}
 	defer tx.Rollback()
 	priorXBlocks := map[string]map[string]domain.Block{}
+	evaluations, err := completedContinuityEvaluations(ctx, tx, run.Source, blocks)
+	if err != nil {
+		return nil, err
+	}
+	evaluatedBlocks := map[string]map[string]domain.Block{}
 	for _, block := range blocks {
 		key := strings.TrimSpace(block.EvidenceKey)
 		contentFingerprint := continuityContentFingerprint(block)
@@ -68,6 +73,13 @@ func (s *Store) ClassifyContentContinuity(ctx context.Context, run domain.Run, o
 				FROM content_continuity_occurrences WHERE run_id=? AND evidence_key=?`, run.ID, key).
 				Scan(&status, &action, &priorSeen, &reason); occurrenceErr == nil {
 				decision.Status, decision.Action, decision.PreviousSeenAt, decision.Reason = status, action, priorSeen, reason
+			}
+			if settings.ResurfaceMode == "smart" && decision.Status == "resurfaced_unchanged" && decision.Action == "evaluate" {
+				evaluated, err := continuityVersionEvaluated(ctx, tx, run.Source, block, evaluations[key], evaluatedBlocks)
+				if err != nil {
+					return nil, err
+				}
+				decision.EvaluationPending = !evaluated
 			}
 			decisions[key] = decision
 			continue
@@ -102,7 +114,17 @@ func (s *Store) ClassifyContentContinuity(ctx context.Context, run domain.Run, o
 				decision.Status = "resurfaced_unchanged"
 				decision.Reason = fmt.Sprintf("The same native source item resurfaced without a material change inside the %d-day cooldown.", settings.ResurfaceCooldownDays)
 				if settings.ResurfaceMode == "smart" {
-					decision.Action = "fail_fast"
+					evaluated, err := continuityVersionEvaluated(ctx, tx, run.Source, block, evaluations[key], evaluatedBlocks)
+					if err != nil {
+						return nil, err
+					}
+					if evaluated {
+						decision.Action = "fail_fast"
+						decision.Reason += " This content and context version already has a completed candidate evaluation."
+					} else {
+						decision.EvaluationPending = true
+						decision.Reason += " No completed candidate evaluation exists for this content and context version; it remains eligible."
+					}
 				}
 			default:
 				decision.Status = "resurfaced_after_cooldown"
@@ -245,7 +267,16 @@ func (s *Store) ResurfaceSemanticReevaluationKeys(ctx context.Context, sessionID
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT o.evidence_key
 		FROM content_continuity_occurrences o JOIN runs r ON r.id=o.run_id
-		WHERE r.session_id=? AND o.status IN ('resurfaced_changed','resurfaced_after_cooldown') AND o.action='evaluate'`, sessionID)
+		WHERE r.session_id=? AND o.action='evaluate' AND (
+		  o.status IN ('resurfaced_changed','resurfaced_after_cooldown') OR
+		  (o.status='resurfaced_unchanged' AND r.status='completed' AND EXISTS (
+		    SELECT 1 FROM json_each(r.coverage_json,'$.continuityEvaluationPending') p
+		    WHERE p.value=o.evidence_key
+		  ) AND EXISTS (
+		    SELECT 1 FROM candidate_assessments a
+		    WHERE a.run_id=r.id AND a.source=r.source AND a.evidence_key=o.evidence_key
+		  ))
+		)`, sessionID)
 	if err != nil {
 		return nil, err
 	}

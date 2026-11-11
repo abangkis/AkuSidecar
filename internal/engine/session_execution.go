@@ -215,6 +215,16 @@ func (e *Engine) process(ctx context.Context, runID string, allowPlanning bool) 
 	if err != nil {
 		return fmt.Errorf("classify resurfaced content: %w", err)
 	}
+	pendingEvaluation := []string{}
+	for key, decision := range continuity {
+		if decision.EvaluationPending {
+			pendingEvaluation = append(pendingEvaluation, key)
+		}
+	}
+	merged.Coverage["continuityEvaluationPending"] = pendingEvaluation
+	if err := e.store.SetRunCoverageField(ctx, runID, "continuityEvaluationPending", pendingEvaluation); err != nil {
+		return fmt.Errorf("save pending continuity evaluation: %w", err)
+	}
 	merged = filterResurfacedObservation(merged, continuity)
 	// Instagram media-only candidates are admitted by the capture contract but
 	// are never sent to the text-only reasoning provider. Persist them in the

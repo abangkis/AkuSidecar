@@ -33,7 +33,38 @@ func emptyCompletionFixture(t *testing.T, resurfaced, visual int) (bridgeCommand
 	if resurfaced > 0 {
 		prior := visionPersistencePriorRun(t, f)
 		obs := domain.Observation{Source: f.run.Source, CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: blocks}}}
+		command, err := f.state.StartRun(context.Background(), prior.ID, map[string]any{"source": prior.Source})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.state.ClaimCommand(context.Background(), prior.ID, "prior-evaluation-fixture"); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.state.SaveObservation(context.Background(), command.ID, prior.ID, obs); err != nil {
+			t.Fatal(err)
+		}
+		stored, err := f.state.Observations(context.Background(), prior.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		obs = stored[0]
 		if _, err := f.state.ClassifyContentContinuity(context.Background(), prior, obs, settings); err != nil {
+			t.Fatal(err)
+		}
+		var scored []domain.ScoredAssessment
+		for _, snapshot := range obs.Snapshots {
+			for _, block := range snapshot.Blocks {
+				scored = append(scored, domain.ScoredAssessment{Assessment: domain.CandidateAssessment{
+					EvidenceKey: block.EvidenceKey, TopicTags: []string{"unclassified"}, TopicFacets: []string{"other"}, ContentType: "other",
+					Novelty: .5, Urgency: .2, Actionability: .2, Materiality: .4, EvidenceStrength: .6, KnowledgeRelation: "unknown",
+					Rationale: "Previously evaluated unchanged fixture.",
+				}})
+			}
+		}
+		if err := f.state.CompleteRun(context.Background(), prior, domain.ReasoningResult{}, scored, nil, map[string]any{}); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.state.FinalizeSession(context.Background(), prior.SessionID); err != nil {
 			t.Fatal(err)
 		}
 	}

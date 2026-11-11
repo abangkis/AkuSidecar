@@ -1359,12 +1359,13 @@ type CandidateAssessment struct {
 }
 
 type ContentContinuityDecision struct {
-	EvidenceKey    string `json:"evidenceKey"`
-	Status         string `json:"status"`
-	Action         string `json:"action"`
-	PreviousSeenAt string `json:"previousSeenAt,omitempty"`
-	ObservedAt     string `json:"observedAt"`
-	Reason         string `json:"reason"`
+	EvaluationPending bool   `json:"evaluationPending,omitempty"`
+	EvidenceKey       string `json:"evidenceKey"`
+	Status            string `json:"status"`
+	Action            string `json:"action"`
+	PreviousSeenAt    string `json:"previousSeenAt,omitempty"`
+	ObservedAt        string `json:"observedAt"`
+	Reason            string `json:"reason"`
 }
 
 type ReasonedItem struct {

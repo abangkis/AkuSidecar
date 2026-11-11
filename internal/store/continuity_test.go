@@ -60,6 +60,19 @@ func TestEngagementOnlyChangeRemainsUnchangedNativeResurface(t *testing.T) {
 	}
 	previous := block
 	previous.Engagement = map[string]any{"likes": "294", "reposts": "0"}
+	priorCommand, err := state.StartRun(ctx, previousRuns[0].ID, map[string]any{"source": domain.SourceX})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.ClaimCommand(ctx, previousRuns[0].ID, "engagement-fixture"); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.SaveObservation(ctx, priorCommand.ID, previousRuns[0].ID, domain.Observation{
+		Source: domain.SourceX, CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{previous}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	finishIdentityRun(t, state, previousRuns[0])
 	if _, err := state.db.ExecContext(ctx, `
 		INSERT INTO content_continuity(
 		  source,evidence_key,content_fingerprint,context_fingerprint,engagement_score,
