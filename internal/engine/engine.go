@@ -24,7 +24,7 @@ import (
 
 const (
 	ExpectedBridgeVersion       = "0.9.4"
-	ExpectedBridgeRevision      = "source-adapters-v122"
+	ExpectedBridgeRevision      = "source-adapters-v123"
 	ExpectedBridgeID            = "aku-bridge-chrome-mv3-v0"
 	BridgeProtocolMajor         = 2
 	BridgeProtocolMinor         = 0
