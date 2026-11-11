@@ -55,6 +55,9 @@ func TestStaticProductionAssetsPreserveBodiesAndGuards(t *testing.T) {
 		{"collection-mode.js", "javascript"},
 		{"instagram-trial-controls.js", "javascript"},
 		{"x-daily-controls.js", "javascript"},
+		{"timeline-hls-player.js", "javascript"},
+		{"timeline-hls-loader.js", "javascript"},
+		{"vendor/hls.mjs", "javascript"},
 	} {
 		t.Run(asset.name, func(t *testing.T) {
 			want, err := embeddedAssets.ReadFile("web/" + asset.name)

@@ -1,0 +1,4 @@
+# Preserve the reviewed upstream distribution and license bytes on checkout.
+# Keep upstream trailing spaces; the pinned checksum detects any modification.
+hls.mjs -text whitespace=-blank-at-eol
+LICENSE -text

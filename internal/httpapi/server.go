@@ -457,7 +457,10 @@ func (s *Server) static(files http.FileSystem) http.Handler {
 			return
 		}
 		extension := path.Ext(r.URL.Path)
-		if value := mime.TypeByExtension(extension); value != "" {
+		if extension == ".mjs" {
+			// Windows file associations can report text/plain for ES modules.
+			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		} else if value := mime.TypeByExtension(extension); value != "" {
 			w.Header().Set("Content-Type", value)
 		}
 		w.Header().Set("Cache-Control", "no-cache")

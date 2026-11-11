@@ -1,7 +1,9 @@
 import { boundedTimelineMedia, mediaViewerCanPan, mediaViewerPanPosition, moveTimelineCarouselIndex, normalizeTimelineCarouselIndex, shouldUseTimelineCarousel, timelineCarouselDotIndexes } from "./timeline-media-carousel.js";
 import { collectionModeState } from "./collection-mode.js";
 import { reserveMediaDimensions } from "./timeline-media-layout.js";
-import { attachXHls, xTimelineHlsUrl } from "./x-hls-playback.js";
+import { attachTimelineHls } from "./timeline-hls-player.js";
+import { timelineHlsPlayback } from "./timeline-hls-policies.js";
+import { createTimelineVideoQuality } from "./timeline-video-quality.js";
 
 export function createTimelineMedia({
   $, configureNativePostLink, getPlaybackRecovery, recordUIActivity, safeMediaUrl, safePlaybackUrl, safeSourceUrl, showNotice, sourceDescriptor, sourceLabel, state
@@ -17,7 +19,7 @@ export function createTimelineMedia({
         inlinePlaybackUrl: value.playbackMode === "inline"
           ? safePlaybackUrl(value.playbackUrl, source)
           : null,
-        hlsPlaylist: xTimelineHlsUrl(value, source),
+        hlsPlaylist: timelineHlsPlayback(value, source),
       }))
       .filter((value) => value.displayUrl), undefined, source);
     if (!media.length) return null;
@@ -91,6 +93,7 @@ export function createTimelineMedia({
       currentIndex = normalizeTimelineCarouselIndex(index, media.length);
       if (carouselKey) state.timelineCarouselIndexes.set(carouselKey, currentIndex);
       const value = media[currentIndex];
+      stopObservingInlineVideoVisibilityWithin(viewport);
       viewport.replaceChildren(isVideoMedia(value)
         ? buildVideoMedia(value, source, nativePostUrl, entry)
         : buildImageMediaControl(value, source, imageMedia, () => Date.now() >= suppressOpenUntil));
@@ -263,9 +266,11 @@ export function createTimelineMedia({
     });
 
     let fallbackUsed = false;
+    let qualityControl;
     const useNativeFallback = () => {
       if (fallbackUsed) return;
       fallbackUsed = true;
+      qualityControl?.dispose();
       if (!video.isConnected) return;
       stopObservingInlineVideoVisibility(video);
       video.pause();
@@ -288,9 +293,19 @@ export function createTimelineMedia({
     // creating a passive request to the source video CDN.
     if (hlsPlaylist) {
       try {
-        const session = attachXHls(video, hlsPlaylist);
-        hlsPlaybackSessions.set(video, session);
-        session.finished.catch(error => {
+        let session;
+        qualityControl = createTimelineVideoQuality(quality => session?.setQuality(quality));
+        shell.append(qualityControl.element);
+        session = attachTimelineHls(video, {
+          ...hlsPlaylist,
+          onState: playbackState => { if (!fallbackUsed) qualityControl.update(playbackState); },
+          onError: useNativeFallback,
+        });
+        if (fallbackUsed) { session.dispose(); return; }
+        hlsPlaybackSessions.set(video, {
+          dispose() { qualityControl.dispose(); session.dispose(); },
+        });
+        session.ready.catch(error => {
           if (error?.name !== "AbortError") useNativeFallback();
         });
       } catch {
@@ -347,7 +362,7 @@ export function createTimelineMedia({
         for (const entry of entries) {
           const observedVideo = entry.target;
           if (!observedVideo.isConnected) {
-            observer.unobserve(observedVideo);
+            stopObservingInlineVideoVisibility(observedVideo);
             continue;
           }
           if (!entry.isIntersecting && !observedVideo.paused) observedVideo.pause();

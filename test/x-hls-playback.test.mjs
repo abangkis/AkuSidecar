@@ -50,7 +50,7 @@ test("offline Chrome decodes X HLS fixtures through Timeline and falls back for 
       response.setHeader("Content-Type", "text/html");
       return response.end("<!doctype html><title>X HLS Timeline fixture</title>");
     }
-    if (!/^\/[a-z-]+\.js$/.test(request.url)) {
+    if (!/^\/(?:[a-z-]+\.js|vendor\/hls\.mjs)$/.test(request.url)) {
       response.writeHead(404);
       return response.end();
     }

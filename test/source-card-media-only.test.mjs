@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { boundedTimelineMedia, shouldUseTimelineCarousel } from "../internal/httpapi/web/timeline-media-carousel.js";
 import { reserveMediaDimensions } from "../internal/httpapi/web/timeline-media-layout.js";
-import { xTimelineHlsUrl } from "../internal/httpapi/web/x-hls-playback.js";
+import { timelineHlsPlayback } from "../internal/httpapi/web/timeline-hls-policies.js";
 
 class Element {
   children = []; className = ""; value = "";
@@ -31,7 +31,7 @@ function renderer() {
     applyPostFreshness() {}, postHeaderContexts: new WeakMap(),
     state: { expandedTimelineText: new Set() }, buildAttachments: () => null,
     buildEngagement: () => null, videoPlaybackMissing: () => false,
-    boundedTimelineMedia, shouldUseTimelineCarousel, reserveMediaDimensions, xTimelineHlsUrl,
+    boundedTimelineMedia, shouldUseTimelineCarousel, reserveMediaDimensions, timelineHlsPlayback,
     safePlaybackUrl: () => null, openMedia() {},
   });
   vm.runInContext([

@@ -114,7 +114,9 @@ func (s *Store) listItems(ctx context.Context, suffix string, args ...any) ([]do
 				for _, snapshot := range observation.Snapshots {
 					for _, block := range snapshot.Blocks {
 						if block.EvidenceKey != "" {
-							if _, exists := byKey[block.EvidenceKey]; !exists {
+							if previous, exists := byKey[block.EvidenceKey]; exists {
+								byKey[block.EvidenceKey] = enrichTimelineQuotePlayback(observation.Source, previous, block)
+							} else {
 								byKey[block.EvidenceKey] = block
 							}
 						}
