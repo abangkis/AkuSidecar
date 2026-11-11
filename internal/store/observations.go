@@ -142,7 +142,11 @@ func (s *Store) SetRunCoverageField(ctx context.Context, runID, key string, valu
 }
 
 func (s *Store) Observations(ctx context.Context, runID string) ([]domain.Observation, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT observation_json FROM observations WHERE run_id=? ORDER BY created_at`, runID)
+	return observationsFrom(ctx, s.db, runID)
+}
+
+func observationsFrom(ctx context.Context, queryer evidenceQueryer, runID string) ([]domain.Observation, error) {
+	rows, err := queryer.QueryContext(ctx, `SELECT observation_json FROM observations WHERE run_id=? ORDER BY created_at`, runID)
 	if err != nil {
 		return nil, err
 	}

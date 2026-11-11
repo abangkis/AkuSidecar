@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/capture"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
@@ -40,6 +41,7 @@ func (s *Store) ClassifyContentContinuity(ctx context.Context, run domain.Run, o
 		return nil, err
 	}
 	defer tx.Rollback()
+	priorXBlocks := map[string]map[string]domain.Block{}
 	for _, block := range blocks {
 		key := strings.TrimSpace(block.EvidenceKey)
 		contentFingerprint := continuityContentFingerprint(block)
@@ -75,12 +77,25 @@ func (s *Store) ClassifyContentContinuity(ctx context.Context, run domain.Run, o
 			insideCooldown := parseErr == nil && !previousTime.Before(cutoff)
 			contentChanged := contentFingerprint != previous.contentFingerprint &&
 				legacyContinuityContentFingerprint(block) != previous.contentFingerprint
+			contextChanged := contextFingerprint != previous.contextFingerprint
+			if !contentChanged && contextChanged && run.Source == domain.SourceX && strings.TrimSpace(block.RelationshipType) == "quote" {
+				priorBlocks, loaded := priorXBlocks[previous.lastRunID]
+				if !loaded {
+					priorBlocks, err = priorXContinuityBlocks(ctx, tx, previous.lastRunID)
+					if err != nil {
+						return nil, err
+					}
+					priorXBlocks[previous.lastRunID] = priorBlocks
+				}
+				if reconciled, ok := reconcileXQuoteFingerprint(priorBlocks[key], block, previous.contextFingerprint, contextFingerprint); ok {
+					contextFingerprint, contextChanged = reconciled, false
+				}
+			}
 			// Engagement counters are retained for continuity telemetry, but their
 			// volatility alone must not turn an otherwise stable native post into a
 			// resurfaced change. Content and context remain the material signals.
-			changed := contentChanged || contextFingerprint != previous.contextFingerprint
 			switch {
-			case changed:
+			case contentChanged || contextChanged:
 				decision.Status = "resurfaced_changed"
 				decision.Reason = "The same native source item resurfaced with materially changed content, context, or engagement."
 			case insideCooldown:
@@ -129,6 +144,82 @@ func (s *Store) ClassifyContentContinuity(ctx context.Context, run domain.Run, o
 		return nil, err
 	}
 	return decisions, nil
+}
+
+func priorXContinuityBlocks(ctx context.Context, tx *sql.Tx, runID string) (map[string]domain.Block, error) {
+	observations, err := observationsFrom(ctx, tx, runID)
+	if err != nil {
+		return nil, fmt.Errorf("read prior X quote evidence: %w", err)
+	}
+	var snapshots []domain.Snapshot
+	for _, observation := range observations {
+		snapshots = append(snapshots, observation.Snapshots...)
+	}
+	blocks := make(map[string]domain.Block)
+	for _, block := range canonicalContinuityBlocks(domain.Observation{Snapshots: capture.ReconcileSnapshots(domain.SourceX, snapshots)}) {
+		blocks[strings.TrimSpace(block.EvidenceKey)] = block
+	}
+	return blocks, nil
+}
+
+func reconcileXQuoteFingerprint(prior, current domain.Block, stored, observed string) (string, bool) {
+	priorPost := domain.ContextObjectIdentity(domain.ContextObject{Kind: "post", Permalink: prior.Permalink})
+	currentPost := domain.ContextObjectIdentity(domain.ContextObject{Kind: "post", Permalink: current.Permalink})
+	if priorPost == "" || priorPost != currentPost || strings.TrimSpace(prior.RelationshipType) != "quote" ||
+		continuityContentFingerprint(prior) != continuityContentFingerprint(current) ||
+		!sameXQuoteText(prior, current) {
+		return "", false
+	}
+	priorLink, priorOK := xQuoteParentID(prior, priorPost)
+	currentLink, currentOK := xQuoteParentID(current, currentPost)
+	if !priorOK || !currentOK || priorLink != "" && currentLink != "" && priorLink != currentLink {
+		return "", false
+	}
+	priorObserved := continuityContextFingerprint(prior)
+	prior.ParentPermalink, current.ParentPermalink = "", ""
+	if continuityContextFingerprint(prior) != continuityContextFingerprint(current) {
+		return "", false
+	}
+	// Keep the last known parent across missing observations. A later, different
+	// known parent must still compare against that identity, not against absence.
+	if currentLink == "" && (priorLink == "" || stored == priorObserved) {
+		return stored, true
+	}
+	if currentLink != "" && stored == priorObserved {
+		return observed, true
+	}
+	return "", false
+}
+
+func xQuoteParentID(block domain.Block, primaryID string) (string, bool) {
+	reason, _ := block.QuotedPost["identityConflictReason"].(string)
+	status, _ := block.QuotedPost["identityStatus"].(string)
+	if reason != "" || status == "conflicting_identity" {
+		return "", false
+	}
+	parent := strings.TrimSpace(block.ParentPermalink)
+	quoteURL, _ := block.QuotedPost["permalink"].(string)
+	quoteURL = strings.TrimSpace(quoteURL)
+	if parent == "" {
+		return "", quoteURL == ""
+	}
+	id := domain.ContextObjectIdentity(domain.ContextObject{Kind: "post", Permalink: parent})
+	return id, id != "" && id != primaryID && (quoteURL == "" || id == domain.ContextObjectIdentity(domain.ContextObject{Kind: "post", Permalink: quoteURL}))
+}
+
+func sameXQuoteText(prior, current domain.Block) bool {
+	priorAuthor, _ := prior.QuotedPost["author"].(string)
+	currentAuthor, _ := current.QuotedPost["author"].(string)
+	priorText, _ := prior.QuotedPost["text"].(string)
+	currentText, _ := current.QuotedPost["text"].(string)
+	priorTime, _ := prior.QuotedPost["publishedAt"].(string)
+	currentTime, _ := current.QuotedPost["publishedAt"].(string)
+	priorAuthor = strings.Join(strings.Fields(priorAuthor), " ")
+	priorText = strings.Join(strings.Fields(priorText), " ")
+	return priorAuthor != "" && priorText != "" &&
+		strings.EqualFold(priorAuthor, strings.Join(strings.Fields(currentAuthor), " ")) &&
+		priorText == strings.Join(strings.Fields(currentText), " ") &&
+		(priorTime == "" || currentTime == "" || priorTime == currentTime)
 }
 
 func (s *Store) ContentContinuityDecisions(ctx context.Context, runID string) (map[string]domain.ContentContinuityDecision, error) {
