@@ -782,6 +782,10 @@ h3 { letter-spacing: -0.02em; }
 .inbox-session > summary::-webkit-details-marker { display: none; }
 .inbox-session-identity { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .inbox-session-identity > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-reasoning-badge { flex-shrink: 0; gap: 6px; min-height: 24px; padding: 3px 9px; font-size: 0.7rem; color: var(--muted); background: rgba(148,163,184,0.06); border-color: rgba(148,163,184,0.22); }
+.inbox-reasoning-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.inbox-reasoning-codex { color: #c8b8ff; background: rgba(167,139,250,0.1); border-color: rgba(167,139,250,0.28); }
+.inbox-reasoning-gemini { color: #a8ceff; background: rgba(96,165,250,0.09); border-color: rgba(96,165,250,0.28); }
 .inbox-flow-summary { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
 .inbox-session-body { padding: 0 18px 18px; border-top: 1px solid var(--line); }
 .inbox-session-meta { margin: 14px 0; color: var(--quiet); font-size: 0.78rem; }
@@ -854,6 +858,7 @@ h3 { letter-spacing: -0.02em; }
 .inbox-runs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .inbox-run-card { min-width: 0; padding: 15px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-raised); }
 .inbox-run-card > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.inbox-run-card > header > strong { margin-right: auto; }
 .inbox-pipeline { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin-top: 14px; }
 .inbox-pipeline > div { display: grid; gap: 2px; padding: 9px 7px; border-radius: 8px; background: var(--panel-strong); text-align: center; }
 .inbox-pipeline strong { color: var(--text); font-size: 1.05rem; }
@@ -1208,6 +1213,10 @@ h3 { letter-spacing: -0.02em; }
   .update-progress-navigation { align-items: flex-start; flex-direction: column; }
   .topbar-actions { justify-items: start; }
   .inbox-session > summary { grid-template-columns: 1fr; gap: 8px; }
+  .inbox-session-identity { flex-wrap: wrap; gap: 8px; }
+  .inbox-session-identity > strong { flex: 1 0 160px; max-width: 100%; white-space: normal; overflow: visible; }
+  .inbox-run-card > header { flex-wrap: wrap; }
+  .inbox-run-card > header > strong { flex-basis: 100%; }
   .inbox-flow-summary { white-space: normal; }
   .inbox-preference-decisions > summary { align-items: flex-start; flex-direction: column; gap: 4px; }
   .inbox-preference-decision { grid-template-columns: 1fr; }

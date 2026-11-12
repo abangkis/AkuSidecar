@@ -330,7 +330,7 @@ const {
   state,
 });
 const {
-  syncInboxSubView, setInboxSubView, loadInbox, renderInbox, buildInboxSession, buildSessionModelUsage, modelUsageMessage, buildModelUsageHelp, renderModelUsageReport, buildModelUsageCategory, modelUsageCategoryProfile, buildModelUsageEntry, modelUsageInvocationCount, modelUsageSummary, formatTokenCount, loadAggregateModelUsage, buildInboxPreferenceDecisions, buildInboxPreferenceDecision, buildAIDetectionDiagnostic, buildAIDetectorYield, buildEventResolutionDiagnostic, buildInboxRun, buildVisionEvaluationTelemetry, inboxRunCaptureReliabilityNotice, buildCaptureCandidateTelemetry, buildMediaAcquisitionTelemetry, buildCaptureSurfaceTelemetry, buildAcquisitionIdentityTelemetry, inboxSessionFlowText, inboxRunMetricText, buildInboxFlowInspector, buildInboxFlowItem, inboxFlowOutcomeLabel, inboxContinuityLabel, inboxStatusTone
+  syncInboxSubView, setInboxSubView, loadInbox, renderInbox, buildInboxSession, buildInboxReasoningBadge, buildSessionModelUsage, modelUsageMessage, buildModelUsageHelp, renderModelUsageReport, buildModelUsageCategory, modelUsageCategoryProfile, buildModelUsageEntry, modelUsageInvocationCount, modelUsageSummary, formatTokenCount, loadAggregateModelUsage, buildInboxPreferenceDecisions, buildInboxPreferenceDecision, buildAIDetectionDiagnostic, buildAIDetectorYield, buildEventResolutionDiagnostic, buildInboxRun, buildVisionEvaluationTelemetry, inboxRunCaptureReliabilityNotice, buildCaptureCandidateTelemetry, buildMediaAcquisitionTelemetry, buildCaptureSurfaceTelemetry, buildAcquisitionIdentityTelemetry, inboxSessionFlowText, inboxRunMetricText, buildInboxFlowInspector, buildInboxFlowItem, inboxFlowOutcomeLabel, inboxContinuityLabel, inboxStatusTone
 } = createInboxUi({
   $: (...args) => $(...args),
   api,
@@ -1620,6 +1620,8 @@ const REVOKE_SOURCE_ACCESS_TIMEOUT_MS = 5000;
 // Frontend feature: inbox-ui.js#renderInbox
 
 // Frontend feature: inbox-ui.js#buildInboxSession
+
+// Frontend feature: inbox-ui.js#buildInboxReasoningBadge
 
 // Frontend feature: inbox-ui.js#buildSessionModelUsage
 

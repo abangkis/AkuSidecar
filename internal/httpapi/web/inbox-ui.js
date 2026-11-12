@@ -78,7 +78,7 @@ export function createInboxUi({
     const status = document.createElement("span");
     status.className = `status-pill status-${inboxStatusTone(session.status)}`;
     status.textContent = humanize(session.status);
-    identity.append(title, status);
+    identity.append(title, buildInboxReasoningBadge(session.runs ?? []), status);
     if (session.delivery === "prepared" && session.deliveryState) {
       const delivery = document.createElement("span");
       delivery.className = "status-pill status-neutral";
@@ -107,6 +107,28 @@ export function createInboxUi({
     body.append(runs);
     details.append(summary, body);
     return details;
+  }
+
+  function buildInboxReasoningBadge(runs) {
+    const providers = [...new Set(runs.flatMap(run => run.reasoning?.providers ?? []))].sort();
+    const invocations = runs.reduce((total, run) => total + (run.reasoning?.invocationCount ?? 0), 0);
+    const failed = runs.reduce((total, run) => total + (run.reasoning?.failedInvocationCount ?? 0), 0);
+    const unknown = runs.reduce((total, run) => total + (run.reasoning?.unknownProviderCount ?? 0), 0);
+    const unrecorded = runs.filter(run => !run.reasoning?.invocationCount).length;
+    const provider = providers.length === 1 ? providers[0] : "";
+    const family = provider === "codex-app-server" ? "codex" : provider.startsWith("gemini") ? "gemini" : "neutral";
+    const label = providers.length > 1 ? "Mixed" : provider === "codex-app-server" ? "Codex" : provider.startsWith("gemini") ? "Gemini" : provider ? formatReasoningProvider(provider) : "Unknown";
+    const badge = document.createElement("span");
+    badge.className = `status-pill inbox-reasoning-badge inbox-reasoning-${family}`;
+    badge.textContent = `${label}${providers.length && unknown ? " + ?" : ""}`;
+    const notes = invocations
+      ? [`Recorded in-run reasoning attempts: ${providers.join(", ") || "provider unavailable"}.`, `${invocations} recorded attempt(s); ${failed} failed. Failed attempts do not prove completed model inference.`]
+      : ["No recorded reasoning invocation; current Settings are not used."];
+    if (unknown) notes.push(`${unknown} recorded attempt(s) have no provider metadata.`);
+    if (unrecorded && invocations) notes.push(`${unrecorded} source run(s) have no recorded reasoning invocation; they may not have needed reasoning or historical telemetry may be unavailable.`);
+    badge.title = notes.join(" ");
+    badge.setAttribute("aria-label", `Reasoning provider: ${badge.textContent}.${unknown ? " Provider metadata is incomplete." : !invocations ? " No recorded invocation." : ""}`);
+    return badge;
   }
 
   function buildSessionModelUsage(session) {
@@ -521,7 +543,7 @@ export function createInboxUi({
       : sourceUnavailable
         ? "Unavailable \u00b7 Source"
         : `${humanize(run.status)} \u00b7 ${humanize(run.stage)}`;
-    header.append(source, stage);
+    header.append(source, buildInboxReasoningBadge([run]), stage);
     const pipeline = document.createElement("div");
     pipeline.className = "inbox-pipeline";
     const metricNumbers = {};
@@ -1190,6 +1212,6 @@ export function createInboxUi({
   }
 
   return {
-    syncInboxSubView, setInboxSubView, loadInbox, renderInbox, buildInboxSession, buildSessionModelUsage, modelUsageMessage, buildModelUsageHelp, renderModelUsageReport, buildModelUsageCategory, modelUsageCategoryProfile, buildModelUsageEntry, modelUsageInvocationCount, modelUsageSummary, formatTokenCount, loadAggregateModelUsage, buildInboxPreferenceDecisions, buildInboxPreferenceDecision, buildAIDetectionDiagnostic, buildAIDetectorYield, buildEventResolutionDiagnostic, buildInboxRun, buildVisionEvaluationTelemetry, inboxRunCaptureReliabilityNotice, buildCaptureCandidateTelemetry, buildMediaAcquisitionTelemetry, buildCaptureSurfaceTelemetry, buildAcquisitionIdentityTelemetry, inboxSessionFlowText, inboxRunMetricText, buildInboxFlowInspector, buildInboxFlowItem, inboxFlowOutcomeLabel, inboxContinuityLabel, inboxStatusTone
+    syncInboxSubView, setInboxSubView, loadInbox, renderInbox, buildInboxSession, buildInboxReasoningBadge, buildSessionModelUsage, modelUsageMessage, buildModelUsageHelp, renderModelUsageReport, buildModelUsageCategory, modelUsageCategoryProfile, buildModelUsageEntry, modelUsageInvocationCount, modelUsageSummary, formatTokenCount, loadAggregateModelUsage, buildInboxPreferenceDecisions, buildInboxPreferenceDecision, buildAIDetectionDiagnostic, buildAIDetectorYield, buildEventResolutionDiagnostic, buildInboxRun, buildVisionEvaluationTelemetry, inboxRunCaptureReliabilityNotice, buildCaptureCandidateTelemetry, buildMediaAcquisitionTelemetry, buildCaptureSurfaceTelemetry, buildAcquisitionIdentityTelemetry, inboxSessionFlowText, inboxRunMetricText, buildInboxFlowInspector, buildInboxFlowItem, inboxFlowOutcomeLabel, inboxContinuityLabel, inboxStatusTone
   };
 }

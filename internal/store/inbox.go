@@ -296,6 +296,11 @@ func (s *Store) TimelineBatchSummaries(ctx context.Context) ([]domain.TimelineBa
 
 func (s *Store) inboxRun(ctx context.Context, run domain.Run) (domain.InboxRun, error) {
 	entry := domain.InboxRun{ID: run.ID, Source: run.Source, Status: run.Status, Stage: run.Stage, StartedAt: run.StartedAt, CompletedAt: run.CompletedAt, Summary: run.Summary, Error: run.Error, StageDurationsMS: map[string]int64{}, CaptureSurface: []domain.CaptureSurfaceEvent{}, CandidateDiagnostics: []domain.InboxCandidateSnapshot{}}
+	var err error
+	entry.Reasoning, err = s.inboxRunReasoning(ctx, run.ID)
+	if err != nil {
+		return domain.InboxRun{}, err
+	}
 	observations, err := s.Observations(ctx, run.ID)
 	if err != nil {
 		return domain.InboxRun{}, err
@@ -408,6 +413,34 @@ func (s *Store) inboxRun(ctx context.Context, run domain.Run) (domain.InboxRun, 
 		return domain.InboxRun{}, err
 	}
 	return entry, nil
+}
+
+func (s *Store) inboxRunReasoning(ctx context.Context, runID string) (domain.InboxReasoning, error) {
+	entry := domain.InboxReasoning{Providers: []string{}}
+	// These are the two source-run reasoning lanes. Session resolution, async AI
+	// detection and shadow experiments have separate authority and must not label a run.
+	rows, err := s.db.QueryContext(ctx, `SELECT TRIM(provider),COUNT(*),SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END)
+		FROM reasoning_invocations WHERE run_id=? AND phase IN ('acquisition_planning','candidate_evaluation')
+		GROUP BY TRIM(provider) ORDER BY TRIM(provider)`, runID)
+	if err != nil {
+		return entry, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var provider string
+		var count, failed int
+		if err := rows.Scan(&provider, &count, &failed); err != nil {
+			return entry, err
+		}
+		entry.InvocationCount += count
+		entry.FailedInvocationCount += failed
+		if provider == "" {
+			entry.UnknownProviderCount += count
+		} else {
+			entry.Providers = append(entry.Providers, provider)
+		}
+	}
+	return entry, rows.Err()
 }
 
 func cloneStringIntMap(value map[string]int) map[string]int {

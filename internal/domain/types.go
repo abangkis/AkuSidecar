@@ -829,6 +829,7 @@ type InboxRun struct {
 	StartedAt            *string                   `json:"startedAt"`
 	CompletedAt          *string                   `json:"completedAt"`
 	Summary              string                    `json:"summary"`
+	Reasoning            InboxReasoning            `json:"reasoning"`
 	CapturedCandidates   int                       `json:"capturedCandidates"`
 	EvaluatedCandidates  int                       `json:"evaluatedCandidates"`
 	SelectedCandidates   int                       `json:"selectedCandidates"`
@@ -850,6 +851,15 @@ type InboxRun struct {
 	IdentityResolution   *InboxIdentityResolution  `json:"identityResolution,omitempty"`
 	CapturePerformance   *InboxCapturePerformance  `json:"capturePerformance,omitempty"`
 	VisionEvaluation     *InboxVisionEvaluation    `json:"visionEvaluation,omitempty"`
+}
+
+// InboxReasoning describes recorded in-run provider attempts, including failures.
+// An empty ledger cannot distinguish an uninvoked run from missing old telemetry.
+type InboxReasoning struct {
+	Providers             []string `json:"providers"`
+	InvocationCount       int      `json:"invocationCount"`
+	FailedInvocationCount int      `json:"failedInvocationCount"`
+	UnknownProviderCount  int      `json:"unknownProviderCount"`
 }
 
 // VisionEvaluationJob is the durable state of a media-only candidate in the

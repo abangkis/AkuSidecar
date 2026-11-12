@@ -3,12 +3,52 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createSessionUi } from "../internal/httpapi/web/session-ui.js";
 import { createProviderSetupUi } from "../internal/httpapi/web/provider-setup-ui.js";
+import { createInboxUi } from "../internal/httpapi/web/inbox-ui.js";
 
 function deferred() {
   let resolve;
   const promise = new Promise(done => { resolve = done; });
   return { promise, resolve };
 }
+
+test("inbox badges distinguish recorded providers, failed attempts and unavailable provenance", () => {
+  const originalDocument = globalThis.document;
+  globalThis.document = { createElement: () => ({ attributes: {}, setAttribute(key, value) { this.attributes[key] = value; } }) };
+  try {
+    const inbox = createInboxUi({
+      state: new Proxy({}, { get() { assert.fail("historical provider must not read current Settings"); } }),
+      formatReasoningProvider: value => value === "deterministic" ? "Local deterministic" : value,
+    });
+    const run = (providers, invocationCount = 1, failedInvocationCount = 0, unknownProviderCount = 0) => ({
+      reasoning: { providers, invocationCount, failedInvocationCount, unknownProviderCount },
+    });
+    const gemini = inbox.buildInboxReasoningBadge([run(["gemini-flash-lite"], 1, 1)]);
+    assert.equal(gemini.textContent, "Gemini");
+    assert.match(gemini.className, /inbox-reasoning-gemini/);
+    assert.match(gemini.title, /gemini-flash-lite/);
+    assert.match(gemini.title, /1 failed.*do not prove completed model inference/);
+    const codex = inbox.buildInboxReasoningBadge([run(["codex-app-server"]), run(["codex-app-server"])]);
+    assert.equal(codex.textContent, "Codex");
+    assert.match(codex.className, /inbox-reasoning-codex/);
+    const mixed = inbox.buildInboxReasoningBadge([run(["gemini-flash-lite"]), run(["codex-app-server"])]);
+    assert.equal(mixed.textContent, "Mixed");
+    assert.equal(mixed.attributes["aria-label"], "Reasoning provider: Mixed.");
+    assert.match(mixed.title, /codex-app-server, gemini-flash-lite/);
+    assert.equal(inbox.buildInboxReasoningBadge([run(["gemini-flash-lite", "deterministic"], 2, 1)]).textContent, "Mixed");
+    const missing = inbox.buildInboxReasoningBadge([{}, run([], 0)]);
+    assert.equal(missing.textContent, "Unknown");
+    assert.match(missing.title, /No recorded reasoning invocation; current Settings are not used/);
+    const incomplete = inbox.buildInboxReasoningBadge([run(["codex-app-server"]), run([], 1, 0, 1), {}]);
+    assert.equal(incomplete.textContent, "Codex + ?");
+    assert.equal(inbox.buildInboxReasoningBadge([run(["codex-app-server", "gemini-flash-lite"], 3, 0, 1)]).textContent, "Mixed + ?");
+    assert.match(incomplete.title, /1 recorded attempt\(s\) have no provider metadata/);
+    assert.match(incomplete.title, /1 source run\(s\) have no recorded reasoning invocation/);
+    assert.equal(inbox.buildInboxReasoningBadge([run(["codex-app-server"]), {}]).textContent, "Codex");
+    assert.equal(inbox.buildInboxReasoningBadge([run(["deterministic"])]).textContent, "Local deterministic");
+  } finally {
+    globalThis.document = originalDocument;
+  }
+});
 
 test("real frontend factories import and compose without invoking late host ports", async t => {
   const app = readFileSync(new URL("../internal/httpapi/web/app.js", import.meta.url), "utf8");
