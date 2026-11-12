@@ -158,9 +158,19 @@ function validatePost(source, post) {
   return platformId;
 }
 
-function toBlock(source, post, feedPosition, captureMode = 'headless_worker') {
+function projectXPlayback(media, policy) {
+  return media.map(item => {
+    if (item?.kind !== 'video_poster' || !item.playbackUrl || !policy?.xPlaybackUrl) return item;
+    const playbackUrl = policy.xPlaybackUrl(item.posterUrl || item.url, item.playbackUrl);
+    return playbackUrl ? {...item, kind: 'video', posterUrl: item.posterUrl || item.url,
+      playbackUrl, playbackMode: 'inline'} : {...item, playbackUrl: null, playbackMode: 'native'};
+  });
+}
+
+function toBlock(source, post, feedPosition, captureMode = 'headless_worker', xMediaPolicy = null) {
   const platformId = validatePost(source, post);
-  const media = Array.isArray(post.media) ? structuredClone(post.media.slice(0, 20)) : [];
+  const originalMedia = Array.isArray(post.media) ? structuredClone(post.media.slice(0, 20)) : [];
+  const media = source === 'x' ? projectXPlayback(originalMedia, xMediaPolicy) : originalMedia;
   const expected = Array.isArray(post.mediaExpected) ? post.mediaExpected.slice(0, 12) : [];
   const limitations = Array.isArray(post.limitations) ? post.limitations.slice(0, 24) : [];
   const expectsVideo = expected.includes('video') || media.some(item => item?.kind === 'video_poster');
@@ -179,13 +189,21 @@ function toBlock(source, post, feedPosition, captureMode = 'headless_worker') {
   const additionalOwnedVideo=['instagram','linkedin'].includes(source)
     && post.mediaEvidence?.additionalStructuredMedia?.status==='observed_owned_urls'
     && media.some(item=>item?.kind==='video' && typeof item.playbackUrl==='string');
+  const ownedXPlayback = source === 'x' && media.some((item, index) =>
+    originalMedia[index]?.kind === 'video_poster' && item.kind === 'video' && item.playbackUrl);
+  if (ownedXPlayback && !media.some(item => item?.kind === 'video_poster') &&
+      !post.mediaEvidence?.expectedWithoutUrl?.includes('video')) {
+    const unresolved = limitations.indexOf('video_stream_not_resolved');
+    if (unresolved >= 0) limitations[unresolved] = 'video_playback_unverified';
+  }
+  const observedPlayback = additionalOwnedVideo || ownedXPlayback;
   const recovery = {
     status: structuredResolved ? 'resolved' : unresolvedVideo ? 'partial' : post.mediaEvidence?.status || 'unverified',
-    outcome: structuredResolved ? 'verified_owned_playback' : additionalOwnedVideo ? 'owned_playback_url_observed' : unresolvedVideo ? 'unresolved'
+    outcome: structuredResolved ? 'verified_owned_playback' : observedPlayback ? 'owned_playback_url_observed' : unresolvedVideo ? 'unresolved'
       : source==='instagram' && post.evidenceMode==='headless_native_target_structured_observation' ? 'observed_native_target_structured' : 'observed_dom_only',
     expected,
     evidence: preserveMap(post.mediaEvidence),
-    ...(unresolvedVideo ? additionalOwnedVideo
+    ...(unresolvedVideo ? observedPlayback
       ? {unknownVideo:'playback_unverified',limitation:'video_playback_unverified'}
       : { unknownVideo: 'unresolved', limitation: 'video_stream_not_resolved' } : {}),
   };
@@ -217,7 +235,9 @@ function toBlock(source, post, feedPosition, captureMode = 'headless_worker') {
     contentKind: typeof post.contentKind === 'string' ? post.contentKind : 'post',
     relationshipType: typeof post.relationshipType === 'string' ? post.relationshipType : 'original',
     parentPermalink: typeof post.parentPermalink === 'string' ? post.parentPermalink : '',
-    quotedPost: preserveMap(post.quotedPost),
+    quotedPost: source === 'x' && Array.isArray(post.quotedPost?.media)
+      ? {...preserveMap(post.quotedPost), media: projectXPlayback(structuredClone(post.quotedPost.media.slice(0, 20)), xMediaPolicy)}
+      : preserveMap(post.quotedPost),
     ...(['x','instagram','linkedin'].includes(source) && Array.isArray(post.directContext)
       ? {directContext:structuredClone(post.directContext.slice(0,source==='x' ? 8 : 12))} : {}),
     engagement: preserveMap(post.engagement),
@@ -257,7 +277,7 @@ function isVerifiedStructuredVideo(source, item) {
   } catch { return false; }
 }
 
-export function toObservation({ source, requestedUrl, snapshots, provenance, capturedAt, stopReason, performedScrolls, scrollStopReason, frontier, freshness, captureMode = 'headless_worker' }) {
+export function toObservation({ source, requestedUrl, snapshots, provenance, capturedAt, stopReason, performedScrolls, scrollStopReason, frontier, freshness, captureMode = 'headless_worker', xMediaPolicy = null }) {
   const first = snapshots[0] || {};
   const hasPosts = snapshots.some(snapshot => (snapshot.posts || []).length > 0);
   const domainSnapshots = snapshots.map((snapshot, index) => {
@@ -283,7 +303,7 @@ export function toObservation({ source, requestedUrl, snapshots, provenance, cap
       scrollY: Number.isFinite(snapshot.scroll?.y) ? Math.trunc(snapshot.scroll.y) : 0,
       viewportHeight: Number.isFinite(snapshot.scroll?.viewportHeight) ? Math.trunc(snapshot.scroll.viewportHeight) : 0,
       newCandidateCount: [...uniqueIds].filter(id => !previousIds.has(id)).length,
-      blocks: posts.map((post, position) => toBlock(source, post, position, captureMode)),
+      blocks: posts.map((post, position) => toBlock(source, post, position, captureMode, xMediaPolicy)),
       qualityReports,
     };
   });

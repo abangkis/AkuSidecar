@@ -89,7 +89,8 @@ registerHooks({resolve(specifier,context,next){
  if(url.startsWith('node:'))return next(url,context);
  const key=url.startsWith(prefix)?decodeURIComponent(url.slice(prefix.length)):'';
  if(!own(modules,key))throw new Error('application_owner_import_rejected');
- return{format:'module',source:modules[key],shortCircuit:true};
+ // Preserve JSON import semantics while reading only the pinned embedded bytes.
+ return{format:key.endsWith('.json')?'json':'module',source:modules[key],shortCircuit:true};
 }});
 import(prefix+${JSON.stringify(entry)}).then(module=>module.${main?'runMainBrowserTransport':daily?'runDailyOwner':'runApplicationOwner'}()).catch(()=>{process.exitCode=2;process.stdin.destroy();process.stdout.end();});
 `;

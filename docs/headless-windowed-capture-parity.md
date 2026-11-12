@@ -2,6 +2,78 @@
 
 Source audit: 5 October 2026. Windowed refers to AkuBridge's visible-browser capture pipeline; native reader display alone is not a capture pipeline. Quiet/hidden browser is a separate backend. This comparison focuses on the X text incident and the shared capture boundaries, not a live parity certification for every source.
 
+## A1: shared X HLS acquisition, 12 November 2026
+
+The source-local A1 increment uses `AkuBoundedCapturePolicy.xPlaybackUrl` in
+Windowed extraction and the Headless X extractor. It reuses the existing
+poster/master-playlist asset binding and MP4 preference; there is no second HLS
+parser. The X worker stages the same provenance-hashed
+`AkuBridge/bounded-capture-policy.js` asset. Its current SHA-256 is
+`4c6de5951fdde2a72d32c70013d46a919c34b63fc4065fda57875ae2f7d4a32a`.
+
+Headless retains an internal poster until structured/passive enrichment has had
+its opportunity to supply an owned MP4. Observation then reapplies the shared
+policy and projects a valid poster/playback pair as inline video. An observed
+URL is reported as `owned_playback_url_observed` with
+`video_playback_unverified`; it does not establish successful playback or
+complete capture quality. Primary and quoted media retain separate DOM scopes
+and separate poster/stream pairs. Failed, foreign, variant-only and unmatched
+playlist evidence leaves the original poster available.
+
+This increment performs no source navigation, playback, permission expansion,
+session transfer or runtime activation. Native X's expansion, freshness,
+quote-navigation and temporary-page restrictions remain unchanged. CSS media
+extraction and full-text authority remain separate later increments.
+
+The new `x-hls-acquisition-parity.test.mjs` compares actual Windowed `findMedia`
+with the actual Headless extractor and Observation JSON. Controlled seams cover
+identity/discovery/text and page transport. Cases include owned HLS, direct and
+structured MP4 precedence, quote isolation, unsafe URLs/posters, failed or
+variant-only playlists, shared-asset provenance and native-capability capture
+composition. A missing-helper negative control reproduces the previous
+acquisition mismatch in memory. These are offline fixtures, not real-source or
+rendered-playback qualification.
+
+Final validation: Bridge's canonical `npm test` passed 599/599; the serial
+worker suite passed 277 with two existing opt-in skips (279 total). The A1
+fixture file passed 23/23, including the missing-helper negative control and
+native-capability composition. The existing Go HTTP HLS recapture/Timeline
+projection regression passed. Extension package verification and diff checks
+passed. An earlier parallel worker run hit the 30 ms text-recovery timing
+assertion; its log is retained beside the final passing serial log.
+
+Ignored project-local evidence is under `build/a1-x-hls-20261112/` in Sidecar
+and Bridge. Sidecar's `source-and-package-provenance.json` records both consumer
+source hashes and the daily/main package manifests; both include the policy
+hash above. Package construction is not bootstrap acceptance. At the A1
+checkpoint, the native-owner bootstrap test failed because the sealed loader treated
+`navigation-catalog.json` as JavaScript. A diagnostic package with A1's embedded
+modules reverted to HEAD reproduces the same syntax failure; see
+`native-owner/baseline-bootstrap-proof.json`. No loader fix or package/runtime
+activation is included in A1.
+
+### Native JSON loader follow-up, 12 November 2026
+
+The package loader now returns Node's `json` module format for an embedded
+`.json` entry and `module` for JavaScript. It still resolves only the package's
+pinned module table; it does not read mutable sibling source or fall back to
+external files. The manifest schema and source-byte hashes are unchanged.
+
+`scripts/native-json-package-bootstrap.test.mjs` reproduces the original failure
+for manual, daily and main transport packages before the fix. With the fix,
+all three packages pass their actual bootstrap protocol after relocation into
+a directory without the embedded source tree. Each package builds reproducibly
+and its manifest pins the original navigation-catalog JSON bytes. The main
+transport check uses an isolated Windows named pipe and confirms zero CDP
+output. No initialize, seed, source or capture operation is sent.
+
+Validation passed: three new bootstrap cases, eleven existing owner/package
+checks and 41 daily-package/provenance/rollback checks, with no failures or
+skips on Windows. Syntax and diff checks also pass. The earlier bootstrap
+blocker is resolved in source and offline package testing; runtime activation,
+browser/session access and live capture remain unperformed. Evidence and
+retained package manifests are under `build/native-json-loader-20261112/`.
+
 ## X wrapped feed markup, 8 November 2026
 
 In the Windowed capture profile, DevTools confirmed that X rendered complete

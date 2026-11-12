@@ -55,6 +55,7 @@
   function findMedia(adapter, container, excludeRoot = null) {
     const records = [];
     const seen = new Set();
+    let resourceEntries;
     // Reuse the adapter's attachment selectors; avatars and inline emoji are excluded.
     const elements = [...container.querySelectorAll('video'), ...container.querySelectorAll(adapter.imageSelector)];
     for (const element of elements) {
@@ -71,7 +72,17 @@
       const key = `${kind}:${url}`;
       if (seen.has(key)) continue;
       seen.add(key);
+      let playbackUrl = null;
+      const playbackPolicy = globalThis.AkuBoundedCapturePolicy;
+      if (kind === 'video_poster' && playbackPolicy?.xPlaybackUrl) {
+        const direct = video ? [element.currentSrc, element.src,
+          ...[...element.querySelectorAll('source[src]')].map(source => source.src)]
+          .find(value => /^https:\/\//i.test(value || '')) : null;
+        resourceEntries ??= globalThis.performance?.getEntriesByType?.('resource') || [];
+        playbackUrl = playbackPolicy.xPlaybackUrl(url, direct, resourceEntries);
+      }
       records.push({ kind, url, alt: element.alt || '',
+        ...(playbackUrl ? {posterUrl: url, playbackUrl, playbackMode: 'inline'} : {}),
         loaded: video ? element.readyState > 0 : element.complete && element.naturalWidth > 0,
         loadedMeaning: video ? 'video_metadata_ready' : 'image_decoded',
         width: video ? element.videoWidth : element.naturalWidth,

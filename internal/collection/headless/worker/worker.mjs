@@ -59,6 +59,7 @@ export async function sourceAssets(bridgePath, source) {
   }
   const selected = source === 'x'
     ? [
+        { relative: 'AkuBridge/bounded-capture-policy.js', path: resolve(bridge, 'bounded-capture-policy.js'), execute: true },
         { relative: 'AkuBridge/x-response-evidence-adapter.js', path: resolve(bridge, 'x-response-evidence-adapter.js'), execute: false, newDocument: true },
         { relative: 'AkuBridge/x-media-evidence-runtime.js', path: resolve(bridge, 'x-media-evidence-runtime.js'), execute: false, newDocument: true },
         { relative: 'AkuBridge/adapters/x-adapter.js', path: resolve(bridge, 'adapters/x-adapter.js'), execute: true },

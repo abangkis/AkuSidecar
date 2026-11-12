@@ -7,6 +7,7 @@ import { photoRecaptureObservation } from './photo-recapture.mjs';
 import { createXTextRecovery } from './x-text-recovery.mjs';
 import { recoverHeadlessFreshness } from './headless-freshness.mjs';
 import { sourceFreshnessContractFor } from './source-freshness-contract.mjs';
+import { boundedCapturePolicyFor } from './capture-primitives.mjs';
 import { finalizeXReplyEvidence, prepareXPassiveEvidence, resolveXPassiveEvidence } from './x-passive-evidence.mjs';
 import { navigateSourcePage } from './navigation-diagnostic.mjs';
 
@@ -434,6 +435,8 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
       captureMode: browser.backend === 'browser_quiet_hidden' ? 'browser_quiet_hidden' : 'headless_worker',
       frontier,
       freshness,
+      xMediaPolicy: source === 'x' && assets.some(asset => asset.relative === 'AkuBridge/bounded-capture-policy.js')
+        ? boundedCapturePolicyFor(assets) : null,
     });
     if (headlessNavigation) observation.coverage.headlessNavigation = headlessNavigation;
     if(photoResolution) observation.coverage.photoParentResolution={status:'verified',photoId:photoResolution.photoId,
