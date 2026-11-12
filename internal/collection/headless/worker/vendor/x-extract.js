@@ -163,6 +163,7 @@
       const challengeBeforeDiscovery = primitives.detectXAccessChallenge(document, location);
       if (challengeBeforeDiscovery) return challengeSnapshot(adapter, challengeBeforeDiscovery);
       const discovery = adapter.discoverCandidates(helpers);
+      const capturedAt = new Date().toISOString();
       let rejected = 0;
       const rejectionReasons = { missing_identity: 0, ambiguous_identity: 0, missing_author: 0, empty_evidence: 0 };
       const posts = discovery.candidates.filter(container => {
@@ -194,6 +195,14 @@
         const links = authoredLinks(primaryTextRoot, quote);
         const semantics = adapter.extractSemantics(container, helpers);
         const presentation = adapter.extractPresentation?.(container, helpers) || {};
+        const timestamp = adapter.extractTimestamp?.(container, { permalink, capturedAt });
+        if (timestamp) {
+          presentation.timestampSource = timestamp.source;
+          presentation.timestampEstimated = timestamp.estimated;
+          presentation.timestampPrecision = timestamp.precision;
+          if (timestamp.text) presentation.timestampText = timestamp.text;
+          if (timestamp.estimated) presentation.timestampCapturedAt = capturedAt;
+        }
         if (sharedIdentity) {
           presentation.primaryIdentity = sharedIdentity;
           presentation.permalinkSource = sharedIdentity.source;
@@ -201,7 +210,7 @@
         const avatar = adapter.findAvatar(container, helpers);
         const media = findMedia(adapter, container, quote);
         const mediaExpected = adapter.mediaAcquisition.detectExpectedKinds(container, { ...helpers, excludeRoot: quote });
-        const quotedPost = adapter.extractQuotedPost(container, { ...helpers, findMedia: root => findMedia(adapter, root) });
+        const quotedPost = adapter.extractQuotedPost(container, { ...helpers, capturedAt, findMedia: root => findMedia(adapter, root) });
         const textCollapsed = ownControls(container, quote, adapter.contentExpansion)
           .some(button => primitives.expansionLabel(compactText(button), 'more'));
         if (quotedPost) {
@@ -230,7 +239,7 @@
           return [];
         }
         return [{ id, permalink, author, avatar,
-          text, publishedAt: times.find(t => canonical(t.closest('a[href]')?.href) === permalink)?.dateTime || null,
+          text, publishedAt: timestamp ? timestamp.publishedAt : times.find(t => canonical(t.closest('a[href]')?.href) === permalink)?.dateTime || null,
           ...semantics, presentation, links, media, mediaExpected: [...new Set(mediaExpected)], mediaEvidence: mediaEvidence(media, [...new Set(mediaExpected)]),
           directContext: Array.isArray(directContext) ? directContext.slice(0, 8) : [],
           avatarEvidenceKeys: [`x:status:${id}`,

@@ -80,6 +80,41 @@ const cases = [
   ['challenge_required', '<section id="challenge-running">Fixture challenge</section>'],
 ];
 
+const capturedTimestampCases = JSON.parse(await readFile(join(bridge, 'test/fixtures/x-wrapped-timestamp-cases.json'), 'utf8'));
+const escapeHTML = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
+const timestampFixture = (block, header = '', extra = '') => {
+  const route = new URL(block.permalink).pathname;
+  const handle = route.split('/')[1];
+  return `<div role="link" data-href="${route}"><article class="group/post">` +
+    `<div class="x-middot-group"><a href="https://x.com/${handle}">${escapeHTML(block.author)}</a>${header}</div>` +
+    `<div dir="auto" class="whitespace-pre-wrap">${escapeHTML(block.text)}</div>${extra}</article></div>`;
+};
+const selected = capturedTimestampCases.cases.map(value => value.occurrences[0]);
+const ownerBlock = selected[0].block;
+const quotedBlock = selected[1].block;
+const nativeTime = '<time datetime="2026-11-12T08:59:21.397Z">1h</time>';
+const timeSpec = { timestamp: true, capturedAt: selected[0].capturedAt,
+  provenance: 'Reconstructed DOM; relative header and contrasting quote times are synthetic. Original normalized evidence retained separately.' };
+const quoteWith = header => timestampFixture(quotedBlock.quotedPost, header);
+cases.push(
+  ['timestamp_token_gremlin_reconstructed_1h', timestampFixture(ownerBlock, '<span>1h</span>'), timeSpec],
+  ['timestamp_chinese_author_reconstructed_1h', timestampFixture(quotedBlock, '<span>1h</span>', quoteWith('<span>3h</span>')), { ...timeSpec, capturedAt: selected[1].capturedAt }],
+  ['timestamp_quote_only_relative', timestampFixture(quotedBlock, '', quoteWith('<span>3h</span>')), timeSpec],
+  ['timestamp_quote_only_native', timestampFixture(quotedBlock, '<time datetime="invalid"></time>', quoteWith(nativeTime)), timeSpec],
+  ['timestamp_wrapped_native_no_anchor', timestampFixture(ownerBlock, nativeTime + '<span>3h</span>'), timeSpec],
+  ['timestamp_legacy_native_precedence', legacy('1234500000000000001', { authorHeader: '<a href="/legacy">Legacy</a><span>1h</span>' })
+    .replace('</article>', timestamp('legacy', '1234500000000000001') + '</article>'), timeSpec],
+  ['timestamp_conflicting_relative', timestampFixture(ownerBlock, '<span>1h</span><span>2h</span>', quoteWith(nativeTime)), timeSpec],
+  ['timestamp_conflicting_native', timestampFixture(ownerBlock, nativeTime + '<time datetime="2026-11-12T07:00:00Z"></time>', quoteWith('<span>1h</span>')), timeSpec],
+  ['timestamp_unsupported_localized', timestampFixture(ownerBlock, '<span>1小时前</span>', quoteWith('<span>1h</span>')), timeSpec],
+  ['timestamp_authored_body_not_time', timestampFixture({ ...ownerBlock, text: '1h' }, '', '<span>1h</span>'), timeSpec],
+  ['timestamp_neighbor_not_time', timestampFixture(ownerBlock) + timestampFixture({ ...ownerBlock, permalink: 'https://x.com/other/status/1234500000000000099' }, '<span>1h</span>'), timeSpec],
+  ['timestamp_profile_name_not_time', timestampFixture({ ...ownerBlock, author: '1h' }), timeSpec],
+  ['timestamp_missing_original', timestampFixture(ownerBlock), timeSpec],
+  ['timestamp_quote_identity_conflict', timestampFixture(ownerBlock, '<span>1h</span>',
+    timestampFixture({ ...quotedBlock.quotedPost, permalink: ownerBlock.permalink }, nativeTime)), timeSpec],
+);
+
 function browserBaseline({ cases, assets, gate, mode }) {
   const out = document.getElementById('result');
   const main = document.querySelector('main');
@@ -105,7 +140,7 @@ function browserBaseline({ cases, assets, gate, mode }) {
   }
   const ready = new Function(gate + '\nreturn isSourceCaptureReady;')();
   const request = (message) => new Promise((resolve) => receive(message, null, resolve));
-  const compactPost = (post) => ({
+  const compactPost = (post, includeTime = false) => ({
     id: post.platformId ?? (post.id ? `x:status:${post.id}` : null),
     permalink: post.permalink,
     identity: post.presentation?.primaryIdentity?.status ?? post.identityComparison?.sharedDecision ?? null,
@@ -114,9 +149,17 @@ function browserBaseline({ cases, assets, gate, mode }) {
     media: post.media?.length ?? 0,
     quoteId: post.quotedPost?.permalink?.match(/\/status\/(\d+)$/)?.[1] ?? null,
     quoteText: post.quotedPost?.text ?? null,
+    ...(includeTime ? { publishedAt: post.publishedAt ?? null,
+      timestampSource: post.presentation?.timestampSource,
+      timestampEstimated: post.presentation?.timestampEstimated,
+      timestampPrecision: post.presentation?.timestampPrecision,
+      timestampText: post.presentation?.timestampText ?? null,
+      timestampCapturedAt: post.presentation?.timestampCapturedAt ?? null,
+      quotePublishedAt: post.quotedPost?.publishedAt ?? null,
+      quoteTimestamp: post.quotedPost?.presentation ?? null } : {}),
   });
 
-  async function sampleWindowed(name) {
+  async function sampleWindowed(name, expansionCase) {
     const { readiness } = await request({ type: 'AKU_BROWSER_PROBE_SOURCE_READY', source: 'x' });
     const windowed = {
       adapter: readiness.adapterVersion,
@@ -137,7 +180,7 @@ function browserBaseline({ cases, assets, gate, mode }) {
       if (JSON.stringify(result.observation.coverage.sharedDOMShadow) !== JSON.stringify(readiness.sharedDOMShadow)) {
         throw new Error(`${name}: Windowed observation lost shadow diagnostics`);
       }
-      windowed.posts = blocks.map(compactPost);
+      windowed.posts = blocks.map(block => compactPost(block, expansionCase?.timestamp));
       windowed.quality = qualityReports.map(({ verdict, issues }) => ({
         verdict, issues: issues.map(({ field, code }) => `${field}:${code}`),
       }));
@@ -145,23 +188,32 @@ function browserBaseline({ cases, assets, gate, mode }) {
     return windowed;
   }
 
-  async function sampleHeadless() {
+  async function sampleHeadless(expansionCase) {
     const snapshot = await globalThis.XHeadlessPoC.collect();
     return {
       adapter: snapshot.adapterVersion,
       readiness: snapshot.sourceReadiness ?? (snapshot.challengeDetected ? 'challenge_required' : null),
       candidateCount: snapshot.candidateCount,
       rejections: snapshot.rejectionReasons,
-      posts: snapshot.posts.map(compactPost),
+      posts: snapshot.posts.map(post => compactPost(post, expansionCase?.timestamp)),
       sharedDOMShadow: snapshot.sharedDOMShadow,
     };
   }
 
   async function run() {
     const rows = [];
-    for (const [name, body] of cases) {
+    const NativeDate = globalThis.Date;
+    for (const [name, body, expansionCase] of cases) {
+      if (expansionCase?.timestamp) {
+        const fixedNow = NativeDate.parse(expansionCase.capturedAt);
+        globalThis.Date = class extends NativeDate {
+          constructor(...values) { super(...(values.length ? values : [fixedNow])); }
+        };
+      } else globalThis.Date = NativeDate;
+      location.href = expansionCase?.route ?? 'https://x.com/home';
+      globalThis.AkuHeadlessCapturePolicy = { allowContentExpansion: Boolean(expansionCase && !expansionCase.timestamp) };
       main.innerHTML = body;
-      const result = mode === 'windowed' ? await sampleWindowed(name) : await sampleHeadless();
+      const result = mode === 'windowed' ? await sampleWindowed(name, expansionCase) : await sampleHeadless(expansionCase);
       rows.push({ name, result });
     }
     out.textContent = JSON.stringify({ rows, shadowCalls, shadowMutations });
@@ -193,26 +245,29 @@ assert.ok(gate, 'Windowed service-worker readiness gate');
 const scratchRoot = await realpath(join(workspace, 'SharedTemp'));
 const scratch = await mkdtemp(join(scratchRoot, 'shared-dom-x-baseline-'));
 
-async function runFixture(mode, assets) {
-  const fixture = join(scratch, `${mode}.html`);
-  const spec = { cases, mode, assets: assets.map(asset => asset.content), gate };
-  const script = `(${browserBaseline.toString()})(${JSON.stringify(spec)});`.replaceAll('</script', '<\\/script');
+async function runFixture(mode, assets, fixtureCases = cases) {
+  const label = `${mode}${fixtureCases === cases ? '' : '-previous-adapter'}`;
+  const fixture = join(scratch, `${label}.html`);
+  const spec = { cases: fixtureCases, mode, assets: assets.map(asset => asset.content), gate };
+  const script = `try { (${browserBaseline.toString()})(${JSON.stringify(spec)}); } catch (error) {
+    document.getElementById('result').textContent = JSON.stringify({error: String(error.stack || error)});
+  }`.replaceAll('</script', '<\\/script');
   await writeFile(fixture, `<!doctype html><meta charset="utf-8"><title>Synthetic X DOM baseline</title>
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'">
 <style>article { min-height: 32px; }</style>
 <base href="https://x.com/home"><main></main><pre id="result"></pre><script>${script}</script>`);
-  const run = spawnSync(chrome, ['--headless', '--dump-dom', '--virtual-time-budget=5000',
+  const run = spawnSync(chrome, ['--headless', '--dump-dom', '--virtual-time-budget=15000',
     '--disable-background-networking', '--disable-component-update', '--no-first-run', '--no-default-browser-check',
     '--host-resolver-rules=MAP * ~NOTFOUND', '--window-size=1200,1000',
-    `--user-data-dir=${join(scratch, `${mode}-profile`)}`, pathToFileURL(fixture).href],
+    `--user-data-dir=${join(scratch, `${label}-profile`)}`, pathToFileURL(fixture).href],
   { encoding: 'utf8', timeout: 25_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true });
   assert.equal(run.status, 0, String(run.error ?? run.stderr).slice(-1_200));
   const serialized = run.stdout.match(/<pre id="result">([\s\S]*?)<\/pre>/)?.[1];
-  assert.ok(serialized, 'Browser fixture did not produce a result');
+  assert.ok(serialized, `Browser fixture did not produce a result: ${run.stdout.slice(-1500)} ${run.stderr.slice(-500)}`);
   const data = JSON.parse(serialized.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&'));
   assert.ok(!data.error, data.error);
-  assert.equal(data.rows.length, cases.length);
-  assert.equal(data.shadowCalls, cases.length);
+  assert.equal(data.rows.length, fixtureCases.length);
+  assert.equal(data.shadowCalls, fixtureCases.length);
   assert.equal(data.shadowMutations, 0);
   return data;
 }
@@ -221,6 +276,8 @@ try {
   const windowedResult = await runFixture('windowed', windowed);
   const headlessResult = await runFixture('headless', headless);
   const data = {
+    timestampFixtureProvenance: capturedTimestampCases,
+    reconstructedDOMNotice: timeSpec.provenance,
     rows: windowedResult.rows.map(({ name, result }, index) => {
       assert.equal(name, headlessResult.rows[index].name);
       return { name, windowed: result, headless: headlessResult.rows[index].result };
@@ -228,10 +285,66 @@ try {
     shadowCalls: windowedResult.shadowCalls + headlessResult.shadowCalls,
     shadowMutations: windowedResult.shadowMutations + headlessResult.shadowMutations,
   };
+  // An explicit local revision can demonstrate the original omission. Normal
+  // regressions remain independent of Git history and future HEAD changes.
+  const previousRevision = process.env.AKU_X_TIMESTAMP_PREVIOUS_REVISION;
+  if (previousRevision) {
+    assert.match(previousRevision, /^[a-f0-9]{40}$/i);
+    const previous = spawnSync('git', ['show', `${previousRevision}:adapters/x-adapter.js`], { cwd: bridge, encoding: 'utf8', windowsHide: true });
+    assert.equal(previous.status, 0, previous.stderr);
+    const reportedShapes = cases.filter(([name]) => name.endsWith('_reconstructed_1h'));
+    const previousAssets = assets => assets.map(asset => asset.relative === 'AkuBridge/adapters/x-adapter.js'
+      ? { ...asset, content: previous.stdout } : asset);
+    data.previousAdapterRevision = previousRevision;
+    data.previousAdapterControl = {};
+    for (const [mode, assets] of [['windowed', windowed], ['headless', headless]]) {
+      const control = await runFixture(mode, previousAssets(assets), reportedShapes);
+      assert.equal(control.shadowMutations, 0);
+      for (const row of control.rows) assert.equal(row.result.posts[0].publishedAt, null, `${mode}: old adapter ${row.name}`);
+      data.previousAdapterControl[mode] = control;
+    }
+  }
   const get = name => data.rows.find(row => row.name === name);
   for (const { name, windowed, headless } of data.rows) {
     assert.deepEqual(headless.posts, windowed.posts, name);
     assert.equal(headless.readiness, windowed.readiness, name);
+  }
+  for (const mode of ['windowed', 'headless']) {
+    const token = get('timestamp_token_gremlin_reconstructed_1h')[mode].posts[0];
+    assert.equal(token.publishedAt, '2026-11-12T08:59:21.397Z');
+    assert.equal(token.timestampSource, 'relative_text_estimate');
+    assert.equal(token.timestampEstimated, true);
+    assert.equal(token.timestampPrecision, 'hour');
+    assert.equal(token.timestampText, '1h');
+    assert.equal(token.timestampCapturedAt, timeSpec.capturedAt);
+    const chinese = get('timestamp_chinese_author_reconstructed_1h')[mode].posts[0];
+    assert.equal(chinese.author, quotedBlock.author);
+    assert.equal(chinese.text, quotedBlock.text);
+    assert.equal(chinese.publishedAt, '2026-11-12T08:59:22.839Z');
+    assert.equal(chinese.timestampCapturedAt, selected[1].capturedAt);
+    assert.equal(chinese.quotePublishedAt, '2026-11-12T06:59:22.839Z');
+    assert.equal(chinese.quoteTimestamp.timestampEstimated, true);
+    assert.equal(chinese.quoteTimestamp.timestampText, '3h');
+    const native = get('timestamp_wrapped_native_no_anchor')[mode].posts[0];
+    assert.equal(native.publishedAt, '2026-11-12T08:59:21.397Z');
+    assert.equal(native.timestampSource, 'native_datetime');
+    assert.equal(native.timestampEstimated, false);
+    assert.equal(native.timestampPrecision, 'exact');
+    assert.equal(get('timestamp_legacy_native_precedence')[mode].posts[0].publishedAt, '2026-01-02T03:04:00.000Z');
+    for (const name of ['timestamp_quote_only_relative', 'timestamp_quote_only_native', 'timestamp_conflicting_relative',
+      'timestamp_conflicting_native', 'timestamp_unsupported_localized', 'timestamp_authored_body_not_time',
+      'timestamp_neighbor_not_time', 'timestamp_profile_name_not_time', 'timestamp_missing_original']) {
+      assert.equal(get(name)[mode].posts[0].publishedAt, null, `${mode}: ${name}`);
+      assert.equal(get(name)[mode].posts[0].timestampEstimated, false, `${mode}: ${name}`);
+    }
+    assert.equal(get('timestamp_quote_only_relative')[mode].posts[0].quotePublishedAt, '2026-11-12T06:59:21.397Z');
+    assert.equal(get('timestamp_quote_only_native')[mode].posts[0].quotePublishedAt, '2026-11-12T08:59:21.397Z');
+    assert.equal(get('timestamp_conflicting_native')[mode].posts[0].timestampSource, 'conflicting_native_time');
+    assert.equal(get('timestamp_conflicting_relative')[mode].posts[0].timestampSource, 'conflicting_relative_time');
+    const invalidQuote = get('timestamp_quote_identity_conflict')[mode].posts[0];
+    assert.equal(invalidQuote.publishedAt, token.publishedAt);
+    assert.equal(invalidQuote.quoteId, null);
+    assert.equal(invalidQuote.quotePublishedAt, null);
   }
   for (const mode of ['windowed', 'headless']) {
     assert.equal(get('legacy')[mode].posts[0].id, 'x:status:1234500000000000001');
@@ -268,10 +381,11 @@ try {
     wrapper_timestamp_agreement: 'ready', wrapper_timestamp_conflict: 'no_valid_candidates',
     quote_cannot_identify_owner: 'no_valid_candidates', quote_identity_conflict: 'ready',
     quote_direct_link: 'ready', quote_authored_link: 'ready',
+    timestamp_quote_identity_conflict: 'no_valid_candidates',
     empty: 'empty_unverified', login_required: 'login_required', challenge_required: 'challenge_required',
   };
   for (const { name, windowed, headless } of data.rows) {
-    assert.equal(windowed.sharedDOMShadow.code, expectedShadowCodes[name], name);
+    assert.equal(windowed.sharedDOMShadow.code, expectedShadowCodes[name] ?? (name.startsWith('timestamp_') ? 'ready' : undefined), name);
     assert.deepEqual(headless.sharedDOMShadow, windowed.sharedDOMShadow, name);
     assert.deepEqual(projectDOMShadow(headless).sharedDOMShadow, headless.sharedDOMShadow, name);
   }
