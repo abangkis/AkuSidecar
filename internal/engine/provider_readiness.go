@@ -11,12 +11,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/abangkis/AkuSidecar/internal/codexruntime"
+	"github.com/abangkis/AkuSidecar/internal/codexselection"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/credentials"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	sdkollama "github.com/abangkis/ai4u-inference-sdk-go/providers/ollama"
+	"github.com/abangkis/ai4u-library-go/pkg/codexruntime"
 )
 
 const (
@@ -68,6 +69,10 @@ func (e *Engine) ensureReasoningProviderReady(ctx context.Context, name string) 
 	if err != nil {
 		return err
 	}
+	return e.ensureReasoningProviderReadyWithSettings(ctx, name, settings)
+}
+
+func (e *Engine) ensureReasoningProviderReadyWithSettings(ctx context.Context, name string, settings domain.Settings) error {
 	provider, found := e.reasoningProviderConfiguration(name)
 	if !found {
 		return fmt.Errorf("reasoning provider %q is not selectable", name)
@@ -152,10 +157,7 @@ func (e *Engine) probeCodexReadiness(ctx context.Context, summary config.Provide
 	if e.ProviderName() == summary.Name {
 		candidate = e.provider
 	} else {
-		requested := strings.TrimSpace(provider.Executable)
-		if strings.TrimSpace(settings.ReasoningExecutablePath) != "" {
-			requested = strings.TrimSpace(settings.ReasoningExecutablePath)
-		}
+		requested := codexselection.Request(e.config.Root, provider.Executable, settings)
 		probeCtx, cancel := context.WithTimeout(ctx, providerReadinessTimeout)
 		result, err := codexruntime.Discover(probeCtx, requested)
 		cancel()

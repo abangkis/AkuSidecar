@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/abangkis/AkuSidecar/internal/aidetector"
+	"github.com/abangkis/AkuSidecar/internal/codexselection"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	semanticengine "github.com/abangkis/AkuSidecar/internal/eventengine"
@@ -56,10 +57,9 @@ func (e *Engine) planProviderSwapWithFactory(ctx context.Context, target string,
 	if err := cfgCopy.Reasoning.Select(target); err != nil {
 		return nil, fmt.Errorf("select reasoning provider %q: %w", target, err)
 	}
-	if target == "codex-app-server" && strings.TrimSpace(cfgCopy.Reasoning.Executable) == "" {
-		if path := strings.TrimSpace(settings.ReasoningExecutablePath); path != "" {
-			cfgCopy.Reasoning.Executable = path
-		}
+	if target == "codex-app-server" {
+		settings.ReasoningExecutableMode = codexselection.Mode(*settings)
+		cfgCopy.Reasoning.Executable = codexselection.Request(cfgCopy.Root, cfgCopy.Reasoning.Executable, *settings)
 	}
 	candidate, err := newProvider(cfgCopy)
 	if err != nil {
@@ -72,6 +72,11 @@ func (e *Engine) planProviderSwapWithFactory(ctx context.Context, target string,
 			plan.closeCandidate()
 		}
 	}()
+	if target == "codex-app-server" {
+		if executable, ok := candidate.(reasoning.ExecutableRuntime); ok {
+			settings.ReasoningExecutablePath = executable.ExecutablePath()
+		}
+	}
 	if profileProvider, ok := candidate.(reasoning.ProfileProvider); ok {
 		if _, err := reasoning.ActivateProviderProfileSet(settings, target, profileProvider); err != nil {
 			return nil, err

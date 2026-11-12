@@ -48,8 +48,8 @@ type RoutedProvider interface {
 }
 
 // ExecutableRuntime is an optional provider capability for inference backends
-// that launch a local executable. Domain settings retain only the selected
-// path; discovery and activation remain owned by the provider adapter.
+// that launch a local executable. Domain settings retain selection mode and
+// the last resolved path; discovery and activation use the provider adapter.
 type ExecutableRuntime interface {
 	ExecutablePath() string
 	DiscoverExecutable(context.Context, string) (string, error)

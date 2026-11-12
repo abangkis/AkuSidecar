@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/abangkis/AkuSidecar/internal/codexselection"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
@@ -27,6 +28,23 @@ func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domai
 	if err != nil {
 		return domain.Settings{}, err
 	}
+	activeCodex := e.provider != nil && e.ProviderName() == "codex-app-server"
+	codexSelection := activeCodex || value.ReasoningProvider == "codex-app-server" || current.ReasoningExecutableMode != ""
+	if codexSelection {
+		if value.ReasoningExecutableMode == "" {
+			if strings.TrimSpace(value.ReasoningExecutablePath) != strings.TrimSpace(current.ReasoningExecutablePath) {
+				value.ReasoningExecutableMode = codexselection.Explicit
+				if strings.TrimSpace(value.ReasoningExecutablePath) == "" {
+					value.ReasoningExecutableMode = codexselection.Automatic
+				}
+			} else {
+				value.ReasoningExecutableMode = codexselection.Mode(current)
+			}
+		}
+		if err := value.Validate(); err != nil {
+			return domain.Settings{}, err
+		}
+	}
 	if target := strings.TrimSpace(value.ReasoningProvider); target != "" && target != current.ReasoningProvider && len(e.config.Reasoning.Providers) > 0 {
 		provider, selectable := e.reasoningProviderConfiguration(target)
 		if !selectable {
@@ -35,11 +53,21 @@ func (e *Engine) SaveSettings(ctx context.Context, value domain.Settings) (domai
 		if !provider.Configured {
 			return domain.Settings{}, fmt.Errorf("%s is not configured: set %s before selecting it", provider.Label, provider.CredentialName)
 		}
-		if err := e.ensureReasoningProviderReady(ctx, target); err != nil {
+		if err := e.ensureReasoningProviderReadyWithSettings(ctx, target, value); err != nil {
 			return domain.Settings{}, err
 		}
 	}
-	executableRuntime, resolvedExecutable, err := e.prepareReasoningExecutableChange(ctx, current.ReasoningExecutablePath, value.ReasoningExecutablePath)
+	requested := value.ReasoningExecutablePath
+	if activeCodex && (codexselection.Mode(current) != value.ReasoningExecutableMode || strings.TrimSpace(requested) != strings.TrimSpace(current.ReasoningExecutablePath)) {
+		requested = codexselection.Request(e.config.Root, e.config.Reasoning.Providers["codex-app-server"].Executable, value)
+	}
+	// A switch to Codex validates and constructs the target runtime below; the
+	// current remote provider cannot validate an executable for that target.
+	currentPath := current.ReasoningExecutablePath
+	if !activeCodex && value.ReasoningProvider == "codex-app-server" {
+		requested = currentPath
+	}
+	executableRuntime, resolvedExecutable, err := e.prepareReasoningExecutableChange(ctx, currentPath, requested)
 	if err != nil {
 		return domain.Settings{}, err
 	}

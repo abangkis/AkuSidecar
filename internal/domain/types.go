@@ -95,6 +95,7 @@ type Settings struct {
 	ResurfaceCooldownDays       int                        `json:"resurfaceCooldownDays"`
 	ReasoningProvider           string                     `json:"reasoningProvider"`
 	ReasoningExecutablePath     string                     `json:"reasoningExecutablePath"`
+	ReasoningExecutableMode     string                     `json:"reasoningExecutableMode,omitempty"`
 	ReasoningAcquisitionProfile string                     `json:"reasoningAcquisitionProfile"`
 	ReasoningEvaluationProfile  string                     `json:"reasoningEvaluationProfile"`
 	ReasoningSemanticProfile    string                     `json:"reasoningSemanticProfile"`
@@ -423,6 +424,12 @@ func (s Settings) Validate() error {
 	}
 	if len(s.ReasoningExecutablePath) > 4096 || strings.ContainsRune(s.ReasoningExecutablePath, '\x00') {
 		return errors.New("reasoningExecutablePath is invalid")
+	}
+	if s.ReasoningExecutableMode != "" && s.ReasoningExecutableMode != "automatic" && s.ReasoningExecutableMode != "explicit" {
+		return errors.New("reasoningExecutableMode is invalid")
+	}
+	if s.ReasoningExecutableMode == "explicit" && strings.TrimSpace(s.ReasoningExecutablePath) == "" {
+		return errors.New("explicit reasoning executable requires a path")
 	}
 	for name, profile := range map[string]string{
 		"reasoningAcquisitionProfile": s.ReasoningAcquisitionProfile,

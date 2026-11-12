@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/abangkis/AkuSidecar/internal/codexselection"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/credentials"
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -69,12 +70,16 @@ type ReasoningRuntimeProfile struct {
 	ExecutablePath string `json:"executablePath"`
 	Editable       bool   `json:"editable"`
 	AutoRepaired   bool   `json:"autoRepaired,omitempty"`
+	SelectionMode  string `json:"selectionMode,omitempty"`
 }
 
 func (e *Engine) ReasoningRuntime() ReasoningRuntimeProfile {
 	result := ReasoningRuntimeProfile{Provider: e.ProviderName(), Label: "Inference executable"}
 	if e.ProviderName() == "codex-app-server" {
 		result.Label = "Codex executable"
+		if settings, err := e.store.GetSettings(context.Background()); err == nil {
+			result.SelectionMode = codexselection.Mode(settings)
+		}
 	}
 	if runtime, ok := e.provider.(reasoning.ExecutableRuntime); ok {
 		result.ExecutablePath = runtime.ExecutablePath()
@@ -96,6 +101,7 @@ func (e *Engine) DiscoverReasoningExecutable(ctx context.Context) (ReasoningRunt
 	}
 	result := e.ReasoningRuntime()
 	result.ExecutablePath = path
+	result.SelectionMode = codexselection.Automatic
 	if executableAvailable(runtime.ExecutablePath()) {
 		return result, nil
 	}
@@ -103,7 +109,13 @@ func (e *Engine) DiscoverReasoningExecutable(ctx context.Context) (ReasoningRunt
 	if err != nil {
 		return e.ReasoningRuntime(), err
 	}
+	if e.ProviderName() == "codex-app-server" && (codexselection.Mode(settings) == codexselection.Explicit || codexselection.Request(e.config.Root, e.config.Reasoning.Providers["codex-app-server"].Executable, settings) != "") {
+		return result, nil
+	}
 	settings.ReasoningExecutablePath = path
+	if e.ProviderName() == "codex-app-server" {
+		settings.ReasoningExecutableMode = codexselection.Automatic
+	}
 	if err := e.store.SaveSettings(ctx, settings); err != nil {
 		return e.ReasoningRuntime(), fmt.Errorf("persist rediscovered reasoning executable: %w", err)
 	}

@@ -13,12 +13,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/abangkis/AkuSidecar/internal/codexruntime"
+	"github.com/abangkis/AkuSidecar/internal/codexselection"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/livingtopics"
 	"github.com/abangkis/ai4u-inference-sdk-go/inference"
 	"github.com/abangkis/ai4u-inference-sdk-go/providers/codexappserver"
+	"github.com/abangkis/ai4u-library-go/pkg/codexruntime"
 )
 
 // appServerThreadLimit mirrors the Codex App Server transport's thread budget.
@@ -161,7 +162,7 @@ func (c *CodexAppServer) ExecutablePath() string {
 }
 
 func (c *CodexAppServer) DiscoverExecutable(ctx context.Context, requested string) (string, error) {
-	result, err := codexruntime.Discover(ctx, requested)
+	result, err := codexruntime.Discover(ctx, codexselection.Request(c.root, requested, domain.Settings{}))
 	if err != nil {
 		return "", err
 	}
@@ -575,10 +576,7 @@ func appServerTelemetry(run domain.Run, phase string, model config.ModelConfig, 
 }
 
 func resolveExecutable(root, value string) (string, error) {
-	requested := strings.TrimSpace(value)
-	if requested != "" && strings.ContainsAny(requested, `\\/`) && !filepath.IsAbs(requested) {
-		requested = filepath.Join(root, requested)
-	}
+	requested := codexselection.Request(root, value, domain.Settings{})
 	result, err := codexruntime.Discover(context.Background(), requested)
 	if err != nil {
 		return "", fmt.Errorf("discover Codex App Server runtime: %w", err)

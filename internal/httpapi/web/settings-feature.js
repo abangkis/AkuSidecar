@@ -1,4 +1,5 @@
 import { applyReasoningRuntimeResponse } from "./reasoning-runtime-state.js";
+import { renderExecutableSelection, readExecutableSelection } from "./reasoning-executable-selection.js";
 import { sourceAccessReadinessState } from "./onboarding-source-readiness.js";
 
 export function createSettingsFeature({
@@ -10,7 +11,7 @@ export function createSettingsFeature({
     const reasoningRuntime = state.bootstrap?.reasoningRuntime;
     renderReasoningProviderControl(settings);
     $("#reasoning-executable-label").textContent = reasoningRuntime?.label || "Inference executable";
-    $("#reasoning-executable-path").value = reasoningRuntime?.executablePath || settings.reasoningExecutablePath || "";
+    renderExecutableSelection($("#reasoning-executable-path"), reasoningRuntime?.executablePath || settings.reasoningExecutablePath, reasoningRuntime?.selectionMode || settings.reasoningExecutableMode || "");
     $("#reasoning-executable-path").disabled = reasoningRuntime?.editable === false;
     $("#detect-reasoning-executable").disabled = reasoningRuntime?.editable === false;
     $("#bounded-load-profile").value = settings.loadProfile;
@@ -265,7 +266,7 @@ export function createSettingsFeature({
       autoUpdateManualReservePct: Number.parseInt($("#auto-update-manual-reserve").value, 10),
       preparedBatchMaxAgeHours: Number.parseInt($("#prepared-batch-max-age").value, 10),
       nextBatchBehavior: $("#next-batch-behavior").value,
-      reasoningExecutablePath: $("#reasoning-executable-path").value.trim(),
+      ...readExecutableSelection($("#reasoning-executable-path")),
       reasoningProvider: $("#reasoning-provider")?.value || current.reasoningProvider,
       reasoningAcquisitionProfile: reasoningProfileValue("acquisition_planning", current.reasoningAcquisitionProfile),
       reasoningEvaluationProfile: reasoningProfileValue("candidate_evaluation", current.reasoningEvaluationProfile),
@@ -368,9 +369,10 @@ export function createSettingsFeature({
       state.bootstrap.reasoningRuntime = runtime;
       if (runtime.autoRepaired && state.bootstrap.settings) {
         state.bootstrap.settings.reasoningExecutablePath = runtime.executablePath;
+        state.bootstrap.settings.reasoningExecutableMode = runtime.selectionMode || "automatic";
       }
       $("#reasoning-executable-label").textContent = runtime.label || "Inference executable";
-      $("#reasoning-executable-path").value = runtime.executablePath || "";
+      renderExecutableSelection($("#reasoning-executable-path"), runtime.executablePath, runtime.selectionMode || "automatic");
       refreshSettingsDirtyState();
       status.textContent = runtime.autoRepaired
         ? "Detected and refreshed · ready to use"
