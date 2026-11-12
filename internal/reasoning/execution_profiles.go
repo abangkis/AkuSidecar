@@ -16,7 +16,7 @@ import (
 )
 
 // These are client-owned workload identities. Provider profile IDs such as
-// luna_high remain UI/binding projections and are never capability authority.
+// gpt6_luna_high remain UI/binding projections and are never capability authority.
 const (
 	ExecutionProfilePlanning    inference.ProfileID = "akusidecar.planning"
 	ExecutionProfileEvaluation  inference.ProfileID = "akusidecar.candidate_evaluation"

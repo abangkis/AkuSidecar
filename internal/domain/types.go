@@ -28,10 +28,10 @@ const (
 	DefaultAIDetectionEnabled               = true
 	DefaultResurfaceMode                    = "smart"
 	DefaultResurfaceCooldownDays            = 7
-	DefaultReasoningAcquisition             = "luna_high"
-	DefaultReasoningEvaluation              = "luna_high"
-	DefaultReasoningSemantic                = "luna_high"
-	DefaultReasoningAIDeep                  = "luna_high"
+	DefaultReasoningAcquisition             = "gpt6_luna_high"
+	DefaultReasoningEvaluation              = "gpt6_luna_high"
+	DefaultReasoningSemantic                = "gpt6_luna_high"
+	DefaultReasoningAIDeep                  = "gpt6_luna_high"
 	DefaultSourceWaitMode                   = "progressive_wait"
 	DefaultAutoUpdateMode                   = "adaptive"
 	DefaultAutoUpdateRefillMin              = 15

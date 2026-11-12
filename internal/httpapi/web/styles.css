@@ -1060,6 +1060,11 @@ h3 { letter-spacing: -0.02em; }
 .reasoning-process-route > small { color: var(--muted); }
 .reasoning-process-provider { color: var(--quiet) !important; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
 .reasoning-profile-select { width: 100%; min-width: 0; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel-raised); color: var(--text); }
+.reasoning-model-controls { display: grid; width: 100%; min-width: 0; gap: 12px; text-align: left; border: 0; padding: 0; margin: 0; }
+.reasoning-model-field { display: grid; gap: 5px; min-width: 0; }
+.reasoning-model-field > span, .reasoning-effort-field > span { color: var(--quiet); font-size: 0.72rem; }
+.reasoning-effort-field { display: grid; grid-template-columns: minmax(0, 1fr) minmax(90px, 110px); gap: 12px; align-items: center; }
+.reasoning-model-select, .reasoning-effort-select { min-width: 0; }
 .reasoning-executable-row { grid-template-columns: minmax(0, 0.8fr) minmax(360px, 1.2fr); }
 .reasoning-executable-row[hidden] { display: none; }
 .reasoning-provider-control { display: grid; justify-self: end; width: min(100%, 260px); min-width: 0; gap: 6px; }

@@ -46,7 +46,7 @@ func TestNewProviderRejectsOllamaEntriesWithoutStableModels(t *testing.T) {
 		t.Fatal(err)
 	}
 	codex.Reasoning.Providers = map[string]config.ProviderConfig{
-		"codex-app-server": {Executable: os.Args[0], TimeoutMS: 120000, Planning: config.ModelConfig{Model: "gpt-5.6-luna", Effort: "high"}},
+		"codex-app-server": {Executable: os.Args[0], TimeoutMS: 120000, Planning: config.ModelConfig{Model: "gpt-6-luna", Effort: "high"}},
 	}
 	codex.Reasoning.ActiveProvider = "codex-app-server"
 	if err := codex.Reasoning.Select("codex-app-server"); err != nil {

@@ -378,14 +378,14 @@ func TestOllamaSalukiXHighUsesNativeFlagAndRejectsUnsupportedMax(t *testing.T) {
 
 func TestEnsureResolvableProfileMigratesLegacyValues(t *testing.T) {
 	codex := &CodexAppServer{}
-	if got := EnsureResolvableProfile(codex, "luna_high"); got != "luna_high" {
+	if got := EnsureResolvableProfile(codex, "luna_high"); got != "gpt6_luna_high" {
 		t.Fatalf("resolvable profile changed to %q", got)
 	}
-	if got := EnsureResolvableProfile(codex, "luna_max"); got != "luna_max" {
+	if got := EnsureResolvableProfile(codex, "luna_max"); got != "gpt6_luna_max" {
 		t.Fatalf("explicit max profile changed to %q", got)
 	}
-	if got := EnsureResolvableProfile(codex, "unknown"); got != "luna_high" {
-		t.Fatalf("unknown profile migrated to %q, want luna_high", got)
+	if got := EnsureResolvableProfile(codex, "unknown"); got != "gpt6_luna_high" {
+		t.Fatalf("unknown profile migrated to %q, want gpt6_luna_high", got)
 	}
 	if got := EnsureResolvableProfile(Deterministic{}, "anything"); got != "anything" {
 		t.Fatalf("non-catalog provider changed profile to %q", got)

@@ -23,20 +23,20 @@
         "maxRetries": 0,
         "timeoutMs": 300000,
         "planning": {
-          "modelId": "codex-luna",
+          "modelId": "codex-gpt-6-luna",
           "minReasoningTier": "high"
         },
         "evaluation": {
-          "modelId": "codex-luna",
+          "modelId": "codex-gpt-6-luna",
           "minReasoningTier": "high",
           "assurance": "provider_strict"
         },
         "semanticEvent": {
-          "modelId": "codex-luna",
+          "modelId": "codex-gpt-6-luna",
           "minReasoningTier": "high"
         },
         "aiDetection": {
-          "modelId": "codex-luna",
+          "modelId": "codex-gpt-6-luna",
           "minReasoningTier": "high"
         }
       },

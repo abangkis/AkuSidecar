@@ -1,5 +1,6 @@
 import { applyReasoningRuntimeResponse } from "./reasoning-runtime-state.js";
 import { renderExecutableSelection, readExecutableSelection } from "./reasoning-executable-selection.js";
+import { codexModelLabel, createCodexModelControls } from "./codex-model-controls.js";
 import { sourceAccessReadinessState } from "./onboarding-source-readiness.js";
 
 export function createSettingsFeature({
@@ -162,7 +163,13 @@ export function createSettingsFeature({
       provider.className = "reasoning-process-provider";
       provider.textContent = formatReasoningProvider(process.provider);
       route.append(provider);
-      if (process.options?.length) {
+      const detail = document.createElement("small");
+      const updateDetail = (model, effort) => {
+        detail.textContent = `${process.execution === "async" ? "Async" : "In run"} · ${formatReasoningModel(model)} · ${formatReasoningEffort(effort)} thinking`;
+      };
+      if (process.provider === "codex-app-server") {
+        route.append(createCodexModelControls({ document, process, onChange: updateDetail, formatEffort: formatReasoningEffort }));
+      } else if (process.options?.length) {
         const select = document.createElement("select");
         select.id = `reasoning-profile-${process.id.replaceAll("_", "-")}`;
         select.className = "reasoning-profile-select";
@@ -181,8 +188,7 @@ export function createSettingsFeature({
         model.textContent = formatReasoningModel(process.model);
         route.append(model);
       }
-      const detail = document.createElement("small");
-      detail.textContent = `${process.execution === "async" ? "Async" : "In run"} · ${formatReasoningModel(process.model)} · ${formatReasoningEffort(process.effort)} thinking`;
+      updateDetail(process.model, process.effort);
       route.append(detail);
       row.append(copy, route);
       host.append(row);
@@ -201,6 +207,8 @@ export function createSettingsFeature({
   }
 
   function formatReasoningModel(value) {
+    const label = codexModelLabel(value);
+    if (label) return label;
     if (value === "gpt-5.6-luna") return "GPT-5.6 Luna";
     if (value === "local-deterministic") return "No model";
     return value || "Backend default";
@@ -309,7 +317,7 @@ export function createSettingsFeature({
     return document.querySelector(`[data-process-id="${processId}"]`)?.value
       || fallback
       || RELEASE_REASONING_DEFAULTS[processId]
-      || "luna_high";
+      || "gpt6_luna_high";
   }
 
   async function persistSettings(settings, confirmationPhrase = "") {
@@ -412,6 +420,8 @@ export function createSettingsFeature({
     $("#ai-detection-presentation").closest(".settings-row")?.classList.toggle("settings-row-disabled", !enabled);
     const deepProfile = document.querySelector('[data-process-id="ai_deep_detection"]');
     if (deepProfile) deepProfile.disabled = !enabled;
+    const deepControls = deepProfile?.closest(".reasoning-model-controls");
+    if (deepControls) deepControls.disabled = !enabled;
     const hide = enabled && $("#ai-detection-presentation").value === "hide";
     $("#ai-hide-warning").classList.toggle("hidden", !hide);
     const active = state.bootstrap?.settings?.aiDetectionPresentation === "hide";

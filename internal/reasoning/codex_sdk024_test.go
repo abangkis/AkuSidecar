@@ -28,8 +28,8 @@ func TestCodexQueuedDeadlinePreservesActiveInvocation(t *testing.T) {
 				Root: filepathRoot(t),
 				Reasoning: config.ReasoningConfig{
 					Executable: os.Args[0], TimeoutMS: 10000, CodexSessionPoolSize: test.size,
-					Planning:   config.ModelConfig{Model: "gpt-5.6-luna", Effort: "high"},
-					Evaluation: config.ModelConfig{Model: "gpt-5.6-luna", Effort: "high"},
+					Planning:   config.ModelConfig{Model: "gpt-6-luna", Effort: "high"},
+					Evaluation: config.ModelConfig{Model: "gpt-6-luna", Effort: "high"},
 				},
 			})
 			if err != nil {

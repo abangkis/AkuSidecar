@@ -47,15 +47,22 @@ func effortRank(effort string) int {
 	}
 }
 
-// EnsureResolvableProfile returns the supplied profile ID when the provider
-// catalog can resolve it. Unknown IDs fall back to the provider's high-effort
-// profile, or its lowest-effort profile when high is unavailable. This keeps a
+// EnsureResolvableProfile first migrates provider-owned legacy selections, then
+// returns the supplied ID when the catalog can resolve it. Unknown IDs fall back
+// to the provider's high-effort profile, or its lowest-effort profile when high is unavailable. This keeps a
 // provider switch from silently escalating automatic work to xhigh or max.
 // Providers without a catalog return the input unchanged.
 func EnsureResolvableProfile(provider Provider, id string) string {
 	catalog, ok := provider.(ProfileProvider)
 	if !ok {
 		return id
+	}
+	if migration, ok := provider.(interface{ MigrateProfileID(string) (string, bool) }); ok {
+		if migrated, found := migration.MigrateProfileID(id); found {
+			if _, resolvable := catalog.ResolveProfile(migrated); resolvable {
+				return migrated
+			}
+		}
 	}
 	if _, found := catalog.ResolveProfile(id); found {
 		return id

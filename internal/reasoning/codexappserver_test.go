@@ -83,19 +83,21 @@ func TestCodexTransportPoolIsExplicitOptIn(t *testing.T) {
 func TestCodexProfileCatalogIsBounded(t *testing.T) {
 	provider := &CodexAppServer{}
 	options := provider.ProfileOptions()
-	if len(options) != 6 {
+	if len(options) != 15 {
 		t.Fatalf("options=%+v", options)
 	}
-	for _, id := range []string{"luna_high", "luna_xhigh", "luna_max", "terra_high", "terra_xhigh", "sol_medium"} {
-		if model, ok := provider.ResolveProfile(id); !ok || model.Model == "" || model.Effort == "" {
-			t.Fatalf("profile %q model=%+v ok=%v", id, model, ok)
+	for _, option := range options {
+		if model, ok := provider.ResolveProfile(option.ID); !ok || model.Model != option.Model || model.Effort != option.Effort || model.ProfileID != option.ID {
+			t.Fatalf("profile %q model=%+v ok=%v", option.ID, model, ok)
 		}
 	}
-	if model, ok := provider.ResolveProfile("luna_max"); !ok || model.Model != "gpt-5.6-luna" || model.Effort != "max" {
+	if model, ok := provider.ResolveProfile("gpt6_luna_max"); !ok || model.Model != "gpt-6-luna" || model.Effort != "max" {
 		t.Fatalf("luna max profile=%+v ok=%v", model, ok)
 	}
-	if _, ok := provider.ResolveProfile("sol_xhigh"); ok {
-		t.Fatal("unlisted profile must fail closed")
+	for _, id := range []string{"sol_xhigh", "luna_max", "gpt61_astra_high", "gpt6_sol_high", "gpt61_sol_ultra", "gpt6_luna_none"} {
+		if _, ok := provider.ResolveProfile(id); ok {
+			t.Fatalf("unlisted profile %q must fail closed", id)
+		}
 	}
 }
 
@@ -146,14 +148,14 @@ func TestAppServerTelemetryPreservesQueueWait(t *testing.T) {
 	telemetry := appServerTelemetry(
 		domain.Run{ID: "run-test"},
 		"candidate_evaluation",
-		config.ModelConfig{Model: "gpt-5.6-luna", Effort: "max"},
+		config.ModelConfig{Model: "gpt-6-luna", Effort: "max"},
 		14*time.Millisecond,
 		domain.ModelUsage{
 			CallerLatencyMS:        17,
 			QueueWaitMS:            5,
 			ProviderExecutionMS:    9,
 			ResponseTotalMS:        14,
-			ProviderModel:          "gpt-5.6-luna",
+			ProviderModel:          "gpt-6-luna",
 			NativeReasoning:        "max",
 			ModelDescriptorVersion: "test-descriptor",
 		},
@@ -224,7 +226,7 @@ func TestCodexCloseInterruptsGenerateAndLeavesPositiveProfileBudgetUnenforced(t 
 	}
 	provider := &CodexAppServer{adapter: adapter, clients: pool}
 	model := config.ModelConfig{
-		ModelID: string(sdkcodex.ModelLuna), Model: "gpt-5.6-luna",
+		ModelID: string(sdkcodex.ModelGPT6Luna), Model: "gpt-6-luna",
 		MinReasoningTier: "high", ReasoningOptionID: "high", MaxOutputTokens: 4096,
 	}
 	invokeDone := make(chan error, 1)
@@ -335,6 +337,12 @@ func fakeCodexAppServer() {
 			continue
 		}
 		method, _ := request["method"].(string)
+		if marker := os.Getenv("AKU_FAKE_CODEX_WIRE_CAPTURE"); marker != "" && (method == "thread/start" || method == "turn/start") {
+			if file, err := os.OpenFile(marker, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err == nil {
+				_, _ = file.Write(append(append([]byte(nil), scanner.Bytes()...), '\n'))
+				_ = file.Close()
+			}
+		}
 		id := request["id"]
 		switch method {
 		case "":
@@ -630,7 +638,7 @@ func TestCodexAppServerUsesOneManagedStructuredTransport(t *testing.T) {
 	// Windows endpoint scanning can delay creation of a second copy of the Go
 	// test executable. Keep the protocol fixture bounded without coupling its
 	// deadline to that host-specific process-start latency.
-	cfg := config.Config{Root: root, Reasoning: config.ReasoningConfig{Executable: os.Args[0], TimeoutMS: 60000, Planning: config.ModelConfig{Model: "gpt-5.6-luna", Effort: "high"}, Evaluation: config.ModelConfig{Model: "gpt-5.6-luna", Effort: "high"}}}
+	cfg := config.Config{Root: root, Reasoning: config.ReasoningConfig{Executable: os.Args[0], TimeoutMS: 60000, Planning: config.ModelConfig{Model: "gpt-6-luna", Effort: "high"}, Evaluation: config.ModelConfig{Model: "gpt-6-luna", Effort: "high"}}}
 	provider, err := NewCodexAppServer(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -686,7 +694,7 @@ func TestCodexRejectsExternalSchemaBeforeStartingTurn(t *testing.T) {
 	provider := newFakeCodexAppServer(t)
 	defer provider.Close()
 	model := config.ModelConfig{
-		ModelID: string(sdkcodex.ModelLuna), Model: "gpt-5.6-luna",
+		ModelID: string(sdkcodex.ModelGPT6Luna), Model: "gpt-6-luna",
 		MinReasoningTier: "high", ReasoningOptionID: "high",
 	}
 	_, _, _, err := provider.InvokeStructured(context.Background(), string(ExecutionProfilePlanning), "prompt", json.RawMessage(`{"type":"object","$ref":"https://example.invalid/schema.json"}`), model)
@@ -770,7 +778,7 @@ func TestCodexNativeSchemasForSidecarWorkloads(t *testing.T) {
 
 func newFakeCodexAppServer(t *testing.T) *CodexAppServer {
 	t.Helper()
-	cfg := config.Config{Root: filepathRoot(t), Reasoning: config.ReasoningConfig{Executable: os.Args[0], TimeoutMS: 60000, Planning: config.ModelConfig{Model: "gpt-5.6-luna", Effort: "high"}, Evaluation: config.ModelConfig{Model: "gpt-5.6-luna", Effort: "high"}}}
+	cfg := config.Config{Root: filepathRoot(t), Reasoning: config.ReasoningConfig{Executable: os.Args[0], TimeoutMS: 60000, Planning: config.ModelConfig{Model: "gpt-6-luna", Effort: "high"}, Evaluation: config.ModelConfig{Model: "gpt-6-luna", Effort: "high"}}}
 	provider, err := NewCodexAppServer(cfg)
 	if err != nil {
 		t.Fatal(err)

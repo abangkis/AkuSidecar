@@ -230,30 +230,6 @@ func (c *CodexAppServer) UseExecutable(executable string) {
 	}
 }
 
-func (c *CodexAppServer) ProfileOptions() []ProfileOption {
-	return []ProfileOption{
-		{ID: "luna_high", Label: "Luna High", Model: "gpt-5.6-luna", Effort: "high"},
-		{ID: "luna_xhigh", Label: "Luna XHigh", Model: "gpt-5.6-luna", Effort: "xhigh"},
-		{ID: "luna_max", Label: "Luna Max", Model: "gpt-5.6-luna", Effort: "max"},
-		{ID: "terra_high", Label: "Terra High", Model: "gpt-5.6-terra", Effort: "high"},
-		{ID: "terra_xhigh", Label: "Terra XHigh", Model: "gpt-5.6-terra", Effort: "xhigh"},
-		{ID: "sol_medium", Label: "Sol Medium", Model: "gpt-5.6-sol", Effort: "medium"},
-	}
-}
-
-func (c *CodexAppServer) ResolveProfile(id string) (config.ModelConfig, bool) {
-	for _, option := range c.ProfileOptions() {
-		if option.ID == id {
-			modelID, ok := codexStableModelID(option.Model)
-			if !ok {
-				return config.ModelConfig{}, false
-			}
-			return config.ModelConfig{ModelID: modelID, Model: option.Model, MinReasoningTier: option.Effort, ReasoningOptionID: option.Effort, Effort: option.Effort, ProfileID: id}, true
-		}
-	}
-	return config.ModelConfig{}, false
-}
-
 // InvokeStructured exposes the shared App Server transport to bounded adapters
 // without adding their domain-specific methods to the reasoning Provider.
 func (c *CodexAppServer) InvokeStructured(ctx context.Context, profileID string, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
@@ -343,9 +319,16 @@ func (c *CodexAppServer) AnalyzeWithModel(ctx context.Context, run domain.Run, o
 }
 
 func (c *CodexAppServer) invoke(parent context.Context, profileID inference.ProfileID, prompt string, schema any, model config.ModelConfig) (string, domain.ModelUsage, time.Duration, error) {
-	modelID, ok := codexStableModelID(model.ModelID)
-	if !ok {
-		modelID, ok = codexStableModelID(model.Model)
+	selected := strings.TrimSpace(model.ModelID)
+	if selected == "" {
+		selected = model.Model
+	}
+	modelID, ok := codexStableModelID(selected)
+	if ok && strings.TrimSpace(model.Model) != "" {
+		modelAlias, supported := codexStableModelID(model.Model)
+		if !supported || modelAlias != modelID {
+			return "", domain.ModelUsage{}, 0, fmt.Errorf("conflicting or unsupported Codex App Server model %q for stable model ID %q", model.Model, model.ModelID)
+		}
 	}
 	if !ok {
 		return "", domain.ModelUsage{}, 0, fmt.Errorf("unknown Codex App Server model %q; use a provider-owned stable model ID", model.StableModelID())
@@ -357,20 +340,6 @@ func (c *CodexAppServer) invoke(parent context.Context, profileID inference.Prof
 		return "", domain.ModelUsage{}, 0, errors.New("Codex App Server adapter is closed")
 	}
 	return invokeBound(parent, clients, profileID, prompt, schema, model, modelID)
-}
-
-func codexStableModelID(value string) (string, bool) {
-	value = strings.TrimSpace(value)
-	switch value {
-	case string(codexappserver.ModelLuna), "gpt-5.6-luna":
-		return string(codexappserver.ModelLuna), true
-	case string(codexappserver.ModelTerra), "gpt-5.6-terra":
-		return string(codexappserver.ModelTerra), true
-	case string(codexappserver.ModelSol), "gpt-5.6-sol":
-		return string(codexappserver.ModelSol), true
-	default:
-		return "", false
-	}
 }
 
 // IsUsageLimitError identifies account-level Codex exhaustion. Unlike model

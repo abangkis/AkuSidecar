@@ -92,10 +92,10 @@ const LOAD_PROFILE_PRESETS = {
   stress: { timelineCapacity: 36, maxItemsPerSource: 15, maxItemsTotal: 30, maxScrolls: 6 },
 };
 const RELEASE_REASONING_DEFAULTS = Object.freeze({
-  acquisition_planning: "luna_high",
-  candidate_evaluation: "luna_high",
-  semantic_event_resolution: "luna_high",
-  ai_deep_detection: "luna_high",
+  acquisition_planning: "gpt6_luna_high",
+  candidate_evaluation: "gpt6_luna_high",
+  semantic_event_resolution: "gpt6_luna_high",
+  ai_deep_detection: "gpt6_luna_high",
 });
 const state = {
   bootstrap: null,
