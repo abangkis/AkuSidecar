@@ -120,6 +120,8 @@
   }
 
   function postIdentity(source, adapter, container, explicitIdentity = null) {
+    if (explicitIdentity?.recovery && adapter.validateRecoveredPermalink &&
+        !adapter.validateRecoveredPermalink(container, explicitIdentity.recovery)) return { reason: 'identity_mismatch' };
     const values = [];
     const details = adapter.findPermalinkDetails?.(container, helpers);
     if (details?.url) values.push(details.url);
@@ -561,6 +563,7 @@
     const identity = result.identity;
     const textEvidence = await capturePostText(source, adapter, container, excluded, identity, explicitIdentity);
     if (textEvidence.identityValid === false) return { rejection: textEvidence.status === 'route_changed' ? 'identity_mismatch' : textEvidence.status };
+    if (explicitIdentity?.recovery && !postIdentity(source, adapter, container, explicitIdentity).identity) return { rejection: 'identity_mismatch' };
     const rawText = textEvidence.text;
     const textCharacters = Array.from(rawText);
     const textTruncated = textCharacters.length > 4000;
@@ -644,7 +647,12 @@
           const recovered=await adapter.recoverPermalinks(missing,deadline,{...helpers,isVisibleInViewport:isVisible,
             findPermalinkDetails:root=>{const identity=postIdentity(source,adapter,root).identity;return identity ? {url:identity.permalink} : null;},
             waitForValue:async(fn,attempts,interval)=>{for(let n=0;n<attempts && Date.now()<deadline;n++){const value=fn();if(value)return value;await new Promise(r=>setTimeout(r,Math.min(interval,Math.max(0,deadline-Date.now()))));}return null;}});
-          for(const root of missing) {const identity=linkedinIdentity(recovered?.get(root)?.url);if(identity)bindings.set(root,{...identity,provenance:'adapter_recovery'});}
+          for(const root of missing) {
+            const recovery=recovered?.get(root);
+            if(adapter.validateRecoveredPermalink && !adapter.validateRecoveredPermalink(root,recovery))continue;
+            const identity=linkedinIdentity(recovery?.url);
+            if(identity)bindings.set(root,{...identity,provenance:'adapter_recovery',recovery});
+          }
         } catch { /* A missing permalink remains rejected rather than inferred. */ }
       }
     }

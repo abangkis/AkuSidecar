@@ -226,6 +226,35 @@ test('LinkedIn adapter recovery binds the missing native ID to its own visible c
   assert.equal(result.candidateDiagnostics.permalinkRecoveryCount,1);
 });
 
+for (const invalidAt of ['binding', 'extraction', 'after_text']) {
+test(`LinkedIn rejects recovered ownership lost at ${invalidAt}`,async()=>{
+  const first=candidate({body:'Earlier post whose extraction may yield to the page'});
+  const root=candidate({body:'Recovered LinkedIn post with stable owned text'});
+  const adapter=baseAdapter('linkedin',[first,root]);
+  const firstRecovery={url:'https://www.linkedin.com/feed/update/urn:li:activity:1234567890/'};
+  const recovery={url:'https://www.linkedin.com/feed/update/urn:li:activity:1234567891/'};
+  let ownerValid=invalidAt!=='binding';
+  const extractText=adapter.extractText;
+  adapter.extractText=(container,helpers)=>{
+    const text=extractText(container,helpers);
+    if(container===(invalidAt==='extraction'?first:root) && invalidAt!=='binding') {
+      queueMicrotask(()=>{ownerValid=false;});
+    }
+    return text;
+  };
+  adapter.recoverPermalinks=async()=>new WeakMap([[first,firstRecovery],[root,recovery]]);
+  adapter.validateRecoveredPermalink=(container,value)=>{
+    if(container!==root)return value===firstRecovery;
+    assert.equal(value,recovery);
+    return ownerValid;
+  };
+  const result=await run('linkedin',adapter,'https://www.linkedin.com/feed/').collect();
+  assert.equal(result.posts.some(post=>post.id==='linkedin:activity:1234567891'),false);
+  assert.equal(result.posts[0].id,'linkedin:activity:1234567890');
+  assert.equal(result.rejectionReasons[invalidAt==='binding'?'missing_identity':'identity_mismatch'],1);
+});
+}
+
 test('source container scroll drives frontier metrics and restores the same retained root',async()=>{
   const root=candidate({urn:'urn:li:activity:1234567890',body:'Scrollable post'});
   const container={isConnected:true,clientHeight:500,scrollHeight:3000,scrollTop:0,style:{overflowY:'auto'},parentElement:null,
