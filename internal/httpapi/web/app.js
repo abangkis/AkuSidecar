@@ -1687,6 +1687,8 @@ const REVOKE_SOURCE_ACCESS_TIMEOUT_MS = 5000;
 
 // Frontend feature: timeline-rendering.js#renderTimeline
 
+// Frontend feature: timeline-rendering.js#timelinePresentationSnapshot
+
 // Frontend feature: timeline-rendering.js#renderTimelineNow
 
 // Frontend feature: timeline-rendering.js#renderTimelineActions

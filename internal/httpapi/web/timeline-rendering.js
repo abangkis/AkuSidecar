@@ -4,10 +4,13 @@ import { decorateTimelineConversation, planTimelineConversations } from "./timel
 import { formatTimelineCheckSummary } from "./timeline-check-summary.js";
 import { renderWithCurrentScroll } from "./timeline-media-layout.js";
 import { setInlineStyle } from "./ui-frame.js";
+import { createTimelineBackgroundRefresh } from "./timeline-background-refresh.js";
 
 export function createTimelineRendering({
   $, AI_DEEP_POLL_INTERVAL_MS, BACK_TO_TOP_THRESHOLD_PX, DEFAULT_TIMELINE_BATCH_GAP_PX, DEFAULT_TIMELINE_BOUNDARY_RETURN_MS, api, buildTimelineItem, closeTimelineContentContextDrawer, formatDate, measureTimelineContentContextTabs, renderAutoUpdateStatus, schedulePassiveMediaEnrichment, scheduleTimelineContentContextPosition, getScrollPerformanceTrace, getScrollUIFrames, showError, showNotice, sourceIdentity, startVisibleUpdate, state, stopObservingInlineVideoVisibilityWithin, syncRunButtons, syncTimelineContentContextTabs, getTimelineScrollIdle
 }) {
+  const backgroundRefresh = createTimelineBackgroundRefresh();
+
   function applyStreamWidth(value) {
     document.body.dataset.streamWidth = ["compact", "social", "comfortable", "wide"].includes(value) ? value : "social";
     scheduleBackToTop();
@@ -211,6 +214,15 @@ export function createTimelineRendering({
             options.revealPlacement ?? "append",
           )
         : items ?? [];
+      if (options.background && backgroundRefresh.isUnchanged(
+        timelinePresentationSnapshot(timelineItems, latestCheck ?? null, state.timelineBatches, options.highlightSessionID || ""),
+      )) {
+        // Polling must follow the fresh response even when existing cards stay
+        // mounted. Existing event handlers retain their rendered entry objects.
+        scheduleAIDeepRefresh(routeAIDetectedItems(timelineItems).pending);
+        schedulePassiveMediaEnrichment(timelineItems);
+        return;
+      }
       const render = () => renderTimeline(timelineItems, latestCheck ?? null, state.timelineBatches, options.highlightSessionID || "");
       if (options.preserveScroll || options.background) renderWithCurrentScroll(render);
       else render();
@@ -307,7 +319,37 @@ export function createTimelineRendering({
   }
 
   function renderTimeline(items, latestCheck, timelineBatches = null, highlightSessionID = "") {
-    return getScrollPerformanceTrace().measure("timeline_render", () => renderTimelineNow(items, latestCheck, timelineBatches, highlightSessionID));
+    const presentation = timelinePresentationSnapshot(items, latestCheck, timelineBatches, highlightSessionID);
+    // A failed render may already have torn down the old DOM. It cannot leave
+    // the previous successful checkpoint eligible for a later no-op.
+    backgroundRefresh.invalidate();
+    const rendered = getScrollPerformanceTrace().measure("timeline_render", () => renderTimelineNow(items, latestCheck, timelineBatches, highlightSessionID));
+    backgroundRefresh.commit(presentation);
+    return rendered;
+  }
+
+  function timelinePresentationSnapshot(items, latestCheck, timelineBatches, highlightSessionID) {
+    const routed = routeAIDetectedItems(items ?? []);
+    return backgroundRefresh.capture({
+      items: items ?? [],
+      latestCheck: latestCheck ?? null,
+      timelineBatches: Array.isArray(timelineBatches)
+        ? timelineBatches
+        : (state.bootstrap?.timelineBatches ?? state.timelineBatches ?? []),
+      settings: state.bootstrap?.settings ?? {},
+      routing: Object.fromEntries(["inline", "drawer", "hidden"].map(key => [key, routed[key].map(entry => entry.id)])),
+      preparedBatchCount: state.bootstrap?.autoUpdate?.preparedBatches?.length ?? 0,
+      highlightSessionID: highlightSessionID || "",
+      controls: {
+        sessionActive: Boolean(state.session),
+        mediaRecaptureActive: Boolean(state.mediaRecaptureActive),
+        collectionMode: state.bootstrap?.collectionRuntime?.effective,
+        bridgeCompatible: state.bootstrap?.bridge?.compatible,
+        onboardingStatus: state.bootstrap?.onboarding?.status,
+        onboardingEditing: Boolean(state.onboardingEditing),
+        calibrationActive: Boolean(state.bootstrap?.calibration?.active),
+      },
+    });
   }
 
   function renderTimelineNow(items, latestCheck, timelineBatches = null, highlightSessionID = "") {
