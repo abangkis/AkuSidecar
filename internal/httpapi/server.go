@@ -61,6 +61,7 @@ type Server struct {
 	// Set only by the tagged frontend QA composition, before Server.Start.
 	developmentNativeReaderClosed bool
 	uiPerformanceReports          timeline.Store
+	diagnostics                   diagnosticsObserver
 	postScreenshotGate            chan struct{}
 	postScreenshotRenderer        func(context.Context, domain.TimelineItem, string) (postScreenshotResult, error)
 }
@@ -185,9 +186,7 @@ func (s *Server) api() http.Handler {
 			return
 		}
 		w.Header().Set("X-Aku-Sidecar-Instance-Epoch", s.engine.Epoch())
-		if err := s.route(w, r); err != nil {
-			s.writeError(w, err)
-		}
+		s.serveObservedRoute(w, r)
 	})
 }
 

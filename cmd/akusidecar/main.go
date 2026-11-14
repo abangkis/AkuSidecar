@@ -24,6 +24,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/collection/headless"
 	"github.com/abangkis/AkuSidecar/internal/collection/quiet"
 	"github.com/abangkis/AkuSidecar/internal/config"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/observability"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/engine"
 	semanticengine "github.com/abangkis/AkuSidecar/internal/eventengine"
@@ -259,6 +260,21 @@ func main() {
 	}
 	server, err := httpapi.New(cfg, state, runtime, logger)
 	fatal(logger, err)
+	// Export remains off: only an explicit adapter config can select an endpoint.
+	// No ambient OTEL environment or global provider config is adopted here.
+	diagnostics, diagnosticErr := observability.New(context.Background(), observability.Config{})
+	if diagnosticErr != nil {
+		logger.Printf("diagnostics telemetry unavailable; existing diagnostics remain active")
+	} else {
+		server.SetDiagnosticsObserver(diagnostics)
+		defer func() {
+			shutdown, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if err := diagnostics.Shutdown(shutdown); err != nil {
+				logger.Printf("diagnostics telemetry shutdown incomplete")
+			}
+		}()
+	}
 	resumed, err := runtime.ResumePendingReasoning(context.Background())
 	fatal(logger, err)
 	fatal(logger, runtime.ResumeMediaProvenance(context.Background()))

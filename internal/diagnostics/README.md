@@ -8,6 +8,7 @@ extraction, not a new published library or a new telemetry backend.
 | --- | --- | --- |
 | `recording` | Concurrent progress snapshots, first observed cause, independent cleanup/delivery, explicit completeness | Reusable candidate; caller supplies vocabulary and observations |
 | `snapshot` | Single latest value with copy-on-save/copy-on-read and concurrency control | Reusable candidate; the value supplies its deep-clone operation |
+| `observability` | AkuSidecar instrumentation vocabulary and adapter over the published telemetry runtime | Product adapter; composition-root lifecycle and explicit export configuration |
 | `timeline` | Closed browser-performance report schema, numeric/shape validation, cloning, and latest-report composition | AkuBrowser adapter; stage names, bounds, UTC receipt time and privacy policy stay here |
 | `instagram` | Existing IG catalogs, attempt ownership, wire/public projection and validation | AkuBrowser adapter; does not grant capture, retry or mutation authority |
 | `nativecapture` | Existing bounded platform-specific native-window observations and classification | AkuBrowser/Windows adapter; process classification and capture lifecycle stay here |
@@ -45,10 +46,20 @@ existing Engine/HTTP owners; operational export is not a generic recorder.
   in the native adapter; no browser or capture action is added.
 - HTTP report admission remains bounded and strict, and the latest report
   remains in memory only. New modules do not change endpoint paths or error text.
-- OpenTelemetry initialization/export, module-version upgrades, runtime
-  activation, and migration to a published shared library are separate changes.
+- Runtime activation and additional telemetry coverage are separately verified
+  changes; diagnostic records remain independent of best-effort telemetry.
 
 AG now imports the published AI4UDiagnostics `telemetry` package from alpha.4.
-This extraction follows the same mechanism-versus-product ownership principle;
-it preserves AkuSidecar's existing alpha.3 pin. The root diagnostics value package
-and OTel provider lifecycle are distinct concerns.
+AkuSidecar now adopts the same published alpha.4 module without a local replace.
+The existing generic diagnostics values remain in `pkg/diagnostics`; the new
+adapter delegates provider/export construction to `telemetry`. The application
+composition creates and closes one runtime. HTTP borrows it for the five selected
+Timeline performance and IG diagnostic operations. It does not close providers.
+
+The composition passes an empty exporter endpoint. No CLI/Settings switch or
+environment-based exporter activation is added. The adapter accepts an explicit
+loopback endpoint for deliberate consumers/tests, with the library enforcing its
+transport policy. Operations/outcomes are closed enums; spans and metrics contain
+no post content, source URLs/IDs, diagnostic bodies, credentials, raw errors or
+per-scroll observations. Existing response headers and JSON receive no new trace
+fields. Native capture and browser sampling retain their existing contracts.
