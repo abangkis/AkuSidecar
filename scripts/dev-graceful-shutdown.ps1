@@ -36,6 +36,51 @@ function Get-DevRuntimeUIAppMatches([string] $CommandLine, [int] $Port) {
     return $uri.Scheme -ceq 'http' -and $loopback -and
         $uri.Port -eq $Port -and $uri.AbsolutePath -ceq '/' -and $uri.UserInfo -eq '' -and $uri.Query -eq ''
 }
+function Get-DevRuntimeUIProfilePath($Plan) {
+    $profiles = @()
+    for ($i = 0; $i -lt $Plan.Arguments.Count; $i++) {
+        $argument = [string]$Plan.Arguments[$i]
+        if ($argument -ceq '--browser-profile') {
+            if ($i + 1 -ge $Plan.Arguments.Count -or ([string]$Plan.Arguments[$i + 1]).StartsWith('--')) {
+                throw 'The registered browser profile is missing; no close request will be sent.'
+            }
+            $profiles += [string]$Plan.Arguments[++$i]
+        } elseif ($argument.StartsWith('--browser-profile=', [StringComparison]::Ordinal)) {
+            $profiles += $argument.Substring('--browser-profile='.Length)
+        }
+    }
+    if ($profiles.Count -gt 1 -or ($profiles.Count -eq 1 -and [string]::IsNullOrWhiteSpace($profiles[0]))) {
+        throw 'The registered browser profile is ambiguous or empty; no close request will be sent.'
+    }
+    if ($profiles.Count -eq 0) {
+        # Match config.Load's Root and browserProfilePath's default. The
+        # validated development plan always uses Windows capture split.
+        if (-not [IO.Path]::IsPathRooted([string]$Plan.ConfigPath)) { throw 'Development config path is not absolute.' }
+        $root = Split-Path -Parent (Split-Path -Parent $Plan.ConfigPath)
+        $profile = Join-Path $root 'runtime\app-profile'
+    } else { $profile = $profiles[0].Trim() }
+    $absolute = if ([IO.Path]::IsPathRooted($profile)) { [IO.Path]::GetFullPath($profile) }
+        else { [IO.Path]::GetFullPath((Join-Path $Plan.Service.cwd $profile)) }
+    # Match appshell.SplitProfilePaths without opening or changing the profile.
+    if ($absolute.Length -gt [IO.Path]::GetPathRoot($absolute).Length) {
+        $absolute = $absolute.TrimEnd([char]92, [char]47)
+    }
+    return $absolute + '-ui-split-cft'
+}
+function Get-DevRuntimeUIProfileMatches([string] $CommandLine, [string] $ExpectedProfile) {
+    # Count even malformed/empty flags; a second flag must never override the
+    # one whose value was validated. Support Chromium's quoted Windows forms.
+    if ([regex]::Matches($CommandLine, '(?:^|\s)"?--user-data-dir(?==|\s|$)').Count -ne 1) { return $false }
+    $matches = [regex]::Matches($CommandLine, '(?:^|\s)(?:"--user-data-dir=([^"]+)"|--user-data-dir=(?:"([^"]+)"|([^\s"]+))|--user-data-dir\s+(?:"([^"]+)"|([^\s"]+)))(?=\s|$)')
+    if ($matches.Count -ne 1) { return $false }
+    $value = ''
+    for ($i = 1; $i -lt $matches[0].Groups.Count; $i++) { $value += $matches[0].Groups[$i].Value }
+    if (-not [IO.Path]::IsPathRooted($value)) { return $false }
+    try {
+        return [IO.Path]::GetFullPath($value).TrimEnd([char]92, [char]47).Equals(
+            $ExpectedProfile, [StringComparison]::OrdinalIgnoreCase)
+    } catch { return $false }
+}
 function Assert-DevRuntimeReadiness($Readiness, [string] $ExpectedEpoch) {
     if ($null -eq $Readiness -or $Readiness.ready -isnot [bool] -or
         $Readiness.instanceEpoch -isnot [string] -or [string]::IsNullOrWhiteSpace($Readiness.instanceEpoch)) {
@@ -64,6 +109,7 @@ function Request-DevRuntimeUIShutdown($Plan, $Service, [string] $ExpectedEpoch, 
     if ([string]::IsNullOrWhiteSpace($imageArgument)) { throw 'The registered UI image is missing; no close request will be sent.' }
     $image = if ([IO.Path]::IsPathRooted($imageArgument)) { [IO.Path]::GetFullPath($imageArgument) }
         else { [IO.Path]::GetFullPath((Join-Path $Plan.Service.cwd $imageArgument)) }
+    $profile = Get-DevRuntimeUIProfilePath $Plan
     $port = [int]@($Plan.Service.ports)[0]
     $candidates = @()
     foreach ($ownedId in $Service.ownedPids) {
@@ -71,13 +117,16 @@ function Request-DevRuntimeUIShutdown($Plan, $Service, [string] $ExpectedEpoch, 
         $process = Get-DevRuntimeProcess $ownedId
         if ($null -ne $process -and $process.ParentProcessId -eq $root.ProcessId -and
             ([string]$process.ExecutablePath).Equals($image, [StringComparison]::OrdinalIgnoreCase) -and
-            (Get-DevRuntimeUIAppMatches ([string]$process.CommandLine) $port)) { $candidates += $process }
+            (Get-DevRuntimeUIAppMatches ([string]$process.CommandLine) $port) -and
+            (Get-DevRuntimeUIProfileMatches ([string]$process.CommandLine) $profile)) { $candidates += $process }
     }
     if ($candidates.Count -ne 1) { throw 'Expected exactly one owned AkuBrowser UI; no close request will be sent.' }
     $ui = $candidates[0]
     $created = ([DateTime]$ui.CreationDate).ToUniversalTime().Ticks
     $window = Get-DevRuntimeWindow $ui.ProcessId
-    if ($window.Id -ne $ui.ProcessId -or $window.MainWindowHandle -eq [IntPtr]::Zero -or $window.MainWindowTitle -cne 'AkuBrowser') {
+    # A blank/loading/error page can change the title. Process ownership and
+    # the exact configured UI profile identify the window independently of it.
+    if ($window.Id -ne $ui.ProcessId -or $window.MainWindowHandle -eq [IntPtr]::Zero) {
         throw 'AkuBrowser UI window could not be verified; no close request will be sent.'
     }
     $handle = $window.MainWindowHandle
@@ -89,11 +138,12 @@ function Request-DevRuntimeUIShutdown($Plan, $Service, [string] $ExpectedEpoch, 
     if ($null -eq $current -or $current.ParentProcessId -ne $root.ProcessId -or
         ([DateTime]$current.CreationDate).ToUniversalTime().Ticks -ne $created -or
         -not ([string]$current.ExecutablePath).Equals($image, [StringComparison]::OrdinalIgnoreCase) -or
-        -not (Get-DevRuntimeUIAppMatches ([string]$current.CommandLine) $port)) {
+        -not (Get-DevRuntimeUIAppMatches ([string]$current.CommandLine) $port) -or
+        -not (Get-DevRuntimeUIProfileMatches ([string]$current.CommandLine) $profile)) {
         throw 'AkuBrowser UI identity changed before close; candidate retained.'
     }
     $window = Get-DevRuntimeWindow $ui.ProcessId
-    if ($window.Id -ne $ui.ProcessId -or $window.MainWindowHandle -ne $handle -or $window.MainWindowTitle -cne 'AkuBrowser') {
+    if ($window.Id -ne $ui.ProcessId -or $window.MainWindowHandle -ne $handle) {
         throw 'AkuBrowser UI window changed before close; candidate retained.'
     }
     if (-not $window.CloseMainWindow()) { throw 'AkuBrowser did not accept graceful close; no force-stop will run.' }

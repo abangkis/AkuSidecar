@@ -7,6 +7,8 @@ $script:caseNames = [System.Collections.Generic.List[string]]::new()
 $script:fakePathRoot = [IO.Path]::GetFullPath((Join-Path $projectRoot ('build\test-dev-graceful-shutdown-' + [Guid]::NewGuid().ToString('N'))))
 $script:targetPath = Join-Path $script:fakePathRoot 'runtime\dev\aku-sidecar.exe'
 $script:browserPath = Join-Path $script:fakePathRoot 'runtime\dev\chrome.exe'
+$script:captureProfilePath = Join-Path $script:fakePathRoot 'runtime\capture profile'
+$script:uiProfilePath = $script:captureProfilePath + '-ui-split-cft'
 $script:hadLastExitCode = $null -ne (Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue)
 $script:previousLastExitCode = if ($script:hadLastExitCode) { $global:LASTEXITCODE } else { $null }
 $script:hadControlToken = Test-Path Env:AKU_RUNTIME_CONTROL_TOKEN
@@ -67,7 +69,8 @@ function New-StoppedService {
 function New-TestPlan {
     return [pscustomobject]@{
         Target = $script:targetPath
-        Arguments = @('--ui-chromium-path', $script:browserPath)
+        Arguments = @('--ui-chromium-path', $script:browserPath, '--browser-profile', $script:captureProfilePath, '--windows-capture-split')
+        ConfigPath = Join-Path $script:fakePathRoot 'config\sidecar.json'
         Service = [pscustomobject]@{ cwd = $projectRoot; ports = @(11122) }
     }
 }
@@ -177,7 +180,7 @@ function Set-ControlToken([string] $Value) {
 function Set-ValidRunningFixture([string] $App = 'http://127.0.0.1:11122/', [bool] $CloseResult = $true) {
     Reset-Fixture
     $root = New-FakeProcess 101 0 $script:targetPath $script:fixture.FakeNow.AddMinutes(-2) $script:targetPath 'aku-sidecar.exe'
-    $ui = New-FakeProcess 202 101 $script:browserPath $script:fixture.FakeNow.AddMinutes(-1) ('"' + $script:browserPath + '" --app="' + $App + '"') 'chrome.exe'
+    $ui = New-FakeProcess 202 101 $script:browserPath $script:fixture.FakeNow.AddMinutes(-1) ('"' + $script:browserPath + '" --app="' + $App + '" --user-data-dir="' + $script:uiProfilePath + '"') 'chrome.exe'
     $script:fixture.Processes['101'] = $root
     $script:fixture.Processes['202'] = $ui
     $script:fixture.Windows['202'] = New-FakeWindow 202 ([IntPtr]1234) 'AkuBrowser' $CloseResult
@@ -237,6 +240,65 @@ try {
         Assert-True ($script:fixture.ShutdownCalls.Count -eq 0) 'Tokenless phase invoked runtime HTTP control.'
     }
 
+    Invoke-TestCase 'blank-window-title-close-and-drain' {
+        # Reconstruct the observed white-window title; no real window is closed.
+        $case = Set-ValidRunningFixture
+        $script:fixture.Windows['202'].MainWindowTitle = '127.0.0.1_/'
+        $observed = Wait-DevRuntimeGracefulShutdown $case.Plan (New-ReadService) 0 1
+        Assert-ObservedDrain $observed 'Blank-window graceful close'
+        Assert-True ($script:fixture.CloseCalls.Count -eq 1 -and $script:fixture.CloseCalls[0] -eq 202) 'The verified blank UI did not receive exactly one synthetic close.'
+        Assert-True ($script:fixture.ShutdownCalls.Count -eq 0) 'Blank UI recovery invoked runtime HTTP control.'
+    }
+
+    Invoke-TestCase 'window-title-is-not-process-authority' {
+        foreach ($title in @('', 'Loading...', 'Reader Broker')) {
+            $case = Set-ValidRunningFixture
+            $script:fixture.Windows['202'].MainWindowTitle = $title
+            $result = Invoke-RequestAttempt $case
+            Assert-True ($result.Outcome -ceq 'requested' -and $script:fixture.CloseCalls.Count -eq 1) 'A title-only change blocked a verified UI close.'
+        }
+        $case = Set-ValidRunningFixture
+        $script:fixture.WindowSequences['202'] = @(
+            (New-FakeWindow 202 ([IntPtr]1234) '127.0.0.1_/' $true),
+            (New-FakeWindow 202 ([IntPtr]1234) 'AkuBrowser' $true)
+        )
+        $result = Invoke-RequestAttempt $case
+        Assert-True ($result.Outcome -ceq 'requested' -and $script:fixture.CloseCalls.Count -eq 1) 'A title changing during the readiness check blocked the same verified window.'
+    }
+
+    Invoke-TestCase 'profile-parser-and-configured-profile' {
+        $case = Set-ValidRunningFixture
+        Assert-True ((Get-DevRuntimeUIProfilePath $case.Plan) -ceq $script:uiProfilePath) 'The configured capture profile did not resolve to its dedicated split UI profile.'
+        foreach ($commandLine in @(
+            ('chrome.exe --user-data-dir="' + $script:uiProfilePath + '"'),
+            ('chrome.exe "--user-data-dir=' + $script:uiProfilePath + '"'),
+            ('chrome.exe --user-data-dir "' + $script:uiProfilePath + '"')
+        )) { Assert-True (Get-DevRuntimeUIProfileMatches $commandLine $script:uiProfilePath) 'A quoted Windows UI profile was rejected.' }
+        $simple = Join-Path $script:fakePathRoot 'simple-ui-split-cft'
+        Assert-True (Get-DevRuntimeUIProfileMatches ('chrome.exe --user-data-dir=' + $simple.ToUpperInvariant()) $simple) 'An unquoted case-insensitive Windows path was rejected.'
+        foreach ($commandLine in @(
+            'chrome.exe', 'chrome.exe --user-data-dir=', 'chrome.exe --user-data-dir=""',
+            'chrome.exe --user-data-dir=relative', 'chrome.exe --user-data-dir="unterminated',
+            ('chrome.exe --user-data-dir="' + $script:captureProfilePath + '"'),
+            ('chrome.exe --user-data-dir="' + $script:uiProfilePath + '" --user-data-dir='),
+            ('chrome.exe --user-data-dir="' + $script:uiProfilePath + '" --user-data-dir="' + $script:uiProfilePath + '"')
+        )) { Assert-True (-not (Get-DevRuntimeUIProfileMatches $commandLine $script:uiProfilePath)) 'A missing, malformed, foreign or duplicate UI profile matched.' }
+        $case.Plan.Arguments = @('--browser-profile=runtime\relative profile')
+        $expected = [IO.Path]::GetFullPath((Join-Path $projectRoot 'runtime\relative profile')) + '-ui-split-cft'
+        Assert-True ((Get-DevRuntimeUIProfilePath $case.Plan) -ceq $expected) 'A relative configured profile did not use the registered service cwd.'
+        $case.Plan.Arguments = @('--browser-profile=  ' + $script:captureProfilePath + '\  ')
+        Assert-True ((Get-DevRuntimeUIProfilePath $case.Plan) -ceq $script:uiProfilePath) 'Configured profile whitespace or trailing separators did not follow Go profile normalization.'
+        $case.Plan.Arguments = @()
+        Assert-True ((Get-DevRuntimeUIProfilePath $case.Plan) -ceq (Join-Path $script:fakePathRoot 'runtime\app-profile-ui-split-cft')) 'The default profile did not use the config-derived application root.'
+        foreach ($arguments in @(
+            @('--browser-profile'), @('--browser-profile='), @('--browser-profile', '--dev'),
+            @('--browser-profile=a', '--browser-profile=b')
+        )) {
+            $case.Plan.Arguments = $arguments
+            Assert-Throws { Get-DevRuntimeUIProfilePath $case.Plan } 'Missing, empty or duplicate configured profile did not fail closed.'
+        }
+    }
+
     Invoke-TestCase 'ready-false-wait-zero' {
         $case = Set-ValidRunningFixture
         $script:fixture.ServiceReads = @((New-FakeService 101 @(202)))
@@ -286,7 +348,7 @@ try {
         Assert-NoCloseRequest $case 'Changed root birth'
 
         $case = Set-ValidRunningFixture
-        $changedUi = New-FakeProcess 202 101 $script:browserPath $script:fixture.FakeNow.AddSeconds(-10) 'chrome.exe --app=http://127.0.0.1:11122/' 'chrome.exe'
+        $changedUi = New-FakeProcess 202 101 $script:browserPath $script:fixture.FakeNow.AddSeconds(-10) $script:fixture.Processes['202'].CommandLine 'chrome.exe'
         $script:fixture.ProcessSequences['202'] = @($script:fixture.Processes['202'], $changedUi)
         Assert-NoCloseRequest $case 'Changed UI birth'
 
@@ -297,23 +359,43 @@ try {
     }
 
     Invoke-TestCase 'unrelated-and-ambiguous-ui-rejected' {
-        foreach ($kind in @('wrong-parent', 'wrong-image', 'wrong-title', 'zero-handle', 'native-reader', 'capture-host', 'ambiguous')) {
+        foreach ($kind in @('wrong-parent', 'wrong-image', 'wrong-profile', 'missing-profile', 'zero-handle', 'wrong-window-pid', 'native-reader', 'capture-host', 'ambiguous')) {
             $case = Set-ValidRunningFixture
             if ($kind -eq 'wrong-parent') { $script:fixture.Processes['202'].ParentProcessId = 999 }
             if ($kind -eq 'wrong-image') { $script:fixture.Processes['202'].ExecutablePath = (Join-Path $script:fakePathRoot 'other.exe') }
-            if ($kind -eq 'wrong-title') { $script:fixture.Windows['202'].MainWindowTitle = 'Reader Broker' }
+            if ($kind -eq 'wrong-profile') { $script:fixture.Processes['202'].CommandLine = $script:fixture.Processes['202'].CommandLine.Replace($script:uiProfilePath, $script:captureProfilePath) }
+            if ($kind -eq 'missing-profile') { $script:fixture.Processes['202'].CommandLine = 'chrome.exe --app=http://127.0.0.1:11122/' }
             if ($kind -eq 'zero-handle') { $script:fixture.Windows['202'].MainWindowHandle = [IntPtr]::Zero }
+            if ($kind -eq 'wrong-window-pid') { $script:fixture.Windows['202'].Id = 999 }
             if ($kind -eq 'native-reader') {
                 $script:fixture.Processes['202'].ExecutablePath = (Join-Path $script:fakePathRoot 'com.akubrowser.reader_activation.exe')
             }
-            if ($kind -eq 'capture-host') { $script:fixture.Processes['202'].CommandLine = 'chrome.exe --app=http://capture-host:11122/' }
+            if ($kind -eq 'capture-host') { $script:fixture.Processes['202'].CommandLine = $script:fixture.Processes['202'].CommandLine.Replace('http://127.0.0.1:11122/', 'http://capture-host:11122/') }
             if ($kind -eq 'ambiguous') {
-                $extra = New-FakeProcess 303 101 $script:browserPath $script:fixture.FakeNow.AddSeconds(-30) 'chrome.exe --app=http://localhost:11122/' 'chrome.exe'
+                $extra = New-FakeProcess 303 101 $script:browserPath $script:fixture.FakeNow.AddSeconds(-30) ('chrome.exe --app=http://localhost:11122/ --user-data-dir="' + $script:uiProfilePath + '"') 'chrome.exe'
                 $script:fixture.Processes['303'] = $extra
                 $script:fixture.Windows['303'] = New-FakeWindow 303 ([IntPtr]5678) 'AkuBrowser' $true
                 $case.Service = New-FakeService 101 @(202, 303)
             }
             Assert-NoCloseRequest $case $kind
+        }
+    }
+
+    Invoke-TestCase 'profile-and-window-races-rejected' {
+        foreach ($kind in @('profile', 'parent', 'image', 'url', 'window-pid')) {
+            $case = Set-ValidRunningFixture
+            if ($kind -eq 'window-pid') {
+                $script:fixture.WindowSequences['202'] = @($script:fixture.Windows['202'], (New-FakeWindow 999 ([IntPtr]1234) 'AkuBrowser' $true))
+            } else {
+                $current = $script:fixture.Processes['202']
+                $changed = New-FakeProcess 202 101 $script:browserPath $current.CreationDate $current.CommandLine 'chrome.exe'
+                if ($kind -eq 'profile') { $changed.CommandLine = $changed.CommandLine.Replace($script:uiProfilePath, $script:captureProfilePath) }
+                if ($kind -eq 'parent') { $changed.ParentProcessId = 999 }
+                if ($kind -eq 'image') { $changed.ExecutablePath = Join-Path $script:fakePathRoot 'other.exe' }
+                if ($kind -eq 'url') { $changed.CommandLine = $changed.CommandLine.Replace(':11122/', ':11123/') }
+                $script:fixture.ProcessSequences['202'] = @($current, $changed)
+            }
+            Assert-NoCloseRequest $case ('Changed ' + $kind + ' after readiness')
         }
     }
 
