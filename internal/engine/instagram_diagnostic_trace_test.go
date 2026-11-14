@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/abangkis/AkuSidecar/internal/igdiagnostic"
+	igdiagnostic "github.com/abangkis/AkuSidecar/internal/diagnostics/instagram"
 )
 
 func igTraceEnvelope(t *testing.T, raw []byte) igdiagnostic.Envelope {

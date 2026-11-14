@@ -1,4 +1,4 @@
-package igdiagnostic
+package instagram
 
 import (
 	"context"
@@ -209,7 +209,7 @@ func TestNodeElapsedTracksLatestAcceptedObservation(t *testing.T) {
 }
 
 func TestCatalogParity(t *testing.T) {
-	raw, err := os.ReadFile("../collection/headless/worker/native-pilot/instagram-diagnostic-catalog.mjs")
+	raw, err := os.ReadFile("../../collection/headless/worker/native-pilot/instagram-diagnostic-catalog.mjs")
 	if err != nil {
 		t.Fatal(err)
 	}

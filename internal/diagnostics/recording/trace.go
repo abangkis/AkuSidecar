@@ -1,5 +1,5 @@
-// Package diagnostictrace records observations. It grants no execution authority.
-package diagnostictrace
+// Package recording records observations. It grants no execution authority.
+package recording
 
 import (
 	d "github.com/abangkis/ai4u-diagnostics-go/pkg/diagnostics"

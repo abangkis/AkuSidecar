@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/abangkis/AkuSidecar/internal/engine"
-	"github.com/abangkis/AkuSidecar/internal/igdiagnostic"
+	igdiagnostic "github.com/abangkis/AkuSidecar/internal/diagnostics/instagram"
 )
 
 // SetInstagramReaderDiagnosticAction binds only an already-running browser.

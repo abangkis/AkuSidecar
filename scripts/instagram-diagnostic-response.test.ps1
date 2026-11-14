@@ -14,7 +14,7 @@ $projected = ConvertFrom-InstagramDiagnosticException -Failure $record
 if ($projected.code -cne 'instagram_diagnostic_diagnostic_rejected' -or ($projected | ConvertTo-Json -Compress).Contains('PRIVATE')) { throw 'Exception projection lost flat code or leaked data' }
 Write-Output 'PASS: flat API code retained; unknown/private/oversized bodies excluded.'
 
-$catalog = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../internal/igdiagnostic/catalog.json') -Raw | ConvertFrom-Json
+$catalog = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../internal/diagnostics/instagram/catalog.json') -Raw | ConvertFrom-Json
 $evidence = [ordered]@{}
 foreach ($key in $catalog.checks) { $evidence[$key] = 'not_observed' }
 $trace = [ordered]@{

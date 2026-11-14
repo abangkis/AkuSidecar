@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/appshell"
-	"github.com/abangkis/AkuSidecar/internal/igdiagnostic"
+	igdiagnostic "github.com/abangkis/AkuSidecar/internal/diagnostics/instagram"
 )
 
 // InstagramReaderDiagnosticError contains only a closed admission category.

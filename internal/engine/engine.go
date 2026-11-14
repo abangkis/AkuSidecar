@@ -15,7 +15,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	semanticengine "github.com/abangkis/AkuSidecar/internal/eventengine"
-	"github.com/abangkis/AkuSidecar/internal/igdiagnostic"
+	igdiagnostic "github.com/abangkis/AkuSidecar/internal/diagnostics/instagram"
 	"github.com/abangkis/AkuSidecar/internal/livingtopics"
 	"github.com/abangkis/AkuSidecar/internal/mediaprovenance"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"

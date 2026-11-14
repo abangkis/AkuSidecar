@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/timeline"
 )
 
 const uiPerformancePath = "/api/diagnostics/ui-performance"
@@ -105,7 +107,7 @@ func TestUIPerformanceRejectsBoundsNaNEventLimitOversizeAndTrailingJSON(t *testi
 	nan := bytes.Replace(valid, []byte(`"durationMs":1500`), []byte(`"durationMs":NaN`), 1)
 	oversized := append(append([]byte(nil), valid...), bytes.Repeat([]byte(" "), uiPerformanceMaxBodyBytes)...)
 	tooManyEvents := validUIPerformanceReport()
-	tooManyEvents.Events = make([]uiPerformanceEvent, 501)
+	tooManyEvents.Events = make([]timeline.Event, 501)
 	tooManyEventsBody, err := json.Marshal(tooManyEvents)
 	if err != nil {
 		t.Fatal(err)
@@ -114,10 +116,10 @@ func TestUIPerformanceRejectsBoundsNaNEventLimitOversizeAndTrailingJSON(t *testi
 	tooLong.DurationMs = 60_001
 	tooLongBody, _ := json.Marshal(tooLong)
 	tooMany := validUIPerformanceReport()
-	tooMany.FrameGaps.Count = uiPerformanceMaxCount + 1
+	tooMany.FrameGaps.Count = 10_000_000 + 1
 	tooManyBody, _ := json.Marshal(tooMany)
 	tooLargeTotal := validUIPerformanceReport()
-	tooLargeTotal.Stages[0].TotalMs = uiPerformanceMaxTotalMs + 1
+	tooLargeTotal.Stages[0].TotalMs = 1_000_000_000 + 1
 	tooLargeTotalBody, _ := json.Marshal(tooLargeTotal)
 	missingRequired := bytes.Replace(valid, []byte(`,"version":1`), nil, 1)
 	if bytes.Equal(missingRequired, valid) {
@@ -146,26 +148,58 @@ func TestUIPerformanceRejectsBoundsNaNEventLimitOversizeAndTrailingJSON(t *testi
 	}
 }
 
-func validUIPerformanceReport() uiPerformanceReport {
+func TestUIPerformanceTransportBoundaryAndErrors(t *testing.T) {
+	server := newUIPerformanceDevServer(t)
+	raw, err := json.Marshal(validUIPerformanceReport())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name        string
+		contentType string
+		body        []byte
+		status      int
+		response    string
+	}{
+		{name: "exact body limit", contentType: "application/json; charset=utf-8", body: append(append([]byte(nil), raw...), bytes.Repeat([]byte(" "), uiPerformanceMaxBodyBytes-len(raw))...), status: http.StatusOK, response: `{"saved":true}`},
+		{name: "over body limit", contentType: "application/json", body: append(append([]byte(nil), raw...), bytes.Repeat([]byte(" "), uiPerformanceMaxBodyBytes-len(raw)+1)...), status: http.StatusBadRequest, response: `"message":"invalid UI performance report"`},
+		{name: "missing content type", body: raw, status: http.StatusUnsupportedMediaType, response: `"message":"Content-Type must be application/json"`},
+		{name: "wrong content type", contentType: "text/plain", body: raw, status: http.StatusUnsupportedMediaType, response: `"message":"Content-Type must be application/json"`},
+		{name: "malformed content type", contentType: "application/json;", body: raw, status: http.StatusOK, response: `{"saved":true}`},
+		{name: "invalid document", contentType: "application/json", body: []byte(`{"private":"do not echo"}`), status: http.StatusBadRequest, response: `"message":"invalid UI performance report"`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, uiPerformancePath, bytes.NewReader(test.body))
+			request.Header.Set("Content-Type", test.contentType)
+			response := httptest.NewRecorder()
+			server.api().ServeHTTP(response, request)
+			if response.Code != test.status || !strings.Contains(response.Body.String(), test.response) {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func validUIPerformanceReport() timeline.Report {
 	duration := 80.0
 	script := 21.0
 	recentInput := false
 	name := "scroll_frame"
-	return uiPerformanceReport{
+	return timeline.Report{
 		Version:    1,
 		DurationMs: 1_500,
 		Reason:     "timeout",
-		Support: uiPerformanceSupport{
+		Support: timeline.Support{
 			LongAnimationFrame: true,
 			LongTask:           true,
 			LayoutShift:        false,
 		},
-		FrameGaps:           uiPerformanceFrameGaps{Count: 3, MaxMs: 44, P50Ms: 20, P95Ms: 44, Over32Ms: 1},
+		FrameGaps:           timeline.FrameGaps{Count: 3, MaxMs: 44, P50Ms: 20, P95Ms: 44, Over32Ms: 1},
 		ScrollEvents:        12,
 		DroppedEvents:       0,
 		DroppedFrameSamples: 0,
-		Stages:              []uiPerformanceStage{{Name: "scroll_frame", Count: 4, TotalMs: 100, MaxMs: 50}},
-		Events:              []uiPerformanceEvent{{Kind: "loaf", Name: &name, AtMs: 240, DurationMs: &duration, ScriptMs: &script, HadRecentInput: &recentInput}},
+		Stages:              []timeline.Stage{{Name: "scroll_frame", Count: 4, TotalMs: 100, MaxMs: 50}},
+		Events:              []timeline.Event{{Kind: "loaf", Name: &name, AtMs: 240, DurationMs: &duration, ScriptMs: &script, HadRecentInput: &recentInput}},
 	}
 }
 
@@ -187,7 +221,7 @@ func serveUIPerformanceRequest(server *Server, method string, body []byte) *http
 	return response
 }
 
-func postUIPerformanceReport(t *testing.T, server *Server, report uiPerformanceReport) {
+func postUIPerformanceReport(t *testing.T, server *Server, report timeline.Report) {
 	t.Helper()
 	body, err := json.Marshal(report)
 	if err != nil {
@@ -199,14 +233,14 @@ func postUIPerformanceReport(t *testing.T, server *Server, report uiPerformanceR
 	}
 }
 
-func readUIPerformanceSnapshot(t *testing.T, server *Server) uiPerformanceSnapshot {
+func readUIPerformanceSnapshot(t *testing.T, server *Server) timeline.Snapshot {
 	t.Helper()
 	response := serveUIPerformanceRequest(server, http.MethodGet, nil)
 	if response.Code != http.StatusOK {
 		t.Fatalf("get status=%d body=%s", response.Code, response.Body.String())
 	}
 	var body struct {
-		Trace *uiPerformanceSnapshot `json:"trace"`
+		Trace *timeline.Snapshot `json:"trace"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)

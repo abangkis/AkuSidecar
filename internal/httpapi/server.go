@@ -23,9 +23,10 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/appshell"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/credentials"
+	nativetrace "github.com/abangkis/AkuSidecar/internal/diagnostics/nativecapture"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/timeline"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/engine"
-	"github.com/abangkis/AkuSidecar/internal/nativetrace"
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
 
@@ -59,8 +60,7 @@ type Server struct {
 
 	// Set only by the tagged frontend QA composition, before Server.Start.
 	developmentNativeReaderClosed bool
-	uiPerformanceMu               sync.RWMutex
-	uiPerformanceLatest           *uiPerformanceSnapshot
+	uiPerformanceReports          timeline.Store
 	postScreenshotGate            chan struct{}
 	postScreenshotRenderer        func(context.Context, domain.TimelineItem, string) (postScreenshotResult, error)
 }

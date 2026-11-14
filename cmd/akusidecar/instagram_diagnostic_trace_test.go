@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
-	"github.com/abangkis/AkuSidecar/internal/igdiagnostic"
+	igdiagnostic "github.com/abangkis/AkuSidecar/internal/diagnostics/instagram"
 )
 
 func TestInstagramDiagnosticOwnerTraceRejectsOnlyItsFailedPredicate(t *testing.T) {

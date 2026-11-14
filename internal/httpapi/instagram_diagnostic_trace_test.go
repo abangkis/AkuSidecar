@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/abangkis/AkuSidecar/internal/igdiagnostic"
+	igdiagnostic "github.com/abangkis/AkuSidecar/internal/diagnostics/instagram"
 )
 
 func readIGDiagnosticStatus(s *Server, epoch string) *httptest.ResponseRecorder {

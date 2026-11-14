@@ -3,7 +3,7 @@ function ConvertTo-InstagramDiagnosticTrace {
     param($Value)
     # Operator tooling uses its matched source catalog. A missing catalog yields
     # a code-only report, never an unvalidated diagnostic passthrough.
-    $catalogPath = Join-Path $PSScriptRoot '../internal/igdiagnostic/catalog.json'
+    $catalogPath = Join-Path $PSScriptRoot '../internal/diagnostics/instagram/catalog.json'
     if (-not (Test-Path -LiteralPath $catalogPath)) { return $null }
     try {
         $catalog = Get-Content -LiteralPath $catalogPath -Raw | ConvertFrom-Json -ErrorAction Stop

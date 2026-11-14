@@ -10,8 +10,8 @@ Store authorization and operational cleanup authority are not migrated.
 | Layer | Owner | Responsibility |
 | --- | --- | --- |
 | Generic values | Published AI4UDiagnostics | Operation/phase/location, knownness and bounded numeric projection |
-| Observation recorder | `internal/diagnostictrace` | First observed cause, progress, independent cleanup/delivery and completeness |
-| IG contract | `internal/igdiagnostic` | Closed catalogs, evidence states, validation, safe wire/public projection |
+| Observation recorder | `internal/diagnostics/recording` | First observed cause, progress, independent cleanup/delivery and completeness |
+| IG contract | `internal/diagnostics/instagram` | Closed catalogs, evidence states, validation, safe wire/public projection |
 | Execution | Engine, owner binding, appshell and Node scope | Admission, clocks, deadlines, browser resources, retirement and shutdown |
 | Presentation | HTTP and operator helper | Sanitized response and retained status observation |
 
@@ -91,7 +91,7 @@ when its existing operational failure carries a validated verifier trace. The
 existing source failure code and retry classification remain independent.
 
 The PowerShell operator helper reads the fixed, matched source catalog at
-`internal/igdiagnostic/catalog.json`. If that catalog is unavailable, it falls
+`internal/diagnostics/instagram/catalog.json`. If that catalog is unavailable, it falls
 back to the existing code-only projection. Invalid trace metadata is omitted and
 marked `diagnosticIncomplete`; it never replaces the independently accepted API
 error code. Run the helper from the corresponding source checkout.

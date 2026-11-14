@@ -1,6 +1,6 @@
-// Package nativetrace provides bounded, passive capture diagnostics. It never
+// Package nativecapture provides bounded, passive capture diagnostics. It never
 // reads titles, command lines, URLs, content, input events, or screenshots.
-package nativetrace
+package nativecapture
 
 import (
 	"context"

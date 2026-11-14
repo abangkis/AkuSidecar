@@ -58,6 +58,8 @@ func TestStaticProductionAssetsPreserveBodiesAndGuards(t *testing.T) {
 		{"timeline-hls-player.js", "javascript"},
 		{"timeline-hls-loader.js", "javascript"},
 		{"timeline-hls-uhd.js", "javascript"},
+		{"scroll-performance-trace.js", "javascript"},
+		{"diagnostics/browser-performance.js", "javascript"},
 		{"vendor/hls.mjs", "javascript"},
 	} {
 		t.Run(asset.name, func(t *testing.T) {

@@ -1,6 +1,6 @@
 //go:build windows
 
-package nativetrace
+package nativecapture
 
 import "testing"
 

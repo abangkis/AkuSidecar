@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/abangkis/AkuSidecar/internal/nativetrace"
+	nativetrace "github.com/abangkis/AkuSidecar/internal/diagnostics/nativecapture"
 )
 
 func main() {

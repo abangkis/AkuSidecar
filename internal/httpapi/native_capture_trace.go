@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
-	"github.com/abangkis/AkuSidecar/internal/nativetrace"
+	nativetrace "github.com/abangkis/AkuSidecar/internal/diagnostics/nativecapture"
 )
 
 // SetAppShellPID uses the live session owner, including user-requested retries.

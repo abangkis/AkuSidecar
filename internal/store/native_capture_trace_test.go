@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
-	"github.com/abangkis/AkuSidecar/internal/nativetrace"
+	nativetrace "github.com/abangkis/AkuSidecar/internal/diagnostics/nativecapture"
 )
 
 func TestNativeCaptureTraceReadbackCorrelatesDelayedBridgeReceipt(t *testing.T) {

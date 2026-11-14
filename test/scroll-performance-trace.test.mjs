@@ -83,6 +83,18 @@ test('measured throwing work preserves its exception and records its cost', () =
   assert.equal(f.trace.stop().stages[0].maxMs, 6);
 });
 
+test('Timeline adapter retains all original stage names and stop reason vocabulary', () => {
+  const f = fixture(); f.trace.start();
+  for (const name of ['scroll_frame', 'content_context_scroll', 'back_to_top', 'side_pane', 'timeline_render']) {
+    f.trace.measure(name, () => {});
+  }
+  f.trace.measure('grid_layout', () => {});
+  const report = f.trace.stop('background');
+  assert.deepEqual(report.stages.map(stage => stage.name),
+    ['scroll_frame', 'content_context_scroll', 'back_to_top', 'side_pane', 'timeline_render']);
+  assert.equal(report.reason, 'manual');
+});
+
 test('long observer records stay below the endpoint byte limit', () => {
   const f = fixture(['long-animation-frame']); f.trace.start();
   f.observers[0].emit(Array.from({ length: 500 }, () => ({ startTime: 1.123456789012345,

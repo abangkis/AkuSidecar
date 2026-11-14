@@ -7,7 +7,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/abangkis/AkuSidecar/internal/diagnostictrace"
+	diagnostictrace "github.com/abangkis/AkuSidecar/internal/diagnostics/recording"
 	d "github.com/abangkis/ai4u-diagnostics-go/pkg/diagnostics"
 )
 

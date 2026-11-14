@@ -1,5 +1,5 @@
-// Package igdiagnostic owns the closed IG diagnostic boundary, not execution.
-package igdiagnostic
+// Package instagram owns the closed IG diagnostic boundary, not execution.
+package instagram
 
 import (
 	"bytes"
@@ -8,7 +8,7 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
-	"github.com/abangkis/AkuSidecar/internal/diagnostictrace"
+	diagnostictrace "github.com/abangkis/AkuSidecar/internal/diagnostics/recording"
 	d "github.com/abangkis/ai4u-diagnostics-go/pkg/diagnostics"
 	"io"
 	"regexp"

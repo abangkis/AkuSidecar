@@ -1,4 +1,4 @@
-package nativetrace
+package nativecapture
 
 import "testing"
 

@@ -7,7 +7,7 @@ import (
 	"errors"
 
 	"github.com/abangkis/AkuSidecar/internal/appshell"
-	"github.com/abangkis/AkuSidecar/internal/igdiagnostic"
+	igdiagnostic "github.com/abangkis/AkuSidecar/internal/diagnostics/instagram"
 )
 
 // Diagnostic metadata cannot change the independently decoded operational cause
