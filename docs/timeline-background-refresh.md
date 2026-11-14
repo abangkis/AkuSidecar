@@ -29,8 +29,9 @@ An unchanged response still:
 - Schedules eligible passive media enrichment.
 - Retains rendered entry objects, since existing handlers close over them.
 
-The existing scroll-idle and interaction guards remain in place. This change
-does not alter application timing for responses that change presentation.
+The first increment was published as `1e1164f9ac7303bf57307b0e9a8e0f0687b4bec9`
+and activated independently. It skips unchanged rendering while retaining the
+original application timing for changed responses.
 
 ## Verification
 
@@ -41,25 +42,47 @@ new detection details and routing, pending media, poll cancellation, metadata an
 evidence changes, explicit foreground refresh, and failed-render recovery.
 
 The tests do not establish real browser/GPU scroll performance or live playback.
+An isolated browser fixture using assets fetched from the active runtime verified
+that identical responses retain the actual card and video elements while polling
+later admits a controlled detection result. No model calls or database writes were
+used for that fixture.
 
-## Astra consultation: proposed async follow-up, not adopted
+## Fetch, stage, and apply
 
-Separate acquisition, staging, and presentation application. Keep fetching
-detection results independently of whether destructive rendering is safe. Retain
-the latest eligible staged snapshot and coalesce superseded snapshots within the
-same presentation epoch.
+The second increment implements the owner-approved Astra design in separate
+modules. `timeline-refresh-coordinator.js` owns serialized/coalesced acquisition,
+independent detection polling, latest-snapshot staging, explicit application, and
+request/context invalidation. It has no DOM or routing logic. Foreground refresh,
+navigation, and settings/context changes invalidate obsolete background work.
+Transient fetch failure rearms known pending detection; a failed foreground fetch
+restores polling from the retained presentation without restoring an old stage.
 
-For structural changes such as insertion, removal, routing, or layout-affecting
-content, offer application at an explicit user action. A 350 ms scroll pause does
-not establish that reading or playback has ended. Narrowly proven safe updates
-can use keyed patches that preserve existing card and media elements, focus,
-selection, and expansion state.
+`timeline-refresh-ui.js` owns the fixed update notice, reading guards, and
+synchronous visible-card anchor restoration. The notice does not displace cards
+or take focus. Changed responses remain staged until the user chooses **Apply
+updates**. Application waits for scroll idle and rechecks active playback, text
+selection, editors, and focused controls across both the inline Timeline and the
+AI Signals drawer. A blocked or failed application retains its stage for retry.
 
-Use request generations and presentation epochs to reject responses superseded
-by foreground navigation, reveal, or settings changes. Prefer server revision
-ordering when available: request-start order alone does not prove freshness.
-Protect active playback explicitly, rather than treating focused controls as a
-complete reading-interaction signal.
+The renderer remains responsible for presentation inputs and DOM construction.
+It supplies the coordinator's ports and commits its immutable checkpoint only
+after rendering succeeds. Fresh detection is acquired and polling is updated even
+when application is deferred. The latest same-context staged result replaces
+older staged results; the user does not need to apply each intermediate response.
 
-This is a future design proposal. Staging UI, keyed patches, new request fencing,
-and additional interaction policies are not implemented by the checkpoint gate.
+`test/timeline-refresh-coordinator.test.mjs` covers acquisition, poll, stage,
+context/epoch, failure, and concurrent-application sequences.
+`test/timeline-refresh-ui.test.mjs` covers both reading surfaces and visible-card
+anchor restoration. The browser fixture also verifies that a controlled new
+detection leaves cards mounted, disables Apply during an actual text selection,
+and applies the result after selection ends and the user clicks Apply.
+
+## Remaining boundaries
+
+Publication and runtime activation of the second increment are verified
+separately in the delivery evidence and SI roadmap. Applying changed data still
+rebuilds the list; keyed safe patches are
+deferred. An explicit Apply can replace paused media and transient card state.
+The reading anchor falls back to a surviving visible card, then current scroll
+when all visible cards disappear. Server snapshot revisions are unavailable, so
+local request identity is not a claim about server revision ordering.

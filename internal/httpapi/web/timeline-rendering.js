@@ -5,11 +5,50 @@ import { formatTimelineCheckSummary } from "./timeline-check-summary.js";
 import { renderWithCurrentScroll } from "./timeline-media-layout.js";
 import { setInlineStyle } from "./ui-frame.js";
 import { createTimelineBackgroundRefresh } from "./timeline-background-refresh.js";
+import { createTimelineRefreshCoordinator } from "./timeline-refresh-coordinator.js";
+import { createTimelineRefreshUi, renderWithReadingAnchor } from "./timeline-refresh-ui.js";
 
 export function createTimelineRendering({
   $, AI_DEEP_POLL_INTERVAL_MS, BACK_TO_TOP_THRESHOLD_PX, DEFAULT_TIMELINE_BATCH_GAP_PX, DEFAULT_TIMELINE_BOUNDARY_RETURN_MS, api, buildTimelineItem, closeTimelineContentContextDrawer, formatDate, measureTimelineContentContextTabs, renderAutoUpdateStatus, schedulePassiveMediaEnrichment, scheduleTimelineContentContextPosition, getScrollPerformanceTrace, getScrollUIFrames, showError, showNotice, sourceIdentity, startVisibleUpdate, state, stopObservingInlineVideoVisibilityWithin, syncRunButtons, syncTimelineContentContextTabs, getTimelineScrollIdle
 }) {
   const backgroundRefresh = createTimelineBackgroundRefresh();
+  let backgroundApplication = false;
+  const refreshUI = createTimelineRefreshUi({
+    document: globalThis.document,
+    viewport: globalThis.window,
+    onApply: () => applyBackgroundTimelineRefresh(),
+    isVisible: () => state.currentView === "timeline",
+    isApplying: () => refreshCoordinator.applying,
+  });
+  const refreshCoordinator = createTimelineRefreshCoordinator({
+    fetchSnapshot: () => api(`/api/timeline?limit=${Math.min(50, state.bootstrap?.settings?.timelineCapacity ?? 24)}&offset=0`),
+    onSnapshot(snapshot) {
+      if (state.bootstrap) state.bootstrap.autoUpdate = snapshot.autoUpdate ?? state.bootstrap.autoUpdate;
+      renderAutoUpdateStatus(snapshot.autoUpdate);
+      schedulePassiveMediaEnrichment(snapshot.items ?? []);
+    },
+    isUnchanged: snapshot => backgroundRefresh.isUnchanged(timelinePresentationSnapshot(
+      snapshot.items ?? [], snapshot.latestCheck ?? null, snapshot.timelineBatches, "",
+    )),
+    onStage: snapshot => refreshUI.show(snapshot),
+    hasPendingDetection: snapshot => routeAIDetectedItems(snapshot.items ?? []).pending,
+    waitForIdle: () => getTimelineScrollIdle().wait(),
+    canApply: () => refreshUI.canApply(),
+    getContextKey: () => backgroundRefresh.capture({ settings: state.bootstrap?.settings ?? {}, controls: { view: state.currentView } }),
+    onError: error => showError(error),
+    schedule: (callback, delay) => window.setTimeout(callback, delay),
+    cancel: timer => clearTimeout(timer),
+    pollIntervalMs: AI_DEEP_POLL_INTERVAL_MS,
+    applySnapshot(snapshot) {
+      backgroundApplication = true;
+      try {
+        if (state.bootstrap) state.bootstrap.latestCheck = snapshot.latestCheck ?? null;
+        if (state.bootstrap) state.bootstrap.timelineBatches = snapshot.timelineBatches ?? state.bootstrap.timelineBatches ?? [];
+        state.timelineBatches = snapshot.timelineBatches ?? state.timelineBatches;
+        renderWithReadingAnchor(() => renderTimeline(snapshot.items ?? [], snapshot.latestCheck ?? null, state.timelineBatches));
+      } finally { backgroundApplication = false; }
+    },
+  });
 
   function applyStreamWidth(value) {
     document.body.dataset.streamWidth = ["compact", "social", "comfortable", "wide"].includes(value) ? value : "social";
@@ -192,15 +231,12 @@ export function createTimelineRendering({
   }
 
   async function refreshTimeline(options = {}) {
+    if (options.background) return refreshCoordinator.request();
+    refreshCoordinator.invalidate();
     try {
       const configuredLimit = state.bootstrap?.settings?.timelineCapacity ?? 24;
       const limit = Math.min(50, configuredLimit + Math.max(0, options.extraItems || 0));
       const { items, timelineBatches, latestCheck, autoUpdate } = await api(`/api/timeline?limit=${limit}&offset=0`);
-      if (options.background) {
-        // Scrolling may have started while the request was in flight.
-        await getTimelineScrollIdle().wait();
-        if (timelineInteractionActive()) { state.backgroundTimelineRefreshPending = true; return; }
-      }
       if (state.bootstrap) state.bootstrap.latestCheck = latestCheck ?? null;
       if (state.bootstrap) state.bootstrap.timelineBatches = timelineBatches ?? state.bootstrap.timelineBatches ?? [];
       if (state.bootstrap) state.bootstrap.autoUpdate = autoUpdate ?? state.bootstrap.autoUpdate;
@@ -214,19 +250,13 @@ export function createTimelineRendering({
             options.revealPlacement ?? "append",
           )
         : items ?? [];
-      if (options.background && backgroundRefresh.isUnchanged(
-        timelinePresentationSnapshot(timelineItems, latestCheck ?? null, state.timelineBatches, options.highlightSessionID || ""),
-      )) {
-        // Polling must follow the fresh response even when existing cards stay
-        // mounted. Existing event handlers retain their rendered entry objects.
-        scheduleAIDeepRefresh(routeAIDetectedItems(timelineItems).pending);
-        schedulePassiveMediaEnrichment(timelineItems);
-        return;
-      }
       const render = () => renderTimeline(timelineItems, latestCheck ?? null, state.timelineBatches, options.highlightSessionID || "");
-      if (options.preserveScroll || options.background) renderWithCurrentScroll(render);
+      if (options.preserveScroll) renderWithCurrentScroll(render);
       else render();
     } catch (error) {
+      // A failed explicit refresh must not strand detection on the retained
+      // presentation. The invalidated staged response remains discarded.
+      scheduleAIDeepRefresh(routeAIDetectedItems(state.timelineItems ?? []).pending);
       showError(error);
     }
   }
@@ -319,6 +349,7 @@ export function createTimelineRendering({
   }
 
   function renderTimeline(items, latestCheck, timelineBatches = null, highlightSessionID = "") {
+    if (!backgroundApplication) refreshCoordinator.invalidate();
     const presentation = timelinePresentationSnapshot(items, latestCheck, timelineBatches, highlightSessionID);
     // A failed render may already have torn down the old DOM. It cannot leave
     // the previous successful checkpoint eligible for a later no-op.
@@ -527,51 +558,29 @@ export function createTimelineRendering({
   }
 
   function scheduleAIDeepRefresh(pending) {
-    if (!pending) {
-      if (state.aiDeepPoller) clearTimeout(state.aiDeepPoller);
-      state.aiDeepPoller = null;
-      return;
-    }
-    if (state.aiDeepPoller) return;
-    state.aiDeepPoller = window.setTimeout(() => {
-      state.aiDeepPoller = null;
-      queueBackgroundTimelineRefresh();
-    }, AI_DEEP_POLL_INTERVAL_MS);
+    refreshCoordinator.setPending(pending);
   }
 
   function timelineInteractionActive() {
-    const timeline = $("#result-items");
-    if (!timeline) return false;
-    if (timeline.querySelector(".event-suggestion-editor")) return true;
-    if (timeline.querySelector(".ai-feedback-options[open]")) return true;
-    const active = document.activeElement;
-    return Boolean(
-      active
-      && timeline.contains(active)
-      && active.matches("button, select, summary, input, textarea, a[href]"),
-    );
+    return refreshUI.interactionActive();
   }
 
   function queueBackgroundTimelineRefresh() {
-    state.backgroundTimelineRefreshPending = true;
-    void flushBackgroundTimelineRefresh();
+    return refreshCoordinator.request();
   }
 
   async function flushBackgroundTimelineRefresh() {
-    if (
-      !state.backgroundTimelineRefreshPending
-      || state.backgroundTimelineRefreshInFlight
-      || timelineInteractionActive()
-    ) return;
-    state.backgroundTimelineRefreshInFlight = true;
-    try {
-      await getTimelineScrollIdle().wait();
-      if (timelineInteractionActive()) return;
-      state.backgroundTimelineRefreshPending = false;
-      await refreshTimeline({ background: true });
-    } finally {
-      state.backgroundTimelineRefreshInFlight = false;
-    }
+    refreshUI.sync();
+  }
+
+  async function applyBackgroundTimelineRefresh() {
+    try { return await refreshCoordinator.apply(); }
+    finally { refreshUI.sync(); }
+  }
+
+  function invalidateBackgroundTimelineRefresh() {
+    refreshCoordinator.invalidate();
+    if (state.currentView === "timeline") void refreshCoordinator.request();
   }
 
   function renderTimelineSidePane(items, pending) {
@@ -637,6 +646,6 @@ export function createTimelineRendering({
   }
 
   return {
-    applyStreamWidth, applySingleImageFit, applyPostFreshnessStyle, scheduleTimelineSidePanePosition, syncTimelineSidePanePosition, applyTimelineBatchGap, resetTimelineBatchGap, applyTimelineBoundaryReturnDuration, resetTimelineBoundaryReturnDuration, scheduleBackToTop, syncBackToTopNow, timelineContentContextObstacles, syncBackToTopPosition, syncBackToTopBoundaryPosition, releaseBackToTopBoundary, returnToTop, refreshTimeline, orderTimelineForRevealedBatch, handleFinishLineAction, revealPreparedBatch, routeAIDetectedItems, renderTimeline, renderTimelineNow, renderTimelineActions, observeTimelineItem, scheduleAIDeepRefresh, timelineInteractionActive, queueBackgroundTimelineRefresh, flushBackgroundTimelineRefresh, renderTimelineSidePane, timelineSidePaneAvailable, syncTimelineSidePaneVisibility, openTimelineSidePane, closeTimelineSidePane, populateTimelineSidePane
+    applyStreamWidth, applySingleImageFit, applyPostFreshnessStyle, scheduleTimelineSidePanePosition, syncTimelineSidePanePosition, applyTimelineBatchGap, resetTimelineBatchGap, applyTimelineBoundaryReturnDuration, resetTimelineBoundaryReturnDuration, scheduleBackToTop, syncBackToTopNow, timelineContentContextObstacles, syncBackToTopPosition, syncBackToTopBoundaryPosition, releaseBackToTopBoundary, returnToTop, refreshTimeline, orderTimelineForRevealedBatch, handleFinishLineAction, revealPreparedBatch, routeAIDetectedItems, renderTimeline, renderTimelineNow, renderTimelineActions, observeTimelineItem, scheduleAIDeepRefresh, timelineInteractionActive, queueBackgroundTimelineRefresh, flushBackgroundTimelineRefresh, applyBackgroundTimelineRefresh, invalidateBackgroundTimelineRefresh, renderTimelineSidePane, timelineSidePaneAvailable, syncTimelineSidePaneVisibility, openTimelineSidePane, closeTimelineSidePane, populateTimelineSidePane
   };
 }

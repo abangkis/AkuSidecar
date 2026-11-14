@@ -85,27 +85,17 @@ test("side pane scroll position writes only to pane and toggle, never inherited 
   assert.ok(writes.every(({ target }) => target === pane || target === toggle));
 });
 
-test("background refresh waits both before fetch and after an in-flight scroll", async () => {
-  const state = { backgroundTimelineRefreshPending: true, backgroundTimelineRefreshInFlight: false };
-  let idle, fetches = 0, applied = 0;
-  const context = { state, timelineInteractionActive: () => false,
-    timelineScrollIdle: { wait: () => new Promise(resolve => { idle = resolve; }) },
-    refreshTimeline: async options => { assert.equal(options.background, true); fetches++; } };
+test("background acquisition delegates to the coordinator without waiting for scroll idle or applying cards", async () => {
+  let requests = 0;
+  const context = {
+    refreshCoordinator: { request: async () => { requests++; } },
+    getTimelineScrollIdle: () => assert.fail("scroll idle belongs to explicit application"),
+    api: () => assert.fail("the coordinator owns background acquisition"),
+    renderTimeline: () => assert.fail("background acquisition cannot replace cards"),
+  };
   vm.createContext(context);
-  vm.runInContext(app.slice(app.indexOf("async function flushBackgroundTimelineRefresh()"), app.indexOf('document.addEventListener("focusout"')), context);
-  const result = context.flushBackgroundTimelineRefresh();
-  const extra = context.flushBackgroundTimelineRefresh();
-  assert.equal(fetches, 0);
-  idle(); await Promise.all([result, extra]);
-  assert.equal(fetches, 1);
-  // Exercise the actual post-fetch gate independently of render implementation.
   const start = app.indexOf("async function refreshTimeline(options");
-  const end = app.indexOf("    if (state.bootstrap) state.bootstrap.latestCheck", start);
-  context.api = async () => ({ items: [], latestCheck: null });
-  vm.runInContext(app.slice(start, end) + "applied(); } catch (error) { throw error; } }", Object.assign(context, { applied: () => applied++ }));
-  const fetched = context.refreshTimeline({ background: true });
-  await new Promise(setImmediate);
-  assert.equal(applied, 0);
-  idle(); await fetched;
-  assert.equal(applied, 1);
+  vm.runInContext(app.slice(start, app.indexOf("function orderTimelineForRevealedBatch", start)), context);
+  await context.refreshTimeline({ background: true });
+  assert.equal(requests, 1);
 });

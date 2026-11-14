@@ -72,6 +72,7 @@ function harness(t, initial = fixture()) {
     ui, state, counts, timers, errors, viewport,
     cards: () => $("#result-items").children.filter(node => node.dataset.timelineId),
     respond: value => { response = copy(value); }, failBuild: value => { failBuild = value; },
+    failFetch: value => { fetchError = value ? Error("Fixture fetch failed") : null; },
     async poll() {
       const timer = [...timers].find(([, value]) => value.delay === 5000);
       assert.ok(timer, "pending detection must retain a scheduled poll");
@@ -109,6 +110,10 @@ test("unchanged pending responses keep polling until fresh detection arrives and
   assert.equal(h.counts.renders, 1); assert.equal(h.cards()[0], card);
   const next = fixture(); next.items[0].aiDetection = { pendingDeep: false, pendingMedia: false, badgeLabel: "AI signal · Assessed", detail: "New detection result" };
   h.respond(next); await h.poll();
+  assert.equal(h.counts.renders, 1, "fresh detection is staged without interrupting reading");
+  assert.equal(h.cards()[0], card);
+  assert.equal(h.timers.size, 0);
+  assert.equal(await h.ui.applyBackgroundTimelineRefresh(), true);
   assert.equal(h.counts.renders, 2); assert.notEqual(h.cards()[0], card);
   assert.equal(h.cards()[0].entry.aiDetection.detail, "New detection result");
   assert.equal(h.timers.size, 0);
@@ -125,6 +130,8 @@ test("a new detection result can route a card into the signals drawer", async t 
   const h = harness(t); await h.ui.refreshTimeline();
   const next = fixture(); next.items[0].aiDetection = { pendingDeep: false, routeToSignals: true, badgeLabel: "AI signal · Strong" };
   h.respond(next); await h.poll();
+  assert.equal(h.cards().length, 1);
+  await h.ui.applyBackgroundTimelineRefresh();
   assert.equal(h.cards().length, 0); assert.equal(h.state.sidePaneItems[0].id, "post-1");
   assert.equal(h.timers.size, 0);
 });
@@ -133,6 +140,8 @@ test("effective routing changes are not suppressed when response payloads remain
   const data = fixture(); data.items[0].aiDetection.routeToSignals = true;
   const h = harness(t, data); await h.ui.refreshTimeline(); assert.equal(h.cards().length, 0);
   h.state.seenTimelineItems.add("post-1"); await h.ui.refreshTimeline({ background: true });
+  assert.equal(h.counts.renders, 1);
+  await h.ui.applyBackgroundTimelineRefresh();
   assert.equal(h.counts.renders, 2); assert.equal(h.cards().length, 1);
 });
 
@@ -146,13 +155,13 @@ test("status-only telemetry updates without rebuilding cards", async t => {
 test("evidence, check metadata, batches, settings, and prepared count changes remain visible", async t => {
   const h = harness(t); await h.ui.refreshTimeline(); const next = fixture();
   next.items[0].evidence.media.push({ kind: "image", url: "https://example.org/new.jpg" });
-  h.respond(next); await h.ui.refreshTimeline({ background: true }); assert.equal(h.counts.renders, 2);
-  next.latestCheck.addedItems = 2; h.respond(next); await h.ui.refreshTimeline({ background: true }); assert.equal(h.counts.renders, 3);
-  next.timelineBatches[0].itemCount = 2; h.respond(next); await h.ui.refreshTimeline({ background: true }); assert.equal(h.counts.renders, 4);
+  h.respond(next); await h.ui.refreshTimeline({ background: true }); await h.ui.applyBackgroundTimelineRefresh(); assert.equal(h.counts.renders, 2);
+  next.latestCheck.addedItems = 2; h.respond(next); await h.ui.refreshTimeline({ background: true }); await h.ui.applyBackgroundTimelineRefresh(); assert.equal(h.counts.renders, 3);
+  next.timelineBatches[0].itemCount = 2; h.respond(next); await h.ui.refreshTimeline({ background: true }); await h.ui.applyBackgroundTimelineRefresh(); assert.equal(h.counts.renders, 4);
   h.state.bootstrap.settings.defaultPresentation = "brief";
-  await h.ui.refreshTimeline({ background: true }); assert.equal(h.counts.renders, 5);
+  await h.ui.refreshTimeline({ background: true }); await h.ui.applyBackgroundTimelineRefresh(); assert.equal(h.counts.renders, 5);
   next.autoUpdate.preparedBatches = [{ sessionId: "next" }]; h.respond(next);
-  await h.ui.refreshTimeline({ background: true }); assert.equal(h.counts.renders, 6);
+  await h.ui.refreshTimeline({ background: true }); await h.ui.applyBackgroundTimelineRefresh(); assert.equal(h.counts.renders, 6);
 });
 
 test("foreground refresh still forces a render for identical data", async t => {
@@ -162,9 +171,10 @@ test("foreground refresh still forces a render for identical data", async t => {
 });
 
 test("failed rendering never commits a checkpoint for content that was not displayed", async t => {
-  const h = harness(t); h.failBuild(true); await h.ui.refreshTimeline({ background: true });
+  const h = harness(t); h.failBuild(true); await h.ui.refreshTimeline();
   assert.equal(h.errors.length, 1); h.failBuild(false);
   await h.ui.refreshTimeline({ background: true });
+  await h.ui.applyBackgroundTimelineRefresh();
   assert.equal(h.counts.renders, 2); assert.equal(h.cards().length, 1);
 });
 
@@ -172,8 +182,10 @@ test("a partial failed render invalidates the old checkpoint before the old resp
   const h = harness(t); await h.ui.refreshTimeline();
   const changed = fixture(); changed.items[0].item.whatChanged = "Changed report";
   h.respond(changed); h.failBuild(true); await h.ui.refreshTimeline({ background: true });
+  assert.equal(await h.ui.applyBackgroundTimelineRefresh(), false);
   assert.equal(h.errors.length, 1); assert.equal(h.cards().length, 0);
   h.respond(fixture()); h.failBuild(false); await h.ui.refreshTimeline({ background: true });
+  assert.equal(await h.ui.applyBackgroundTimelineRefresh(), true);
   assert.equal(h.counts.renders, 3); assert.equal(h.cards().length, 1);
   assert.equal(h.cards()[0].entry.item.whatChanged, "Original report");
 });
@@ -183,4 +195,15 @@ test("a completed detection response cancels an outstanding poll timer", async t
   const next = fixture(); next.items[0].aiDetection.pendingDeep = false;
   h.respond(next); await h.ui.refreshTimeline({ background: true });
   assert.equal(h.timers.size, 0);
+});
+
+test("failed foreground acquisition resumes pending detection without reviving an obsolete stage", async t => {
+  const h = harness(t); await h.ui.refreshTimeline(); const card = h.cards()[0];
+  const next = fixture(); next.items[0].aiDetection.detail = "Obsolete staged result";
+  h.respond(next); await h.ui.refreshTimeline({ background: true });
+  h.failFetch(true); await h.ui.refreshTimeline();
+  assert.equal(h.errors.length, 1); assert.equal(h.cards()[0], card);
+  assert.equal(h.timers.size, 1); assert.equal(await h.ui.applyBackgroundTimelineRefresh(), false);
+  h.failFetch(false); h.respond(fixture()); await h.poll();
+  assert.equal(h.counts.renders, 1); assert.equal(h.timers.size, 1);
 });

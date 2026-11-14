@@ -193,7 +193,6 @@ const state = {
   foregroundRecaptureOffers: new Map(),
   pendingSettings: null,
   seenTimelineItems: new Set(),
-  aiDeepPoller: null,
   sidePaneItems: [],
   timelineItems: [],
   timelineReadLaterInFlight: new Set(),
@@ -223,8 +222,6 @@ const state = {
   timelineCarouselIndexes: new Map(),
   expandedAIDetails: new Set(),
   expandedAIFeedbackOptions: new Set(),
-  backgroundTimelineRefreshPending: false,
-  backgroundTimelineRefreshInFlight: false,
   revealingPreparedBatch: false,
   autoLoadLastScrollY: window.scrollY,
   uiActivityTrackingInstalled: false,
@@ -403,7 +400,7 @@ const {
   state,
 });
 const {
-  applyStreamWidth, applySingleImageFit, applyPostFreshnessStyle, scheduleTimelineSidePanePosition, syncTimelineSidePanePosition, applyTimelineBatchGap, resetTimelineBatchGap, applyTimelineBoundaryReturnDuration, resetTimelineBoundaryReturnDuration, scheduleBackToTop, syncBackToTopNow, timelineContentContextObstacles, syncBackToTopPosition, syncBackToTopBoundaryPosition, releaseBackToTopBoundary, returnToTop, refreshTimeline, orderTimelineForRevealedBatch, handleFinishLineAction, revealPreparedBatch, routeAIDetectedItems, renderTimeline, renderTimelineNow, renderTimelineActions, observeTimelineItem, scheduleAIDeepRefresh, timelineInteractionActive, queueBackgroundTimelineRefresh, flushBackgroundTimelineRefresh, renderTimelineSidePane, timelineSidePaneAvailable, syncTimelineSidePaneVisibility, openTimelineSidePane, closeTimelineSidePane, populateTimelineSidePane
+  applyStreamWidth, applySingleImageFit, applyPostFreshnessStyle, scheduleTimelineSidePanePosition, syncTimelineSidePanePosition, applyTimelineBatchGap, resetTimelineBatchGap, applyTimelineBoundaryReturnDuration, resetTimelineBoundaryReturnDuration, scheduleBackToTop, syncBackToTopNow, timelineContentContextObstacles, syncBackToTopPosition, syncBackToTopBoundaryPosition, releaseBackToTopBoundary, returnToTop, refreshTimeline, orderTimelineForRevealedBatch, handleFinishLineAction, revealPreparedBatch, routeAIDetectedItems, renderTimeline, renderTimelineNow, renderTimelineActions, observeTimelineItem, scheduleAIDeepRefresh, timelineInteractionActive, queueBackgroundTimelineRefresh, flushBackgroundTimelineRefresh, applyBackgroundTimelineRefresh, invalidateBackgroundTimelineRefresh, renderTimelineSidePane, timelineSidePaneAvailable, syncTimelineSidePaneVisibility, openTimelineSidePane, closeTimelineSidePane, populateTimelineSidePane
 } = createTimelineRendering({
   $: (...args) => $(...args),
   AI_DEEP_POLL_INTERVAL_MS,
@@ -1059,7 +1056,9 @@ function setView(view) {
     showCalibration(state.bootstrap.calibration.active);
     return;
   }
+  const changedView = state.currentView !== view;
   state.currentView = view;
+  if (changedView) invalidateBackgroundTimelineRefresh();
   state.onboardingEditing = false;
   const timeline = view === "timeline";
   const library = view === "library";
@@ -1713,9 +1712,9 @@ const REVOKE_SOURCE_ACCESS_TIMEOUT_MS = 5000;
 
 // Frontend feature: timeline-rendering.js#flushBackgroundTimelineRefresh
 
-document.addEventListener("focusout", () => {
-  window.setTimeout(() => void flushBackgroundTimelineRefresh(), 0);
-});
+// Frontend feature: timeline-rendering.js#applyBackgroundTimelineRefresh
+
+// Frontend feature: timeline-rendering.js#invalidateBackgroundTimelineRefresh
 
 // Frontend feature: timeline-rendering.js#renderTimelineSidePane
 

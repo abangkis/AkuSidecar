@@ -29,6 +29,7 @@ test("actual refresh preserves user's movement during network acquisition, with 
   let respond; const restored = []; let rendered = 0;
   const window = { scrollY: 900, scrollTo: value => restored.push(value) };
   const context = { state: {}, window,
+    refreshCoordinator: { invalidate() {} },
     api: () => new Promise(resolve => { respond = resolve; }),
     renderAutoUpdateStatus() {}, renderTimeline() { rendered++; window.scrollY = 0; },
     renderWithCurrentScroll: render => renderWithCurrentScroll(render, window),
