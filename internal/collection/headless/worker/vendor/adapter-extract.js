@@ -353,6 +353,10 @@
   function expansionRoot(source, adapter, container, excluded, originalText) {
     const policy = adapter.contentExpansion;
     if (!policy?.buttonSelector || !capturePrimitives?.expansionLabel) return null;
+    if (typeof policy.resolveRoot === 'function') {
+      const root = policy.resolveRoot(container, 'more');
+      return root && !excluded.contains(root) ? root : null;
+    }
     const roots = [];
     try {
       const resolved = adapter.resolveContentRoot?.(container);
@@ -361,13 +365,6 @@
     if (adapter.contentRootSelector) {
       try { roots.push(...(container.querySelectorAll?.(adapter.contentRootSelector) || [])); }
       catch { /* An invalid source selector disables expansion. */ }
-    } else if (source === 'instagram') {
-      // Instagram has no explicit contentRootSelector. Find the smallest
-      // ancestor whose text is exactly the adapter's selected caption and whose
-      // own expansion control is inside that caption.
-      for (const textNode of container.querySelectorAll?.('span[dir="auto"]') || []) {
-        for (let root = textNode.parentElement; root && root !== container; root = root.parentElement) roots.push(root);
-      }
     }
     const seen = new Set();
     for (const root of roots) {
@@ -399,7 +396,8 @@
     if (!['instagram', 'linkedin'].includes(source) || !adapter.contentExpansion?.buttonSelector
         || !capturePrimitives?.expandContent || !capturePrimitives?.restoreContent) return disabled;
     const root = expansionRoot(source, adapter, container, excluded, originalText);
-    if (!root) return disabled;
+    if (!root) return adapter.contentExpansion.isCollapsed?.(container) === true
+      ? {...disabled,collapsed:true,status:'expansion_skipped_unsafe_control'} : disabled;
     const base = { text: originalText, expanded: false, collapsed: true, status: 'expansion_skipped_detect_only', identityValid: true };
     if (policy?.allowContentExpansion !== true) return base;
     if (!Number.isFinite(deadlineAt) || Date.now() >= deadlineAt) return { ...base, status: 'deadline_expired' };
@@ -407,7 +405,9 @@
     let blockedReason = '';
     let expansion = null;
     let clickedControl = null;
-    const scopedAdapter = { contentExpansion: adapter.contentExpansion };
+    // The shared source hook already selected this root. The outer container,
+    // exact identity, route, mutation authority and deadline remain pinned below.
+    const scopedAdapter = { contentExpansion: {...adapter.contentExpansion, resolveRoot:undefined, ownerIdentity:undefined} };
     const readText = root => structuredText(adapter.extractText?.(root || container, helpers) ?? '');
     try {
       expansion = await capturePrimitives.expandContent({
