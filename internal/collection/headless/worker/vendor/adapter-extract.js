@@ -688,15 +688,36 @@
       || Boolean(document.querySelector('iframe[src*="captcha" i], [data-test-id*="challenge" i], #challenge-running, form[action*="checkpoint" i]'))
       || (posts.length === 0 && /^(?:verify you are human|unusual activity detected|security check required|robot check|captcha)$/im.test(challengeText.trim()));
     const structural = discovery.readinessCandidates ?? candidates;
-    const sourceReadiness = capturePrimitives.sourceReadinessState({
+    const visibleCandidateCount = candidates.filter(isVisible).length;
+    const visibleStructuralCandidateCount = structural.filter(isVisible).length;
+    const loading = Boolean(document.querySelector('[aria-busy="true"], .artdeco-loader, [data-test-id*="loading" i]'));
+    const feedRootPresent = adapter.feedRootPresent?.() === true;
+    const baseReadiness = capturePrimitives.sourceReadinessState({
       availability: sourceUnavailable ? {state:'source_unavailable'} : null, loginRequired,
-      visibleCandidateCount: candidates.filter(isVisible).length,
-      visibleStructuralCandidateCount: structural.filter(isVisible).length,
-      loading: Boolean(document.querySelector('[aria-busy="true"], .artdeco-loader, [data-test-id*="loading" i]')),
+      visibleCandidateCount, visibleStructuralCandidateCount, loading,
       documentReady: base.documentReady, candidateCount: candidates.length,
-      structuralCandidateCount: structural.length, feedRootPresent: adapter.feedRootPresent?.() === true,
+      structuralCandidateCount: structural.length, feedRootPresent,
     });
+    // Assessment is observational. Recovery remains owned by the controller;
+    // readiness does not establish native account/document or admission proof.
+    const sourceReadinessAssessment = source === 'instagram'
+      ? globalThis.AkuSourceAdapters.assessReadiness?.(source, {
+        state: baseReadiness, loadingIndicator: loading,
+        feedRootPresent,
+        selectorCandidateCount: candidates.length,
+        visibleSelectorCandidateCount: visibleCandidateCount,
+        structuralCandidateCount: structural.length,
+        visibleStructuralCandidateCount,
+        documentReadyState: document.readyState,
+        // Instagram currently has no adapter visual-hydration contract, matching
+        // Windowed's no-configuration facts rather than claiming visual proof.
+        visualHydrationRequired: false, visualHydrationReady: true,
+        primaryAvatarContainerCount: 0, hydratedPrimaryAvatarCount: 0,
+        mediaContainerCount: 0, hydratedMediaContainerCount: 0,
+      }) ?? null : null;
+    const sourceReadiness = sourceReadinessAssessment?.state ?? baseReadiness;
     return { ...base, sourceReadiness, candidateCount: candidates.length, discoveryStrategy: discovery.strategy || 'unknown',
+      ...(sourceReadinessAssessment ? { sourceReadinessAssessment } : {}),
       candidateDiagnostics:{structuralCandidates:discovery.readinessCandidates?.length ?? discovery.semanticCandidateCount ?? 0,
         eligibleCandidates:candidates.length,actionAnchoredCandidates:discovery.actionAnchoredCandidateCount || 0,targetFallbackStatus,
         permalinkRecoveryCount:bounded.filter(root=>bindings.get(root)?.provenance==='adapter_recovery').length},

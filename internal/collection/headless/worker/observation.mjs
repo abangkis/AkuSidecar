@@ -2,6 +2,31 @@ import { createHash } from 'node:crypto';
 
 const SOURCE_READINESS_STATES = new Set(['source_unavailable', 'login_required',
   'feed_ready', 'feed_empty', 'feed_hydrating', 'loading', 'feed_not_visible', 'selector_mismatch', 'page_shell']);
+const INSTAGRAM_READINESS_DIAGNOSES = new Set(['source_unavailable', 'login_required',
+  'navigation_incomplete', 'post_outside_capture_viewport', 'post_permalink_unhydrated',
+  'dom_contract_mismatch', 'feed_state_unverified', 'readiness_observed']);
+const ownValue = (object, key) => object && typeof object === 'object'
+  ? Object.getOwnPropertyDescriptor(object, key)?.value : undefined;
+
+function projectInstagramReadinessAssessment(snapshot, state) {
+  if (ownValue(snapshot, 'source') !== 'instagram') return {};
+  const assessment = ownValue(snapshot, 'sourceReadinessAssessment');
+  const diagnosis = ownValue(assessment, 'diagnosis');
+  if (ownValue(assessment, 'state') !== state || !INSTAGRAM_READINESS_DIAGNOSES.has(diagnosis)) return {};
+  let recovery = null;
+  const hint = ownValue(assessment, 'recovery');
+  if (hint != null) {
+    const inPageAction = ownValue(hint, 'inPageAction');
+    const expectedAction = diagnosis === 'post_outside_capture_viewport' ? 'align_first_candidate'
+      : diagnosis === 'post_permalink_unhydrated' ? 'reset_feed_top' : null;
+    if (!expectedAction || inPageAction !== expectedAction ||
+        ownValue(hint, 'action') !== 'recreate_managed_surface' ||
+        ownValue(hint, 'reason') !== diagnosis || ownValue(hint, 'maxAttempts') !== 1) return {};
+    recovery = { action: 'recreate_managed_surface', inPageAction, reason: diagnosis, maxAttempts: 1 };
+  }
+  // Passive diagnostic data only; this grants no recovery or native authority.
+  return { sourceReadinessAssessment: { state, diagnosis, recovery } };
+}
 
 // Observational base classification, not sourceReadiness/account/empty proof.
 // Omit absent or unknown values, preserving the older serialized contract.
@@ -9,7 +34,7 @@ export function projectSourceReadiness(snapshot) {
   const state = snapshot && typeof snapshot === 'object'
     ? Object.getOwnPropertyDescriptor(snapshot, 'sourceReadiness')?.value : undefined;
   return typeof state === 'string' && SOURCE_READINESS_STATES.has(state)
-    ? {sourceReadinessState: state} : {};
+    ? {sourceReadinessState: state, ...projectInstagramReadinessAssessment(snapshot, state)} : {};
 }
 
 const DOM_SHADOW_CODES = new Set([
