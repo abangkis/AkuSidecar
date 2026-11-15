@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { capturePrimitivesFor } from '../capture-primitives.mjs';
 
 const shared = await readFile(new URL('../../../../../../AkuBridge/capture-primitives.js', import.meta.url), 'utf8');
+const mediaPolicy = await readFile(new URL('../../../../../../AkuBridge/bounded-capture-policy.js', import.meta.url), 'utf8');
 const extractor = await readFile(new URL('../vendor/x-extract.js', import.meta.url), 'utf8');
 const quoteResolver = await readFile(new URL('../vendor/x-quote-identity.js', import.meta.url), 'utf8');
 
@@ -45,7 +46,7 @@ function fixture({ detail = true, replaceRoute = false, pageNodes = [], challeng
     innerHeight: 900, innerWidth: 1200, scrollY: 0,
     document: { querySelector: selector => challengeDom && selector === '#challenge-running' ? {} : null,
       body, readyState: 'complete', visibilityState: 'visible', title: 'Fixture', scrollingElement: { scrollHeight: 1000 } } });
-  vm.runInContext(shared + '\n' + quoteResolver + '\n' + extractor, context);
+  vm.runInContext(shared + '\n' + mediaPolicy + '\n' + quoteResolver + '\n' + extractor, context);
   return { context, clicks: () => clicks, discoveries: () => discoveries };
 }
 

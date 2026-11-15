@@ -53,47 +53,13 @@
   }
   const canonical = primitives.canonicalizeXPermalink;
   function findMedia(adapter, container, excludeRoot = null) {
-    const records = [];
-    const seen = new Set();
-    let resourceEntries;
-    // Reuse the adapter's attachment selectors; avatars and inline emoji are excluded.
-    const elements = [...container.querySelectorAll('video'), ...container.querySelectorAll(adapter.imageSelector)];
-    for (const element of elements) {
-      if (excludeRoot?.contains(element)) continue;
-      const video = element.tagName === 'VIDEO';
-      const posterImage = !video && Boolean(element.closest(adapter.mediaRendering.videoRootSelector));
-      const url = normalizeHttpUrl(video ? element.poster : element.currentSrc || element.src);
-      if (!url || !adapter.mediaHosts.includes(new URL(url).hostname)) continue;
-      // Detail video controls can nest the author's avatar under the video root.
-      // Its trusted CDN host alone does not make it an attachment or video poster.
-      const mediaURL = new URL(url);
-      if (mediaURL.hostname === 'pbs.twimg.com' && mediaURL.pathname.startsWith('/profile_images/')) continue;
-      const kind = video || posterImage ? 'video_poster' : 'image';
-      const key = `${kind}:${url}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      let playbackUrl = null;
-      const playbackPolicy = globalThis.AkuBoundedCapturePolicy;
-      if (kind === 'video_poster' && playbackPolicy?.xPlaybackUrl) {
-        const direct = video ? [element.currentSrc, element.src,
-          ...[...element.querySelectorAll('source[src]')].map(source => source.src)]
-          .find(value => /^https:\/\//i.test(value || '')) : null;
-        resourceEntries ??= globalThis.performance?.getEntriesByType?.('resource') || [];
-        playbackUrl = playbackPolicy.xPlaybackUrl(url, direct, resourceEntries);
-      }
-      records.push({ kind, url, alt: element.alt || '',
-        ...(playbackUrl ? {posterUrl: url, playbackUrl, playbackMode: 'inline'} : {}),
-        loaded: video ? element.readyState > 0 : element.complete && element.naturalWidth > 0,
-        loadedMeaning: video ? 'video_metadata_ready' : 'image_decoded',
-        width: video ? element.videoWidth : element.naturalWidth,
-        height: video ? element.videoHeight : element.naturalHeight,
-        ...(video ? { readyState: element.readyState, paused: element.paused, currentTime: element.currentTime,
-          duration: Number.isFinite(element.duration) ? element.duration : null,
-          sourceKind: element.currentSrc?.startsWith('blob:') ? 'blob' : element.currentSrc ? 'direct' : 'unset' } : {}),
-      });
-      if (records.length >= 20) break;
-    }
-    return records;
+    const policy = globalThis.AkuBoundedCapturePolicy;
+    if (typeof policy?.extractXDOMMedia !== 'function') throw new Error('Shared X DOM media collector was not loaded.');
+    const result = policy.extractXDOMMedia(container, adapter, { excludeRoot });
+    return result.media.map((item, index) => ({ ...item,
+      kind: item.kind === 'video' ? 'video_poster' : item.kind,
+      ...result.observations[index],
+    }));
   }
   function mediaEvidence(media, expected) {
     const expectedWithoutUrl = expected.filter(kind => !media.some(m => kind === 'video' ? m.kind === 'video_poster' : m.kind === kind));

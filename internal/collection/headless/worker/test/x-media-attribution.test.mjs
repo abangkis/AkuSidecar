@@ -5,8 +5,10 @@ import {readFile} from 'node:fs/promises';
 
 const code=await readFile(new URL('../vendor/x-extract.js',import.meta.url),'utf8');
 const shared=await readFile(new URL('../../../../../../AkuBridge/capture-primitives.js',import.meta.url),'utf8');
+const policy=await readFile(new URL('../../../../../../AkuBridge/bounded-capture-policy.js',import.meta.url),'utf8');
 test('video-root avatar is excluded while native poster and photo are retained',async()=>{
- const image=(url,inVideo=true)=>({tagName:'IMG',currentSrc:url,alt:'',complete:true,naturalWidth:48,naturalHeight:48,closest:()=>inVideo?{}:null});
+ const image=(url,inVideo=true)=>({tagName:'IMG',currentSrc:url,alt:'',complete:true,naturalWidth:640,naturalHeight:360,
+  getBoundingClientRect:()=>({width:640,height:360}),closest:()=>inVideo?{}:null});
  const avatar=image('https://pbs.twimg.com/profile_images/123/avatar_normal.jpg');
  const poster=image('https://pbs.twimg.com/amplify_video_thumb/456/img/poster.jpg');
  const photo=image('https://pbs.twimg.com/media/real-photo.jpg',false);
@@ -22,6 +24,7 @@ test('video-root avatar is excluded while native poster and photo are retained',
   AkuHeadlessCapturePolicy:{allowContentExpansion:false},AkuSourceAdapters:{get:()=>adapter},
   innerHeight:900,innerWidth:1200,scrollY:0,document:{querySelector:()=>null,body:{innerText:''},readyState:'complete',visibilityState:'visible'}});
  vm.runInContext(shared,context);
+ vm.runInContext(policy,context);
  vm.runInContext(code,context);
  const result=await context.XHeadlessPoC.collect();
  assert.equal(result.posts.length,1);

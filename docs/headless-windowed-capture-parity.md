@@ -74,6 +74,53 @@ blocker is resolved in source and offline package testing; runtime activation,
 browser/session access and live capture remain unperformed. Evidence and
 retained package manifests are under `build/native-json-loader-20261112/`.
 
+## A2: shared X DOM and CSS media extraction, 12 November 2026
+
+Windowed `findMedia` and the Headless X extractor now call the same
+`AkuBoundedCapturePolicy.extractXDOMMedia` implementation. Selectors, trusted
+roots, background groups and image exclusions come from the X adapter; URL,
+geometry, deduplication and playback ranking use the existing shared policy.
+Headless no longer maintains a separate DOM media collector.
+
+The collector observes DOM images, video posters and `source[src]`, inline and
+computed CSS backgrounds, and image alternatives in `srcset`, `data-src` and
+`data-original`. It excludes avatars, unsupported URLs and quoted descendants
+from the primary scope. Quoted media is collected separately. Each selector
+result and the accumulated candidate list are limited to 128 entries; normalized
+output retains the existing 20-media ceiling. Truncation is exposed on the
+collector result as `bounded`, not as a complete-capture claim.
+
+Headless hydration metadata follows the selected candidate after deduplication.
+An image is decoded only when its selected URL matches the observed current
+image source and complete/natural geometry confirms decode. CSS backgrounds are
+reported as `css_background_observed` with `loaded: false`; geometry alone does
+not prove decode. Video ready-state metadata remains distinct from successful
+playback. A1's owned HLS acquisition and MP4 precedence remain shared, and
+structured/passive enrichment retains its opportunity to provide an owned MP4.
+
+The policy asset SHA-256 for this increment is
+`2e7a145e6dd74dc3957cf05d32f271910b90046e18ded9179f040464733e5a3d`.
+The offline daily and main package manifests pin those same bytes. Consumer
+source hashes, package manifests and retained logs are recorded under
+`build/a2-x-dom-css-20261112/` in Sidecar; Bridge's final suite log uses the same
+project-local evidence directory name. These packages include the existing
+working-tree inputs and are evidence artifacts, not activation candidates.
+
+Validation: the new `x-dom-css-media-parity.test.mjs` passes 26 tests through the
+actual Windowed function, Headless extractor and Observation JSON, including a
+negative control for a missing collector. Cases cover legacy/wrapped media,
+CSS/DOM alternatives, ownership, provenance, deduplication, geometry, URL
+rejection, collection limits and shared-asset identity. Bridge passes 599 tests;
+the serial worker suite passes 303 with two existing opt-in skips (305 total).
+All 55 native package/bootstrap regressions pass, including the JSON loader
+checks. Extension package verification also passes. Synthetic DOM fixtures do
+not certify current live X markup or rendered playback.
+
+This increment performs no runtime activation, browser/session access, live
+capture, source mutation, text expansion or new navigation. A3 text mutation and
+live qualification remain separate work. Roadmap closure is not implied by
+source implementation or offline verification.
+
 ## X wrapped feed markup, 8 November 2026
 
 In the Windowed capture profile, DevTools confirmed that X rendered complete

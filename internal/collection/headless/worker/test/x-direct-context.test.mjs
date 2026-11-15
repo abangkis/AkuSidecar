@@ -8,7 +8,7 @@ import {contentContextKnownTypes} from '../../../../httpapi/web/timeline-content
 
 const bridge = new URL('../../../../../../AkuBridge/', import.meta.url);
 const sources = await Promise.all([
-  ...['capture-primitives.js', 'source-adapter-runtime.js', 'adapters/x-adapter.js',
+  ...['capture-primitives.js', 'bounded-capture-policy.js', 'source-adapter-runtime.js', 'adapters/x-adapter.js',
     'shared-dom-engine/browser-runtime.js', 'adapters/x-dom-shadow.js'].map(name => readFile(new URL(name, bridge), 'utf8')),
   ...['x-quote-identity.js', 'x-extract.js'].map(name => readFile(new URL('../vendor/' + name, import.meta.url), 'utf8')),
 ]);

@@ -139,15 +139,20 @@ test('actual Windowed and Headless acquisition preserve the same owned primary H
   assert.equal(block.mediaRecovery.limitation, 'video_playback_unverified');
 });
 
-test('the same fixture detects the acquisition gap when the shared playback resolver is absent', async () => {
+test('the same fixture detects missing playback composition at the Headless consumer boundary', async () => {
   const f = fixture({ resources: [entry(master)] });
   const policy = f.context.AkuBoundedCapturePolicy;
   // Reproduce the previous missing shared-policy composition in memory only.
-  f.context.AkuBoundedCapturePolicy = { ...policy, xPlaybackUrl: undefined };
+  f.context.AkuBoundedCapturePolicy = { ...policy,
+    extractXDOMMedia: (...args) => {
+      const result = policy.extractXDOMMedia(...args);
+      return { ...result, media: result.media.map(value => ({ ...value, playbackUrl: null, playbackMode: 'native' })) };
+    },
+  };
   const snapshot = await f.snapshot();
   const block = observation(snapshot, policy).snapshots[0].blocks[0];
   assert.equal(f.windowed()[0].playbackUrl, master);
-  assert.equal(block.media[0].playbackUrl, undefined);
+  assert.equal(block.media[0].playbackUrl, null);
   assert.throws(() => assert.deepEqual(mediaURLs(block.media), mediaURLs(f.windowed())),
     { code: 'ERR_ASSERTION' });
 });
