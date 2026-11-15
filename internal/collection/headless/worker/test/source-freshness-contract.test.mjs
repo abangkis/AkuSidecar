@@ -82,11 +82,18 @@ test('LinkedIn source contract binds exact adapter IDs to activity, ugcPost and 
   ]) assert.equal(contract.primaryIdentity(post),null,JSON.stringify(post));
 });
 
-test('Instagram and Facebook retain explicit disabled headless contracts',()=>{
-  for(const source of sources.filter(source=>!['x','linkedin'].includes(source))){
+test('Facebook retains its disabled contract while Instagram has an explicit read-only mode',()=>{
+  for(const source of ['facebook']){
     const contract=sourceFreshnessContractFor(assets,source);
     assert.equal(contract.source,source);assert.equal(contract.enabled,false);
     assert.equal(contract.matchesFeedURL,undefined);
+  }
+  const instagram=sourceFreshnessContractFor(assets,'instagram');
+  assert.equal(instagram.enabled,true);assert.equal(instagram.mode,'settled_current');
+  for(const [before,after] of [['mode: "settled_current"','mode: "unsafe"'],['wakeObservationMs: 3_500','wakeObservationMs: 0']]){
+    assert.ok(assets.find(a=>a.relative==='AkuBridge/adapters/instagram-adapter.js').content.includes(before));
+    const broken=assets.map(a=>a.relative==='AkuBridge/adapters/instagram-adapter.js'?{...a,content:a.content.replace(before,after)}:a);
+    assert.equal(sourceFreshnessContractFor(broken,'instagram').enabled,false);
   }
 });
 

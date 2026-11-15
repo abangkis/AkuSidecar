@@ -75,6 +75,13 @@ export async function recoverHeadlessFreshness({
     return unchanged(base('unavailable', { probeStatus: 'unavailable', limitation: 'capture_headroom_reserved' }));
   }
 
+  if (contract.mode === 'settled_current') {
+    if (requestedPolicy === 'preserve_frontier' || requestedPolicy === 'preserve_target') {
+      return unchanged(base('preserved', { limitation: 'preserve_policy' }));
+    }
+    return observeSettledCurrent({page,snapshot,options,contract,collectSnapshot,phaseDeadline,base,unchanged});
+  }
+
   let currentUrl;
   try {
     currentUrl = await evaluateBounded(page, 'location.href', phaseDeadline);
@@ -242,6 +249,64 @@ export async function recoverHeadlessFreshness({
 
   await assertCurrentRoute(page, options, contract, phaseDeadline, true);
   return unchanged(base('reveal_unverified', { ...activationFields, limitation: 'no_primary_content_change' }));
+}
+
+// Read-only counterpart of the adapter's Windowed wake/settled-current contract.
+// The caller owns an already navigated page; this never focuses, reloads, clicks
+// or grants native/account authority. All source identities come from the adapter.
+async function observeSettledCurrent({page,snapshot,options,contract,collectSnapshot,phaseDeadline,base,unchanged}) {
+  assertUsable(snapshot);
+  const duration = contract.settledObservationMs;
+  const original = primaryPosts(snapshot,contract);
+  if (snapshot.url !== options.pageUrl) return unchanged(base('not_verified',{limitation:'snapshot_route_unverified'}));
+  if (!Number.isInteger(duration) || duration < 500 || duration > 4000 ||
+      typeof collectSnapshot !== 'function' || snapshot.documentReady !== true ||
+      original.size === 0 || original.size !== snapshot.posts.length) {
+    return unchanged(base('not_verified',{limitation:'primary_identity_unavailable'}));
+  }
+  const until = Date.now()+duration;
+  if (until+ROUTE_CHECK_RESERVE_MS > phaseDeadline) return unchanged(base('unavailable',{limitation:'settlement_budget_unavailable'}));
+  const exactRoute = async () => {
+    const actual = await evaluateBounded(page,'location.href',phaseDeadline);
+    assertApprovedRoute(actual,options,contract);
+    if (actual !== options.pageUrl) throw captureError('source_route_changed','source route changed during settled-current observation');
+  };
+  let current = snapshot;
+  let latest = original;
+  try {
+    for (;;) {
+      await exactRoute();
+      assertUsable(current);
+      const probe = await evaluateBounded(page,`globalThis.AkuSourceFreshnessRuntime?.probe(${JSON.stringify(contract.source)})`,phaseDeadline);
+      await exactRoute();
+      assertUsable(probe);
+      if (!isRecord(probe) || probe.source !== contract.source || typeof probe.pendingContentDetected !== 'boolean') {
+        return unchanged(base('unavailable',{limitation:'source_probe_unavailable'}));
+      }
+      if (probe.pendingContentDetected) throw captureError('freshness_unavailable','Instagram does not support pending-content reveal');
+      const fresh = await within(Promise.resolve().then(()=>collectSnapshot(phaseDeadline)),phaseDeadline);
+      await exactRoute();assertUsable(fresh);
+      if (fresh?.url !== options.pageUrl) throw captureError('source_route_changed','source snapshot route changed');
+      latest = primaryPosts(fresh,contract);
+      if (fresh.documentReady !== true || latest.size === 0 || latest.size !== fresh.posts.length) {
+        return unchanged(base('not_verified',{limitation:'primary_identity_unavailable'}));
+      }
+      current = fresh;
+      const comparison = comparePrimaryPosts(original,latest);
+      if (comparison.addedPrimaryCount+comparison.changedPrimaryCount > 0 || Date.now() >= until) {
+        return {snapshot:current,freshness:base(comparison.addedPrimaryCount+comparison.changedPrimaryCount > 0 ? 'verified':'checked_no_pending',{
+          probeStatus:'observed',pendingContentDetected:false,pendingContentLabel:'',strategy:contract.version,
+          verification:comparison.addedPrimaryCount+comparison.changedPrimaryCount > 0?'feed_change':'adapter_wake_contract',
+          evidence:comparison.addedPrimaryCount+comparison.changedPrimaryCount > 0?'primary_content_changed':'adapter_wake_window_settled',
+          readOnly:true,feedMutation:false,verifiedPrimaryCount:latest.size,...comparison,limitation:null})};
+      }
+      await delay(Math.min(POLL_INTERVAL_MS,Math.max(1,until-Date.now())));
+    }
+  } catch (error) {
+    if (normalizedSourceError(error) || error?.code === 'source_route_changed' || error?.code === 'freshness_unavailable') throw error;
+    await exactRoute();
+    return unchanged(base('unavailable',{limitation:boundedFailure(error,phaseDeadline)}));
+  }
 }
 
 function primaryPosts(snapshot, contract) {

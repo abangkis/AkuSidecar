@@ -131,15 +131,15 @@ test('Instagram terminal policy reassesses recovered media and never accepts pag
   assert.equal(withoutFacts.snapshots[0].blocks[0].captureQuality.assessment,undefined,'structured/legacy observations cannot invent DOM facts');
 });
 
-test('real capture composition carries passive Instagram assessment while freshness remains explicitly disabled',async()=>{
+test('real capture composition retains passive quality and refuses an insufficient settling budget',async()=>{
   const f=fixture();
   const page={async navigate(){f.effects.navigations++;return {};},async send(){return {};},async evaluate(expression){return vm.runInContext(expression,f.context);}};
   const observation=await captureIsolated({backend:'headless_worker',forSource:async()=>page}, {instagram:assets},'instagram',{
     scrolls:0,sourceHydrationTimeoutMs:1000,captureTimeoutMs:5000,sameTabMutationAllowed:false,pendingContentPolicy:'detect_only'});
   const block=observation.snapshots[0].blocks[0];
   assert.equal(block.captureQuality.status,'unverified');assert.equal(block.captureQuality.assessment.verdict,'complete');
-  assert.equal(observation.coverage.freshness.workerStatus,'not_verified');
-  assert.equal(observation.coverage.freshness.limitation,'source_contract_unsupported');
+  assert.equal(observation.coverage.freshness.workerStatus,'unavailable');
+  assert.equal(observation.coverage.freshness.limitation,'settlement_budget_unavailable');
   assert.equal(f.effects.clicks,0);assert.equal(f.effects.network,0);assert.equal(f.effects.navigations,1);
   const policy=assets.find(a=>a.relative==='AkuBridge/capture-quality-policy.js');
   assert.equal(policy.sha256,createHash('sha256').update(policy.content).digest('hex'));
@@ -161,12 +161,22 @@ test(`Instagram freshness capability reconciliation: ${spec.name}`,async()=>{
   }
   let evaluations=0;
   const snapshot=await f.context.XHeadlessPoC.collect();
-  const result=await recoverHeadlessFreshness({source:'instagram',backend:'headless_worker',snapshot,
-    options:{acquisitionRound:spec.round??1,pendingContentPolicy:'reveal_if_present',sourceFreshnessPolicy:'wake_and_reveal',sameTabMutationAllowed:true},
-    contract:sourceFreshnessContractFor(assets,'instagram'),deadlineAt:Date.now()+5000,
-    page:{evaluate:async()=>{evaluations++;throw Error('disabled capability must not evaluate a page');}}});
-  assert.equal(result.snapshot,snapshot);assert.equal(result.freshness.workerStatus,'not_verified');
-  assert.equal(result.freshness.limitation,'source_contract_unsupported');assert.equal(evaluations,0);
+  const headless=()=>recoverHeadlessFreshness({source:'instagram',backend:'headless_worker',snapshot,
+    options:{pageUrl:'https://www.instagram.com/',acquisitionRound:spec.round??1,pendingContentPolicy:'reveal_if_present',sourceFreshnessPolicy:'wake_and_reveal',sameTabMutationAllowed:true},
+    contract:sourceFreshnessContractFor(assets,'instagram'),deadlineAt:Date.now()+10000,
+    collectSnapshot:()=>f.context.XHeadlessPoC.collect(),
+    page:{evaluate:async expression=>{evaluations++;return vm.runInContext(expression,f.context);}}});
+  if(spec.pending)await assert.rejects(headless(),{code:'freshness_unavailable'});
+  else {
+    const result=await headless();
+    assert.equal(result.freshness.workerStatus,spec.round===2?'preserved':'checked_no_pending');
+    if(spec.round===2){assert.equal(result.snapshot,snapshot);assert.equal(evaluations,0);}
+    else {
+      assert.equal(result.freshness.verification,'adapter_wake_contract');
+      assert.equal(result.freshness.readOnly,true);assert.equal(result.freshness.verifiedPrimaryCount,1);
+      assert.equal(result.freshness.activationCount,0);assert.equal(result.freshness.feedMutation,false);
+    }
+  }
   assert.equal(f.effects.clicks,0);assert.equal(f.effects.network,0);
   assert.equal(f.effects.wakes,spec.background?1:0);
 });

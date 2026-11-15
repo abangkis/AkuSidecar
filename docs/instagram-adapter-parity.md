@@ -1,6 +1,7 @@
 # Instagram adapter parity (B)
 
-Scope: B1 shared readiness and B2 freshness/quality reconciliation under the
+Scope: B1 shared readiness, B2 quality reconciliation, B3 primary-caption
+expansion and B4 read-only freshness parity under the
 existing Headless adapter-parity roadmap. Native provider qualification and
 SharedDOMEngine adapter onboarding retain their separate roadmap owners.
 
@@ -36,22 +37,20 @@ navigation, recovery execution or controller authority is introduced.
 
 | Equivalent condition | Windowed | Ordinary Headless Instagram |
 | --- | --- | --- |
-| Active feed without pending control | `active_feed_ready` from dispatch contract | `not_verified`, `source_contract_unsupported` |
-| Background feed, unchanged after bounded wake | `adapter_wake_settled` from adapter contract | Same explicit unsupported result; no wake/probe |
-| Visible pending-content control | Reveal unsupported; `freshness_unavailable` | Same explicit unsupported result; no click |
-| Follow-up acquisition | `follow_up_preserved`, no wake/reveal | Freshness contract remains disabled; no mutation |
+| Active feed without pending control | `active_feed_ready` from dispatch contract | `checked_no_pending` only after bounded, owned-primary observation |
+| Background feed, unchanged after bounded wake | `adapter_wake_settled` from adapter contract | Same adapter settling interval and `adapter_wake_contract` evidence, without focus or mutation |
+| Visible pending-content control | Reveal unsupported; `freshness_unavailable` | Same unsupported result; no click |
+| Follow-up acquisition | `follow_up_preserved`, no wake/reveal | `preserved`, no freshness evaluation or mutation |
 
 The fixture uses the actual Instagram strategy, shared source probe, Windowed
-freshness controller and Headless contract/controller. Headless performs zero
-freshness page evaluations even when a permissive request asks for reveal.
+freshness controller and Headless contract/controller. B2 originally retained an
+explicitly disabled Headless contract; B4 replaces that limitation with the
+adapter-owned `settled_current` mode. `revealSupported` remains false in both
+consumers. See [B4 proof and guards](instagram-freshness-parity.md).
 
-Retain `instagram.freshness.headless.enabled: false` and `revealSupported: false`.
-Windowed wake/settled-current evidence is not equivalent to owned Headless
-primary-identity verification. Return to this limitation only when an Instagram
-feed-route matcher, exact primary-identity contract and separately authorized
-qualification demonstrate safe freshness evidence on that owned route. Reuse
-the existing controller, deadlines, mutation consent and continuation guards.
-Do not activate generic reveal or repeat account probes to close track B.
+B3 closes the no-wrapper caption gap with a shared, primary-caption-scoped root
+resolver and exact owner checks. Both consumers use the same resolver; unsafe
+controls preserve partial text. See [B3 paired DOM evidence](instagram-caption-parity.md).
 
 ## Retained baseline and qualification ownership
 
@@ -73,15 +72,17 @@ Do not activate generic reveal or repeat account probes to close track B.
 
 New fixture suite: `internal/collection/headless/worker/test/instagram-capability-parity.test.mjs`.
 It covers seven equal-input quality cases, final-media/schema trust boundaries,
-actual capture composition with real assets, and four freshness comparisons.
+actual capture composition with real assets, and four freshness comparisons
+that now exercise the enabled B4 contract with the same real-adapter fixture.
 B1's 13 readiness fixtures remain covered with the actual quality asset loaded.
 
-Worker regression: 343 passed, 4 skipped. Native Instagram session, provider and
-owned-bootstrap fixtures: 153 passed. The retained Bridge source/policy is
-unchanged from its 638-test B1 verification. Native recovery and account/document
+Worker regression after B4: 351 passed, 5 skipped. Native Instagram session, provider and
+owned-bootstrap fixtures: 153 passed. Bridge regression passes all 638 tests
+with the B4 adapter contract loaded. Native recovery and account/document
 rejection behavior remain unchanged.
 
-B1 publication/activation is already verified. B2 implementation and offline
-evidence are separate from B2 activation and any live capture. Closure of this
-implementation/reconciliation scope must not close Headless Stage 03/04, enable
-freshness, certify native Instagram, or imply full media/playback acceptance.
+B1/B2 publication and activation are already verified. B3/B4 implementation and
+offline evidence are separate from their bundle delivery and any live capture.
+This source-parity scope does not close Headless Stage 03/04, certify native
+Instagram, or imply full media/playback acceptance. A live result is not inferred
+from passing offline fixtures or a healthy runtime.

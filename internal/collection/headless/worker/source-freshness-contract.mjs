@@ -24,10 +24,14 @@ export function sourceFreshnessContractFor(assets, source) {
     }
     const adapter = context.AkuSourceAdapters.get(source);
     const contract = adapter.freshness.headless;
-    if (contract?.enabled === true && adapter.freshness.revealSupported === true &&
+    const settled = contract?.mode === 'settled_current';
+    const validSettled = settled && Number.isInteger(adapter.freshness.wakeObservationMs)
+      && adapter.freshness.wakeObservationMs >= 500 && adapter.freshness.wakeObservationMs <= 4000;
+    if (contract?.enabled === true && (adapter.freshness.revealSupported === true || validSettled) &&
         typeof contract.version === 'string' && contract.version &&
         typeof contract.matchesFeedURL === 'function' && typeof contract.primaryIdentity === 'function') {
       result = Object.freeze({ source, enabled: true, version: contract.version,
+        ...(settled ? {mode:'settled_current',settledObservationMs:adapter.freshness.wakeObservationMs} : {}),
         matchesFeedURL: contract.matchesFeedURL, primaryIdentity: contract.primaryIdentity });
     }
   } catch {

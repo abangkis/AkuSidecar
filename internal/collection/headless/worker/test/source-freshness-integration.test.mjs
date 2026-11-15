@@ -77,8 +77,8 @@ test('capture rejects a route-changing reveal rather than admitting original fee
   await assert.rejects(capture(f.browser,f.assets,'x',payload),error=>/route/.test(error.code||error.message));
   assert.equal(f.state.clicks,1);
 });
-test('Facebook and Instagram retain disabled contracts while preserving read-only capture',async()=>{
-  for(const source of ['instagram','facebook']){
+test('Facebook retains its disabled contract while preserving read-only capture',async()=>{
+  for(const source of ['facebook']){
     const f=fixture({source});
     const observation=await capture(f.browser,f.assets,source,payload);
     assert.equal(observation.coverage.freshness.workerStatus,'not_verified',source);
@@ -86,6 +86,16 @@ test('Facebook and Instagram retain disabled contracts while preserving read-onl
     assert.ok(observation.snapshots[0].blocks.length>0,source);
     assert.equal(f.state.clicks,0,source);assert.equal(f.state.freshnessEvaluations,0,source);
   }
+});
+
+test('Instagram observes bounded current content without reveal, and refuses pending content',async()=>{
+  const f=fixture({source:'instagram',pending:false});
+  const result=await capture(f.browser,f.assets,'instagram',{...payload,captureTimeoutMs:8000});
+  assert.equal(result.coverage.freshness.workerStatus,'checked_no_pending');
+  assert.equal(result.coverage.freshness.readOnly,true);assert.equal(f.state.clicks,0);
+  const pending=fixture({source:'instagram'});
+  await assert.rejects(capture(pending.browser,pending.assets,'instagram',{...payload,captureTimeoutMs:8000}),{code:'freshness_unavailable'});
+  assert.equal(pending.state.clicks,0);
 });
 test('LinkedIn clicks Show new posts on For You and preserves that route in round two',async()=>{
   const f=fixture({source:'linkedin',pendingLabel:'Show new posts',landedURL:linkedInAlias});
