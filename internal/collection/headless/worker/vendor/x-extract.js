@@ -33,18 +33,19 @@
   const structuredText = primitives.structuredText;
   const helpers = { compactText, structuredText, normalizeHttpUrl, uniqueElements: values => [...new Set(values)] };
   const expansionStates = new WeakMap();
-  const ownControls = (container, quote, policy) => [...container.querySelectorAll(policy.buttonSelector)]
-    .filter(button => !quote?.contains(button));
   async function expandDetail(adapter, container) {
     if (globalThis.AkuHeadlessCapturePolicy?.allowContentExpansion === false) return;
     if (primitives.detectXAccessChallenge(document, location)) return;
     const quote = adapter.findQuotedRoot(container);
     const identity = adapter.resolveIdentity?.(container, quote);
     if (identity && identity.status !== 'identified') return;
-    const ownLink = [...container.querySelectorAll('time')].find(t => !quote?.contains(t))?.closest('a[href]')?.href;
-    if (location.hostname === 'x.com' && canonical(location.href) !== canonical(ownLink)) return;
+    const ownLink = identity?.permalink ?? [...container.querySelectorAll('time')]
+      .find(t => !quote?.contains(t))?.closest('a[href]')?.href;
+    const detailPermalink = canonical(location.href);
+    if (location.hostname === 'x.com' && (!detailPermalink || detailPermalink !== canonical(ownLink))) return;
     if (expansionStates.has(container)) return;
-    const expansion = await primitives.expandContent({ container, adapter, readText: structuredText,
+    const expansion = await primitives.expandContent({ container, adapter, readText: root => adapter.extractText(root, helpers),
+      expectedPermalink: ownLink, requireExactXPermalink: true,
       route: () => location.href, deadlineAt: globalThis.AkuHeadlessCapturePolicy?.deadlineAt ?? Infinity });
     const state = expansion.state === 'expanded_no_restore_control' ? 'expanded'
       : expansion.state === 'route_changed' ? 'navigation_changed'
@@ -177,8 +178,7 @@
         const media = findMedia(adapter, container, quote);
         const mediaExpected = adapter.mediaAcquisition.detectExpectedKinds(container, { ...helpers, excludeRoot: quote });
         const quotedPost = adapter.extractQuotedPost(container, { ...helpers, capturedAt, findMedia: root => findMedia(adapter, root) });
-        const textCollapsed = ownControls(container, quote, adapter.contentExpansion)
-          .some(button => primitives.expansionLabel(compactText(button), 'more'));
+        const textCollapsed = Boolean(primitives.findExpansionButton(container, adapter, 'more'));
         if (quotedPost) {
           const quoteIdentity = quotedPost.identityConflictReason
             ? { permalink: null, status: 'conflicting_identity', provenance: null,
@@ -191,8 +191,7 @@
           semantics.parentPermalink = quoteIdentity.permalink;
           quotedPost.mediaExpected = [...new Set(adapter.mediaAcquisition.detectExpectedKinds(quote, helpers))];
           quotedPost.mediaEvidence = mediaEvidence(quotedPost.media, quotedPost.mediaExpected);
-          quotedPost.textCollapsed = [...quote.querySelectorAll(adapter.contentExpansion.buttonSelector)]
-            .some(button => primitives.expansionLabel(compactText(button), 'more'));
+          quotedPost.textCollapsed = Boolean(primitives.findExpansionButton(quote, adapter, 'more'));
           quotedPost.textStatus = quotedPost.textCollapsed ? 'requires_permalink_capture' : 'visible_text_no_collapse_control';
           quotedPost.textCompleteness = primitives.textCompleteness({ collapsed: quotedPost.textCollapsed, textStatus: quotedPost.textStatus });
         }

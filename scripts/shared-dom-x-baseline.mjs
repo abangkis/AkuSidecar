@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { registeredScriptsForSources } from '../../AkuBridge/source-access-policy.js';
@@ -46,6 +46,13 @@ const wrappedPost = wrapped('1234500000000000002');
 const quoteId = '1234500000000000004';
 const quote = `<div role="link" data-testid="quoteTweet"><div data-testid="User-Name">quote</div>` +
   `${timestamp('quote', quoteId)}<div data-testid="tweetText">Quoted fixture body</div></div>`;
+const wrappedLongId = '1234500000000000010';
+const wrappedLongPermalink = `https://x.com/wrapped/status/${wrappedLongId}`;
+const wrappedExcerpt = 'A short excerpt ending before the rest of the post.';
+const wrappedFullText = `${wrappedExcerpt} ${'The rest of the post is now visible. '.repeat(12).trim()}`;
+const showMoreButton = '<button type="button" class="text-brand hover:underline">Show more</button>';
+const wrappedLong = wrapped(wrappedLongId, { text: `<span>${wrappedExcerpt}</span> ${showMoreButton}`, extra: showMoreButton });
+const authoredShowMore = 'These are the words the author wrote: Show more';
 const cases = [
   ['legacy', legacy('1234500000000000001')],
   ['wrapped_without_time', wrappedPost],
@@ -75,6 +82,13 @@ const cases = [
     <a href="/quote/status/${quoteId}">Quoted post</a><div data-testid="tweetText">Quote body</div></div>` })],
   ['quote_authored_link', legacy('1234500000000000003', { extra: `<div data-testid="quoteTweet">
     <div data-testid="tweetText"><a href="/quote/status/${quoteId}">A link in the quote body</a></div></div>` })],
+  ['wrapped_show_more_feed', wrappedLong, { replacement: wrappedFullText }],
+  ['wrapped_show_more_detail', wrappedLong, { route: wrappedLongPermalink, replacement: wrappedFullText }],
+  ['wrapped_show_more_stalled', wrappedLong, { route: wrappedLongPermalink }],
+  ['wrapped_authored_show_more', wrapped(wrappedLongId, { text: `<span>${authoredShowMore}</span>`, extra: showMoreButton }), {}],
+  ['wrapped_quote_show_more', wrapped(wrappedLongId, {
+    extra: wrapped(quoteId, { handle: 'quote', text: `<span>${wrappedExcerpt}</span> ${showMoreButton}` }),
+  }), {}],
   ['empty', '<p>No posts to display</p>'],
   ['login_required', '<input name="password" aria-label="Fixture password">'],
   ['challenge_required', '<section id="challenge-running">Fixture challenge</section>'],
@@ -181,6 +195,7 @@ function browserBaseline({ cases, assets, gate, mode }) {
         throw new Error(`${name}: Windowed observation lost shadow diagnostics`);
       }
       windowed.posts = blocks.map(block => compactPost(block, expansionCase?.timestamp));
+      if (expansionCase) windowed.completeness = blocks.map(block => block.presentation.textCompleteness);
       windowed.quality = qualityReports.map(({ verdict, issues }) => ({
         verdict, issues: issues.map(({ field, code }) => `${field}:${code}`),
       }));
@@ -197,6 +212,8 @@ function browserBaseline({ cases, assets, gate, mode }) {
       rejections: snapshot.rejectionReasons,
       posts: snapshot.posts.map(post => compactPost(post, expansionCase?.timestamp)),
       sharedDOMShadow: snapshot.sharedDOMShadow,
+      ...(expansionCase ? { completeness: snapshot.posts.map(post => post.textCompleteness),
+        textStatus: snapshot.posts.map(post => post.textStatus) } : {}),
     };
   }
 
@@ -213,7 +230,16 @@ function browserBaseline({ cases, assets, gate, mode }) {
       location.href = expansionCase?.route ?? 'https://x.com/home';
       globalThis.AkuHeadlessCapturePolicy = { allowContentExpansion: Boolean(expansionCase && !expansionCase.timestamp) };
       main.innerHTML = body;
+      let clicks = 0;
+      if (expansionCase) {
+        const textButton = main.querySelector('article > .whitespace-pre-wrap > button');
+        for (const button of main.querySelectorAll('button')) button.addEventListener('click', () => {
+          clicks++;
+          if (button === textButton && expansionCase.replacement) button.parentElement.textContent = expansionCase.replacement;
+        });
+      }
       const result = mode === 'windowed' ? await sampleWindowed(name, expansionCase) : await sampleHeadless(expansionCase);
+      if (expansionCase) result.expansionClicks = clicks;
       rows.push({ name, result });
     }
     out.textContent = JSON.stringify({ rows, shadowCalls, shadowMutations });
@@ -242,7 +268,9 @@ assert.equal(digest(windowedRuntime.content), headlessRuntime.sha256);
 const workerSource = await readFile(join(bridge, 'service-worker.js'), 'utf8');
 const gate = workerSource.match(/^function isSourceCaptureReady\(readiness\) \{[\s\S]*?^\}/m)?.[0];
 assert.ok(gate, 'Windowed service-worker readiness gate');
-const scratchRoot = await realpath(join(workspace, 'SharedTemp'));
+const scratchDirectory = join(workspace, 'AkuSidecar', 'build', 'shared-dom-x-baseline');
+await mkdir(scratchDirectory, { recursive: true });
+const scratchRoot = await realpath(scratchDirectory);
 const scratch = await mkdtemp(join(scratchRoot, 'shared-dom-x-baseline-'));
 
 async function runFixture(mode, assets, fixtureCases = cases) {
@@ -306,9 +334,17 @@ try {
   }
   const get = name => data.rows.find(row => row.name === name);
   for (const { name, windowed, headless } of data.rows) {
-    assert.deepEqual(headless.posts, windowed.posts, name);
+    if (name !== 'wrapped_show_more_feed') assert.deepEqual(headless.posts, windowed.posts, name);
     assert.equal(headless.readiness, windowed.readiness, name);
   }
+  const feedExpansion = get('wrapped_show_more_feed');
+  assert.equal(feedExpansion.windowed.posts[0].text, wrappedFullText);
+  assert.equal(feedExpansion.windowed.expansionClicks, 1);
+  assert.deepEqual(feedExpansion.windowed.completeness, ['expanded']);
+  assert.equal(feedExpansion.headless.posts[0].text, wrappedExcerpt);
+  assert.equal(feedExpansion.headless.expansionClicks, 0);
+  assert.deepEqual(feedExpansion.headless.completeness, ['partial']);
+  assert.deepEqual(feedExpansion.headless.textStatus, ['requires_permalink_capture']);
   for (const mode of ['windowed', 'headless']) {
     const token = get('timestamp_token_gremlin_reconstructed_1h')[mode].posts[0];
     assert.equal(token.publishedAt, '2026-11-12T08:59:21.397Z');
@@ -345,6 +381,18 @@ try {
     assert.equal(invalidQuote.publishedAt, token.publishedAt);
     assert.equal(invalidQuote.quoteId, null);
     assert.equal(invalidQuote.quotePublishedAt, null);
+    const detail = get('wrapped_show_more_detail')[mode];
+    assert.equal(detail.posts[0].text, wrappedFullText);
+    assert.equal(detail.expansionClicks, 1);
+    assert.deepEqual(detail.completeness, ['expanded']);
+    const stalled = get('wrapped_show_more_stalled')[mode];
+    assert.equal(stalled.posts[0].text, wrappedExcerpt);
+    assert.equal(stalled.expansionClicks, 1);
+    assert.deepEqual(stalled.completeness, ['partial']);
+    assert.equal(get('wrapped_authored_show_more')[mode].posts[0].text, authoredShowMore);
+    assert.equal(get('wrapped_authored_show_more')[mode].expansionClicks, 0);
+    assert.equal(get('wrapped_quote_show_more')[mode].posts[0].quoteText, wrappedExcerpt);
+    assert.equal(get('wrapped_quote_show_more')[mode].expansionClicks, 0);
   }
   for (const mode of ['windowed', 'headless']) {
     assert.equal(get('legacy')[mode].posts[0].id, 'x:status:1234500000000000001');
@@ -382,6 +430,8 @@ try {
     quote_cannot_identify_owner: 'no_valid_candidates', quote_identity_conflict: 'ready',
     quote_direct_link: 'ready', quote_authored_link: 'ready',
     timestamp_quote_identity_conflict: 'no_valid_candidates',
+    wrapped_show_more_feed: 'ready', wrapped_show_more_detail: 'ready', wrapped_show_more_stalled: 'ready',
+    wrapped_authored_show_more: 'ready', wrapped_quote_show_more: 'ready',
     empty: 'empty_unverified', login_required: 'login_required', challenge_required: 'challenge_required',
   };
   for (const { name, windowed, headless } of data.rows) {

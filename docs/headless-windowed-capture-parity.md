@@ -121,6 +121,69 @@ capture, source mutation, text expansion or new navigation. A3 text mutation and
 live qualification remain separate work. Roadmap closure is not implied by
 source implementation or offline verification.
 
+## A3: shared X full-text semantics, 15 November 2026
+
+This source-local increment verifies the actual X adapter against the same
+reconstructed wrapped post in Windowed, Headless and native detect-only modes.
+It reuses the inline-control discovery, authored-text/root reader and quote
+exclusion already present in the local source baseline. Those earlier local
+changes were not included in the A2 publication pair (Bridge `ec93594`, Sidecar
+`f499d53`); the complete A3 publication package includes them with this increment.
+
+Windowed expansion now uses the X adapter's authored-text reader, as Headless
+already does. An actual inline control is excluded, while authored words ending
+in “Show more” remain text. Collapse detection uses the shared expansion-control
+helper. No worker-specific selector list or second text parser is introduced.
+
+The shared expansion primitive pins the X post's canonical identity before the
+click and checks it during polling. Windowed can expand an identified feed post;
+on a detail route it must match that post. Headless additionally requires an
+exact detail permalink. Missing/conflicting identity, a different or quoted post
+route, owner replacement, route change, and unsuccessful expansion cannot be
+reported as successful full-text recovery. Other adapters retain their existing
+expansion contract.
+
+Native X capability flags are unchanged: expansion, freshness mutation, quote
+navigation and temporary detail pages remain disabled. Recognized collapsed
+text stays partial with `permalink_capture_unavailable`, even when a caller
+supplies permissive mutation options and a temporary-page function. This does
+not deliver native full-text expansion or complete the whole A3 roadmap scope.
+
+Validation uses `test/x-full-text-parity.test.mjs` under the Headless worker.
+It loads the actual X adapter, shared assets, Windowed `expandSourceContent`
+and Headless extractor in an isolated offline Chrome DOM. Ten scenarios run in
+each of three modes, covering inline controls, quote isolation, authored labels,
+feed/detail distinction, wrong/quote routes, missing identity, changed owner or
+route, and stalled expansion. Native capture orchestration also consumes its
+real-DOM snapshot with synthetic transport and verifies zero temporary pages.
+The browser test is opt-in through `AKU_OFFLINE_CHROME`; the explicit run passed.
+The fixture reconstructs markup and controls the route; it is not captured live
+X DOM and does not execute the surrounding Windowed pipeline or daily-owner RPC.
+
+Final offline validation: Bridge 636 passed; serial worker suite 306 passed and
+three opt-in tests skipped (309 total); native package/bootstrap suites 55
+passed. The new browser test was run separately with no skip. Extension package
+verification and diff checks passed. Logs and generated fixture profiles/results
+are under each project's `build/a3-shared-text-20261115/` directory. No production
+activation, live capture, native capability expansion, commit or push is part of
+this implementation checkpoint.
+
+### A3 publication review, 15 November 2026
+
+The isolated publication pair is based on Bridge `f5064f7` and Sidecar
+`f499d53`. Review includes the previously unpublished inline detection and
+authored reader, shared owner guards, Headless composition, unit tests, and both
+real-DOM fixtures. Only four files per repository belong to this package;
+development-package retention changes and experiments are excluded.
+
+The exact publication pair passes 636 Bridge tests, 306 worker tests (three
+opt-in skips), 55 native package/bootstrap tests, the separately enabled
+30-scenario full-text browser fixture, and the shared-DOM X baseline. Extension
+package verification and diff checks pass. The baseline fixture now keeps its
+temporary profiles under the Sidecar build directory. Review found no blocker
+within this bounded source/offline scope. Runtime activation and live capture
+remain unperformed, and native capabilities remain unchanged.
+
 ## X wrapped feed markup, 8 November 2026
 
 In the Windowed capture profile, DevTools confirmed that X rendered complete
