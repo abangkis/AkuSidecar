@@ -9,6 +9,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'source-cache.ps1')
 $sourceBuildCaches = Get-SourceBuildCachePaths -Repository (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $PSScriptRoot 'worker-backup-retention.ps1')
+. (Join-Path $PSScriptRoot 'native-stage-retention.ps1')
 . (Join-Path $PSScriptRoot 'dev-runtime-contract.ps1')
 $runtimeOperation = Enter-DevRuntimeOperation (Join-Path $repoRoot 'runtime\dev')
 try {
@@ -150,6 +151,7 @@ try {
         [Text.UTF8Encoding]::new($false)
     )
     Move-Item -LiteralPath $temporaryProvenance -Destination $provenancePath -Force
+    $null = Remove-NativeStageAfterSuccess -BuildRoot (Join-Path $repoRoot 'build') -StagePath $nativeStage -BuildSucceeded
     if ($workerStageBackedUp) {
         $null = Remove-WorkerBackupAfterSuccess -RuntimeRoot $runtimeDir -BackupPath $priorWorkerStage -BackupPrefix $workerBackupPrefix
     }
