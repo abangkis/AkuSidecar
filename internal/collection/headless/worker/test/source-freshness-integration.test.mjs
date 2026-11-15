@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 import {sourceFreshnessContractFor} from '../source-freshness-contract.mjs';
 const bridge=fileURLToPath(new URL('../../../../../../AkuBridge/',import.meta.url));
 const runtime=await readFile(new URL('../../../../../../AkuBridge/source-freshness-runtime.js',import.meta.url),'utf8');
-const adapterAssets=await Promise.all(['capture-primitives.js','source-adapter-runtime.js',...['x','linkedin','instagram','facebook'].map(source=>`adapters/${source}-adapter.js`)].map(async name=>({
+const adapterAssets=await Promise.all(['capture-primitives.js','capture-quality-policy.js','source-adapter-runtime.js',...['x','linkedin','instagram','facebook'].map(source=>`adapters/${source}-adapter.js`)].map(async name=>({
   relative:'AkuBridge/'+name,execute:false,content:await readFile(new URL('../../../../../../AkuBridge/'+name,import.meta.url),'utf8'),sha256:'a'.repeat(64)})));
 const linkedInAssets=(await sourceAssets(bridge,'linkedin')).filter(asset=>[
   'capture-primitives.js','source-adapter-runtime.js','source-feed-routes.js','adapters/linkedin-adapter.js','source-freshness-runtime.js',

@@ -1,7 +1,53 @@
-import { runInNewContext } from 'node:vm';
+import { createContext, runInContext, runInNewContext } from 'node:vm';
 
 const cache = new WeakMap();
 const policyCache = new WeakMap();
+const qualityCache = new WeakMap();
+
+// Evaluate the exact shared policy and actual adapter semantics from the
+// provenance-hashed asset set. Page-provided verdicts/profiles are never used.
+export function xCandidateQualityPolicyFor(assets) {
+  if (qualityCache.has(assets)) return qualityCache.get(assets);
+  const context = createContext({URL});
+  for (const relative of ['AkuBridge/capture-primitives.js', 'AkuBridge/source-adapter-runtime.js',
+    'AkuBridge/adapters/x-adapter.js', 'AkuBridge/capture-quality-policy.js']) {
+    const asset = assets?.find(entry => entry.relative === relative);
+    if (typeof asset?.content !== 'string') throw new Error(`Shared X candidate quality asset is required: ${relative}`);
+    runInContext(asset.content, context, {timeout:1000, filename:relative});
+  }
+  const policy = context.AkuCaptureQualityPolicy;
+  const adapter = context.AkuSourceAdapters.get('x');
+  if (typeof policy?.evaluateCandidate !== 'function' || typeof policy?.normalizeFacts !== 'function' ||
+      typeof policy?.observeCandidateFacts !== 'function') throw new Error('Shared X candidate quality contract is unavailable.');
+  const contract = Object.freeze({
+    assess(candidate, rawFacts, textCompleteness, expectedKinds = []) {
+      if (!rawFacts || typeof rawFacts !== 'object' || Array.isArray(rawFacts) ||
+          Object.getOwnPropertyDescriptor(rawFacts, 'schema')?.value !== 'aku.x.candidate-quality-facts.v1') return null;
+      const observed = policy.normalizeFacts(rawFacts);
+      // Recovery/enrichment may have replaced text or media since DOM sampling.
+      // Retry authority is terminal here and remains in the capture controller.
+      const normalizedCandidate = {...candidate,
+        media: candidate.media.map(item => ({...item, kind:item.kind==='video_poster'?'video':item.kind})),
+        quotedPost: candidate.quotedPost && {...candidate.quotedPost,
+          media:Array.isArray(candidate.quotedPost.media) ? candidate.quotedPost.media.map(item=>({...item,kind:item.kind==='video_poster'?'video':item.kind})) : []},
+      };
+      const facts = {...observed,
+        stableTextIdentity:String(candidate.text ?? '').replace(/\s+/g,' ').trim().length >= 40,
+        timestampSignalDetected:observed.timestampSignalDetected || Boolean(candidate.presentation?.timestampText),
+        publishedAtNotExposed:candidate.presentation?.timestampSource==='not_exposed_promoted' || candidate.presentation?.timestampAvailability==='not_exposed_promoted',
+        mediaPlaybackMissing:typeof adapter.mediaAcquisition.isComplete==='function' &&
+          !adapter.mediaAcquisition.isComplete(normalizedCandidate.media,{contentKind:candidate.contentKind,
+            expectedKinds:Array.isArray(expectedKinds)?expectedKinds.filter(kind=>['image','video'].includes(kind)):[]}),
+      };
+      const report = policy.evaluateCandidate({candidate:normalizedCandidate,facts,
+        profileId:adapter.qualityProfile,evidenceProfile:adapter.evidenceProfile,candidateKey:null,attempt:0,retriesRemaining:0});
+      return structuredClone({...report,policyVersion:policy.runtimeRevision,stage:'terminal_observation',
+        retriesRemaining:0,textCompleteness:['expanded','no_collapse_observed','recovery_verified','partial','truncated'].includes(textCompleteness)?textCompleteness:'unknown'});
+    },
+  });
+  qualityCache.set(assets,contract);
+  return contract;
+}
 
 // Reuse the page's provenance-hashed policy for pure playback admission in
 // Observation. No browser globals, transport or playback are available here.

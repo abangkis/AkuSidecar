@@ -184,6 +184,74 @@ temporary profiles under the Sidecar build directory. Review found no blocker
 within this bounded source/offline scope. Runtime activation and live capture
 remain unperformed, and native capabilities remain unchanged.
 
+## A4: shared X candidate-quality assessment, 15 November 2026
+
+The baseline comparison used equivalent normalized candidates and facts with
+the actual X adapter evidence profile. Windowed already evaluated these facts;
+Headless projected `unverified` metadata without an equivalent assessment.
+
+| Fixture | Existing Windowed assessment | Independent boundary retained |
+| --- | --- | --- |
+| Ready authored text or media-only evidence | `complete` | This is evidence assessment, not live verification. |
+| Missing owned media with available text | `usable_degraded` | Existing owned-media policy does not trigger a quality retry when text provides usable evidence. |
+| Unresolved video poster | Generic evidence can be `complete` | Playback remains unresolved/unverified. |
+| Collapsed text | Generic evidence can be `complete` | Text completeness remains partial. |
+| Empty detected evidence | `retryable` with budget, `invalid` when exhausted | Recovery authority belongs to the controller. |
+| Ambiguous native identity | Evaluator alone is not an identity verifier | Existing extractor/admission guards reject the candidate. |
+
+The selected change reuses the existing evaluator rather than changing verdict
+semantics. Windowed X and the Headless extractor use one DOM-fact observer with
+the adapter's selectors and media ownership rules. Only a versioned, allowlisted
+boolean fact record crosses the observation boundary. The actual shared policy
+and X adapter are loaded from provenance-hashed assets for terminal assessment
+after Headless text/media normalization. Page-provided verdicts and profiles
+are not authoritative.
+
+Headless adds a nested `captureQuality.assessment`; its outer `status` stays
+`unverified`, and text/playback limitations remain independent. Terminal
+assessment has zero quality retries remaining. No aggregate quality verdict is
+added to coverage, so this change does not enable complete-quality follow-up
+planning, extra retries, source mutation, temporary pages or stronger admission.
+Native capabilities and existing per-source recovery controllers are unchanged.
+
+Baseline evidence is retained in `build/a4-x-quality-20261115/before.json`.
+This increment is offline implementation and comparison, not live source,
+playback, daily-owner acceptance or roadmap closure.
+
+Validation: the new `x-candidate-quality-parity.test.mjs` passes 10 cases with
+the explicit offline Chrome opt-in. It compares the actual Windowed quality
+function with final Headless projection and uses the actual X adapter plus
+Windowed media observer in a reconstructed browser DOM. Cases cover owned,
+foreign and quoted media, collapsed text, unresolved video, empty evidence,
+remaining/exhausted retry budget, final recovered text/media, rejected supplied
+verdicts, and missing policy contracts. Native capture composition records zero
+temporary pages, quote clicks and mutation grants; daily-owner RPC is not run.
+Deadline and retry execution remain controller responsibilities; the terminal
+assessment does not claim a new recovery allowance.
+
+Final suites: Bridge 636 passed; worker 315 passed with four opt-in skips
+(319 total); native package/bootstrap 55 passed. The A4 browser fixture was
+run separately with no skip. Extension package verification and diff checks
+pass. Two old hand-built asset fixtures now include the required quality policy;
+the initial failing worker log and passing corrected log are retained under
+`build/a4-x-quality-20261115/`. No activation, live capture, commit or push is
+included in this implementation checkpoint.
+
+### A4 publication review, 15 November 2026
+
+The isolated publication pair starts from Bridge `7a3ce93` and Sidecar
+`815c1e3`. Only two Bridge and nine Sidecar files are included: shared policy,
+consumer wiring, parity/regression fixtures and this documentation. Local
+development-package retention work and experiments are excluded.
+
+The exact publication pair passes 636 Bridge tests, 315 worker tests with four
+opt-in skips, 55 native package/bootstrap tests, and all 10 A4 parity tests with
+the explicit offline browser opt-in. Extension package verification and diff
+checks pass. Review found no blocker within this scope. Assessment remains
+nested, with unverified status and controller authority unchanged. Activation,
+live source capture and daily-owner end-to-end acceptance are not part of this
+publication.
+
 ## X wrapped feed markup, 8 November 2026
 
 In the Windowed capture profile, DevTools confirmed that X rendered complete

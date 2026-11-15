@@ -167,7 +167,7 @@ function projectXPlayback(media, policy) {
   });
 }
 
-function toBlock(source, post, feedPosition, captureMode = 'headless_worker', xMediaPolicy = null) {
+function toBlock(source, post, feedPosition, captureMode = 'headless_worker', xMediaPolicy = null, xCandidateQualityPolicy = null) {
   const platformId = validatePost(source, post);
   const originalMedia = Array.isArray(post.media) ? structuredClone(post.media.slice(0, 20)) : [];
   const media = source === 'x' ? projectXPlayback(originalMedia, xMediaPolicy) : originalMedia;
@@ -224,7 +224,7 @@ function toBlock(source, post, feedPosition, captureMode = 'headless_worker', xM
     ...(post.identityComparison ? { identityComparison: structuredClone(post.identityComparison) } : {}),
     ...(post.permalinkProvenance ? { permalinkProvenance: post.permalinkProvenance } : {}),
   };
-  return {
+  const block = {
     evidenceKey: evidenceKey(source, platformId, post.permalink, post.author, post.text),
     author: post.author,
     avatarUrl: typeof post.avatar === 'string' ? post.avatar : '',
@@ -249,6 +249,12 @@ function toBlock(source, post, feedPosition, captureMode = 'headless_worker', xM
     captureQuality: quality,
     feedPosition,
   };
+  if (source === 'x' && xCandidateQualityPolicy) {
+    const assessment = xCandidateQualityPolicy.assess(block,
+      Object.getOwnPropertyDescriptor(post, 'qualityFacts')?.value, post.textCompleteness, expected);
+    if (assessment) quality.assessment = assessment;
+  }
+  return block;
 }
 
 function isVerifiedStructuredVideo(source, item) {
@@ -277,7 +283,7 @@ function isVerifiedStructuredVideo(source, item) {
   } catch { return false; }
 }
 
-export function toObservation({ source, requestedUrl, snapshots, provenance, capturedAt, stopReason, performedScrolls, scrollStopReason, frontier, freshness, captureMode = 'headless_worker', xMediaPolicy = null }) {
+export function toObservation({ source, requestedUrl, snapshots, provenance, capturedAt, stopReason, performedScrolls, scrollStopReason, frontier, freshness, captureMode = 'headless_worker', xMediaPolicy = null, xCandidateQualityPolicy = null }) {
   const first = snapshots[0] || {};
   const hasPosts = snapshots.some(snapshot => (snapshot.posts || []).length > 0);
   const domainSnapshots = snapshots.map((snapshot, index) => {
@@ -303,7 +309,7 @@ export function toObservation({ source, requestedUrl, snapshots, provenance, cap
       scrollY: Number.isFinite(snapshot.scroll?.y) ? Math.trunc(snapshot.scroll.y) : 0,
       viewportHeight: Number.isFinite(snapshot.scroll?.viewportHeight) ? Math.trunc(snapshot.scroll.viewportHeight) : 0,
       newCandidateCount: [...uniqueIds].filter(id => !previousIds.has(id)).length,
-      blocks: posts.map((post, position) => toBlock(source, post, position, captureMode, xMediaPolicy)),
+      blocks: posts.map((post, position) => toBlock(source, post, position, captureMode, xMediaPolicy, xCandidateQualityPolicy)),
       qualityReports,
     };
   });

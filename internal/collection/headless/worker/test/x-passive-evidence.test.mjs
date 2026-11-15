@@ -8,7 +8,7 @@ import {capture} from '../capture.mjs';
 import {MAX_SINGLE_POST_BYTES, toObservation} from '../observation.mjs';
 
 const bridge = new URL('../../../../../../AkuBridge/', import.meta.url);
-const names = ['x-response-evidence-adapter.js', 'x-media-evidence-runtime.js', 'capture-primitives.js', 'bounded-capture-policy.js',
+const names = ['x-response-evidence-adapter.js', 'x-media-evidence-runtime.js', 'capture-primitives.js', 'bounded-capture-policy.js', 'capture-quality-policy.js',
   'source-adapter-runtime.js', 'adapters/x-adapter.js', 'shared-dom-engine/browser-runtime.js', 'adapters/x-dom-shadow.js'];
 const templates = await Promise.all(names.map(async name => ({relative: 'AkuBridge/' + name,
   execute: !name.startsWith('x-'), content: await readFile(new URL(name, bridge), 'utf8')})));

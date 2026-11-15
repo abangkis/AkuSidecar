@@ -203,7 +203,7 @@
           rejectionReasons.empty_evidence++;
           return [];
         }
-        return [{ id, permalink, author, avatar,
+        const post = { id, permalink, author, avatar,
           text, publishedAt: timestamp ? timestamp.publishedAt : times.find(t => canonical(t.closest('a[href]')?.href) === permalink)?.dateTime || null,
           ...semantics, presentation, links, media, mediaExpected: [...new Set(mediaExpected)], mediaEvidence: mediaEvidence(media, [...new Set(mediaExpected)]),
           directContext: Array.isArray(directContext) ? directContext.slice(0, 8) : [],
@@ -223,7 +223,17 @@
             ...(quotedPost && !quotedPost.permalink ? ['quoted_identity_unresolved'] : []),
             ...(quotedPost?.mediaExpected.includes('video') || quotedPost?.media.some(m => m.kind === 'video_poster') ? ['quoted_video_stream_not_resolved'] : []),
             ...(mediaExpected.includes('video') ? ['video_stream_not_resolved'] : [])],
-        }];
+        };
+        const qualityPolicy = globalThis.AkuCaptureQualityPolicy;
+        if (qualityPolicy && typeof qualityPolicy.observeCandidateFacts !== 'function') throw new Error('Shared X candidate quality facts contract is unavailable.');
+        if (qualityPolicy?.observeCandidateFacts) post.qualityFacts = {
+          schema: 'aku.x.candidate-quality-facts.v1',
+          ...qualityPolicy.observeCandidateFacts({container, adapter, candidate: {
+            ...post, platformId: `x:status:${id}`, avatarUrl: avatar,
+            media: media.map(item => ({...item, kind: item.kind === 'video_poster' ? 'video' : item.kind})),
+          }}),
+        };
+        return [post];
       });
       const loginLink = Boolean(document.querySelector('a[href="/login"], a[href^="/i/flow/login"]'));
       const finalChallenge = primitives.detectXAccessChallenge(document, location);
