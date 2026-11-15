@@ -110,6 +110,11 @@ const nativeTime = '<time datetime="2026-11-12T08:59:21.397Z">1h</time>';
 const timeSpec = { timestamp: true, capturedAt: selected[0].capturedAt,
   provenance: 'Reconstructed DOM; relative header and contrasting quote times are synthetic. Original normalized evidence retained separately.' };
 const quoteWith = header => timestampFixture(quotedBlock.quotedPost, header);
+const absoluteURL = ownerBlock.permalink;
+const absoluteAnchor = (text, url = absoluteURL) => `<a href="${url}">${text}</a>`;
+const absoluteSpec = { ...timeSpec, route: absoluteURL, capturedAt: '2026-11-15T12:54:28.005Z' };
+const absoluteBody = (text, extra = '', header = '') => timestampFixture(ownerBlock, header, absoluteAnchor(text) + extra);
+const detailBody = text => absoluteBody(text).replace(/^<div role="link" data-href="[^"]+">/, '<div data-navigation-stop>');
 cases.push(
   ['timestamp_token_gremlin_reconstructed_1h', timestampFixture(ownerBlock, '<span>1h</span>'), timeSpec],
   ['timestamp_chinese_author_reconstructed_1h', timestampFixture(quotedBlock, '<span>1h</span>', quoteWith('<span>3h</span>')), { ...timeSpec, capturedAt: selected[1].capturedAt }],
@@ -128,6 +133,37 @@ cases.push(
   ['timestamp_quote_identity_conflict', timestampFixture(ownerBlock, '<span>1h</span>',
     timestampFixture({ ...quotedBlock.quotedPost, permalink: ownerBlock.permalink }, nativeTime)), timeSpec],
 );
+cases.push(
+  ['absolute_detail_date_identity', detailBody('9:30 PM · Nov 14, 2026 GMT+07:00'), absoluteSpec],
+  ['absolute_detail_no_zone', detailBody('9:30 PM · Nov 14, 2026'), absoluteSpec],
+  ['absolute_explicit_offset', absoluteBody('9:30 PM · Nov 14, 2026 GMT+07:00', quoteWith('<span>3h</span>')), absoluteSpec],
+  ['absolute_utc', absoluteBody('9:30 PM · Nov 14, 2026 UTC'), absoluteSpec],
+  ['absolute_numeric_offset', absoluteBody('9:30 PM · Nov 14, 2026 -03:30'), absoluteSpec],
+  ['absolute_seconds', absoluteBody('12:00:01 AM · Nov 14, 2026 Z'), absoluteSpec],
+  ['absolute_no_zone', absoluteBody('9:30 PM · Nov 14, 2026', quoteWith('<span>3h</span>')), absoluteSpec],
+  ['absolute_abbreviation', absoluteBody('9:30 PM · Nov 14, 2026 EST'), absoluteSpec],
+  ['absolute_invalid_date', absoluteBody('9:30 PM · Feb 30, 2026 UTC'), absoluteSpec],
+  ['absolute_invalid_clock', absoluteBody('13:30 PM · Nov 14, 2026 UTC'), absoluteSpec],
+  ['absolute_invalid_offset', absoluteBody('9:30 PM · Nov 14, 2026 +14:01'), absoluteSpec],
+  ['absolute_unknown_offset', absoluteBody('9:30 PM · Nov 14, 2026 -00:00'), absoluteSpec],
+  ['absolute_conflicting', absoluteBody('9:30 PM · Nov 14, 2026 UTC', absoluteAnchor('10:30 PM · Nov 14, 2026 UTC')), absoluteSpec],
+  ['absolute_quote_only', timestampFixture(quotedBlock, '', timestampFixture(quotedBlock.quotedPost, '', absoluteAnchor('9:30 PM · Nov 14, 2026 UTC', quotedBlock.quotedPost.permalink))), { ...absoluteSpec, route: quotedBlock.permalink }],
+  ['absolute_body_not_time', timestampFixture({ ...ownerBlock, text: '' }).replace('<div dir="auto" class="whitespace-pre-wrap"></div>', `<div dir="auto" class="whitespace-pre-wrap">${absoluteAnchor('9:30 PM · Nov 14, 2026 UTC')}</div>`), absoluteSpec],
+  ['absolute_wrong_route', absoluteBody('9:30 PM · Nov 14, 2026 UTC'), { ...absoluteSpec, route: 'https://x.com/other/status/1234500000000000099' }],
+  ['absolute_feed_not_time', absoluteBody('9:30 PM · Nov 14, 2026 UTC'), timeSpec],
+  ['absolute_media_link_not_time', timestampFixture(ownerBlock, '', absoluteAnchor('9:30 PM · Nov 14, 2026 UTC', absoluteURL + '/photo/1')), absoluteSpec],
+  ['absolute_wrong_owner', timestampFixture(ownerBlock, '', absoluteAnchor('9:30 PM · Nov 14, 2026 UTC', 'https://x.com/other/status/1234500000000000099')), absoluteSpec],
+  ['absolute_nested_article', timestampFixture(ownerBlock, '', '<article>' + absoluteAnchor('9:30 PM · Nov 14, 2026 UTC') + '</article>'), absoluteSpec],
+  ['absolute_noon', absoluteBody('12:00 PM · Nov 14, 2026 UTC'), absoluteSpec],
+  ['absolute_valid_leap', absoluteBody('1:00 AM · Feb 29, 2024 UTC'), absoluteSpec],
+  ['absolute_native_precedence', absoluteBody('9:30 PM · Nov 14, 2026 UTC', '', nativeTime), absoluteSpec],
+  ['absolute_relative_precedence', absoluteBody('9:30 PM · Nov 14, 2026 UTC', '', '<span>1h</span>'), absoluteSpec],
+  ['absolute_unzoned_relative_preserved', absoluteBody('9:30 PM · Nov 14, 2026', '', '<span>1h</span>'), absoluteSpec],
+);
+const preservedRelativeForms = [['now',0],['1s',1000],['2m',120000],['3h',10800000],['4d',345600000],['2w',1209600000]];
+for (const [label] of preservedRelativeForms) cases.push([
+  'absolute_preserves_relative_' + label, absoluteBody('9:30 PM · Nov 14, 2026 UTC', '', `<span>${label}</span>`), absoluteSpec,
+]);
 
 function browserBaseline({ cases, assets, gate, mode }) {
   const out = document.getElementById('result');
@@ -346,6 +382,42 @@ try {
   assert.deepEqual(feedExpansion.headless.completeness, ['partial']);
   assert.deepEqual(feedExpansion.headless.textStatus, ['requires_permalink_capture']);
   for (const mode of ['windowed', 'headless']) {
+    const absolute = get('absolute_explicit_offset')[mode].posts[0];
+    assert.equal(get('absolute_detail_date_identity')[mode].posts[0].publishedAt, '2026-11-14T14:30:00.000Z');
+    assert.equal(get('absolute_detail_no_zone')[mode].posts[0].timestampSource, 'unavailable');
+    assert.equal(get('absolute_detail_no_zone')[mode].posts[0].timestampText, '9:30 PM · Nov 14, 2026');
+    assert.equal(absolute.publishedAt, '2026-11-14T14:30:00.000Z');
+    assert.equal(absolute.timestampSource, 'absolute_date_anchor');
+    assert.equal(absolute.timestampPrecision, 'minute');
+    assert.equal(absolute.timestampEstimated, false);
+    assert.equal(absolute.quotePublishedAt, '2026-11-15T09:54:28.005Z');
+    assert.equal(get('absolute_utc')[mode].posts[0].publishedAt, '2026-11-14T21:30:00.000Z');
+    assert.equal(get('absolute_numeric_offset')[mode].posts[0].publishedAt, '2026-11-15T01:00:00.000Z');
+    assert.equal(get('absolute_seconds')[mode].posts[0].publishedAt, '2026-11-14T00:00:01.000Z');
+    assert.equal(get('absolute_seconds')[mode].posts[0].timestampPrecision, 'second');
+    assert.equal(get('absolute_noon')[mode].posts[0].publishedAt, '2026-11-14T12:00:00.000Z');
+    assert.equal(get('absolute_valid_leap')[mode].posts[0].publishedAt, '2024-02-29T01:00:00.000Z');
+    for (const [label, age] of preservedRelativeForms) {
+      const prior = get('absolute_preserves_relative_' + label)[mode].posts[0];
+      assert.equal(prior.publishedAt, new Date(Date.parse(absoluteSpec.capturedAt) - age).toISOString());
+      assert.equal(prior.timestampSource, 'relative_text_estimate');
+    }
+    for (const name of ['absolute_no_zone', 'absolute_abbreviation', 'absolute_invalid_date', 'absolute_invalid_clock',
+      'absolute_invalid_offset', 'absolute_unknown_offset', 'absolute_conflicting', 'absolute_quote_only',
+      'absolute_body_not_time', 'absolute_wrong_route', 'absolute_feed_not_time', 'absolute_media_link_not_time',
+      'absolute_wrong_owner', 'absolute_nested_article']) {
+      assert.equal(get(name)[mode].posts[0].publishedAt, null, `${mode}: ${name}`);
+    }
+    assert.equal(get('absolute_no_zone')[mode].posts[0].timestampSource, 'unavailable');
+    assert.equal(get('absolute_no_zone')[mode].posts[0].quotePublishedAt, '2026-11-15T09:54:28.005Z');
+    assert.equal(get('absolute_no_zone')[mode].posts[0].timestampText, '9:30 PM · Nov 14, 2026');
+    assert.equal(get('absolute_conflicting')[mode].posts[0].timestampSource, 'conflicting_absolute_time');
+    assert.equal(get('absolute_native_precedence')[mode].posts[0].publishedAt, '2026-11-12T08:59:21.397Z');
+    assert.equal(get('absolute_native_precedence')[mode].posts[0].timestampSource, 'native_datetime');
+    for (const name of ['absolute_relative_precedence', 'absolute_unzoned_relative_preserved']) {
+      assert.equal(get(name)[mode].posts[0].publishedAt, '2026-11-15T11:54:28.005Z');
+      assert.equal(get(name)[mode].posts[0].timestampSource, 'relative_text_estimate');
+    }
     const token = get('timestamp_token_gremlin_reconstructed_1h')[mode].posts[0];
     assert.equal(token.publishedAt, '2026-11-12T08:59:21.397Z');
     assert.equal(token.timestampSource, 'relative_text_estimate');
@@ -422,6 +494,7 @@ try {
   assert.equal(get('hydration_after').windowed.readiness, 'feed_ready');
   assert.equal(get('conflicting_identity').headless.rejections.ambiguous_identity, 1);
   const expectedShadowCodes = {
+    absolute_detail_date_identity: 'no_valid_candidates', absolute_detail_no_zone: 'no_valid_candidates',
     legacy: 'ready', wrapped_without_time: 'ready', mixed_layouts: 'ready', legacy_quote: 'ready',
     wrapped_quote: 'ready', resurface_legacy_6h: 'ready', resurface_legacy_7h: 'ready', resurface_wrapped: 'ready',
     media_only: 'ready', placeholder: 'no_valid_candidates',
@@ -435,7 +508,7 @@ try {
     empty: 'empty_unverified', login_required: 'login_required', challenge_required: 'challenge_required',
   };
   for (const { name, windowed, headless } of data.rows) {
-    assert.equal(windowed.sharedDOMShadow.code, expectedShadowCodes[name] ?? (name.startsWith('timestamp_') ? 'ready' : undefined), name);
+    assert.equal(windowed.sharedDOMShadow.code, expectedShadowCodes[name] ?? (/^(timestamp_|absolute_)/.test(name) ? 'ready' : undefined), name);
     assert.deepEqual(headless.sharedDOMShadow, windowed.sharedDOMShadow, name);
     assert.deepEqual(projectDOMShadow(headless).sharedDOMShadow, headless.sharedDOMShadow, name);
   }

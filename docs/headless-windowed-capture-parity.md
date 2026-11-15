@@ -791,3 +791,26 @@ direct tweet/article roots. This source-only change does not rewrite existing
 captures or activate the runtime. Already polluted captures require a later,
 separately authorized recapture or evidence-backed repair; the renderer does
 not guess which words in historical text are UI labels.
+
+### Additive X absolute date anchors (offline, 15 November 2026)
+
+The shared X adapter now has a detail-page fallback for a text-only absolute
+date anchor. Existing native datetime and relative-text decisions retain their
+precedence, including conflict detection. The fallback requires an identified
+primary post, the exact primary detail route, and an owned anchor to that post.
+Quote descendants, authored body links, nested articles and media routes cannot
+provide the primary timestamp.
+
+Supported text has the form `9:30 PM · Nov 14, 2026 GMT+07:00`, with optional
+seconds and an explicit `UTC`, `GMT`, `Z` or numeric offset. Calendar, clock and
+offset values are validated without locale-dependent date parsing. Browser or
+machine timezone is never inferred. A recognized date without timezone keeps
+its display text while `publishedAt` remains null and the source remains
+`unavailable`. Ambiguous timezone abbreviations and conflicting dates do not
+produce a timestamp. Windowed forwards the same precision as Headless.
+
+Offline real-DOM fixtures cover both production in-page paths, including the
+unwrapped detail-date identity path, quote isolation, legacy/native precedence,
+all existing relative units, invalid dates and timezone uncertainty. Evidence:
+`build/x-absolute-date-detail-offline.json`. No historical backfill, activation
+or live capture is part of this increment.
