@@ -11,16 +11,21 @@ import (
 )
 
 func (e *Engine) StartVisibleUpdate(ctx context.Context, intent string) (domain.Session, error) {
+	return e.StartVisibleTargetUpdate(ctx, intent, nil)
+}
+
+func (e *Engine) StartVisibleTargetUpdate(ctx context.Context, intent string, target *domain.CaptureTarget) (domain.Session, error) {
 	trigger := domain.UpdateTriggerUser
 	firstRunStatus, err := e.store.CalibrationFirstRunStatus(ctx)
 	if err != nil {
 		return domain.Session{}, err
 	}
-	if firstRunStatus == "pending" {
+	if firstRunStatus == "pending" && target == nil {
 		trigger = domain.UpdateTriggerOnboarding
 	}
 	return e.startSession(ctx, intent, domain.UpdatePolicy{
-		Trigger: trigger, Delivery: domain.UpdateDeliveryVisible, BudgetAuthority: domain.BudgetAuthorityUser,
+		CaptureTarget: target,
+		Trigger:       trigger, Delivery: domain.UpdateDeliveryVisible, BudgetAuthority: domain.BudgetAuthorityUser,
 	})
 }
 
@@ -142,6 +147,22 @@ func (e *Engine) startSession(ctx context.Context, intent string, policy domain.
 		return domain.Session{}, noGrantedActiveSourceError()
 	}
 	settings.ActiveSources = validSources
+	if target := policy.CaptureTarget; target != nil {
+		allowed := false
+		for _, source := range validSources {
+			if source == target.Source {
+				allowed = true
+			}
+		}
+		if !allowed {
+			return domain.Session{}, noGrantedActiveSourceError()
+		}
+		if len(e.readyDailySources()) > 0 {
+			return domain.Session{}, errors.New("targeted capture requires the ordinary collection route")
+		}
+		settings.ActiveSources = []domain.Source{target.Source}
+		settings.MaxItemsPerSource, settings.MaxItemsTotal = 1, 1
+	}
 	if err := e.validateDevelopmentSelection(settings); err != nil {
 		return domain.Session{}, err
 	}

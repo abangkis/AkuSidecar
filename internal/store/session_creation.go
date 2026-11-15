@@ -36,6 +36,12 @@ func (s *Store) createUpdateSession(ctx context.Context, intent string, settings
 	if err := policy.Validate(); err != nil {
 		return domain.Session{}, err
 	}
+	if target := policy.CaptureTarget; target != nil {
+		if len(dailySources) != 0 || len(settings.ActiveSources) != 1 || settings.ActiveSources[0] != target.Source {
+			return domain.Session{}, errors.New("targeted capture requires one ordinary source")
+		}
+		settings.MaxItemsPerSource, settings.MaxItemsTotal = 1, 1
+	}
 	open, err := s.ActiveSession(ctx)
 	if err != nil {
 		return domain.Session{}, err
@@ -52,6 +58,9 @@ func (s *Store) createUpdateSession(ctx context.Context, intent string, settings
 		"trigger":         policy.Trigger,
 		"delivery":        policy.Delivery,
 		"budgetAuthority": policy.BudgetAuthority,
+	}
+	if policy.CaptureTarget != nil {
+		coverageValue["captureTarget"] = policy.CaptureTarget
 	}
 	if settings.CollectionMode == "headless" {
 		// Freeze the experimental hybrid source plan with the session. Facebook

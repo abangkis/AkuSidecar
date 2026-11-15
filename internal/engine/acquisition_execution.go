@@ -13,6 +13,17 @@ import (
 // executeAcquisitionPlanning reports whether a queued follow-up must finish before
 // candidate evaluation. The caller retains its existing lock and work ownership.
 func (e *Engine) executeAcquisitionPlanning(ctx context.Context, runID string, run domain.Run, observations []domain.Observation, merged domain.Observation, settings domain.Settings, allowPlanning bool) (bool, error) {
+	session, err := e.store.GetSession(ctx, run.SessionID)
+	if err != nil {
+		return false, err
+	}
+	target, err := domain.SessionCaptureTarget(session)
+	if err != nil {
+		return false, err
+	}
+	if target != nil {
+		return false, nil
+	}
 	dailyRoundOne, err := e.store.IsDailySourceCapture(ctx, runID)
 	if err != nil {
 		return false, err

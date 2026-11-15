@@ -6,17 +6,25 @@ import (
 	"net/http"
 	"path"
 	"strings"
+
+	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
 func (s *Server) startUpdate(w http.ResponseWriter, r *http.Request) error {
 	ctx := r.Context()
 	var body struct {
-		Intent string `json:"intent"`
+		Intent        string                `json:"intent"`
+		CaptureTarget *domain.CaptureTarget `json:"captureTarget,omitempty"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		return err
 	}
-	session, err := s.engine.StartVisibleUpdate(ctx, body.Intent)
+	if body.CaptureTarget != nil {
+		if err := body.CaptureTarget.Validate(); err != nil {
+			return badRequest(err.Error())
+		}
+	}
+	session, err := s.engine.StartVisibleTargetUpdate(ctx, body.Intent, body.CaptureTarget)
 	if err != nil {
 		return conflict(err.Error())
 	}

@@ -1229,6 +1229,21 @@ func (e *Engine) ownedCapturePayload(run domain.Run, leaseID string, settings do
 		return nil, err
 	}
 	payload := capturePayload(run, leaseID, settings, round, continuation, reason)
+	target, err := domain.SessionCaptureTarget(session)
+	if err != nil {
+		return nil, err
+	}
+	if target != nil {
+		if round != 1 || target.Source != run.Source {
+			return nil, errors.New("targeted capture cannot continue or change source")
+		}
+		payload["mode"] = "capture_single_post"
+		payload["pageUrl"], payload["targetUrl"] = target.Permalink, target.Permalink
+		payload["scrolls"], payload["maxAcquisitionRounds"] = 0, 1
+		payload["sourceFreshnessPolicy"], payload["pendingContentPolicy"] = "preserve_target", "detect_only"
+		payload["sameTabMutationAllowed"], payload["openIfMissing"] = false, true
+		payload["tabLifecycle"] = map[string]any{"ownership": "managed", "openedTabDisposition": "close_after_capture"}
+	}
 	if behavior := e.config.Capture.Behavior.Effective(); behavior.Enabled {
 		payload["scrollFraction"] = behavior.ScrollFraction
 		payload["scrollSettleMs"] = behavior.ScrollSettleMS

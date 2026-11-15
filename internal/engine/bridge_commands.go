@@ -150,6 +150,19 @@ func (e *Engine) AcceptObservation(ctx context.Context, commandID, runID string,
 		return domain.Run{}, errors.New("observation source does not match run")
 	}
 	normalizeObservation(&value)
+	session, err := e.store.GetSession(ctx, run.SessionID)
+	if err != nil {
+		return domain.Run{}, err
+	}
+	target, err := domain.SessionCaptureTarget(session)
+	if err != nil {
+		return domain.Run{}, err
+	}
+	if target != nil {
+		if err := scopeTargetObservation(&value, *target); err != nil {
+			return domain.Run{}, err
+		}
+	}
 	if err := validateObservation(value); err != nil {
 		return domain.Run{}, err
 	}

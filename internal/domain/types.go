@@ -566,12 +566,21 @@ const (
 )
 
 type UpdatePolicy struct {
+	CaptureTarget   *CaptureTarget  `json:"captureTarget,omitempty"`
 	Trigger         UpdateTrigger   `json:"trigger"`
 	Delivery        UpdateDelivery  `json:"delivery"`
 	BudgetAuthority BudgetAuthority `json:"budgetAuthority"`
 }
 
 func (policy UpdatePolicy) Validate() error {
+	if policy.CaptureTarget != nil {
+		if err := policy.CaptureTarget.Validate(); err != nil {
+			return err
+		}
+		if policy.Trigger != UpdateTriggerUser || policy.Delivery != UpdateDeliveryVisible || policy.BudgetAuthority != BudgetAuthorityUser {
+			return errors.New("targeted capture requires a visible user update")
+		}
+	}
 	if policy.Trigger != UpdateTriggerOnboarding && policy.Trigger != UpdateTriggerScheduler && policy.Trigger != UpdateTriggerUser {
 		return fmt.Errorf("unsupported update trigger %q", policy.Trigger)
 	}

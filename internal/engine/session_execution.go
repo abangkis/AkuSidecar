@@ -68,6 +68,13 @@ func (e *Engine) startNextLocked(ctx context.Context, sessionID string) (*domain
 		return nil, e.finalizeSessionLocked(ctx, sessionID)
 	}
 	if e.dailySourceReady(run.Source) {
+		target, targetErr := domain.SessionCaptureTarget(session)
+		if targetErr != nil {
+			return nil, targetErr
+		}
+		if target != nil {
+			return nil, errors.New("targeted capture requires the ordinary collection route")
+		}
 		// The daily collector owns a separate browser, but Store still serializes
 		// this session's capture commands. Drain predecessors before registering
 		// a worker or starting native derivation; do not borrow the ordinary owner.
