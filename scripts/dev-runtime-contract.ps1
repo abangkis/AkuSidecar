@@ -187,3 +187,104 @@ function Invoke-DevRuntimePromotion([string] $RuntimeRoot) {
     }
     return $backup
 }
+
+function Enter-DevRuntimeOperation([string] $RuntimeRoot) {
+    $root = (Get-WorkerBackupCanonicalRuntimeRoot $RuntimeRoot).ToUpperInvariant()
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $identity = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($root))).Replace('-', '') }
+    finally { $sha.Dispose() }
+    $mutex = [Threading.Mutex]::new($false, ('Local\AkuSidecar.DevRuntime.' + $identity))
+    try {
+        try { $owned = $mutex.WaitOne(0) }
+        catch [Threading.AbandonedMutexException] {
+            $mutex.ReleaseMutex()
+            throw 'A previous development operation ended unexpectedly; inspect the runtime before retrying.'
+        }
+        if (-not $owned) { throw 'Another development build, restart or rollback cleanup owns this runtime.' }
+        return $mutex
+    } catch {
+        $mutex.Dispose()
+        throw
+    }
+}
+
+function Get-DevRuntimeRollbackPath([string] $RuntimeRoot, [string] $BackupPath) {
+    $root = Get-WorkerBackupCanonicalRuntimeRoot $RuntimeRoot
+    $backup = Get-WorkerBackupCanonicalRuntimeRoot $BackupPath
+    if (-not [IO.Path]::GetDirectoryName($backup).Equals($root, [StringComparison]::OrdinalIgnoreCase) -or
+        [IO.Path]::GetFileName($backup) -cnotmatch '^\.dev-runtime-rollback-[0-9a-f]{32}$') {
+        throw "Rollback is not an owned immediate child of the runtime root: $backup"
+    }
+    return $backup
+}
+
+function Assert-DevRuntimeRollbackBundle([string] $BackupPath) {
+    $allowed = @((Get-DevRuntimeEntries | ForEach-Object { $_.Target })) + @('aku-sidecar.exe.runtime-state.json')
+    foreach ($entry in Get-ChildItem -LiteralPath $BackupPath -Force -ErrorAction Stop) {
+        if ($allowed -cnotcontains $entry.Name) { throw "Unexpected rollback entry: $($entry.FullName)" }
+    }
+    $entries = @(Get-ChildItem -LiteralPath $BackupPath -Recurse -Force -ErrorAction Stop)
+    foreach ($entry in $entries) {
+        if (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Rollback contains a reparse point.' }
+        $sourceModule = -not $entry.PSIsContainer -and $entry.Extension -in @('.js', '.mjs', '.cjs')
+        if ($entry.Name -match '(?i)^\.env(?:\..*)?$|^(?:\.git|node_modules|cache|profiles?|user[-_]?data|cookies?|sessions?|credentials?|secrets?|tokens?|logs?|reports?|screenshots?)$' -or
+            (-not $sourceModule -and $entry.Name -match '(?i)(cookie|session|profile|user[-_]?data|credential|secret|token)') -or
+            $entry.Name -match '(?i)\.(?:db(?:-(?:wal|shm|journal))?|sqlite\d?(?:-(?:wal|shm))?|jsonl|log|png|jpe?g|webp|gif|mp4|webm|har|pem|key|pfx|p12|jks)$') {
+            throw "Rollback contains data or evidence: $($entry.FullName)"
+        }
+    }
+    $null = Get-WorkerBackupBundleInventory (Join-Path $BackupPath 'headless-worker')
+    $null = Assert-DevRuntimeBundle $BackupPath
+    return @($entries | Where-Object { -not $_.PSIsContainer })
+}
+
+function Remove-DevRuntimeRollbacksAfterSuccess {
+    param(
+        [Parameter(Mandatory)] [string] $RuntimeRoot,
+        [Parameter(Mandatory)] [string] $KeepPath,
+        [Parameter(Mandatory)] [string] $VerifiedBinarySha256
+    )
+    $operation = $null
+    try {
+        $operation = Enter-DevRuntimeOperation $RuntimeRoot
+        $root = Get-WorkerBackupCanonicalRuntimeRoot $RuntimeRoot
+        $keep = Get-DevRuntimeRollbackPath $root $KeepPath
+        if ($VerifiedBinarySha256 -notmatch '^[0-9a-fA-F]{64}$') { throw 'Verified runtime hash is invalid.' }
+        $active = Assert-DevRuntimeBundle $root
+        if ($active.binarySha256 -ne $VerifiedBinarySha256) { throw 'Runtime changed after startup verification.' }
+        $null = Assert-DevRuntimeRollbackBundle $keep
+        $success = $true
+        foreach ($entry in Get-ChildItem -LiteralPath $root -Directory -Force -ErrorAction Stop) {
+            if ($entry.Name -cnotmatch '^\.dev-runtime-rollback-[0-9a-f]{32}$' -or
+                $entry.FullName.Equals($keep, [StringComparison]::OrdinalIgnoreCase)) { continue }
+            try {
+                $backup = Get-DevRuntimeRollbackPath $root $entry.FullName
+                if ($null -ne (Test-WorkerBackupProcessReference $backup)) { throw 'A process still references this rollback.' }
+                $files = @(Assert-DevRuntimeRollbackBundle $backup)
+                # Check every handle before deleting any file in this bundle.
+                $handles = [Collections.Generic.List[IO.FileStream]]::new()
+                try {
+                    foreach ($file in $files) {
+                        $handles.Add([IO.File]::Open($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None))
+                    }
+                } finally {
+                    foreach ($handle in $handles) { $handle.Dispose() }
+                }
+                if ($null -ne (Test-WorkerBackupProcessReference $backup)) { throw 'A process started using this rollback.' }
+                Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction Stop
+                if (Test-Path -LiteralPath $backup) { throw 'Rollback remains after cleanup.' }
+            } catch {
+                $success = $false
+                Write-Warning "Older development rollback retained: $($entry.FullName). $($_.Exception.Message)"
+            }
+        }
+        return $success
+    } catch {
+        Write-Warning "Development rollback cleanup deferred. $($_.Exception.Message)"
+        return $false
+    } finally {
+        if ($null -ne $operation) {
+            try { $operation.ReleaseMutex() } finally { $operation.Dispose() }
+        }
+    }
+}

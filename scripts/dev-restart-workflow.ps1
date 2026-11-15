@@ -30,6 +30,8 @@ if ($PlanOnly) {
     return
 }
 if (-not (Test-Path -LiteralPath $supervisor -PathType Leaf)) { throw 'AkuSupervisor development executable is missing.' }
+$runtimeOperation = Enter-DevRuntimeOperation $runtimeDir
+try {
 $configHash = (Get-FileHash -LiteralPath $supervisorConfig -Algorithm SHA256).Hash
 $applicationConfigHash = (Get-FileHash -LiteralPath $plan.ConfigPath -Algorithm SHA256).Hash
 $null = Assert-WorkerBackupCopyReady -RuntimeRoot $runtimeDir -WorkerRoot (Join-Path $runtimeDir 'headless-worker') -BackupPrefix '.restart-dev-headless-worker-rollback-'
@@ -114,5 +116,9 @@ $service = Get-RegisteredDevService
 $process = Get-CimInstance Win32_Process -Filter "ProcessId=$($service.rootPid)"
 if (-not $process -or -not ([string]$process.ExecutablePath).Equals($plan.Target, [StringComparison]::OrdinalIgnoreCase)) { throw 'Started service image does not match the promoted development runtime.' }
 $null = Assert-DevRuntimeBundle $runtimeDir
+$null = Remove-DevRuntimeRollbacksAfterSuccess -RuntimeRoot $runtimeDir -KeepPath $previousBundle -VerifiedBinarySha256 $expected.binarySha256
 Write-Host "AkuSidecar $($health.version) restarted from runtime/dev; previous complete bundle retained at $previousBundle. Process derivation consent was not granted."
 if ($ActivationMode -eq 'no-session-transfer') { Write-Host 'Saved permissions and Auto Update are unchanged; native X/IG admission remains held until explicit Start.' }
+} finally {
+    try { $runtimeOperation.ReleaseMutex() } finally { $runtimeOperation.Dispose() }
+}

@@ -10,6 +10,8 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $sourceBuildCaches = Get-SourceBuildCachePaths -Repository (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $PSScriptRoot 'worker-backup-retention.ps1')
 . (Join-Path $PSScriptRoot 'dev-runtime-contract.ps1')
+$runtimeOperation = Enter-DevRuntimeOperation (Join-Path $repoRoot 'runtime\dev')
+try {
 if ($Verify) {
     & (Join-Path $PSScriptRoot 'test-native-reader-regression.ps1')
     if ($LASTEXITCODE -ne 0) { throw 'Native reader regression gate failed.' }
@@ -170,3 +172,6 @@ finally {
 
 Write-Host "Built AkuSidecar: $output"
 Write-Host "Recorded development provenance: $provenancePath"
+} finally {
+    try { $runtimeOperation.ReleaseMutex() } finally { $runtimeOperation.Dispose() }
+}
