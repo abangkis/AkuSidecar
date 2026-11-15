@@ -232,7 +232,10 @@ export async function resolveAdditionalSourceMedia({page,source,posts,resolver,f
       evidence.status='owned_url_observed_partial';
       evidence.expectedWithoutUrl=(evidence.expectedWithoutUrl || []).filter(kind=>!media.some(m=>m.kind===kind && (kind!=='video' || m.playbackUrl)));
     }
-    if (hasVideo) evidence.videoStreamStatus=media.some(m=>m.kind==='video' && m.playbackUrl) ? 'owned_playback_url_observed' : 'unknown';
+    if (hasVideo) evidence.videoStreamStatus=source==='linkedin' && !additions.length
+      && post.mediaEvidence?.videoStreamStatus==='direct_dom_playback_observed'
+      ? 'direct_dom_playback_observed'
+      : media.some(m=>m.kind==='video' && m.playbackUrl) ? 'owned_playback_url_observed' : 'unknown';
     const ownedPlayback=additions.some(m=>m.kind==='video' && m.playbackUrl);
     const limitations=ownedPlayback ? [...new Set([...(post.limitations || []).filter(v=>v!=='video_stream_not_resolved'),'video_playback_unverified'])] : post.limitations;
     output.push({...post,media,limitations,mediaExpected:[...new Set([...(post.mediaExpected || []),...(hasVideo ? ['video'] : [])])],mediaEvidence:evidence});

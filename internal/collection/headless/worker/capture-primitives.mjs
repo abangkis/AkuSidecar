@@ -14,11 +14,15 @@ export function instagramCandidateQualityPolicyFor(assets) {
   return candidateQualityPolicyFor(assets, 'instagram');
 }
 
+export function linkedinCandidateQualityPolicyFor(assets) {
+  return candidateQualityPolicyFor(assets, 'linkedin');
+}
+
 function candidateQualityPolicyFor(assets, source) {
   let contracts = qualityCache.get(assets);
   if (!contracts) { contracts = new Map(); qualityCache.set(assets, contracts); }
   if (contracts.has(source)) return contracts.get(source);
-  const label = source === 'x' ? 'X' : 'Instagram';
+  const label = source === 'x' ? 'X' : source === 'linkedin' ? 'LinkedIn' : 'Instagram';
   const context = createContext({URL});
   for (const relative of ['AkuBridge/capture-primitives.js', 'AkuBridge/source-adapter-runtime.js',
     `AkuBridge/adapters/${source}-adapter.js`, 'AkuBridge/capture-quality-policy.js']) {
@@ -31,6 +35,15 @@ function candidateQualityPolicyFor(assets, source) {
   if (typeof policy?.evaluateCandidate !== 'function' || typeof policy?.normalizeFacts !== 'function' ||
       typeof policy?.observeCandidateFacts !== 'function') throw new Error(`Shared ${label} candidate quality contract is unavailable.`);
   const contract = Object.freeze({
+    // This is URL observation, never playback or account/admission proof. Use
+    // the same strict native identity and progressive-media policy as Bridge.
+    hasObservedPlayback(post) {
+      if (source !== 'linkedin' || Object.getOwnPropertyDescriptor(post?.qualityFacts ?? {}, 'schema')?.value !== 'aku.linkedin.candidate-quality-facts.v1'
+          || post.mediaEvidence?.videoStreamStatus !== 'direct_dom_playback_observed'
+          || post.mediaEvidence?.expectedWithoutUrl?.includes('video')) return false;
+      return Boolean(adapter.freshness.headless.primaryIdentity(post)) &&
+        adapter.mediaAcquisition.isComplete(post.media, {contentKind:'video',expectedKinds:['video']});
+    },
     assess(candidate, rawFacts, textCompleteness, expectedKinds = []) {
       if (!rawFacts || typeof rawFacts !== 'object' || Array.isArray(rawFacts) ||
           Object.getOwnPropertyDescriptor(rawFacts, 'schema')?.value !== `aku.${source}.candidate-quality-facts.v1`) return null;

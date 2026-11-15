@@ -7,7 +7,7 @@ import { photoRecaptureObservation } from './photo-recapture.mjs';
 import { createXTextRecovery } from './x-text-recovery.mjs';
 import { recoverHeadlessFreshness } from './headless-freshness.mjs';
 import { sourceFreshnessContractFor } from './source-freshness-contract.mjs';
-import { boundedCapturePolicyFor, xCandidateQualityPolicyFor, instagramCandidateQualityPolicyFor } from './capture-primitives.mjs';
+import { boundedCapturePolicyFor, xCandidateQualityPolicyFor, instagramCandidateQualityPolicyFor, linkedinCandidateQualityPolicyFor } from './capture-primitives.mjs';
 import { finalizeXReplyEvidence, prepareXPassiveEvidence, resolveXPassiveEvidence } from './x-passive-evidence.mjs';
 import { navigateSourcePage } from './navigation-diagnostic.mjs';
 
@@ -441,6 +441,8 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
         ? xCandidateQualityPolicyFor(assets) : null,
       instagramCandidateQualityPolicy: source === 'instagram' && assets.some(asset => asset.relative === 'AkuBridge/capture-quality-policy.js')
         ? instagramCandidateQualityPolicyFor(assets) : null,
+      linkedinCandidateQualityPolicy: source === 'linkedin' && assets.some(asset => asset.relative === 'AkuBridge/capture-quality-policy.js')
+        ? linkedinCandidateQualityPolicyFor(assets) : null,
     });
     if (headlessNavigation) observation.coverage.headlessNavigation = headlessNavigation;
     if(photoResolution) observation.coverage.photoParentResolution={status:'verified',photoId:photoResolution.photoId,

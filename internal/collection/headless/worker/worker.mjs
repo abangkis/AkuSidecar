@@ -75,7 +75,7 @@ export async function sourceAssets(bridgePath, source) {
         { relative: 'worker/vendor/facebook-extract.js', path: resolve(root, 'vendor/facebook-extract.js'), execute: true },
       ] : [
         { relative: 'AkuBridge/bounded-capture-policy.js', path: resolve(bridge, 'bounded-capture-policy.js'), execute: true },
-        ...(source === 'instagram' ? [{ relative: 'AkuBridge/capture-quality-policy.js', path: resolve(bridge, 'capture-quality-policy.js'), execute: true }] : []),
+        { relative: 'AkuBridge/capture-quality-policy.js', path: resolve(bridge, 'capture-quality-policy.js'), execute: true },
         { relative: 'AkuBridge/media-post-processor.js', path: resolve(bridge, 'media-post-processor.js'), execute: true },
         ...(source === 'linkedin' ? ['linkedin-permalink-policy.js','linkedin-timestamp-policy.js'].map(name=>({relative:`AkuBridge/${name}`,path:resolve(bridge,name),execute:true})) : []),
         { relative: `AkuBridge/adapters/${source}-adapter.js`, path: resolve(bridge, `adapters/${source}-adapter.js`), execute: true },

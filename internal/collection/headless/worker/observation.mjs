@@ -192,7 +192,7 @@ function projectXPlayback(media, policy) {
   });
 }
 
-function toBlock(source, post, feedPosition, captureMode = 'headless_worker', xMediaPolicy = null, xCandidateQualityPolicy = null, instagramCandidateQualityPolicy = null) {
+function toBlock(source, post, feedPosition, captureMode = 'headless_worker', xMediaPolicy = null, xCandidateQualityPolicy = null, instagramCandidateQualityPolicy = null, linkedinCandidateQualityPolicy = null) {
   const platformId = validatePost(source, post);
   const originalMedia = Array.isArray(post.media) ? structuredClone(post.media.slice(0, 20)) : [];
   const media = source === 'x' ? projectXPlayback(originalMedia, xMediaPolicy) : originalMedia;
@@ -216,12 +216,13 @@ function toBlock(source, post, feedPosition, captureMode = 'headless_worker', xM
     && media.some(item=>item?.kind==='video' && typeof item.playbackUrl==='string');
   const ownedXPlayback = source === 'x' && media.some((item, index) =>
     originalMedia[index]?.kind === 'video_poster' && item.kind === 'video' && item.playbackUrl);
-  if (ownedXPlayback && !media.some(item => item?.kind === 'video_poster') &&
+  const ownedLinkedInDOMPlayback = source === 'linkedin' && linkedinCandidateQualityPolicy?.hasObservedPlayback(post) === true;
+  if ((ownedXPlayback || ownedLinkedInDOMPlayback) && !media.some(item => item?.kind === 'video_poster') &&
       !post.mediaEvidence?.expectedWithoutUrl?.includes('video')) {
     const unresolved = limitations.indexOf('video_stream_not_resolved');
     if (unresolved >= 0) limitations[unresolved] = 'video_playback_unverified';
   }
-  const observedPlayback = additionalOwnedVideo || ownedXPlayback;
+  const observedPlayback = additionalOwnedVideo || ownedXPlayback || ownedLinkedInDOMPlayback;
   const recovery = {
     status: structuredResolved ? 'resolved' : unresolvedVideo ? 'partial' : post.mediaEvidence?.status || 'unverified',
     outcome: structuredResolved ? 'verified_owned_playback' : observedPlayback ? 'owned_playback_url_observed' : unresolvedVideo ? 'unresolved'
@@ -275,7 +276,7 @@ function toBlock(source, post, feedPosition, captureMode = 'headless_worker', xM
     feedPosition,
   };
   const candidateQualityPolicy = source === 'x' ? xCandidateQualityPolicy
-    : source === 'instagram' ? instagramCandidateQualityPolicy : null;
+    : source === 'instagram' ? instagramCandidateQualityPolicy : source === 'linkedin' ? linkedinCandidateQualityPolicy : null;
   if (candidateQualityPolicy) {
     const assessment = candidateQualityPolicy.assess(block,
       Object.getOwnPropertyDescriptor(post, 'qualityFacts')?.value, post.textCompleteness, expected);
@@ -310,7 +311,7 @@ function isVerifiedStructuredVideo(source, item) {
   } catch { return false; }
 }
 
-export function toObservation({ source, requestedUrl, snapshots, provenance, capturedAt, stopReason, performedScrolls, scrollStopReason, frontier, freshness, captureMode = 'headless_worker', xMediaPolicy = null, xCandidateQualityPolicy = null, instagramCandidateQualityPolicy = null }) {
+export function toObservation({ source, requestedUrl, snapshots, provenance, capturedAt, stopReason, performedScrolls, scrollStopReason, frontier, freshness, captureMode = 'headless_worker', xMediaPolicy = null, xCandidateQualityPolicy = null, instagramCandidateQualityPolicy = null, linkedinCandidateQualityPolicy = null }) {
   const first = snapshots[0] || {};
   const hasPosts = snapshots.some(snapshot => (snapshot.posts || []).length > 0);
   const domainSnapshots = snapshots.map((snapshot, index) => {
@@ -336,7 +337,7 @@ export function toObservation({ source, requestedUrl, snapshots, provenance, cap
       scrollY: Number.isFinite(snapshot.scroll?.y) ? Math.trunc(snapshot.scroll.y) : 0,
       viewportHeight: Number.isFinite(snapshot.scroll?.viewportHeight) ? Math.trunc(snapshot.scroll.viewportHeight) : 0,
       newCandidateCount: [...uniqueIds].filter(id => !previousIds.has(id)).length,
-      blocks: posts.map((post, position) => toBlock(source, post, position, captureMode, xMediaPolicy, xCandidateQualityPolicy, instagramCandidateQualityPolicy)),
+      blocks: posts.map((post, position) => toBlock(source, post, position, captureMode, xMediaPolicy, xCandidateQualityPolicy, instagramCandidateQualityPolicy, linkedinCandidateQualityPolicy)),
       qualityReports,
     };
   });
