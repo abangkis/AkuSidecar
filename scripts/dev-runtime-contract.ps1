@@ -51,7 +51,10 @@ function Assert-DevRuntimeBundle([string] $RuntimeRoot, [switch] $Candidate) {
         throw 'Development bundle capability/provenance contract is invalid.'
     }
     $actual = @(Get-DevRuntimeInventory $RuntimeRoot -Candidate:$Candidate)
-    if (($actual | ConvertTo-Json -Depth 5 -Compress) -cne (@($state.artifacts) | ConvertTo-Json -Depth 5 -Compress)) {
+    # Inventory order may differ between Windows PowerShell cultures. Compare
+    # both lists using the current ordering without relaxing any file/hash check.
+    $expectedArtifacts = @($state.artifacts | Sort-Object path)
+    if (($actual | ConvertTo-Json -Depth 5 -Compress) -cne ($expectedArtifacts | ConvertTo-Json -Depth 5 -Compress)) {
         throw 'Development bundle hashes do not match provenance.'
     }
     if (($actual | Where-Object path -eq 'aku-sidecar.exe').sha256 -cne $state.binarySha256) { throw 'Development binary hash disagrees with provenance.' }

@@ -77,6 +77,42 @@ function New-SyntheticRuntimeBundle([string] $RuntimeRoot, [switch] $Candidate) 
     [IO.File]::WriteAllText((Join-Path $RuntimeRoot $stateName), (ConvertTo-CompactJson $state), [Text.UTF8Encoding]::new($false))
 }
 
+function Test-SyntheticInventoryOrder([string] $RuntimeRoot, [switch] $Candidate) {
+    $stateName = if ($Candidate) { 'aku-sidecar.next.exe.runtime-state.json' } else { 'aku-sidecar.exe.runtime-state.json' }
+    $statePath = Join-Path $RuntimeRoot $stateName
+    $original = Get-Content -LiteralPath $statePath -Raw -Encoding UTF8
+    try {
+        $state = $original | ConvertFrom-Json
+        $reversed = @($state.artifacts)
+        [array]::Reverse($reversed)
+        Assert-True ($reversed[0].path -cne $state.artifacts[0].path) 'Inventory order fixture did not change order.'
+        $state.artifacts = $reversed
+        $shuffled = ConvertTo-CompactJson $state
+        [IO.File]::WriteAllText($statePath, $shuffled, [Text.UTF8Encoding]::new($false))
+        $verified = Assert-DevRuntimeBundle $RuntimeRoot -Candidate:$Candidate
+        Assert-True ($verified.binarySha256 -ceq $state.binarySha256) 'Reordered inventory changed the verified binary hash.'
+        Assert-True ($verified.artifacts.Count -eq $reversed.Count) 'Reordered inventory changed the artifact count.'
+        Assert-True ((Get-Content -LiteralPath $statePath -Raw -Encoding UTF8) -ceq $shuffled) 'Bundle verification rewrote provenance.'
+
+        foreach ($invalid in @('changed-hash', 'changed-path', 'missing-entry', 'duplicate-entry')) {
+            $state = $original | ConvertFrom-Json
+            switch ($invalid) {
+                'changed-hash' { $state.artifacts[0].sha256 = '0' * 64 }
+                'changed-path' { $state.artifacts[0].path = 'unexpected.fixture' }
+                'missing-entry' { $state.artifacts = @($state.artifacts | Select-Object -Skip 1) }
+                'duplicate-entry' { $state.artifacts = @($state.artifacts) + @($state.artifacts[0]) }
+            }
+            $reversed = @($state.artifacts)
+            [array]::Reverse($reversed)
+            $state.artifacts = $reversed
+            [IO.File]::WriteAllText($statePath, (ConvertTo-CompactJson $state), [Text.UTF8Encoding]::new($false))
+            Assert-Throws { Assert-DevRuntimeBundle $RuntimeRoot -Candidate:$Candidate } "Order normalization accepted $invalid provenance."
+        }
+    } finally {
+        [IO.File]::WriteAllText($statePath, $original, [Text.UTF8Encoding]::new($false))
+    }
+}
+
 function Get-CanonicalRuntimeStatus([object] $Service) {
     return [pscustomobject]@{ response = [pscustomobject]@{ services = @($Service) } }
 }
@@ -250,6 +286,9 @@ try {
     Assert-True ($activeInventoryJson -ceq $candidateInventoryJson) 'Active and candidate marker inventories differ.'
     Assert-True ($activeState.binarySha256 -ceq $candidateState.binarySha256) 'Active and candidate marker binary hashes differ.'
     Assert-True ($activeState.artifacts.Count -eq $candidateState.artifacts.Count) 'Active and candidate provenance artifact counts differ.'
+
+    Test-SyntheticInventoryOrder $activeRoot
+    Test-SyntheticInventoryOrder $candidateRoot -Candidate
 
     # The promotion rewrite must also retain UTF-8 names and exact provenance.
     New-SyntheticRuntimeBundle $activeRoot -Candidate
