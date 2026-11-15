@@ -7,22 +7,33 @@ const qualityCache = new WeakMap();
 // Evaluate the exact shared policy and actual adapter semantics from the
 // provenance-hashed asset set. Page-provided verdicts/profiles are never used.
 export function xCandidateQualityPolicyFor(assets) {
-  if (qualityCache.has(assets)) return qualityCache.get(assets);
+  return candidateQualityPolicyFor(assets, 'x');
+}
+
+export function instagramCandidateQualityPolicyFor(assets) {
+  return candidateQualityPolicyFor(assets, 'instagram');
+}
+
+function candidateQualityPolicyFor(assets, source) {
+  let contracts = qualityCache.get(assets);
+  if (!contracts) { contracts = new Map(); qualityCache.set(assets, contracts); }
+  if (contracts.has(source)) return contracts.get(source);
+  const label = source === 'x' ? 'X' : 'Instagram';
   const context = createContext({URL});
   for (const relative of ['AkuBridge/capture-primitives.js', 'AkuBridge/source-adapter-runtime.js',
-    'AkuBridge/adapters/x-adapter.js', 'AkuBridge/capture-quality-policy.js']) {
+    `AkuBridge/adapters/${source}-adapter.js`, 'AkuBridge/capture-quality-policy.js']) {
     const asset = assets?.find(entry => entry.relative === relative);
-    if (typeof asset?.content !== 'string') throw new Error(`Shared X candidate quality asset is required: ${relative}`);
+    if (typeof asset?.content !== 'string') throw new Error(`Shared ${label} candidate quality asset is required: ${relative}`);
     runInContext(asset.content, context, {timeout:1000, filename:relative});
   }
   const policy = context.AkuCaptureQualityPolicy;
-  const adapter = context.AkuSourceAdapters.get('x');
+  const adapter = context.AkuSourceAdapters.get(source);
   if (typeof policy?.evaluateCandidate !== 'function' || typeof policy?.normalizeFacts !== 'function' ||
-      typeof policy?.observeCandidateFacts !== 'function') throw new Error('Shared X candidate quality contract is unavailable.');
+      typeof policy?.observeCandidateFacts !== 'function') throw new Error(`Shared ${label} candidate quality contract is unavailable.`);
   const contract = Object.freeze({
     assess(candidate, rawFacts, textCompleteness, expectedKinds = []) {
       if (!rawFacts || typeof rawFacts !== 'object' || Array.isArray(rawFacts) ||
-          Object.getOwnPropertyDescriptor(rawFacts, 'schema')?.value !== 'aku.x.candidate-quality-facts.v1') return null;
+          Object.getOwnPropertyDescriptor(rawFacts, 'schema')?.value !== `aku.${source}.candidate-quality-facts.v1`) return null;
       const observed = policy.normalizeFacts(rawFacts);
       // Recovery/enrichment may have replaced text or media since DOM sampling.
       // Retry authority is terminal here and remains in the capture controller.
@@ -45,7 +56,7 @@ export function xCandidateQualityPolicyFor(assets) {
         retriesRemaining:0,textCompleteness:['expanded','no_collapse_observed','recovery_verified','partial','truncated'].includes(textCompleteness)?textCompleteness:'unknown'});
     },
   });
-  qualityCache.set(assets,contract);
+  contracts.set(source,contract);
   return contract;
 }
 

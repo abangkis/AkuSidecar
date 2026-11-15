@@ -1,9 +1,13 @@
 # Instagram readiness parity (B1)
 
-Status: source implementation verified offline on 2026-11-15 and reviewed for
-scoped publication. Publication does not establish a build, activation, or live
-qualification. Existing unrelated packaging and retention changes are outside
-this delivery.
+Status: source implementation published and verified offline on 2026-11-15.
+The ordinary development bundle was built and, after the owner's manual restart,
+verified active with binary SHA-256
+`dc59171e67fc0e18fc8a8e40a6499be543a3a92cd5e3021e470509ec2c2307f1`.
+All 128 active artifacts and 114 worker files matched the verified B1 bundle;
+Supervisor, API and Bridge health passed. This is B1 activation/health evidence,
+not live Instagram or native-provider qualification. Unrelated packaging and
+retention changes remain outside this delivery.
 
 The Windowed readiness probe and Headless collector now call the same Instagram
 `assessReadiness` policy through the AkuBridge adapter registry. Source-specific
@@ -71,6 +75,7 @@ remains separately unqualified; B1 is not provider qualification.
 
 The fixtures are synthetic Node VM DOMs. They do not prove live markup coverage,
 rendering/geometry parity for every layout, or behavior of an activated bundle.
-After scoped publication, the next delivery step is the ordinary development
-build and offline package verification when authorized. Activation and live
-capture remain separate decisions.
+For B2 freshness/quality reconciliation and retained limitations, see
+[Instagram adapter parity](instagram-adapter-parity.md). B1 activation does not
+attest that later B2 source changes are loaded. Live qualification remains a
+separate decision.

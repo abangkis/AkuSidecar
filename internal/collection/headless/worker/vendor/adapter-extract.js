@@ -593,7 +593,7 @@
     }
     const links = linksFor(container, excluded);
     if (!text && !media.media.length && !attachments.length) return { rejection: 'empty_evidence' };
-    return { post: {
+    const post = {
       id: identity.id, permalink: identity.permalink, author, avatar, text, publishedAt: time.publishedAt,
       ...semantics, presentation, attachments, links, directContext: Array.isArray(directContext) ? directContext.slice(0, 8) : [],
       media: media.media, mediaExpected: media.expected, mediaEvidence: {...media.evidence,
@@ -603,7 +603,16 @@
       limitations: ['visible_dom_only', 'no_production_admission', ...(controls ? ['text_may_be_collapsed'] : []),
         ...(textTruncated ? ['text_truncated'] : []),
         ...(media.expected.includes('video') && media.evidence.videoStreamStatus === 'unknown' ? ['video_stream_not_resolved'] : [])],
-    } };
+    };
+    const qualityPolicy = globalThis.AkuCaptureQualityPolicy;
+    if (source === 'instagram' && qualityPolicy) {
+      if (typeof qualityPolicy.observeCandidateFacts !== 'function') throw Error('Shared Instagram candidate quality facts contract is unavailable.');
+      post.textCompleteness = textTruncated ? 'truncated'
+        : capturePrimitives.textCompleteness({collapsed:controls,textStatus:textEvidence.status});
+      post.qualityFacts = { schema: 'aku.instagram.candidate-quality-facts.v1',
+        ...qualityPolicy.observeCandidateFacts({container, adapter, candidate:{...post,platformId:post.id,avatarUrl:post.avatar}}) };
+    }
+    return { post };
   }
 
   async function collect() {

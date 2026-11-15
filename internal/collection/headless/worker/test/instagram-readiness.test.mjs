@@ -6,12 +6,13 @@ import {toObservation, projectSourceReadiness} from '../observation.mjs';
 import {emptyCaptureDiagnostics, NATIVE_CAPTURE_CAPABILITIES} from '../capture.mjs';
 
 const bridge = new URL('../../../../../../AkuBridge/', import.meta.url);
-const [registry, adapter, primitives, windowed, headless] = await Promise.all([
+const [registry, adapter, primitives, windowed, headless, quality] = await Promise.all([
   readFile(new URL('source-adapter-runtime.js', bridge), 'utf8'),
   readFile(new URL('adapters/instagram-adapter.js', bridge), 'utf8'),
   readFile(new URL('capture-primitives.js', bridge), 'utf8'),
   readFile(new URL('content-script.js', bridge), 'utf8'),
   readFile(new URL('../vendor/adapter-extract.js', import.meta.url), 'utf8'),
+  readFile(new URL('capture-quality-policy.js', bridge), 'utf8'),
 ]);
 const nativeCapabilitiesBefore=JSON.stringify(NATIVE_CAPTURE_CAPABILITIES);
 
@@ -58,7 +59,7 @@ function runtime(spec, mode) {
     AkuBoundedCapturePolicy:{},AkuCaptureQualityPolicy:{},AkuSourceFreshnessRuntime:{},
     AkuMediaAcquisitionEngine:{},AkuMediaPostProcessor:{createDeferredInbox:()=>({})}});
   context.window=context;
-  for(const source of [primitives,registry,adapter])vm.runInContext(source,context);
+  for(const source of [primitives,registry,adapter,quality])vm.runInContext(source,context);
   const facts=[];
   const actual=context.AkuSourceAdapters;
   const actualAdapter=actual.get('instagram');
