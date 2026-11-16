@@ -83,9 +83,9 @@ export async function sourceAssets(bridgePath, source) {
       ];
   selected.splice(selected.findIndex(asset => asset.relative === `AkuBridge/adapters/${source}-adapter.js`) + 1, 0,
     { relative: 'AkuBridge/source-freshness-runtime.js', path: resolve(bridge, 'source-freshness-runtime.js'), execute: true });
-  if (source === 'x') {
+  if (source === 'x' || source === 'instagram') {
     // Older Bridge packages do not carry shadow diagnostics. Load the complete pair when available.
-    const shadow = ['shared-dom-engine/browser-runtime.js', 'adapters/x-dom-shadow.js'].map(name => ({
+    const shadow = ['shared-dom-engine/browser-runtime.js', `adapters/${source}-dom-shadow.js`].map(name => ({
       relative: `AkuBridge/${name}`, path: resolve(bridge, name), execute: true,
     }));
     try {

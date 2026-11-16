@@ -725,7 +725,17 @@
         mediaContainerCount: 0, hydratedMediaContainerCount: 0,
       }) ?? null : null;
     const sourceReadiness = sourceReadinessAssessment?.state ?? baseReadiness;
+    let shadow = {};
+    if (source === 'instagram') {
+      try {
+        const diagnostic = globalThis.AkuInstagramDOMShadow?.assess({ adapter, candidates:structural,
+          visible:isVisible, loading, feedRoot:feedRootPresent,
+          access:loginRequired ? 'login_required' : sourceUnavailable ? 'unavailable' : 'available' });
+        if (diagnostic) shadow = {sharedDOMShadow:diagnostic};
+      } catch { /* A shadow failure cannot change capture or readiness. */ }
+    }
     return { ...base, sourceReadiness, candidateCount: candidates.length, discoveryStrategy: discovery.strategy || 'unknown',
+      ...shadow,
       ...(sourceReadinessAssessment ? { sourceReadinessAssessment } : {}),
       candidateDiagnostics:{structuralCandidates:discovery.readinessCandidates?.length ?? discovery.semanticCandidateCount ?? 0,
         eligibleCandidates:candidates.length,actionAnchoredCandidates:discovery.actionAnchoredCandidateCount || 0,targetFallbackStatus,

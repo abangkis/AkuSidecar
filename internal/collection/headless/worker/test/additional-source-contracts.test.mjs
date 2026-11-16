@@ -16,6 +16,7 @@ test('additional sources load their own Bridge adapter and media runtime with ha
     const assets=await sourceAssets(bridge,source);
     assert.deepEqual(assets.filter(a=>a.execute).map(a=>a.relative),[
       'AkuBridge/capture-primitives.js','AkuBridge/source-adapter-runtime.js',
+      ...(source==='instagram'?['AkuBridge/shared-dom-engine/browser-runtime.js','AkuBridge/adapters/instagram-dom-shadow.js']:[]),
       ...(source==='linkedin' ? ['AkuBridge/source-feed-routes.js'] : []),
       'AkuBridge/bounded-capture-policy.js','AkuBridge/capture-quality-policy.js','AkuBridge/media-post-processor.js',
       ...(source==='linkedin' ? ['AkuBridge/linkedin-permalink-policy.js','AkuBridge/linkedin-timestamp-policy.js'] : []),
