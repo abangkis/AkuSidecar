@@ -44,7 +44,11 @@ function browserFixture({assets,cases,mode,shadow,gate}) {
   const effects={calls:0,mutations:0,clicks:0,scrolls:0,network:0};let inside=false,receive;
   const forbidden=field=>()=>{if(inside){effects[field]++;throw Error('shadow effect forbidden');}};
   const window={location,innerWidth,innerHeight,scrollX:0,scrollY:0,scrollTo:forbidden('scrolls'),scrollBy:forbidden('scrolls')};
-  const chrome={runtime:{onMessage:{addListener(fn){receive=fn;},removeListener(){}}}};
+  const pushes=[];
+  const chrome={runtime:{onMessage:{addListener(fn){receive=fn;},removeListener(){}},async sendMessage(message){
+    if(message.type==='AKU_BROWSER_CAPTURE_PROGRESS'){pushes.push(message);return {ok:true};}
+    return {ok:false};
+  }}};
   const request=message=>new Promise(ok=>receive(message,null,ok));
   const NativeDate=globalThis.Date;
   globalThis.Date=class extends NativeDate {constructor(...args){super(...(args.length?args:['2026-11-16T00:00:00Z']));}};
@@ -78,7 +82,8 @@ function browserFixture({assets,cases,mode,shadow,gate}) {
         if(!probe.ok)throw Error('Windowed readiness failed');
         let observation=null;
         if(ready(probe.readiness)){
-          const capture=await request({type:'AKU_BROWSER_COLLECT_VISIBLE',payload:{source:'instagram',scrolls:0,restoreScroll:false,
+          const diagnosticAttempt=`00000000-0000-4000-8000-${String(rows.length+1).padStart(12,'0')}`;
+          const capture=await request({type:'AKU_BROWSER_COLLECT_VISIBLE',payload:{source:'instagram',scrolls:0,restoreScroll:false,diagnosticAttempt,
             qualityRetryBudget:0,sourceFreshness:{},sourceReadiness:probe.readiness}});
           if(!capture.ok)throw Error('Windowed fixture capture failed: '+capture.message);
           observation=capture.observation;
@@ -90,7 +95,10 @@ function browserFixture({assets,cases,mode,shadow,gate}) {
         rows.push({name:item.name,diagnostic:snapshot.sharedDOMShadow??null,baseline:stable(snapshot)});
       }
     }
-    observer.disconnect();return {rows,effects};
+    observer.disconnect();return {rows,effects,progress:{count:pushes.length,
+      attempts:new Set(pushes.map(message=>message.attemptId)).size,
+      safe:pushes.every(message=>message.schemaVersion===1&&message.sequence>=1&&message.progress.source==='instagram'&&
+        !/Private|Fixture123|cdninstagram|instagram:|fixture_author/.test(JSON.stringify(message.progress)))}};
   })();
 }
 
@@ -136,6 +144,10 @@ export async function runInstagramShadowParity(chrome,output) {
       const effects=results[mode+'-shadow'].effects;assert.equal(effects.calls,cases.length-1);
       for(const field of ['mutations','clicks','scrolls','network'])assert.equal(effects[field],0,mode+' '+field);
     }
+    for(const label of ['windowed-baseline','windowed-shadow']){
+      assert.ok(results[label].progress.count>0,'Actual Windowed capture must publish progress');
+      assert.equal(results[label].progress.safe,true);
+    }
     assert.equal(rows.find(r=>r.name==='conflicting identity').diagnostic.rejections.identity_conflict,1);
     assert.equal(rows.find(r=>r.name==='nested article cannot identify parent').diagnostic.rejections.missing_identity,1);
     assert.equal(rows.find(r=>r.name==='comment cannot identify parent').diagnostic.rejections.missing_identity,1);
@@ -144,6 +156,7 @@ export async function runInstagramShadowParity(chrome,output) {
       baseline:'Each consumer executes the same capture/readiness entry points with shadow assets omitted; all non-diagnostic, non-timing results must match.',
       fixtures:cases.length,engineSha256:headless.find(a=>a.relative===engine).sha256,probeSha256:headless.find(a=>a.relative===probe).sha256,
       assets:Object.fromEntries([...new Map([...windowed,...headless].map(a=>[a.relative,a])).values()].map(a=>[a.relative,digest(a.content)])),
+      progress:{baseline:results['windowed-baseline'].progress,shadow:results['windowed-shadow'].progress},
       effects:{windowed:results['windowed-shadow'].effects,headless:results['headless-shadow'].effects},rows};
     if(output)await writeFile(output,JSON.stringify(report,null,2)+'\n');
     return report;
