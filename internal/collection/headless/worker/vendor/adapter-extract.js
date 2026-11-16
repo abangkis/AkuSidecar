@@ -726,9 +726,10 @@
       }) ?? null : null;
     const sourceReadiness = sourceReadinessAssessment?.state ?? baseReadiness;
     let shadow = {};
-    if (source === 'instagram') {
+    if (source === 'instagram' || source === 'linkedin') {
       try {
-        const diagnostic = globalThis.AkuInstagramDOMShadow?.assess({ adapter, candidates:structural,
+        const probe = source === 'instagram' ? globalThis.AkuInstagramDOMShadow : globalThis.AkuLinkedInDOMShadow;
+        const diagnostic = probe?.assess({ adapter, candidates:structural,
           visible:isVisible, loading, feedRoot:feedRootPresent,
           access:loginRequired ? 'login_required' : sourceUnavailable ? 'unavailable' : 'available' });
         if (diagnostic) shadow = {sharedDOMShadow:diagnostic};

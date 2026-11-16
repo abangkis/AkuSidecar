@@ -372,7 +372,7 @@ export function toObservation({ source, requestedUrl, snapshots, provenance, cap
       authenticatedUiObserved: last.authenticatedUiObserved === true,
       documentReady: last.documentReady === true,
       ...projectSourceReadiness(last),
-      ...(['x','instagram'].includes(source) ? projectDOMShadow(last) : {}),
+      ...(['x','instagram','linkedin'].includes(source) ? projectDOMShadow(last) : {}),
       ...(source === 'x' && last.xObserverRegistration ? { xResponseObserver: {
         registration: last.xObserverRegistration,
         diagnostics: last.xResponseObserver ?? null,
