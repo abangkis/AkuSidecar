@@ -147,6 +147,7 @@ export async function dailyRollbackProvenance(service,{allowPackaged=false}={}){
 }
 export async function verifyDailyPackage(path){
   const root=dirname(await ordinary(path));
+  reject(await absent(join(root,'retention-retired.json')),'development_package_retired');
   const manifest=JSON.parse(await readFile(path,'utf8'));
   reject([schema,mainSchema].includes(manifest.schema),'daily_package_contract_rejected');
   const main=manifest.schema===mainSchema,source=main?'main':'dedicated',reader=dailyReaderContract(source);

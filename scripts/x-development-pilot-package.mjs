@@ -93,6 +93,7 @@ export function activationArguments(plan,configPath,appShell=true){
 export async function verifyPackage(path){
   const manifest=JSON.parse(await readFile(await ordinary(path),'utf8'));
   const root=dirname(resolve(path));
+  try{await lstat(join(root,'retention-retired.json'));throw new Error('development_package_retired');}catch(error){if(error.code!=='ENOENT')throw error;}
   if(manifest.schema!=='aku.x.development-activation-package.v1'||manifest.preparationOnly!==true||
     manifest.executionApproved!==false||manifest.defaultOff!==true||manifest.maxAttemptMS!==60000||
     manifest.controls.retry!==false||manifest.controls.maxTransfers!==1||

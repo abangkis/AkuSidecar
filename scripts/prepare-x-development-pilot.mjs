@@ -1,5 +1,6 @@
 // Prepare a reviewable candidate only. Never launch Chrome, invoke manual start,
 // register a host, inspect an account profile or open any database.
+import {beginDevelopmentPreparation} from './development-package-retention.mjs';
 import {mkdir,readFile,writeFile,copyFile,lstat} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
@@ -10,6 +11,8 @@ import {buildNativeOwnerPackage} from './build-x-native-owner.mjs';
 import {ordinary,digest,fileRecord,copyTree,copyRuntimeSchemas,inventory,instanceConfig,activationArguments,verifyPackage} from './x-development-pilot-package.mjs';
 
 const project=resolve(dirname(fileURLToPath(import.meta.url)),'..');
+const retentionOperation=beginDevelopmentPreparation(project);
+try {
 if(process.platform!=='win32'||process.argv.length!==2)throw new Error('Windows preparation takes no arguments');
 const id=randomUUID().replaceAll('-',''),parent=join(project,'build','x-application-qa-prepared');
 await mkdir(parent,{recursive:true});await ordinary(parent,true);
@@ -96,4 +99,7 @@ await writeFile(manifestPath,JSON.stringify(manifest,null,2)+'\n',{flag:'wx'});
 for(const row of baseline){if((await fileRecord(row.path)).sha256!==row.sha256)throw new Error('main_files_changed_during_preparation');}
 try{await lstat(plan.database);throw new Error('preparation_created_database');}catch(error){if(error.code!=='ENOENT')throw error;}
 const verified=await verifyPackage(manifestPath);
+const retention=await retentionOperation.verified({kind:'pilot',root,verification:verified});
+if(retention.deferred.length)console.warn('Development package retention deferred; see build/.development-package-retention/last-result.json');
 process.stdout.write(JSON.stringify({manifest:manifestPath,...verified,activationReady:false,mainFilesUnchanged:true,browserStarted:false,sessionTransferred:false})+'\n');
+} finally { retentionOperation.release(); }

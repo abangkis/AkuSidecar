@@ -1,5 +1,6 @@
 // Build a sealed daily-main candidate and rollback evidence only. Never apply
 // config/service/registry changes, start Chrome or open a database/profile.
+import {beginDevelopmentPreparation} from './development-package-retention.mjs';
 import {mkdir,readFile,writeFile,copyFile,lstat} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
@@ -12,6 +13,8 @@ import {dailyDatabaseSchemas,dailyPreparationArguments,dailyReaderContract,daily
 import {sourceAssets} from '../internal/collection/headless/worker/worker.mjs';
 
 const project=resolve(dirname(fileURLToPath(import.meta.url)),'..');
+const retentionOperation=beginDevelopmentPreparation(project);
+try {
 if(process.platform!=='win32')throw new Error('daily_preparation_requires_windows');
 const options=dailyPreparationArguments(process.argv.slice(2)),reader=dailyReaderContract(options.readerSource);
 const supervisorConfig=await ordinary(options.supervisorConfig);
@@ -115,4 +118,8 @@ const manifest={schema:reader.schema,...(reader.source==='main'?{readerSource:'m
 const manifestPath=join(root,'daily-package.json');
 await writeFile(manifestPath,JSON.stringify(manifest,null,2)+'\n',{flag:'wx'});
 if((await fileRecord(supervisorConfig)).sha256!==manifest.supervisor.sha256)throw new Error('daily_supervisor_changed_during_preparation');
-process.stdout.write(JSON.stringify({manifest:manifestPath,manifestSHA256:(await fileRecord(manifestPath)).sha256,...await verifyDailyPackage(manifestPath)})+'\n');
+const verified=await verifyDailyPackage(manifestPath);
+const retention=await retentionOperation.verified({kind:'daily',root,verification:verified});
+if(retention.deferred.length)console.warn('Development package retention deferred; see build/.development-package-retention/last-result.json');
+process.stdout.write(JSON.stringify({manifest:manifestPath,manifestSHA256:(await fileRecord(manifestPath)).sha256,...verified})+'\n');
+} finally { retentionOperation.release(); }

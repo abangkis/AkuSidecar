@@ -1,4 +1,5 @@
 // Preparation only. This helper has no browser, pilot execution or transfer path.
+import {beginDevelopmentPreparation} from './development-package-retention.mjs';
 import {mkdir,readFile,writeFile,realpath,lstat} from 'node:fs/promises';
 import {createHash,randomUUID} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
@@ -9,6 +10,8 @@ import {buildNativeOwnerPackage} from './build-x-native-owner.mjs';
 import {renderXQAController} from './auth-session-fixture/x-qa-controller-render.mjs';
 
 const project=resolve(dirname(fileURLToPath(import.meta.url)),'..');
+const retentionOperation=beginDevelopmentPreparation(project);
+try {
 if(process.argv.length!==2||process.platform!=='win32')throw new Error('Windows preparation takes no arguments; native execution is unavailable');
 const id=randomUUID().replaceAll('-','');
 const parent=join(project,'build','x-application-qa-prepared');
@@ -75,5 +78,8 @@ const plan={schema:'aku.x.application-qa-preparation.v2',sourceCommit,sourceDirt
   runbook:'docs/x-application-native-qa-run-plan.md'};
 const planPath=join(root,'prepared-review.json');
 await writeFile(planPath,JSON.stringify(plan,null,2)+'\n',{flag:'wx'});
+const retention=await retentionOperation.verified({kind:'qa',root,verification:{packageId:id,preparationOnly:true}});
+if(retention.deferred.length)console.warn('Development package retention deferred; see build/.development-package-retention/last-result.json');
 process.stdout.write(JSON.stringify({preparedReview:planPath,sourceCommit,sourceDirty,sourceSHA256,runtimePlan:materialized.plan,executionReady:false,
   browserStarted:false,sessionTransferred:false,retainedProfileInspected:false})+'\n');
+} finally { retentionOperation.release(); }
