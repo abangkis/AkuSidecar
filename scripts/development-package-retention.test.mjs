@@ -7,6 +7,17 @@ import {randomUUID,createHash} from 'node:crypto';
 import {beginDevelopmentPreparation} from './development-package-retention.mjs';
 
 const repo=resolve(dirname(fileURLToPath(import.meta.url)),'..');
+const localReleaseTools=['convergence-release-tools','ig-bootstrap-release-tools','ig-corroboration-release-tools','ig-layered-release-tools','ig-read-release-tools','pending-diagnostics-release-tools'];
+const localReleaseOptions={skip:process.env.AKU_RETENTION_LOCAL_RELEASE_TEST==='1'?false:'Local release tooling requires AKU_RETENTION_LOCAL_RELEASE_TEST=1'};
+function localReleaseHelper(name,file){
+ const path=join(repo,'build',name,file);
+ assert.ok(fs.existsSync(path),`Required local release helper is missing: ${path}`);
+ return path;
+}
+function assertBefore(text,gate,action,label){
+ const gateAt=text.indexOf(gate),actionAt=text.indexOf(action);
+ assert.ok(gateAt>=0&&actionAt>gateAt,`${label}: ${action} must follow ${gate}`);
+}
 const testParent=join(repo,'build','development-package-retention-tests');
 fs.mkdirSync(testParent,{recursive:true});
 const suite=join(testParent,randomUUID());fs.mkdirSync(suite);
@@ -145,23 +156,25 @@ test('native guard, IPC, handle preflight and mutex work on a disposable runtime
  }
  retired(a);present(b);
 });
-test('all preparation and activation hooks run only after their verification gates',()=>{
- const preparation=['convergence-release-tools','ig-bootstrap-release-tools','ig-corroboration-release-tools','ig-layered-release-tools','ig-read-release-tools','pending-diagnostics-release-tools'];
- for(const name of preparation){
-  const text=fs.readFileSync(join(repo,'build',name,'prepare.mjs'),'utf8');
-  assert.ok(text.indexOf('const retentionVerification=await verifyPrepared(root)')<text.indexOf('retentionOperation.verified'));
-  assert.match(text,/finally \{ retentionOperation\.release\(\); \}/u);
- }
+test('tracked preparation hooks run only after their verification gates',()=>{
  for(const name of ['prepare-x-daily-development.mjs','prepare-x-development-pilot.mjs','prepare-x-application-qa.mjs']){
   const text=fs.readFileSync(join(repo,'scripts',name),'utf8');assert.match(text,/finally \{ retentionOperation\.release\(\); \}/u);
   const gate=name.includes('daily')?'const verified=await verifyDailyPackage':name.includes('pilot')?'const verified=await verifyPackage':'const planPath=';
-  assert.ok(text.indexOf(gate)<text.indexOf('retentionOperation.verified'));
+  assertBefore(text,gate,'retentionOperation.verified',name);
  }
- for(const name of ['convergence-handoff-tools',...preparation.slice(1)]){
-  const text=fs.readFileSync(join(repo,'build',name,'activate.ps1'),'utf8');
-  const at=text.indexOf('\nComplete-DevelopmentPackageHandoff');
-  assert.ok(at>text.indexOf("$receipt=@{status='activated'"));assert.ok(at>text.indexOf('activation-receipt.json'));
-  assert.ok(text.indexOf('Enter-DevelopmentPackageHandoff')<text.indexOf('Invoke-DevRuntimePromotion'));
+});
+
+test('local release preparation and activation hooks preserve verification gates',localReleaseOptions,()=>{
+ for(const name of localReleaseTools){
+  const text=fs.readFileSync(localReleaseHelper(name,'prepare.mjs'),'utf8');
+  assertBefore(text,'const retentionVerification=await verifyPrepared(root)','retentionOperation.verified',name);
+  assert.match(text,/finally \{ retentionOperation\.release\(\); \}/u);
+ }
+ for(const name of ['convergence-handoff-tools',...localReleaseTools.slice(1)]){
+  const text=fs.readFileSync(localReleaseHelper(name,'activate.ps1'),'utf8');
+  assertBefore(text,"$receipt=@{status='activated'",'\nComplete-DevelopmentPackageHandoff',name);
+  assertBefore(text,'activation-receipt.json','\nComplete-DevelopmentPackageHandoff',name);
+  assertBefore(text,'Enter-DevelopmentPackageHandoff','Invoke-DevRuntimePromotion',name);
   assert.match(text,/finally \{\s*try \{ \$packageOperation\.ReleaseMutex\(\)/u);
  }
 });
@@ -170,16 +183,19 @@ import {verifyDailyPackage} from './x-daily-development-package.mjs';
 import {verifyPackage} from './x-development-pilot-package.mjs';
 import {pathToFileURL} from 'node:url';
 
-test('retired daily, pilot and main packages are rejected before a rollback read',async()=>{
+test('retired daily and pilot packages are rejected before a rollback read',async()=>{
  for(const [kind,check]of [['daily',verifyDailyPackage],['pilot',verifyPackage]]){
   const project=fixture(),p=pack(project,kind);
   write(join(p.root,'retention-retired.json'),{schema:'aku.development-package-retired.v1'});
   await assert.rejects(check(p.manifestPath),/development_package_retired/u);present(p);
  }
+});
+
+test('local main package verifiers reject retirement before a rollback read',localReleaseOptions,async()=>{
  const project=fixture(),p=pack(project,'main');
  write(join(p.root,'retention-retired.json'),{schema:'aku.development-package-retired.v1'});
- for(const name of ['convergence-release-tools','ig-bootstrap-release-tools','ig-corroboration-release-tools','ig-layered-release-tools','ig-read-release-tools','pending-diagnostics-release-tools']){
-  const {verifyPrepared}=await import(pathToFileURL(join(repo,'build',name,'verify.mjs')));
+ for(const name of localReleaseTools){
+  const {verifyPrepared}=await import(pathToFileURL(localReleaseHelper(name,'verify.mjs')));
   await assert.rejects(verifyPrepared(p.root),/development_package_retired/u);
  }
  present(p);

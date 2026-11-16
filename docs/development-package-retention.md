@@ -84,14 +84,40 @@ of local release tooling must preserve the same verification and retention hooks
 
 ## Validation
 
-Run the focused Node suite with:
+Run the focused Node suite from a fresh source checkout with Node.js 22 or newer:
 
     node --test scripts/development-package-retention.test.mjs
 
+This default suite uses tracked source and disposable fixtures only. No existing
+release helpers, prepared packages, runtime binaries, or service registration are
+required. It creates its own test output directory under build/; it does not
+build an application package. On Windows, the reparse-path fixture creates a
+directory junction and requires permission to create that link.
+
+Two integration tests for the local, Git-ignored release tools are explicitly
+skipped by default, with a reason in the test output. They cover preparation and
+activation hook ordering, and the six main-package retirement verifiers. To run
+them on a development machine where those helpers already exist:
+
+    $env:AKU_RETENTION_LOCAL_RELEASE_TEST = '1'
+    node --test scripts/development-package-retention.test.mjs
+    Remove-Item Env:AKU_RETENTION_LOCAL_RELEASE_TEST
+
+Explicitly enabling these tests requires all six build/*release-tools preparation
+and verification helpers, plus their six activation helpers (including
+build/convergence-handoff-tools/activate.ps1). A missing helper fails the test;
+it is never silently skipped. The tests read hook source and call verifiers only
+on disposable fixtures. They never execute preparation or activation entrypoints.
+These local tools remain ignored and are not generated or copied into the suite.
+
 On Windows, set AKU_RETENTION_NATIVE_TEST=1 for the disposable-runtime test of
-the actual Windows guard, IPC, handle preflight and named mutex. The suite creates
-and removes only UUID-named fixture directories under
-build/development-package-retention-tests.
+the actual Windows guard, IPC, handle preflight and named mutex. This separate
+opt-in needs Windows PowerShell script execution and read access to the process,
+Supervisor configuration, and native-host registry observations used by the guard.
+It uses the tracked guard and does not require the local release helpers. The
+suite creates and removes only UUID-named fixture directories under
+build/development-package-retention-tests. Its native observation never starts,
+stops, reloads, or activates a service.
 
 Run the existing package verifier suites and scripts/test-dev-runtime-retention.ps1
 when changing the associated contracts. Tests never activate the live runtime.
