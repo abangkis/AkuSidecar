@@ -1,0 +1,15 @@
+{
+  "name": "aku-x-headless-poc",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "capture": "node capture.mjs",
+    "capture:shared": "node shared-profile-test.mjs",
+    "capture:facebook": "node capture.mjs --source facebook",
+    "capture:facebook:shared": "node shared-profile-test.mjs --source facebook",
+    "login": "node capture.mjs --login",
+    "test": "node smoke.mjs",
+    "test:facebook": "node facebook-smoke.mjs"
+  },
+  "engines": { "node": ">=22" }
+}
