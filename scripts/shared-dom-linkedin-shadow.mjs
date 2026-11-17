@@ -8,6 +8,7 @@ const link=id=>`<a href="/feed/update/urn:li:activity:${id}/">Post</a>`;
 const card=({body=text,links=link(primary),id=primary,author=true,tag='article',attributes=''}={})=>
   `<${tag} class="feed-shared-update-v2" ${id?`data-urn="urn:li:activity:${id}"`:''} ${attributes}>${author?'<span data-view-name="feed-actor-name">Private Author</span>':''}${links}${body}</${tag}>`;
 const post=card();
+const blockedPost=card({id:null,links:'',body:text+'<button id="post-control" aria-label="Open control menu for post by Private Author">Menu</button>'});
 const cases=[
   {name:'native article',body:post,code:'ready'},
   {name:'native wrapper',body:card({tag:'div'}),code:'ready'},
@@ -17,6 +18,13 @@ const cases=[
   {name:'public activity anchor',body:card({id:null,links:`<a href="/posts/fixture-author_activity-${primary}-abc">Post</a>`}),code:'ready'},
   {name:'action ancestor',body:`<section><span data-view-name="feed-actor-name">Private Author</span>${link(primary)}${text}<button>Like</button><button>Comment</button></section>`,code:'ready'},
   {name:'missing native identity',body:card({id:null,links:''}),code:'no_valid_candidates',rejections:{missing_identity:1}},
+  {name:'existing menu blocks recovery',body:blockedPost+'<div role="menu" style="width:120px;height:50px">Private menu</div>',code:'no_valid_candidates',recoveryBlocker:'role_menu'},
+  {name:'existing dialog blocks recovery',body:blockedPost+'<div role="dialog" style="width:120px;height:50px">Private dialog</div>',code:'no_valid_candidates',recoveryBlocker:'role_dialog'},
+  {name:'aria-hidden dialog remains a recovery blocker',body:blockedPost+'<div aria-hidden="true"><div role="dialog" style="width:120px;height:50px">Private hidden dialog</div></div>',code:'no_valid_candidates',recoveryBlocker:'role_dialog',ancestorFlag:'ariaHidden'},
+  {name:'hidden dialog does not block recovery',body:blockedPost+'<div role="dialog" style="display:none">Private hidden dialog</div>',code:'no_valid_candidates',recoveryBlocker:null,recoveryAttempt:true},
+  {name:'conflicting ARIA references stay diagnostic',body:blockedPost.replace('id="post-control"','id="post-control" aria-controls="other-surface"')+'<div role="dialog" id="actual-surface" aria-labelledby="post-control" style="width:120px;height:50px">Private dialog</div>',code:'no_valid_candidates',recoveryBlocker:'role_dialog',aria:{labelledBy:'matches',controls:'different',owns:'absent'}},
+  {name:'inert ancestor remains a recovery blocker',body:blockedPost+'<div inert><div role="dialog" style="width:120px;height:50px">Private inert dialog</div></div>',code:'no_valid_candidates',recoveryBlocker:'role_dialog',ancestorFlag:'inert'},
+  {name:'transparent ancestor records the existing visibility difference',body:blockedPost+'<div style="opacity:0"><div role="dialog" style="width:120px;height:50px">Private transparent dialog</div></div>',code:'no_valid_candidates',recoveryBlocker:'role_dialog',ancestorFlag:'opacityZero',recoveryDifference:'Windowed checks the surface style only; Headless also checks ancestor styles. The transparent ancestor therefore blocks only Windowed. This diagnostic increment preserves both operational predicates.',headlessRecoveryAttempt:true},
   {name:'foreign native URL',body:card({id:null,links:`<a href="https://foreign.test/posts/author_activity-${primary}-x">Post</a>`}),code:'no_valid_candidates'},
   {name:'profile URL is not a post',body:card({id:null,links:`<a href="/in/author-activity-${primary}/">Profile</a>`}),code:'no_valid_candidates'},
   {name:'conflicting root and anchor',body:card({links:link(other)}),code:'no_valid_candidates',rejections:{identity_conflict:1}},

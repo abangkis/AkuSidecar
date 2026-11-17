@@ -6,6 +6,7 @@ import {join,dirname,resolve,sep} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {registeredScriptsForSources} from '../../AkuBridge/source-access-policy.js';
 import {sourceAssets} from '../internal/collection/headless/worker/worker.mjs';
+import {projectLinkedInRecoveryBlockers} from '../internal/collection/headless/worker/observation.mjs';
 
 const workspace=fileURLToPath(new URL('../../',import.meta.url));
 const bridge=join(workspace,'AkuBridge');
@@ -13,6 +14,8 @@ function browserFixture({assets,cases,mode,shadow,gate,source,canonicalUrl,probe
   const out=document.getElementById('result'),main=document.querySelector('main');
   const location=new URL(canonicalUrl);
   const effects={calls:0,mutations:0,clicks:0,scrolls:0,network:0};let inside=false,receive;
+  let recoveryClicks=0;
+  main.addEventListener('click',event=>{if(event.target.closest('button[aria-label^="Open control menu for post by"]'))recoveryClicks++;});
   const forbidden=field=>()=>{if(inside){effects[field]++;throw Error('shadow effect forbidden');}};
   const window={location,innerWidth,innerHeight,scrollX:0,scrollY:0,scrollTo:forbidden('scrolls'),scrollBy:forbidden('scrolls')};
   const pushes=[];
@@ -44,6 +47,7 @@ function browserFixture({assets,cases,mode,shadow,gate,source,canonicalUrl,probe
     const rows=[];
     for(const item of cases){
       location.href=item.route??canonicalUrl;main.innerHTML=item.body;
+      recoveryClicks=0;
       if(shadow){globalThis[probeGlobal]={...globalThis[probeGlobal],assess:item.failProbe?()=>{throw Error('private probe failure');}:function(sample){
         observer.takeRecords();inside=true;effects.calls++;
         try{return original.assess(sample);}finally{effects.mutations+=observer.takeRecords().length;inside=false;}
@@ -58,12 +62,16 @@ function browserFixture({assets,cases,mode,shadow,gate,source,canonicalUrl,probe
             qualityRetryBudget:0,sourceFreshness:{},sourceReadiness:probe.readiness}});
           if(!capture.ok)throw Error('Windowed fixture capture failed: '+capture.message);
           observation=capture.observation;
+          if(observation.snapshots.some(snapshot=>Object.hasOwn(snapshot,'linkedinRecoveryBlockers'))){
+            throw Error('Windowed observation snapshots must conform to the strict Sidecar schema');
+          }
           if(shadow && !item.failProbe && JSON.stringify(observation.coverage.sharedDOMShadow)!==JSON.stringify(probe.readiness.sharedDOMShadow))throw Error('Windowed projection lost shadow');
         }
-        rows.push({name:item.name,diagnostic:probe.readiness.sharedDOMShadow??null,baseline:stable({readiness:probe.readiness,observation})});
+        rows.push({name:item.name,diagnostic:probe.readiness.sharedDOMShadow??null,
+          recoveryClicks,recoveryBlockers:observation?.coverage?.linkedinRecoveryBlockers??[],baseline:stable({readiness:probe.readiness,observation})});
       }else{
         const snapshot=await globalThis.XHeadlessPoC.collect();
-        rows.push({name:item.name,diagnostic:snapshot.sharedDOMShadow??null,baseline:stable(snapshot)});
+        rows.push({name:item.name,diagnostic:snapshot.sharedDOMShadow??null,recoveryClicks,recoveryBlockers:snapshot.linkedinRecoveryBlockers??[],baseline:stable(snapshot)});
       }
     }
     observer.disconnect();return {rows,effects,progress:{count:pushes.length,
@@ -114,7 +122,28 @@ export async function runDOMShadowParity({chrome,output,source,canonicalUrl,prob
       assert.doesNotMatch(JSON.stringify(w.diagnostic),new RegExp(privacyPattern));
       for(const [key,count]of Object.entries(spec.rejections??{}))assert.equal(w.diagnostic?.rejections[key],count,spec.name+" rejection "+key);
       for(const [key,count]of Object.entries(spec.counts??{}))assert.equal(w.diagnostic?.counts[key],count,spec.name+" count "+key);
+      if(Object.hasOwn(spec,'recoveryBlocker')){
+        const native=projectLinkedInRecoveryBlockers({source,linkedinRecoveryBlockers:h.recoveryBlockers},0).linkedinRecoveryBlockers??[];
+        const projected=projectLinkedInRecoveryBlockers({source,linkedinRecoveryBlockers:w.recoveryBlockers},0).linkedinRecoveryBlockers??[];
+        assert.deepEqual(projected,w.recoveryBlockers,spec.name+' strict projection');
+        if(spec.recoveryDifference){assert.deepEqual(native,[]);assert.equal(h.recoveryClicks>0,true,spec.name+' Headless recovery attempt');}
+        else assert.deepEqual(w.recoveryBlockers,native,spec.name+' recovery diagnostic parity');
+        if(spec.recoveryBlocker===null)assert.deepEqual(w.recoveryBlockers,[]);
+        else {
+          assert.ok(w.recoveryBlockers.length>0,spec.name+' retained blocker');
+          assert.equal(w.recoveryBlockers[0].samples[0].selector,spec.recoveryBlocker);
+          assert.equal(w.recoveryBlockers[0].phase,'pre_recovery_guard');
+          assert.equal(w.recoveryBlockers[0].snapshotIndex,0);assert.equal(w.recoveryBlockers[0].candidateIndex,0);
+          if(spec.ancestorFlag)assert.equal(w.recoveryBlockers[0].samples[0].ancestors[spec.ancestorFlag],true);
+          if(spec.aria)assert.deepEqual(w.recoveryBlockers[0].samples[0].aria,spec.aria);
+          assert.doesNotMatch(JSON.stringify(w.recoveryBlockers),new RegExp(privacyPattern));
+        }
+        if(spec.recoveryAttempt){assert.ok(w.recoveryClicks>0,spec.name+' Windowed recovery reached');assert.ok(h.recoveryClicks>0,spec.name+' Headless recovery reached');}
+      }
       return {name:spec.name,diagnostic:w.diagnostic,
+        ...(Object.hasOwn(spec,'recoveryBlocker')?{recoveryBlockers:w.recoveryBlockers}:{}),
+        ...(spec.recoveryDifference?{recoveryDifference:spec.recoveryDifference,headlessRecoveryBlockers:h.recoveryBlockers}:{}),
+        ...(spec.recoveryAttempt||spec.headlessRecoveryAttempt?{recoveryClicks:{windowed:w.recoveryClicks,headless:h.recoveryClicks}}:{}),
         ...(spec.difference?{headlessDiagnostic:h.diagnostic,intentionalDifference:spec.difference}:{}),
         captureUnchanged:{windowed:true,headless:true}};
     });

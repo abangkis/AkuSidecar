@@ -190,6 +190,62 @@ func bridgeCommandsObservation(run domain.Run) domain.Observation {
 	return domain.Observation{Source: run.Source, PageURL: "https://www.linkedin.com/feed/", CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{{PlatformID: "1234567890123456789", Text: "Offline HTTP characterization evidence", Author: "fixture", Permalink: "https://www.linkedin.com/feed/update/urn:li:activity:1234567890123456789", FeedPosition: 1}}}}, Coverage: map[string]any{"quality": "complete"}}
 }
 
+func TestBridgeCommandsLinkedInRecoveryBlockersCoverage(t *testing.T) {
+	s, token, run, command := bridgeCommandsFixture(t, nil)
+	ctx := context.Background()
+	if claimed, err := s.store.ClaimCommand(ctx, run.ID, "fixture"); err != nil || claimed == nil {
+		t.Fatalf("claim: %v %v", claimed, err)
+	}
+	observation := bridgeCommandsObservation(run)
+	observation.Snapshots = append(observation.Snapshots, domain.Snapshot{Index: 1})
+	const blockerKey = "linkedinRecoveryBlockers"
+	const diagnostic = `[{"code":"existing_surface","phase":"pre_recovery_guard","snapshotIndex":1,"candidateIndex":0,
+		"menuCount":1,"dialogCount":null,"complete":false,"samples":[{"kind":"menu","selector":"role_menu",
+		"guardVisible":true,"aria":{"labelledBy":"absent","controls":"absent","owns":"absent"},
+		"hasArea":true,"intersectsViewport":true,"displayed":true,"cssVisible":true,"opacityPositive":true,
+		"hiddenAttribute":false,"ariaHidden":false,"inert":false,"ancestors":{"inspected":2,"complete":true,
+		"displayNone":false,"visibilityHidden":false,"opacityZero":true,"hiddenAttribute":false,"ariaHidden":false,"inert":false}}]}]`
+	var want any
+	if err := json.Unmarshal([]byte(diagnostic), &want); err != nil {
+		t.Fatal(err)
+	}
+	observation.Coverage[blockerKey] = want
+	target := "/api/bridge/commands/" + command.ID + "/observation"
+	submit := func(payload any) *httptest.ResponseRecorder {
+		t.Helper()
+		raw, err := json.Marshal(map[string]any{"runId": run.ID, "observation": payload})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return bridgeCommandsServe(s, bridgeCommandsRequest(s, token, http.MethodPost, target, string(raw)))
+	}
+
+	// Reproduce the rejected wire shape while keeping the claim available for the corrected payload.
+	bad := struct {
+		domain.Observation
+		Snapshots []any `json:"snapshots"`
+	}{Observation: observation, Snapshots: []any{observation.Snapshots[0], map[string]any{"index": 1, blockerKey: want}}}
+	before, err := s.store.GetRun(ctx, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridgeCommandsError(t, submit(bad), http.StatusBadRequest, "invalid_request", `unknown field "linkedinRecoveryBlockers"`)
+	bridgeCommandsUnchanged(t, s, before)
+
+	bridgeCommandsJSON(t, submit(observation), http.StatusAccepted)
+	stored, err := s.store.Observations(ctx, run.ID)
+	if err != nil || len(stored) != 1 {
+		t.Fatalf("stored observations: count=%d err=%v", len(stored), err)
+	}
+	if got := stored[0].Coverage[blockerKey]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("stored blocker diagnostics = %#v, want %#v", got, want)
+	}
+	if len(stored[0].Snapshots) != 2 || stored[0].Snapshots[1].Index != 1 {
+		t.Fatalf("stored snapshots lost the diagnostic reference: %+v", stored[0].Snapshots)
+	}
+	waitHTTPTestSession(t, s.engine, run.SessionID, "completed")
+}
+
 func TestBridgeCommandsCharacterizationResults(t *testing.T) {
 	for _, endpoint := range []string{"observation", "failure"} {
 		for _, claim := range []bool{false, true} {

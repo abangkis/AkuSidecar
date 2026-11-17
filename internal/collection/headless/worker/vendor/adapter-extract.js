@@ -635,6 +635,7 @@
     catch { discovery = { candidates: [], strategy: 'adapter_error' }; }
     let candidates = uniqueElements(discovery.candidates).filter(Boolean);
     const bindings=new WeakMap();
+    const linkedinRecoveryBlockers=[];
     let targetFallbackStatus='not_needed';
     if(source==='instagram' && candidates.length===0) {
       const route=instagramIdentity(location.href);
@@ -654,10 +655,12 @@
         const deadline=Date.now()+5000;
         try {
           const recovered=await adapter.recoverPermalinks(missing,deadline,{...helpers,isVisibleInViewport:isVisible,
+            diagnosticCandidateIndex:root=>bounded.indexOf(root),
             findPermalinkDetails:root=>{const identity=postIdentity(source,adapter,root).identity;return identity ? {url:identity.permalink} : null;},
             waitForValue:async(fn,attempts,interval)=>{for(let n=0;n<attempts && Date.now()<deadline;n++){const value=fn();if(value)return value;await new Promise(r=>setTimeout(r,Math.min(interval,Math.max(0,deadline-Date.now()))));}return null;}});
           for(const root of missing) {
             const recovery=recovered?.get(root);
+            if(recovery?.blockerDiagnostic && linkedinRecoveryBlockers.length<8)linkedinRecoveryBlockers.push(recovery.blockerDiagnostic);
             if(adapter.validateRecoveredPermalink && !adapter.validateRecoveredPermalink(root,recovery))continue;
             const identity=linkedinIdentity(recovery?.url);
             if(identity)bindings.set(root,{...identity,provenance:'adapter_recovery',recovery});
@@ -736,6 +739,7 @@
       } catch { /* A shadow failure cannot change capture or readiness. */ }
     }
     return { ...base, sourceReadiness, candidateCount: candidates.length, discoveryStrategy: discovery.strategy || 'unknown',
+      ...(linkedinRecoveryBlockers.length ? {linkedinRecoveryBlockers} : {}),
       ...shadow,
       ...(sourceReadinessAssessment ? { sourceReadinessAssessment } : {}),
       candidateDiagnostics:{structuralCandidates:discovery.readinessCandidates?.length ?? discovery.semanticCandidateCount ?? 0,

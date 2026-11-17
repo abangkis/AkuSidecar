@@ -1,5 +1,5 @@
 import { applyQuoteRecovery, probeQuoteNavigation } from './quote-navigation.mjs';
-import { canonicalSourceURL, captureError, toObservation, projectSourceReadiness, projectDOMShadow } from './observation.mjs';
+import { canonicalSourceURL, captureError, toObservation, projectSourceReadiness, projectDOMShadow, projectLinkedInRecoveryBlockers } from './observation.mjs';
 import { sourceProvenance } from './provenance.mjs';
 import { resolveStructuredMedia } from './structured-media.mjs';
 import { resolveAdditionalSourceMedia, resolveInstagramNativeTarget, createInstagramVideoRecovery } from './additional-source-media.mjs';
@@ -508,9 +508,12 @@ export function emptyCaptureDiagnostics(snapshots) {
   const count = value => Number.isSafeInteger(value) && value >= 0 && value <= 1_000_000 ? value : null;
   const flag = value => typeof value === 'boolean' ? value : null;
   const records = value => Array.isArray(value) ? value.filter(item=>item && typeof item==='object' && !Array.isArray(item)) : [];
-  return {sampleCount:snapshots.length,samples:records(snapshots).slice(-2).map(snapshot=>({
+  const selected = Array.isArray(snapshots) ? snapshots.map((snapshot, snapshotIndex) => ({ snapshot, snapshotIndex }))
+    .filter(({snapshot}) => snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)).slice(-2) : [];
+  return {sampleCount:snapshots.length,samples:selected.map(({snapshot,snapshotIndex})=>({
     ...projectSourceReadiness(snapshot),
     ...projectDOMShadow(snapshot),
+    ...projectLinkedInRecoveryBlockers(snapshot, snapshotIndex),
     candidateCount:count(snapshot.candidateCount), rejected:count(snapshot.rejected),
     photoEvidence:{status:['not_photo_route','evidence_limit','photo_metadata_missing','conflicting_photo_binding','photo_owner_missing','photo_image_not_visible','verified_photo_media'].includes(snapshot.photoEvidence?.status)?snapshot.photoEvidence.status:null,
       postBinding:snapshot.photoEvidence?.postBinding==='unverified'?'unverified':null},
