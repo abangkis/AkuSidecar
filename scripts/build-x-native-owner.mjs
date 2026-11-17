@@ -22,10 +22,18 @@ export async function buildNativeDailyOwnerPackage(outputDirectory){
 export async function buildMainBrowserTransportPackage(outputDirectory){
   return buildOwnerPackage(outputDirectory,false,true);
 }
+export async function verifySharedDiagnosticCore(read=readFile){
+  const canonical=resolve(project,'..','AkuBridge','diagnostics','state-core.js');
+  const runtime=resolve(project,'internal','collection','headless','worker','vendor','diagnostic-state-core.js');
+  const [source,copy]=await Promise.all([read(canonical),read(runtime)]);
+  if(!Buffer.from(source).equals(Buffer.from(copy)))throw new Error('diagnostic_core_source_mismatch');
+  return hash(source);
+}
 async function buildOwnerPackage(outputDirectory,daily,main=false){
   const entry=main?'internal/collection/headless/worker/native-pilot/main-browser-transport.mjs':daily?'internal/collection/headless/worker/native-pilot/daily-owner.mjs':manualEntry;
   const output=resolve(outputDirectory),rel=relative(project,output);
   if(!rel||isAbsolute(rel)||rel==='..'||rel.startsWith('..'+sep))throw new Error('package_output_must_be_project_local');
+  await verifySharedDiagnosticCore();
   const sourceNames=main?['x','instagram']:['x'];
   const bundles=await Promise.all(sourceNames.map(source=>sourceAssets(resolve(project,'..','AkuBridge'),source)));
   const catalog=Object.fromEntries(sourceNames.map((source,index)=>[source,{

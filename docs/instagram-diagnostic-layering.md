@@ -26,6 +26,31 @@ The IG adapter uses library `Location` values in actual recorder state and uses
 boundary. Library values are not directly serialized as public JSON and are not
 a sanitizer. Numeric projection limits do not enforce operation deadlines.
 
+## Shared JavaScript state mechanism
+
+The Bridge recorder and native Node trace now use the same state mechanism.
+Canonical source is `AkuBridge/diagnostics/state-core.js`; the byte-identical
+runtime asset is `internal/collection/headless/worker/vendor/diagnostic-state-core.js`.
+The native package builder checks their equality before package construction.
+This keeps runtime imports inside the Sidecar worker while avoiding a second
+implementation or an extracted JavaScript package.
+
+The core records phase/completion, first observed failure, separate
+cleanup/delivery and sticky incompleteness. It does not read clocks or enforce
+budget, deadlines, sequence, schema, source proof or resource authority.
+`native-pilot/diagnostic-trace.mjs` remains the native adapter for those existing
+observation policies: ceil-rounded bounded monotonic elapsed, budget/remaining
+values, sequence increments on snapshots, reserved final progress, validation
+and uncertain-cleanup preservation. Bridge retains its distinct snapshot,
+knownness, wire and delivery policies. The IG wrapper retains its closed catalog,
+document-context freeze and strict public projection.
+
+Run `node --test scripts/shared-diagnostic-recorder-parity.test.mjs` in the normal
+sibling workspace for common clock/budget/sequence/completeness fixtures and
+negative controls for source drift. These tests do not construct packages,
+activate a runtime or use a browser/session. The previously prepared v131
+development bundle does not include this source change.
+
 ## Observations and authority
 
 The diagnostic attempt identifier is random and separate from the nonce used by
