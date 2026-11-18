@@ -7,6 +7,22 @@ const script = fs.readFileSync(new URL("../internal/httpapi/split_ui_bridge.js",
 const diagnosticsScript = fs.readFileSync(new URL("../internal/httpapi/web/native-post-diagnostics.js", import.meta.url), "utf8");
 const origin = "http://127.0.0.1:11122";
 
+test("capture journal confirmation sends the exact preview to the authenticated capture owner", async () => {
+  const journal = { outcome: "archived", capacityBlocked: false, archivedRecords: 120 };
+  const f = fixture({ ok: true, result: { journal } });
+  const previewToken = "a".repeat(64);
+  const message = { type: "AKU_BROWSER_CAPTURE_JOURNAL", requestId: "request", journalOperation: "archive", previewToken };
+  await f.send(message, "https://foreign.example");
+  assert.equal(f.calls.length, 0);
+  await f.send(message);
+  const action = f.calls.find(call => call.url === "/api/split-capture/actions");
+  assert.deepEqual(JSON.parse(action.options.body), { type: "capture_journal", journalOperation: "archive", previewToken });
+  assert.equal(action.options.headers["X-Aku-Split-Epoch"], "current-epoch");
+  assert.equal(f.messages.at(-1).type, "AKU_BROWSER_CAPTURE_JOURNAL_RESULT");
+  assert.equal(f.messages.at(-1).requestId, message.requestId);
+  assert.deepEqual(f.messages.at(-1).journal, journal);
+});
+
 test("a passive Browser probe arriving after headless return is skipped, while real actions still fail", async () => {
   for (const type of ["AKU_BROWSER_BRIDGE_PING", "AKU_BROWSER_PROBE_SOURCE_SESSIONS", "AKU_BROWSER_BRIDGE_RELOAD_SELF", "AKU_BROWSER_OPEN_NATIVE_POST"]) {
     const f = fixture({ ok: false, error: "browser_handoff_required", message: "requires browser mode" });

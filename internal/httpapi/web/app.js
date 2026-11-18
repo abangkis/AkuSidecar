@@ -8,6 +8,7 @@ import { createNativePostRouter } from "./native-post-routing.js";
 import { nativePostWaitReason, syncNativePostAvailability } from "./native-post-availability.js";
 
 import { setSettingsText, setSettingsClass } from "./settings-render.js";
+import { createCaptureJournalUI, requestCaptureJournal } from "./capture-journal-ui.js";
 import { createXDailyControls } from "./x-daily-controls.js";
 import { createInstagramTrialControls } from "./instagram-trial-controls.js";
 import { createFrameTaskQueue } from "./ui-frame.js";
@@ -235,6 +236,8 @@ const {
   recoverInvalidatedBridgeContext, recoverInvalidBridgeToken, pingBridge, refreshBridgeAfterUserReturn, requestSourceSessionReadiness, openSourceFromSettings, syncNativePostLinks, configureNativePostLink, openNativePostInReaderWindow, cancelNativePostBroker, setSourceSessionStatus, renderSourceSessionError, renderSourceSessionReadiness, renderOnboardingSourceReadiness, bridgeActionLoop, renderBridge, configureBackgroundBridge, renderCollectionRuntime, renderBrowserConnection, openChromeExtensions, reloadIncompatibleBridge
 } = createCaptureUi({
   $: (...args) => $(...args),
+  refreshCaptureJournal: () => captureJournalUI.refresh(),
+  renderCaptureJournalBanner: () => captureJournalUI.renderBanner(),
   BRIDGE_CONTEXT_RECOVERY_KEY,
   BRIDGE_CONTEXT_RECOVERY_WINDOW_MS,
   BRIDGE_TOKEN_RECOVERY_KEY,
@@ -636,6 +639,10 @@ const settingsDirty = createDirtyStateTracker({
   onChange: renderSettingsDirtyState,
 });
 const $ = (selector) => document.querySelector(selector);
+const captureJournalUI = createCaptureJournalUI({
+  $, getRuntime: () => state.bootstrap?.collectionRuntime,
+  request: (...args) => requestCaptureJournal(window, endpoint, ...args),
+});
 const xDailyControls = createXDailyControls({
   panel: $("#x-daily-controls"),
   status: $("#x-daily-status"),

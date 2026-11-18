@@ -913,6 +913,11 @@
           <button id="confirm-x-capture-recovery" class="secondary-button" type="button">I completed verification in X</button>
         </section>
 
+        <section id="capture-journal-banner" class="auto-update-timeline-status hidden" role="status" aria-labelledby="capture-journal-banner-title">
+          <div><strong id="capture-journal-banner-title">Capture journal full</strong><span id="capture-journal-banner-detail">Browser capture is paused.</span></div>
+          <button id="capture-journal-review" class="secondary-button" type="button">Review capture journal</button>
+        </section>
+
         <section id="auto-update-timeline-status" class="auto-update-timeline-status hidden" aria-live="polite">
           <div>
             <strong id="auto-update-timeline-title">Auto Update paused</strong>
@@ -1098,6 +1103,23 @@
           </div>
         </div>
         <button id="media-viewer-next" type="button" aria-label="Next image">›</button>
+      </div>
+    </dialog>
+
+    <dialog id="capture-journal-dialog" class="reset-confirmation-dialog" aria-labelledby="capture-journal-title">
+      <div class="reset-confirmation-card">
+        <h2 id="capture-journal-title">Review capture journal</h2>
+        <p id="capture-journal-summary">Read-only preview</p>
+        <dl id="capture-journal-counts" class="capture-journal-counts" hidden>
+          <div><dt>Records used</dt><dd id="capture-journal-used"></dd></div>
+          <div><dt id="capture-journal-eligible-label">Eligible closed records</dt><dd id="capture-journal-eligible"></dd></div>
+          <div id="capture-journal-protected-row"><dt>Protected records</dt><dd id="capture-journal-protected"></dd></div>
+        </dl>
+        <p id="capture-journal-feedback" class="settings-detail" role="status"></p>
+        <div class="reset-confirmation-actions">
+          <button id="capture-journal-cancel" class="secondary-button" type="button">Cancel</button>
+          <button id="capture-journal-submit" class="primary-button" type="button" disabled>Review again</button>
+        </div>
       </div>
     </dialog>
 

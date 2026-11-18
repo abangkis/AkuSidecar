@@ -427,6 +427,46 @@ func TestSplitCaptureActionRoundTripAndBoundedQueue(t *testing.T) {
 	}
 }
 
+func TestSplitCaptureJournalArchiveRoundTrip(t *testing.T) {
+	s, token := splitTestServer(t)
+	const actionPath = "/api/split-capture/actions"
+	for _, malformed := range []string{
+		`{"type":"capture_journal","journalOperation":"archive"}`,
+		`{"type":"capture_journal","journalOperation":"archive","previewToken":"not-a-preview"}`,
+		`{"type":"capture_journal","journalOperation":"clear"}`,
+	} {
+		if w := splitRequest(s, token, "", "POST", actionPath, malformed); w.Code != 400 {
+			t.Fatalf("malformed journal action: %d %s", w.Code, w.Body)
+		}
+	}
+	preview := strings.Repeat("a", 64)
+	ui := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		ui <- splitRequest(s, token, "", "POST", actionPath, `{"type":"capture_journal","journalOperation":"archive","previewToken":"`+preview+`"}`)
+	}()
+	w := splitRequest(s, token, s.splitCapture.key, "GET", "/api/bridge/split-capture/next", "")
+	var claim struct{ Action splitCaptureAction }
+	if err := json.Unmarshal(w.Body.Bytes(), &claim); w.Code != 200 || err != nil || claim.Action.Type != "capture_journal" || claim.Action.JournalOperation != "archive" || claim.Action.PreviewToken != preview {
+		t.Fatalf("capture owner claim: %d %s", w.Code, w.Body)
+	}
+	resultPath := "/api/bridge/split-capture/results/" + claim.Action.ID
+	const result = `{"ok":true,"result":{"journal":{"capacityBlocked":false,"archivedRecords":120}}}`
+	if w := splitRequest(s, token, "stale", "POST", resultPath, result); w.Code != 409 {
+		t.Fatalf("stale owner result: %d %s", w.Code, w.Body)
+	}
+	if w := splitRequest(s, token, s.splitCapture.key, "POST", resultPath, result); w.Code != 204 {
+		t.Fatalf("current owner result: %d %s", w.Code, w.Body)
+	}
+	select {
+	case w := <-ui:
+		if w.Code != 200 || !strings.Contains(w.Body.String(), `"archivedRecords":120`) {
+			t.Fatalf("journal result: %d %s", w.Code, w.Body)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("journal result did not reach the UI")
+	}
+}
+
 func TestSplitAssetsAreAbsentByDefault(t *testing.T) {
 	s := &Server{}
 	r := httptest.NewRequest("GET", "http://127.0.0.1:11122/", nil)

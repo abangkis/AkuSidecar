@@ -5,7 +5,7 @@ import { nativePostWaitReason, syncNativePostAvailability } from "./native-post-
 import { setSettingsClass, setSettingsText } from "./settings-render.js";
 
 export function createCaptureUi({
-  $, BRIDGE_CONTEXT_RECOVERY_KEY, BRIDGE_CONTEXT_RECOVERY_WINDOW_MS, BRIDGE_TOKEN_RECOVERY_KEY, NATIVE_POST_OPEN_TIMEOUT_MS, SOURCE_SESSION_PROBE_TIMEOUT_MESSAGE, api, bridgeApi, bridgeSourceReadiness, endpoint, logNativePostTrace, getNativePointerTraces, getNativePostOpening, renderSourceSettingsValues, getRouteNativePost, schedulePassiveMediaEnrichment, setPill, showError, showNotice, sourceDescriptor, sourceDescriptors, state, syncRunButtons, updateOnboardingSummary, setNativePostOpening
+  $, BRIDGE_CONTEXT_RECOVERY_KEY, BRIDGE_CONTEXT_RECOVERY_WINDOW_MS, BRIDGE_TOKEN_RECOVERY_KEY, NATIVE_POST_OPEN_TIMEOUT_MS, SOURCE_SESSION_PROBE_TIMEOUT_MESSAGE, api, bridgeApi, bridgeSourceReadiness, endpoint, logNativePostTrace, getNativePointerTraces, getNativePostOpening, renderSourceSettingsValues, getRouteNativePost, schedulePassiveMediaEnrichment, setPill, showError, showNotice, sourceDescriptor, sourceDescriptors, state, syncRunButtons, updateOnboardingSummary, setNativePostOpening, refreshCaptureJournal, renderCaptureJournalBanner
 }) {
   let lastBridgeReturnRefreshAt = 0;
 
@@ -35,6 +35,7 @@ export function createCaptureUi({
   }
 
   function pingBridge() {
+    void refreshCaptureJournal();
     if (!browserCollectorProbeAllowed(state.bootstrap?.collectionRuntime)) return;
     window.postMessage({
       type: "AKU_BROWSER_BRIDGE_PING",
@@ -370,6 +371,7 @@ export function createCaptureUi({
   }
 
   function renderCollectionRuntime() {
+    renderCaptureJournalBanner();
     syncNativePostLinks();
     const runtime = state.bootstrap?.collectionRuntime;
     const view = collectionModeState(runtime,state.bootstrap?.bridge?.compatible);

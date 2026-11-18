@@ -30,6 +30,20 @@ Malformed journal data is not treated as an empty ledger. The journal is bounded
 at 4,096 records without silently evicting unresolved ownership or tombstones;
 capacity exhaustion reports pending cleanup and requires operator resolution.
 
+In Browser mode, the persistent **Capture journal full** banner opens a read-only
+preview. The Bridge serializes confirmation with capture and cleanup. It archives
+only whole, closed leases for which browser inventory contains no matching tab
+and the managed capture state and ledger contain no matching binding. Active,
+pending, retained, and ambiguous records stay in the live journal. A changed
+preview requires fresh confirmation. The archive and live journal are saved
+together, and the banner clears only when the current journal has room for
+admission. Archived tombstones remain available to verify old cleanup receipts.
+The first confirmed archive upgrades the local journal format. Older Bridge
+builds cannot read that format and will block capture if loaded against it.
+Before every archive, the Bridge replaces and reads back one local snapshot at
+`akuBridgeSurfaceCleanupJournalBackupLatest`. A failed backup prevents archival.
+The key contains the exact pre-archive journal, including any prior archive.
+
 ## Receipt
 
 `aku.surface-cleanup.v1` echoes the lease and optional source and accounts for

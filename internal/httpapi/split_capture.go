@@ -70,17 +70,19 @@ func (s *Server) auditSplitAction(ctx context.Context, action splitCaptureAction
 var splitUIBridge []byte
 
 type splitCaptureAction struct {
-	ID           string   `json:"id"`
-	Type         string   `json:"type"`
-	Source       string   `json:"source,omitempty"`
-	URL          string   `json:"url,omitempty"`
-	RunID        string   `json:"runId,omitempty"`
-	LeaseID      string   `json:"leaseId,omitempty"`
-	RecaptureID  string   `json:"recaptureId,omitempty"`
-	ActionID     string   `json:"actionId,omitempty"`
-	RequestID    string   `json:"requestId,omitempty"`
-	CandidateIDs []string `json:"candidateIds,omitempty"`
-	HostOnly     bool     `json:"hostOnly,omitempty"`
+	ID               string   `json:"id"`
+	Type             string   `json:"type"`
+	Source           string   `json:"source,omitempty"`
+	URL              string   `json:"url,omitempty"`
+	RunID            string   `json:"runId,omitempty"`
+	LeaseID          string   `json:"leaseId,omitempty"`
+	RecaptureID      string   `json:"recaptureId,omitempty"`
+	ActionID         string   `json:"actionId,omitempty"`
+	RequestID        string   `json:"requestId,omitempty"`
+	CandidateIDs     []string `json:"candidateIds,omitempty"`
+	HostOnly         bool     `json:"hostOnly,omitempty"`
+	JournalOperation string   `json:"journalOperation,omitempty"`
+	PreviewToken     string   `json:"previewToken,omitempty"`
 }
 type splitActionResult struct {
 	OK      bool            `json:"ok"`
@@ -760,6 +762,19 @@ func splitCaptureOwnedRoute(r *http.Request) bool {
 func validateSplitAction(a splitCaptureAction) error {
 	switch a.Type {
 	case "ping", "probe_source_sessions", "revoke_source_access", "configure_background":
+	case "capture_journal":
+		switch a.JournalOperation {
+		case "status", "preview":
+			if a.PreviewToken != "" {
+				return errors.New("unexpected capture journal preview token")
+			}
+		case "archive":
+			if _, err := hex.DecodeString(a.PreviewToken); len(a.PreviewToken) != 64 || err != nil || strings.ToLower(a.PreviewToken) != a.PreviewToken {
+				return errors.New("invalid capture journal preview token")
+			}
+		default:
+			return errors.New("unsupported capture journal operation")
+		}
 	case "open_source":
 		if !splitSource(a.Source) {
 			return errors.New("unsupported source")
@@ -1115,6 +1130,10 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			}
 		}
 		runtimeStatus := s.engine.CollectionRuntime()
+		if a.Type == "capture_journal" && (runtimeStatus.NativeReaderOnly || runtimeStatus.Pending ||
+			(runtimeStatus.Available && (runtimeStatus.State != captureruntime.Ready || runtimeStatus.Effective != "browser"))) {
+			return apiError{Status: 409, Code: "browser_handoff_required", Message: "Capture journal maintenance requires the Browser capture owner."}
+		}
 		if passiveCollectorProbe(a.Type) && (runtimeStatus.NativeReaderOnly || (runtimeStatus.Available && runtimeStatus.State != captureruntime.Ready)) {
 			return apiError{Status: 409, Code: "browser_handoff_required", Message: "Browser probe skipped while the capture owner is changing or a native reader is active."}
 		}

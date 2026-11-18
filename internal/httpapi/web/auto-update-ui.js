@@ -1,5 +1,6 @@
 import { captureBehaviorDiagnostics } from "./capture-behavior-status.js";
 import { confirmSourceCaptureRecovery, renderSourceCapturePause } from "./source-capture-pause.js";
+import { renderOperationalBanner } from "./operational-banner.js";
 
 export function createAutoUpdateUi({
   $, api, formatDate, formatSchedulerMoment, formatTokenCount, humanize, renderNativeReaderNotice, renderSession, renderTimelineActions, setNoticeText, setView, showError, sourceLabel, startPolling, state
@@ -29,6 +30,7 @@ export function createAutoUpdateUi({
     const runNow = $("#prepare-batch-now");
     const timeline = $("#auto-update-timeline-status");
     const timelineAction = $("#auto-update-timeline-settings");
+    const timelineBanner = { panel: timeline, title: $("#auto-update-timeline-title"), detail: $("#auto-update-timeline-detail"), action: timelineAction };
     if (!detail || !queue || !modeBadge || !modeNotice || !stateBadge || !preparedMetric || !runwayLabel || !runwayMetric || !resultMetric || !pressureLabel || !pressureMetric || !allowanceLabel || !allowanceMetric || !nextMetric || !budget || !budgetDetail || !timeline) return;
     if (state.bootstrap && status) state.bootstrap.autoUpdate = status;
     if (!status) {
@@ -42,7 +44,7 @@ export function createAutoUpdateUi({
       for (const metric of [preparedMetric, runwayMetric, resultMetric, pressureMetric, allowanceMetric, nextMetric]) metric.textContent = "—";
       budget.textContent = "Daily token telemetry is not available yet.";
       budgetDetail.textContent = "—";
-      timeline.classList.add("hidden");
+      renderOperationalBanner(timelineBanner, null);
       renderTimelineActions();
       return;
     }
@@ -137,7 +139,6 @@ export function createAutoUpdateUi({
     budget.textContent = `${formatTokenCount(quotaUsed)} of ${formatTokenCount(dailyBudget)} quota used${actual}${manualReset} · ${formatTokenCount(dailyRemaining)} remaining · resets ${formatDate(status.budgetResetAt)}`;
     budgetDetail.textContent = `${formatTokenCount(automaticRemaining)} automatic · ${formatTokenCount(reserve)} user reserve`;
     const usageLimitPaused = status.state === "usage_limit_paused";
-    if (timelineAction) timelineAction.textContent = usageLimitPaused ? "Confirm usage restored" : "Review Auto Update";
     if (reset) reset.disabled = Boolean(state.session);
     if (confirmRestored) {
       confirmRestored.classList.toggle("hidden", !usageLimitPaused);
@@ -146,17 +147,17 @@ export function createAutoUpdateUi({
     if (runNow) runNow.disabled = Boolean(state.session) || !status.enabled || status.state === "running" || usageLimitPaused;
     renderTimelineActions();
     const paused = status.enabled && ["paused", "budget_paused", "usage_limit_paused"].includes(status.state);
-    timeline.classList.toggle("hidden", !paused);
-    if (paused) {
-      $("#auto-update-timeline-title").textContent = usageLimitPaused
+    renderOperationalBanner(timelineBanner, paused ? {
+      title: usageLimitPaused
         ? "Auto Update paused by Codex usage limit"
-        : status.state === "budget_paused" ? "Auto Update paused by today’s budget" : "Auto Update paused";
-      $("#auto-update-timeline-detail").textContent = usageLimitPaused
+        : status.state === "budget_paused" ? "Auto Update paused by today’s budget" : "Auto Update paused",
+      detail: usageLimitPaused
         ? `Codex reported a usage limit${status.usageLimitPausedAt ? ` at ${formatDate(status.usageLimitPausedAt)}` : ""}. Automatic checks will not retry until you confirm in Settings that usage is restored.`
         : status.state === "budget_paused"
           ? `${formatTokenCount(dailyRemaining)} quota remains; the next run is estimated at ${formatTokenCount(estimate)}. Increase or reset today’s local quota in Settings, or wait until ${formatDate(status.budgetResetAt)}.`
-          : status.reason || "Automatic work is waiting for an available boundary.";
-    }
+          : status.reason || "Automatic work is waiting for an available boundary.",
+      actionLabel: usageLimitPaused ? "Confirm usage restored" : "Review Auto Update",
+    } : null);
   }
 
   function autoUpdateModeLabel(mode) {

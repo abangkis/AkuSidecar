@@ -1156,6 +1156,10 @@ h3 { letter-spacing: -0.02em; }
 .reset-confirmation-label strong { color: var(--danger); letter-spacing: 0.04em; }
 .reset-confirmation-label + input { width: 100%; margin-top: 9px; padding: 11px 12px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--panel-raised); color: var(--text); }
 .reset-confirmation-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.capture-journal-counts { margin: 16px 0; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 9px; }
+.capture-journal-counts > div { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; }
+.capture-journal-counts > div + div { border-top: 1px solid var(--line); }
+.capture-journal-counts dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 
 .provider-selection-dialog { width: min(94vw, 680px); max-width: none; max-height: min(calc(100dvh - 40px), 900px); padding: 0; overflow: auto; scrollbar-gutter: stable; border: 1px solid var(--line-strong); border-radius: 16px; background: var(--panel); color: var(--text); }
 .provider-selection-dialog.has-provider-context { width: min(96vw, 1020px); }

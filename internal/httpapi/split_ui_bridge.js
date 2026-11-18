@@ -75,6 +75,7 @@
     AKU_BROWSER_X_MEDIA_EVIDENCE_LOOKUP: ["media_evidence", "AKU_BROWSER_X_MEDIA_EVIDENCE_RESULT", "AKU_BROWSER_X_MEDIA_EVIDENCE_FAILED"],
     AKU_BROWSER_CONFIGURE_BACKGROUND_DISPATCH: ["configure_background", null, "AKU_BROWSER_BRIDGE_ERROR"],
     AKU_BROWSER_REVOKE_SOURCE_ACCESS: ["revoke_source_access", "AKU_BROWSER_REVOKE_SOURCE_ACCESS_RESULT", "AKU_BROWSER_REVOKE_SOURCE_ACCESS_FAILED"],
+    AKU_BROWSER_CAPTURE_JOURNAL: ["capture_journal", "AKU_BROWSER_CAPTURE_JOURNAL_RESULT", "AKU_BROWSER_CAPTURE_JOURNAL_FAILED"],
     AKU_BROWSER_DISPATCH: ["dispatch", null, "AKU_BROWSER_DISPATCH_FAILED"],
   };
   const cancelNativePostBroker = async (request) => {
@@ -158,6 +159,10 @@
         if (typeof message[key] === "string") body[key] = message[key];
       }
       if (operation[0] === "open_native_post" && typeof message.requestId === "string") body.requestId = message.requestId;
+      if (operation[0] === "capture_journal") {
+        body.journalOperation = message.journalOperation;
+        body.previewToken = message.previewToken;
+      }
       if (Array.isArray(message.candidateIds)) body.candidateIds = message.candidateIds;
       if (nativeStarted !== null) nativePostTrace(nativeTraceId, "relay_request_start", { elapsedMs: Math.round(performance.now() - nativeStarted) });
       const response = await fetch("/api/split-capture/actions", {
