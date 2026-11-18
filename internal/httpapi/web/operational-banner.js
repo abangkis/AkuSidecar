@@ -6,8 +6,8 @@ export function renderOperationalBanner({ panel, title, detail, action }, notice
   if (panel && panel.hidden !== hidden) panel.hidden = hidden;
   if (!notice) return;
 
-  setSettingsText(title, notice.title);
-  setSettingsText(detail, notice.detail);
+  if (title) setSettingsText(title, notice.title);
+  if (detail) setSettingsText(detail, notice.detail);
   if (action) {
     action.hidden = !notice.actionLabel;
     if (notice.actionLabel) setSettingsText(action, notice.actionLabel);

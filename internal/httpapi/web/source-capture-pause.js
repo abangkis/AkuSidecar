@@ -1,9 +1,9 @@
+import { renderOperationalBanner } from "./operational-banner.js";
+
 export function renderSourceCapturePause({ panel, detail }, pause) {
-  panel?.classList.toggle("hidden", !pause);
-  if (!detail) return;
   const category = pause?.category === "cloudflare" ? "Cloudflare browser verification. "
     : pause?.category === "x_human_verification" ? "X requests verification through its phone app. " : "";
-  detail.textContent = category + (pause?.message || "");
+  renderOperationalBanner({ panel, detail }, { visible: Boolean(pause), detail: category + (pause?.message || "") });
 }
 
 export async function confirmSourceCaptureRecovery(api, pause, confirmed) {

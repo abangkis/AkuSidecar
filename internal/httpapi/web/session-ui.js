@@ -1,6 +1,7 @@
 import { collectionModeState } from "./collection-mode.js";
 import { isVerifiedSurfaceCleanupReceipt } from "./capture-surface-cleanup-receipt.js";
 import { nativeReaderNotice, nativeReaderResumeMessage } from "./native-reader-notice.js";
+import { renderOperationalBanner } from "./operational-banner.js";
 import { releaseCompletedSourceSurfaces, runUsesBrowserCapture, sessionUsesBrowserCapture } from "./capture-surface-release-barrier.js";
 import { setSettingsText } from "./settings-render.js";
 
@@ -332,17 +333,18 @@ export function createSessionUi({
       feedback: state.nativeReaderResumeFeedback,
       runtimeFailure: state.bootstrap?.collectionRuntime?.failure,
     });
-    panel.classList.toggle("hidden", !notice.visible);
     panel.setAttribute("aria-busy", String(state.closingNativeReaders));
-    setSettingsText($("#native-reader-update-title"), notice.title);
-    setSettingsText($("#native-reader-update-detail"), notice.detail);
+    renderOperationalBanner({
+      panel, title: $("#native-reader-update-title"), detail: $("#native-reader-update-detail"),
+      action: $("#native-reader-close-resume"),
+    }, {
+      visible: notice.visible, title: notice.title, detail: notice.detail, actionLabel: notice.button,
+      actionDisabled: notice.disabled || Boolean(getNativePostOpening()),
+    });
     setSettingsText($("#native-reader-update-feedback"), notice.feedback);
     const manualAction = $("#native-reader-manual-action");
     setSettingsText(manualAction, notice.manualAction);
     manualAction.classList.toggle("hidden", !notice.manualAction);
-    const button = $("#native-reader-close-resume");
-    button.disabled = notice.disabled || getNativePostOpening();
-    setSettingsText(button, notice.button);
   }
 
   async function closeNativeReadersAndResume() {

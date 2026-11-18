@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { nativeReaderNotice, nativeReaderResumeMessage } from "../internal/httpapi/web/native-reader-notice.js";
+import { createSessionUi } from "../internal/httpapi/web/session-ui.js";
 
 test("reader banner distinguishes blocked, closing, failure and clear states", () => {
   assert.equal(nativeReaderNotice(null).visible, false);
@@ -29,6 +30,64 @@ test("manual closure is an explicit user action, including before a failed butto
   assert.equal(nativeReaderNotice(status, { feedback: runtimeFailure }).manualAction, notice.manualAction);
   assert.equal(nativeReaderNotice(status, { busy: true, runtimeFailure }).manualAction, "");
   assert.equal(nativeReaderNotice({ nativeReaderBlocked: false }, { feedback: runtimeFailure }).visible, false);
+});
+
+test("shared Native Reader banner keeps its busy, failure and manual-close feedback", () => {
+  const nodes = new Map();
+  const $ = selector => {
+    if (!nodes.has(selector)) {
+      const attributes = new Map();
+      const classes = new Set();
+      nodes.set(selector, {
+        textContent: "", hidden: false, disabled: false, attributes,
+        classList: { toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); }, contains: name => classes.has(name) },
+        setAttribute: (name, value) => attributes.set(name, value),
+      });
+    }
+    return nodes.get(selector);
+  };
+  const state = { closingNativeReaders: false, bootstrap: { collectionRuntime: {} } };
+  let opening = false;
+  const ui = createSessionUi({ $, state, getNativePostOpening: () => opening });
+  const banner = $("#native-reader-update-notice");
+  const action = $("#native-reader-close-resume");
+  const feedback = $("#native-reader-update-feedback");
+  const manual = $("#native-reader-manual-action");
+  const blocked = { nativeReaderBlocked: true };
+
+  ui.renderNativeReaderNotice(blocked);
+  assert.equal(banner.hidden, false);
+  assert.match(action.textContent, /lanjutkan auto update/);
+  assert.equal(action.disabled, false);
+  opening = true;
+  ui.renderNativeReaderNotice(blocked);
+  assert.equal(action.disabled, true);
+  opening = false;
+
+  state.closingNativeReaders = true;
+  ui.renderNativeReaderNotice(blocked);
+  assert.equal(banner.attributes.get("aria-busy"), "true");
+  assert.match(action.textContent, /Menutup/);
+  assert.equal(action.disabled, true);
+
+  state.closingNativeReaders = false;
+  state.nativeReaderResumeFeedback = "Reader window refused closure";
+  ui.renderNativeReaderNotice(blocked);
+  assert.equal(banner.attributes.get("aria-busy"), "false");
+  assert.equal(feedback.textContent, "Reader window refused closure");
+  assert.equal(action.disabled, false);
+
+  state.nativeReaderResumeFeedback = "native reader window contains an unverified page; close it manually";
+  ui.renderNativeReaderNotice(blocked);
+  assert.equal(manual.classList.contains("hidden"), false);
+  assert.match(manual.textContent, /secara manual/);
+  assert.match(feedback.textContent, /langsung di browser/);
+
+  ui.renderNativeReaderNotice({ nativeReaderBlocked: false });
+  assert.equal(banner.hidden, true);
+  assert.equal(banner.classList.contains("hidden"), true);
+  assert.equal(feedback.textContent, "");
+  assert.equal(manual.classList.contains("hidden"), true);
 });
 
 function actionFixture(api) {
