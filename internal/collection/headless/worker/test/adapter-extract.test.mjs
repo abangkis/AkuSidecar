@@ -6,6 +6,7 @@ import { toObservation } from '../observation.mjs';
 
 const shared = await readFile(new URL('../../../../../../AkuBridge/capture-primitives.js', import.meta.url), 'utf8');
 const registry = await readFile(new URL('../../../../../../AkuBridge/source-adapter-runtime.js', import.meta.url), 'utf8');
+const linkedinPermalink = await readFile(new URL('../../../../../../AkuBridge/linkedin-permalink-policy.js', import.meta.url), 'utf8');
 const extractor = await readFile(new URL('../vendor/adapter-extract.js', import.meta.url), 'utf8');
 
 function element({ tagName = 'DIV', rect = { width: 500, height: 240, left: 0, right: 500, top: 20, bottom: 260 },
@@ -25,6 +26,7 @@ function element({ tagName = 'DIV', rect = { width: 500, height: 240, left: 0, r
     },
     querySelector: () => null,
     closest: () => null,
+    matches: selector => selector === 'a[href]' && tagName === 'A' && Boolean(attrs.href),
     contains: node => node === this || children.includes(node),
   };
 }
@@ -39,6 +41,8 @@ function candidate({ urn = null, anchors = [], images = [], times = [], body = '
   const imageRoots = [...images, ...commentImages];
   const root = {
     tagName: 'ARTICLE', parentElement: null, innerText: body, textContent: body, style: {},
+    matches: () => false,
+    closest: () => null,
     getAttribute: name => name === 'data-urn' ? urn : null,
     getBoundingClientRect: () => ({ width: 600, height: 300, left: 0, right: 600, top: 10, bottom: 310, ...rect }),
     contains: node => node === root || anchors.includes(node) || imageRoots.includes(node) || times.includes(node)
@@ -81,6 +85,10 @@ function run(source, adapter, url, useRegistry = false) {
     AkuSourceAdapters: { get: id => id === source ? adapter : null },
   });
   vm.runInContext(shared, context);
+  if (source === 'linkedin') {
+    vm.runInContext(linkedinPermalink, context);
+    adapter = { ...adapter, resolvePostIdentity: context.AkuLinkedInPermalinkPolicy.resolvePostIdentity };
+  }
   if (useRegistry) {
     vm.runInContext(registry, context);
     context.AkuSourceAdapters.register(adapter);
@@ -131,7 +139,6 @@ function baseAdapter(source, candidates) {
     discoverCandidates: () => ({ candidates, strategy: 'fixture_native_permalink' }),
     platformIdFromCandidates: values => values.map(identityFor).find(Boolean) || null,
     findPermalinkDetails: source === 'instagram' ? container => ({ url: container.querySelectorAll('a[href]')[0]?.href }) : undefined,
-    findDomPermalink: source === 'linkedin' ? container => `https://www.linkedin.com/feed/update/${container.getAttribute('data-urn')}/` : undefined,
     findAuthor: () => 'Fixture author', findAvatar: () => null,
     extractText: container => container.innerText,
     extractSemantics: () => ({ contentKind: 'post', relationshipType: 'original', engagement: { like: '3' } }),

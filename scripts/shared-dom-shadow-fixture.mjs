@@ -87,7 +87,8 @@ export async function runDOMShadowParity({chrome,output,source,canonicalUrl,prob
   const headless=(await sourceAssets(bridge,source)).filter(a=>a.execute);
   const engine='AkuBridge/shared-dom-engine/browser-runtime.js',probe=`AkuBridge/adapters/${source}-dom-shadow.js`;
   const digest=value=>createHash('sha256').update(value).digest('hex');
-  for(const file of [engine,probe])assert.equal(digest(windowed.find(a=>a.relative===file).content),headless.find(a=>a.relative===file).sha256);
+  const sharedFiles=[engine,probe,...(source==='linkedin'?['AkuBridge/linkedin-permalink-policy.js']:[])];
+  for(const file of sharedFiles)assert.equal(digest(windowed.find(a=>a.relative===file).content),headless.find(a=>a.relative===file).sha256);
   const service=await readFile(join(bridge,'service-worker.js'),'utf8');
   const gate=service.match(/^function isSourceCaptureReady\(readiness\) \{[\s\S]*?^\}/m)?.[0];assert.ok(gate);
   const parent=join(workspace,`AkuSidecar/build/${source}-dom-shadow`);await mkdir(parent,{recursive:true});
@@ -122,6 +123,19 @@ export async function runDOMShadowParity({chrome,output,source,canonicalUrl,prob
       assert.doesNotMatch(JSON.stringify(w.diagnostic),new RegExp(privacyPattern));
       for(const [key,count]of Object.entries(spec.rejections??{}))assert.equal(w.diagnostic?.rejections[key],count,spec.name+" rejection "+key);
       for(const [key,count]of Object.entries(spec.counts??{}))assert.equal(w.diagnostic?.counts[key],count,spec.name+" count "+key);
+      if(spec.captureIdentity){
+        const {id,url,headlessRejection,mediaKind,linkUrl,noRecovery}=spec.captureIdentity;
+        const blocks=w.baseline.observation?.snapshots.flatMap(snapshot=>snapshot.blocks)??[];
+        assert.equal(blocks.length,1,spec.name+' Windowed block count');
+        assert.ok(blocks[0].text,spec.name+' Windowed retains authored text');
+        assert.equal(blocks[0].platformId??null,id??null,spec.name+' Windowed platform ID');
+        assert.equal(blocks[0].permalink??null,url??null,spec.name+' Windowed permalink');
+        if(mediaKind)assert.ok(blocks[0].media.some(item=>item.kind===mediaKind),spec.name+' Windowed media');
+        if(linkUrl)assert.ok(blocks[0].links.some(item=>item.href===linkUrl),spec.name+' Windowed authored link');
+        if(noRecovery)assert.equal(w.recoveryClicks+h.recoveryClicks,0,spec.name+' no recovery for a conflict');
+        assert.deepEqual(h.baseline.posts.map(post=>[post.id,post.permalink]),id?[[id,url]]:[],spec.name+' Headless identity');
+        if(headlessRejection)assert.equal(h.baseline.rejectionReasons[headlessRejection],1,spec.name+' Headless rejection');
+      }
       if(Object.hasOwn(spec,'recoveryBlocker')){
         const native=projectLinkedInRecoveryBlockers({source,linkedinRecoveryBlockers:h.recoveryBlockers},0).linkedinRecoveryBlockers??[];
         const projected=projectLinkedInRecoveryBlockers({source,linkedinRecoveryBlockers:w.recoveryBlockers},0).linkedinRecoveryBlockers??[];

@@ -5,6 +5,8 @@ import {runDOMShadowParity} from './shared-dom-shadow-fixture.mjs';
 const primary='1234567890123456789',other='9876543210987654321';
 const text='<div data-testid="expandable-text-box">Private primary authored fixture text with enough source detail to exercise the existing LinkedIn capture path.</div>';
 const link=id=>`<a href="/feed/update/urn:li:activity:${id}/">Post</a>`;
+const ownIdentity={id:`linkedin:activity:${primary}`,url:`https://www.linkedin.com/feed/update/urn:li:activity:${primary}/`};
+const embeddedRepost=`<div class="update-components-mini-update-v2">${link(other)}</div>`;
 const card=({body=text,links=link(primary),id=primary,author=true,tag='article',attributes=''}={})=>
   `<${tag} class="feed-shared-update-v2" ${id?`data-urn="urn:li:activity:${id}"`:''} ${attributes}>${author?'<span data-view-name="feed-actor-name">Private Author</span>':''}${links}${body}</${tag}>`;
 const post=card();
@@ -12,10 +14,10 @@ const blockedPost=card({id:null,links:'',body:text+'<button id="post-control" ar
 const cases=[
   {name:'native article',body:post,code:'ready'},
   {name:'native wrapper',body:card({tag:'div'}),code:'ready'},
-  {name:'root URN without anchor',body:card({links:''}),code:'ready'},
+  {name:'root URN without anchor',body:card({links:''}),code:'ready',captureIdentity:ownIdentity},
   {name:'ugcPost root',body:card({id:null,links:'',attributes:`data-id="urn:li:ugcPost:${primary}"`}),code:'ready'},
   {name:'share root',body:card({id:null,links:'',attributes:`data-id="urn:li:share:${primary}"`}),code:'ready'},
-  {name:'public activity anchor',body:card({id:null,links:`<a href="/posts/fixture-author_activity-${primary}-abc">Post</a>`}),code:'ready'},
+  {name:'public activity anchor',body:card({id:null,links:`<a href="/posts/fixture-author_activity-${primary}-abc">Post</a>`}),code:'ready',captureIdentity:ownIdentity},
   {name:'action ancestor',body:`<section><span data-view-name="feed-actor-name">Private Author</span>${link(primary)}${text}<button>Like</button><button>Comment</button></section>`,code:'ready'},
   {name:'missing native identity',body:card({id:null,links:''}),code:'no_valid_candidates',rejections:{missing_identity:1}},
   {name:'existing menu blocks recovery',body:blockedPost+'<div role="menu" style="width:120px;height:50px">Private menu</div>',code:'no_valid_candidates',recoveryBlocker:'role_menu'},
@@ -25,9 +27,18 @@ const cases=[
   {name:'conflicting ARIA references stay diagnostic',body:blockedPost.replace('id="post-control"','id="post-control" aria-controls="other-surface"')+'<div role="dialog" id="actual-surface" aria-labelledby="post-control" style="width:120px;height:50px">Private dialog</div>',code:'no_valid_candidates',recoveryBlocker:'role_dialog',aria:{labelledBy:'matches',controls:'different',owns:'absent'}},
   {name:'inert ancestor remains a recovery blocker',body:blockedPost+'<div inert><div role="dialog" style="width:120px;height:50px">Private inert dialog</div></div>',code:'no_valid_candidates',recoveryBlocker:'role_dialog',ancestorFlag:'inert'},
   {name:'transparent ancestor records the existing visibility difference',body:blockedPost+'<div style="opacity:0"><div role="dialog" style="width:120px;height:50px">Private transparent dialog</div></div>',code:'no_valid_candidates',recoveryBlocker:'role_dialog',ancestorFlag:'opacityZero',recoveryDifference:'Windowed checks the surface style only; Headless also checks ancestor styles. The transparent ancestor therefore blocks only Windowed. This diagnostic increment preserves both operational predicates.',headlessRecoveryAttempt:true},
-  {name:'foreign native URL',body:card({id:null,links:`<a href="https://foreign.test/posts/author_activity-${primary}-x">Post</a>`}),code:'no_valid_candidates'},
+  {name:'foreign native URL',body:card({id:null,links:`<a href="https://foreign.test/posts/author_activity-${primary}-x">Post</a>`}),code:'no_valid_candidates',captureIdentity:{headlessRejection:'missing_identity'}},
   {name:'profile URL is not a post',body:card({id:null,links:`<a href="/in/author-activity-${primary}/">Profile</a>`}),code:'no_valid_candidates'},
-  {name:'conflicting root and anchor',body:card({links:link(other)}),code:'no_valid_candidates',rejections:{identity_conflict:1}},
+  {name:'profile wrapping a timestamp does not identify post',body:card({id:null,links:'<a href="/in/fixture-author/"><time datetime="2026-11-15T00:00:00Z">1d</time></a>'}),
+    code:'no_valid_candidates',captureIdentity:{headlessRejection:'missing_identity'}},
+  {name:'conflicting root and anchor',body:card({links:link(other),body:text+'<button aria-label="Open control menu for post by Private Author">Menu</button>'}),
+    code:'no_valid_candidates',rejections:{identity_conflict:1},captureIdentity:{headlessRejection:'ambiguous_identity',noRecovery:true}},
+  {name:'root URN and only native anchor belongs to embedded repost',body:card({links:'',body:text+embeddedRepost}),code:'ready',captureIdentity:ownIdentity},
+  {name:'embedded repost cannot identify parent that has text and image',body:card({id:null,links:'',body:text+embeddedRepost+
+    '<div class="update-components-image"><img width="320" height="180" src="https://media.licdn.com/fixture.jpg"></div>'}),
+    code:'no_valid_candidates',captureIdentity:{headlessRejection:'missing_identity',mediaKind:'image'}},
+  {name:'authored native link is not the primary post identity',body:card({id:null,links:'',body:text.replace('</div>',` ${link(other)}</div>`)}),
+    code:'no_valid_candidates',captureIdentity:{headlessRejection:'missing_identity',linkUrl:`https://www.linkedin.com/feed/update/urn:li:activity:${other}/`}},
   {name:'offscreen',body:card({attributes:'style="margin-top:2000px"'}),code:'offscreen'},
   {name:'owned image only',body:card({body:'<div class="update-components-image"><img width="320" height="180" src="https://media.licdn.com/fixture.jpg"></div>'}),code:'ready'},
   {name:'owned video poster only',body:card({body:'<video width="320" height="180" poster="https://media.licdn.com/poster.jpg"></video>'}),code:'ready'},
@@ -51,7 +62,7 @@ const cases=[
   {name:'challenge DOM',body:'<section id="challenge-running">Security check</section>',code:'challenge_required'},
   {name:'wrong host',route:'https://foreign.test/',body:post,code:'wrong_route',headlessCode:null,headlessProbe:false,
     difference:'Headless rejects an unsupported host before adapter selection; Windowed receives an explicit source and emits wrong_route. Both retain their existing rejection.'},
-  {name:'node bound',body:card({links:Array.from({length:101},()=>link(primary)).join('')}),code:'no_valid_candidates'},
+  {name:'node bound',body:card({links:Array.from({length:101},()=>link(primary)).join('')}),code:'no_valid_candidates',captureIdentity:{headlessRejection:'identity_unverified'}},
   {name:'claim bound',body:card({links:Array.from({length:9},(_,n)=>link('12345678901234567'+String(n).padStart(2,'0'))).join('')}),code:'no_valid_candidates'},
   {name:'text traversal bound',body:card({body:'<div data-testid="expandable-text-box">'+Array.from({length:101},()=>'<span>Private text</span>').join('')+'</div>'}),code:'no_valid_candidates'},
   {name:'candidate bound',body:Array.from({length:65},()=>post).join(''),code:'ready',counts:{candidates:64}},

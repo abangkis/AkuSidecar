@@ -83,11 +83,14 @@ async function fixture(source, { allow = true, policyPresent = true, deadlineAt 
   const profile = { href: 'https://www.instagram.com/owner/', innerText: 'Owner', textContent: 'Owner',
     getAttribute: name => name === 'href' ? '/owner/' : null, querySelector: () => null };
   const permalink = { get href() { return currentUrl; }, innerText: '', textContent: '',
-    getAttribute: name => name === 'href' ? currentUrl : null };
+    getAttribute: name => name === 'href' ? currentUrl : null,
+    matches: selector => selector === 'a[href]', closest: () => null, querySelector: () => null };
   const time = { dateTime: '2026-10-12T00:00:00Z', getAttribute: () => '2026-10-12T00:00:00Z',
     closest: () => permalink };
   const candidate = {
     tagName: 'ARTICLE', parentElement: null, style: {},
+    matches: () => false,
+    closest: () => null,
     get innerText() { return expanded ? longText : 'Short caption'; },
     get textContent() { return this.innerText; },
     getAttribute: name => name === 'data-urn' && source === 'linkedin' ? 'urn:li:activity:1234567890' : null,
@@ -134,7 +137,6 @@ async function fixture(source, { allow = true, policyPresent = true, deadlineAt 
     matchesPage: () => true,
     discoverCandidates: () => ({ candidates: [candidate], strategy: 'fixture_native_permalink' }),
     findPermalinkDetails: source === 'instagram' ? () => ({ url: currentUrl, source: 'native_post_anchor' }) : real.findPermalinkDetails,
-    findDomPermalink: source === 'linkedin' ? () => currentUrl : real.findDomPermalink,
     findAuthor: () => 'Owner',
     findAvatar: () => null,
     extractSemantics: () => ({ contentKind: 'post', relationshipType: 'original', engagement: {} }),

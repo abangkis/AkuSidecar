@@ -96,50 +96,25 @@
     return { id: `instagram:${kind}:${shortcode}`, permalink: `https://www.instagram.com/${kind}/${shortcode}/` };
   }
 
-  function linkedinIdentity(value) {
-    const raw = String(value ?? '').trim();
-    const url = /^https?:\/\//i.test(raw) ? parseHttps(raw) : null;
-    let match = url && url.hostname.toLowerCase() === 'www.linkedin.com'
-      ? url.pathname.match(/^\/feed\/update\/(urn:li:(activity|ugcPost|share):(\d{5,30}))\/?$/i)
-        || url.pathname.match(/^\/posts\/[^/]*-(activity|ugcpost|share)-(\d{5,30})(?:-[A-Za-z0-9_-]+)?\/?$/i)
-      : null;
-    if (match) return linkedinRecord(match.length === 4 ? match[2] : match[1], match.length === 4 ? match[3] : match[2]);
-    if (url) return null;
-    match = raw.match(/^urn:li:(activity|ugcPost|share):(\d{5,30})$/i)
-      || raw.match(/^(activity|ugcPost|share)[:-](\d{5,30})$/i);
-    return match ? linkedinRecord(match[1], match[2]) : null;
-  }
-
-  function linkedinRecord(kind, nativeId) {
-    const normalizedKind = String(kind).toLowerCase();
-    const pathKind = normalizedKind === 'ugcpost' ? 'ugcPost' : normalizedKind;
-    return {
-      id: `linkedin:${normalizedKind}:${nativeId}`,
-      permalink: `https://www.linkedin.com/feed/update/urn:li:${pathKind}:${nativeId}/`,
-    };
-  }
-
   function postIdentity(source, adapter, container, explicitIdentity = null) {
     if (explicitIdentity?.recovery && adapter.validateRecoveredPermalink &&
         !adapter.validateRecoveredPermalink(container, explicitIdentity.recovery)) return { reason: 'identity_mismatch' };
+    if (source === 'linkedin') {
+      const post = adapter.resolvePostIdentity?.(container);
+      if (post?.status === 'missing') return explicitIdentity
+        ? { identity: explicitIdentity, identitySource: 'adapter_recovery' } : { reason: 'missing_identity' };
+      if (post?.status === 'conflicting') return { reason: 'ambiguous_identity' };
+      if (post?.status !== 'identified') return { reason: 'identity_unverified' };
+      if (explicitIdentity && post.id !== explicitIdentity.id) return { reason: 'identity_mismatch' };
+      return { identity: { id: post.id, permalink: post.url }, identitySource: explicitIdentity ? 'adapter_recovery' : 'native_dom' };
+    }
     const values = [];
     const details = adapter.findPermalinkDetails?.(container, helpers);
     if (details?.url) values.push(details.url);
-    const domPermalink = adapter.findDomPermalink?.(container);
-    if (domPermalink) values.push(domPermalink);
-    if (source === 'linkedin') {
-      values.push(container.getAttribute?.('data-urn'), container.getAttribute?.('data-id'));
-      for (const element of [...(container.querySelectorAll?.('[data-urn], [data-id], a[href]') || [])].slice(0, 100)) {
-        values.push(element.getAttribute?.('data-urn'), element.getAttribute?.('data-id'), element.href,
-          element.getAttribute?.('href'));
-      }
-    } else {
-      for (const anchor of container.querySelectorAll?.('a[href]') || []) values.push(anchor.href, anchor.getAttribute?.('href'));
-    }
+    for (const anchor of container.querySelectorAll?.('a[href]') || []) values.push(anchor.href, anchor.getAttribute?.('href'));
     const identities = new Map();
-    for (const value of values) {
-      if (!value) continue;
-      const identity = source === 'instagram' ? instagramIdentity(value) : linkedinIdentity(value);
+    for (const value of values.filter(Boolean)) {
+      const identity = instagramIdentity(value);
       if (identity) identities.set(identity.id, identity);
     }
     if (identities.size === 0 && explicitIdentity) identities.set(explicitIdentity.id, explicitIdentity);
@@ -149,8 +124,7 @@
     if (explicitIdentity && identity.id !== explicitIdentity.id) return { reason: 'identity_mismatch' };
     const adapterId = adapter.platformIdFromCandidates?.([identity.permalink]);
     if (adapterId !== identity.id) return { reason: 'identity_mismatch' };
-    return { identity, identitySource: explicitIdentity?.provenance || (explicitIdentity && values.every(value => !value || !(source === 'instagram'
-      ? instagramIdentity(value) : linkedinIdentity(value))) ? 'explicit_target_route' : explicitIdentity ? 'adapter_recovery' : 'native_dom') };
+    return { identity, identitySource: explicitIdentity?.provenance ?? 'native_dom' };
   }
 
   function isRendered(element) {
@@ -662,8 +636,8 @@
             const recovery=recovered?.get(root);
             if(recovery?.blockerDiagnostic && linkedinRecoveryBlockers.length<8)linkedinRecoveryBlockers.push(recovery.blockerDiagnostic);
             if(adapter.validateRecoveredPermalink && !adapter.validateRecoveredPermalink(root,recovery))continue;
-            const identity=linkedinIdentity(recovery?.url);
-            if(identity)bindings.set(root,{...identity,provenance:'adapter_recovery',recovery});
+            const post=globalThis.AkuLinkedInPermalinkPolicy?.nativePostFromUrl(recovery?.url);
+            if(post)bindings.set(root,{id:post.id,permalink:post.url,provenance:'adapter_recovery',recovery});
           }
         } catch { /* A missing permalink remains rejected rather than inferred. */ }
       }

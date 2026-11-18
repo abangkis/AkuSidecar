@@ -48,6 +48,7 @@ export async function sourceAssets(bridgePath, source) {
     { relative: 'AkuBridge/source-adapter-runtime.js', path: resolve(bridge, 'source-adapter-runtime.js'), execute: true },
   ];
   if (source === 'linkedin') {
+    shared.push({ relative: 'AkuBridge/linkedin-permalink-policy.js', path: resolve(bridge, 'linkedin-permalink-policy.js'), execute: true });
     const routePolicy = resolve(bridge, 'source-feed-routes.js');
     try {
       await stat(routePolicy);
@@ -77,7 +78,7 @@ export async function sourceAssets(bridgePath, source) {
         { relative: 'AkuBridge/bounded-capture-policy.js', path: resolve(bridge, 'bounded-capture-policy.js'), execute: true },
         { relative: 'AkuBridge/capture-quality-policy.js', path: resolve(bridge, 'capture-quality-policy.js'), execute: true },
         { relative: 'AkuBridge/media-post-processor.js', path: resolve(bridge, 'media-post-processor.js'), execute: true },
-        ...(source === 'linkedin' ? ['linkedin-permalink-policy.js','linkedin-timestamp-policy.js'].map(name=>({relative:`AkuBridge/${name}`,path:resolve(bridge,name),execute:true})) : []),
+        ...(source === 'linkedin' ? [{ relative: 'AkuBridge/linkedin-timestamp-policy.js', path: resolve(bridge, 'linkedin-timestamp-policy.js'), execute: true }] : []),
         { relative: `AkuBridge/adapters/${source}-adapter.js`, path: resolve(bridge, `adapters/${source}-adapter.js`), execute: true },
         { relative: 'worker/vendor/adapter-extract.js', path: resolve(root, 'vendor/adapter-extract.js'), execute: true },
       ];
