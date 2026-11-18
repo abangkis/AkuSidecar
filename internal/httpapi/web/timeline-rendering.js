@@ -498,6 +498,7 @@ export function createTimelineRendering({
         container.append(marker);
         previousSession = entry.sessionId;
       }
+      let previousMemberID;
       for (const member of group.members) {
         const rendered = buildTimelineItem(member.entry);
         rendered.dataset.timelineId = member.entry.id;
@@ -518,8 +519,15 @@ export function createTimelineRendering({
             }
           },
         });
+        if (member.parentID && member.parentID === previousMemberID) {
+          const connector = document.createElement("span");
+          connector.className = "timeline-reply-connector";
+          connector.setAttribute("aria-hidden", "true");
+          rendered.append(connector);
+        }
         container.append(rendered);
         observeTimelineItem(rendered, member.entry.id);
+        previousMemberID = member.entry.id;
       }
     }
     syncTimelineContentContextTabs();

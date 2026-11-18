@@ -127,7 +127,7 @@ test("reply chips stay beside source identity and remain available in brief mode
   const group = planTimelineConversations([post("reply", "root"), post("root")])[0];
   const card = element("article"), identity = element(), brief = element();
   card.querySelector = selector => selector === ".source-layout-card > header > div" ? identity
-    : selector === ":scope > .item-layout-view" ? brief : null;
+    : selector.split(", ").includes(":scope > .presentable-item > .item-layout-view") ? brief : null;
   const visited = [];
   decorateTimelineConversation(card, group.members[1], group, { documentRef,
     navigateToParent: id => visited.push(id), formatAuthor: name => name.toUpperCase() });
@@ -139,6 +139,18 @@ test("reply chips stay beside source identity and remain available in brief mode
   assert.equal(button.type, "button");
   button.listeners.click(); brief.children[0].children[0].listeners.click();
   assert.deepEqual(visited, ["root", "root"]);
+});
+
+test("Timeline connects only adjacent direct replies, including for another source", () => {
+  const items = [post("first", "root"), post("sibling", "root"), post("nested", "sibling"),
+    post("root"), post("orphan", "missing")].map(item => ({ ...item, source: "linkedin" }));
+  const cards = render(items).elements.get("#result-items").children.filter(row => row.dataset.timelineId);
+  assert.deepEqual(cards.map(card => card.dataset.timelineId), ["root", "first", "sibling", "nested", "orphan"]);
+  const connected = cards.filter(card => card.children.some(child => child.className === "timeline-reply-connector"));
+  assert.deepEqual(connected.map(card => card.dataset.timelineId), ["first", "nested"]);
+  for (const card of connected) {
+    assert.equal(card.children.at(-1).attributes["aria-hidden"], "true");
+  }
 });
 
 test("branch chips name their immediate parent while unresolved replies have no connector or guessed destination", () => {

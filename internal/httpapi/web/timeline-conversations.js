@@ -130,6 +130,6 @@ export function decorateTimelineConversation(card, member, group, {
     && card.querySelector?.(".source-layout-card > header > div");
   if (identity) {
     identity.append(buildCue());
-    card.querySelector(":scope > .item-layout-view")?.prepend(buildCue());
+    card.querySelector(":scope > .item-layout-view, :scope > .presentable-item > .item-layout-view")?.prepend(buildCue());
   } else card.prepend(buildCue());
 }
