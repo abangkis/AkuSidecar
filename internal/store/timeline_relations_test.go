@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -113,6 +114,90 @@ func TestProjectTimelineRelationsKeepsIdentitySourceScopedAndReportsMissingParen
 	projectTimelineRelations(items)
 	if got := items[1].Conversation; got == nil || got.Status != "not_in_view" || got.TargetTimelineID != "" {
 		t.Fatalf("cross-source conversation=%+v", got)
+	}
+}
+
+func TestLinkedInReplyContractStoresAndProjectsPostParent(t *testing.T) {
+	const parentID = "linkedin:activity:1234567890123456789"
+	const replyID = "linkedin:activity:1234567890123456790"
+	const parentURL = "https://www.linkedin.com/feed/update/urn:li:activity:1234567890123456789/"
+	const replyURL = "https://www.linkedin.com/feed/update/urn:li:activity:1234567890123456790/"
+	observation := domain.Observation{
+		Source: domain.SourceLinkedIn, PageURL: "https://www.linkedin.com/feed/", CapturedAt: domain.Now(),
+		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{
+			{EvidenceKey: "linkedin:fixture-parent", PlatformID: parentID, Permalink: parentURL, Text: "Parent fixture"},
+			{EvidenceKey: "linkedin:fixture-reply", PlatformID: replyID, Permalink: replyURL, Text: "Reply fixture",
+				DirectContext: []domain.DirectContext{{Kind: "replies_to", Provenance: "observed_dom",
+					Target: domain.ContextObject{Kind: "post", Permalink: parentURL, Availability: "reference_only"}}}},
+		}}},
+	}
+	if path := os.Getenv("AKU_REPLY_FIXTURE_OBSERVATION"); path != "" {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(raw, &observation); err != nil {
+			t.Fatal(err)
+		}
+		t.Log("Using the observation emitted by the LinkedIn adapter fixture")
+	}
+	for _, block := range observation.Snapshots[0].Blocks {
+		if err := domain.ValidateDirectContext(observation.Source, block.DirectContext); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx := context.Background()
+	s := openTestStore(t)
+	settings, err := s.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.ActiveSources = []domain.Source{domain.SourceLinkedIn}
+	session, err := s.CreateUpdateSession(ctx, "LinkedIn reply contract fixture", settings, domain.UpdatePolicy{
+		Trigger: domain.UpdateTriggerUser, Delivery: domain.UpdateDeliveryVisible, BudgetAuthority: domain.BudgetAuthorityUser,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := session.Runs[0]
+	command, err := s.StartRun(ctx, run.ID, map[string]any{"source": "linkedin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed, err := s.ClaimCommand(ctx, run.ID, "fixture"); err != nil || claimed == nil {
+		t.Fatalf("claim fixture: %v, %v", claimed, err)
+	}
+	if err := s.SaveObservation(ctx, command.ID, run.ID, observation); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := s.Observations(ctx, run.ID)
+	if err != nil || len(stored) != 1 {
+		t.Fatalf("stored observations: %d, %v", len(stored), err)
+	}
+	items := make([]domain.TimelineItem, 0, 2)
+	for _, block := range stored[0].Snapshots[0].Blocks {
+		items = append(items, domain.TimelineItem{ID: block.PlatformID, SessionID: session.ID, RunID: run.ID,
+			Source: domain.SourceLinkedIn, EvidenceKey: block.EvidenceKey})
+	}
+	if err := s.CompleteRun(ctx, run, domain.ReasoningResult{}, nil, items, nil); err != nil {
+		t.Fatal(err)
+	}
+	page, err := s.ListTimeline(ctx, 2, 0)
+	if err != nil || len(page) != 2 || page[0].ID != parentID || page[1].ID != replyID {
+		t.Fatalf("projected posts: %+v, %v", page, err)
+	}
+	if got := page[1].Conversation; got == nil || got.Kind != "replies_to" || got.Status != "resolved" ||
+		got.TargetTimelineID != parentID || got.Provenance != "observed_dom" {
+		t.Fatalf("projected reply: %+v", got)
+	}
+	if path := os.Getenv("AKU_REPLY_FIXTURE_TIMELINE"); path != "" {
+		raw, err := json.Marshal(page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

@@ -153,6 +153,16 @@ test("Timeline connects only adjacent direct replies, including for another sour
   }
 });
 
+test("Timeline draws C3 for the stored LinkedIn fixture", { skip: !process.env.AKU_REPLY_FIXTURE_TIMELINE }, () => {
+  const items = JSON.parse(readFileSync(process.env.AKU_REPLY_FIXTURE_TIMELINE, "utf8"));
+  const cards = render(items).elements.get("#result-items").children.filter(row => row.dataset.timelineId);
+  assert.deepEqual(cards.map(card => card.dataset.timelineId), [
+    "linkedin:activity:1234567890123456789", "linkedin:activity:1234567890123456790",
+  ]);
+  assert.equal(cards[0].children.filter(child => child.className === "timeline-reply-connector").length, 0);
+  assert.equal(cards[1].children.filter(child => child.className === "timeline-reply-connector").length, 1);
+});
+
 test("branch chips name their immediate parent while unresolved replies have no connector or guessed destination", () => {
   const group = planTimelineConversations([post("leaf", "middle"), post("sibling", "root"), post("middle", "root"), post("root")])[0];
   for (const member of group.members.filter(value => value.parentID)) {

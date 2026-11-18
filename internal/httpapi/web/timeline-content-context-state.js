@@ -30,10 +30,8 @@ function isContentContextObject(value, expectedKind) {
 function isKnownContentContextRelation(source, relation) {
   if (!relation || typeof relation !== "object" || Array.isArray(relation)) return false;
   if (!CONTENT_CONTEXT_RELATION_PROVENANCE.has(relation.provenance)) return false;
-  if (source === "x") {
-    return relation.kind === "replies_to"
-      && isContentContextObject(relation.target, "post")
-      && !relation.parent;
+  if (relation.kind === "replies_to") {
+    return isContentContextObject(relation.target, "post") && !relation.parent;
   }
   if (source !== "linkedin" || !["feed_comment", "feed_reply"].includes(relation.kind)) return false;
   if (!isContentContextObject(relation.target, "comment")) return false;
@@ -60,7 +58,7 @@ export function contentContextKnownTypesDescription(types = []) {
 
 export function contentContextRelationLabel(source, relation) {
   if (!relation || typeof relation !== "object") return "Conversation context";
-  if (source === "x" && relation.kind === "replies_to") return "Reply to post";
+  if (relation.kind === "replies_to") return "Reply to post";
   if (source === "linkedin" && relation.kind === "feed_comment") {
     const actor = typeof relation.actor === "string" ? relation.actor.trim() : "";
     return actor ? "Comment by " + actor : "Comment";

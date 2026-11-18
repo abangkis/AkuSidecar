@@ -328,7 +328,7 @@ function toBlock(source, post, feedPosition, captureMode = 'headless_worker', xM
     quotedPost: source === 'x' && Array.isArray(post.quotedPost?.media)
       ? {...preserveMap(post.quotedPost), media: projectXPlayback(structuredClone(post.quotedPost.media.slice(0, 20)), xMediaPolicy)}
       : preserveMap(post.quotedPost),
-    ...(['x','instagram','linkedin'].includes(source) && Array.isArray(post.directContext)
+    ...(Array.isArray(post.directContext)
       ? {directContext:structuredClone(post.directContext.slice(0,source==='x' ? 8 : 12))} : {}),
     engagement: preserveMap(post.engagement),
     presentation,

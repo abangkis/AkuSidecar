@@ -51,10 +51,7 @@ func projectTimelineRelations(items []domain.TimelineItem) {
 			if domain.ValidateDirectContext(item.Source, []domain.DirectContext{relation}) != nil {
 				continue
 			}
-			nativeID := directPostIdentity(item.Source, relation.Target.Permalink)
-			if nativeID == "" {
-				nativeID = domain.ContextObjectIdentity(relation.Target)
-			}
+			nativeID := domain.ReplyPostIdentity(item.Source, relation.Target.ID, relation.Target.Permalink)
 			if nativeID == "" || nativeID == identities[index] {
 				continue
 			}
@@ -101,17 +98,5 @@ func timelineItemPostIdentity(item domain.TimelineItem) string {
 	if item.Evidence == nil {
 		return ""
 	}
-	identity := directPostIdentity(item.Source, item.Evidence.Permalink)
-	// An invalid explicit URL is not repaired using a detached platform ID.
-	if item.Evidence.Permalink != "" && identity == "" {
-		return ""
-	}
-	platformIdentity := domain.ContextObjectIdentity(domain.ContextObject{Kind: "post", ID: item.Evidence.PlatformID})
-	if identity != "" {
-		if platformIdentity != "" && platformIdentity != identity {
-			return ""
-		}
-		return identity
-	}
-	return platformIdentity
+	return domain.ReplyPostIdentity(item.Source, item.Evidence.PlatformID, item.Evidence.Permalink)
 }

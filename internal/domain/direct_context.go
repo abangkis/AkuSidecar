@@ -57,9 +57,9 @@ func ValidateDirectContext(source Source, values []DirectContext) error {
 		if value.OmittedCommentCount < 0 || value.OmittedCommentCount > 1000000 || value.OmittedCommentCount > 0 && (source != SourceLinkedIn || value.MatchBasis != "actor_profile") {
 			return errors.New("invalid omitted comment count")
 		}
-		if source == SourceX && value.Kind != "quotes" && value.Kind != "replies_to" ||
-			source == SourceLinkedIn && value.Kind != "feed_comment" && value.Kind != "feed_reply" ||
-			source != SourceX && source != SourceLinkedIn {
+		postReply := value.Kind == "replies_to" && source.Valid()
+		if !postReply && !(source == SourceX && value.Kind == "quotes") &&
+			!(source == SourceLinkedIn && (value.Kind == "feed_comment" || value.Kind == "feed_reply")) {
 			return errors.New("unsupported direct context relation")
 		}
 		if value.Provenance != "observed_dom" && value.Provenance != "observed_response" && value.Provenance != "legacy_capture" {
@@ -91,7 +91,7 @@ func ValidateDirectContext(source Source, values []DirectContext) error {
 				return errors.New("invalid comment capture reason")
 			}
 			expected := "post"
-			if source == SourceLinkedIn {
+			if source == SourceLinkedIn && !postReply {
 				expected = "comment"
 			}
 			if object.Kind != expected || len(object.ID) > 200 || len(object.Permalink) > 2048 || len([]rune(object.Author)) > 300 || len([]rune(object.Text)) > 4000 {
@@ -119,6 +119,9 @@ func ValidateDirectContext(source Source, values []DirectContext) error {
 					return errors.New("context object ID and permalink disagree")
 				}
 			}
+			if postReply && source != SourceX && ReplyPostIdentity(source, object.ID, object.Permalink) == "" {
+				return errors.New("invalid reply parent post identity")
+			}
 			if object.Availability == "captured" && object.Text == "" && !object.HasMedia {
 				return errors.New("captured context object has no body evidence")
 			}
@@ -134,6 +137,96 @@ func ValidateDirectContext(source Source, values []DirectContext) error {
 }
 
 var directStatusIDPattern = regexp.MustCompile(`^\d{5,30}$`)
+var replyLinkedInID = regexp.MustCompile(`(?i)^(?:linkedin:|urn:li:)?(?:activity|ugcpost|share):\d+$`)
+var replyFacebookID = regexp.MustCompile(`^(?:pfbid[A-Za-z0-9]+|\d+)$`)
+
+// ReplyPostIdentity verifies source ownership and rejects contradictory ID/URL
+// evidence. A native permalink also supports posts without a reversible ID.
+func ReplyPostIdentity(source Source, id, permalink string) string {
+	if !source.Valid() {
+		return ""
+	}
+	var canonical string
+	if permalink != "" {
+		var ok bool
+		canonical, ok = CanonicalSourceURL(source, permalink)
+		if !ok {
+			return ""
+		}
+	}
+	if source == SourceX {
+		fromURL := ContextObjectIdentity(ContextObject{Kind: "post", Permalink: canonical})
+		if id == "" {
+			return fromURL
+		}
+		native := ContextObjectIdentity(ContextObject{Kind: "post", ID: id})
+		if fromURL != "" && fromURL != native {
+			return ""
+		}
+		return native
+	}
+	var native, proven string
+	switch source {
+	case SourceLinkedIn:
+		if replyLinkedInID.MatchString(id) {
+			native = NormalizeNativeIdentity(source, id)
+		}
+		if candidate := NativeIdentityFromPermalink(source, canonical); replyLinkedInID.MatchString(candidate) {
+			proven = candidate
+		}
+	case SourceInstagram:
+		if instagramNormalizedIdentityPattern.MatchString(id) {
+			native = NormalizeNativeIdentity(source, id)
+		}
+		proven = NativeIdentityFromPermalink(source, canonical)
+	case SourceFacebook:
+		if candidate := strings.TrimPrefix(id, "facebook:post:"); id != candidate && replyFacebookID.MatchString(candidate) {
+			native = id
+		}
+		proven = facebookReplyIdentity(canonical)
+	}
+	if proven != "" {
+		if id != "" && native != proven {
+			return ""
+		}
+		return proven
+	}
+	if canonical != "" {
+		return canonical
+	}
+	return native
+}
+
+func facebookReplyIdentity(canonical string) string {
+	parsed, err := url.Parse(canonical)
+	if err != nil || canonical == "" {
+		return ""
+	}
+	values := parsed.Query()
+	key := ""
+	switch parsed.Path {
+	case "/story.php", "/permalink.php":
+		key = "story_fbid"
+	case "/photo", "/photo/":
+		key = "fbid"
+		if !values.Has(key) {
+			key = "photo_id"
+		}
+	case "/watch/":
+		key = "v"
+	}
+	if key != "" && len(values[key]) == 1 && replyFacebookID.MatchString(values.Get(key)) {
+		return "facebook:post:" + values.Get(key)
+	}
+	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(segments) >= 2 {
+		kind, id := segments[len(segments)-2], segments[len(segments)-1]
+		if (kind == "posts" || kind == "permalink" || kind == "videos" || kind == "reel") && replyFacebookID.MatchString(id) {
+			return "facebook:post:" + id
+		}
+	}
+	return ""
+}
 
 func validCommentCaptureReason(reason string) bool {
 	switch reason {
@@ -169,6 +262,18 @@ func ContextObjectIdentity(object ContextObject) string {
 	return object.Permalink
 }
 
+func directContextMergeIdentity(object ContextObject) string {
+	if object.Kind != "post" {
+		return ContextObjectIdentity(object)
+	}
+	for _, source := range []Source{SourceX, SourceLinkedIn, SourceInstagram, SourceFacebook} {
+		if identity := ReplyPostIdentity(source, object.ID, object.Permalink); identity != "" {
+			return string(source) + ":" + identity
+		}
+	}
+	return ""
+}
+
 // Merge by stable target and actor identity. Reference-only recapture must not
 // erase an already captured body. A genuinely refreshed body replaces it.
 func MergeDirectContext(previous, current []DirectContext) []DirectContext {
@@ -189,7 +294,7 @@ func MergeDirectContext(previous, current []DirectContext) []DirectContext {
 				}
 				value.Parent = &copy
 			}
-			identity := ContextObjectIdentity(value.Target)
+			identity := directContextMergeIdentity(value.Target)
 			actor := value.ActorURL
 			if actor == "" {
 				actor = value.Actor
@@ -229,10 +334,17 @@ func MergeDirectContext(previous, current []DirectContext) []DirectContext {
 		for i := range indices {
 			indices[i] = i
 		}
-		hasCommentBody := func(i int) bool {
-			return result[i].Target.Kind == "comment" && (strings.TrimSpace(result[i].Target.Text) != "" || result[i].Target.HasMedia)
+		priority := func(i int) int {
+			relation := result[i]
+			if relation.Kind == "replies_to" && directContextMergeIdentity(relation.Target) != "" {
+				return 2
+			}
+			if relation.Target.Kind == "comment" && (strings.TrimSpace(relation.Target.Text) != "" || relation.Target.HasMedia) {
+				return 1
+			}
+			return 0
 		}
-		sort.SliceStable(indices, func(i, j int) bool { return hasCommentBody(indices[i]) && !hasCommentBody(indices[j]) })
+		sort.SliceStable(indices, func(i, j int) bool { return priority(indices[i]) > priority(indices[j]) })
 		indices = indices[:DirectContextLimit]
 		sort.Ints(indices) // Preserve relative observation order among retained rows.
 		bounded := make([]DirectContext, 0, DirectContextLimit)
@@ -245,8 +357,8 @@ func MergeDirectContext(previous, current []DirectContext) []DirectContext {
 }
 
 func mergeContextObject(previous, current ContextObject) ContextObject {
-	identity := ContextObjectIdentity(current)
-	if identity == "" || identity != ContextObjectIdentity(previous) {
+	identity := directContextMergeIdentity(current)
+	if identity == "" || identity != directContextMergeIdentity(previous) {
 		return current
 	}
 	if (previous.Text != "" || previous.HasMedia) && contextCaptureNewer(previous.CapturedAt, current.CapturedAt) {

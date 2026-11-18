@@ -7,6 +7,27 @@ import (
 	"testing"
 )
 
+func TestPostReplyIdentityAcceptsNativeAliasesAndRejectsConflicts(t *testing.T) {
+	for _, tc := range []struct {
+		source Source
+		id     string
+		url    string
+		want   string
+	}{
+		{SourceLinkedIn, "urn:li:activity:12345", "https://www.linkedin.com/posts/example-activity-12345-test", "linkedin:activity:12345"},
+		{SourceLinkedIn, "linkedin:activity:54321", "https://www.linkedin.com/feed/update/urn:li:activity:12345/", ""},
+		{SourceLinkedIn, "", "https://x.com/example/status/12345", ""},
+		{SourceInstagram, "instagram:p:AbCdE", "https://www.instagram.com/p/AbCdE/", "instagram:p:AbCdE"},
+		{SourceInstagram, "instagram:p:AbCdE", "", "instagram:p:AbCdE"},
+		{SourceFacebook, "facebook:post:12345", "https://m.facebook.com/story.php?story_fbid=12345&id=67890", "facebook:post:12345"},
+		{SourceFacebook, "facebook:post:54321", "https://www.facebook.com/demo/posts/12345", ""},
+	} {
+		if got := ReplyPostIdentity(tc.source, tc.id, tc.url); got != tc.want {
+			t.Errorf("%s identity = %q, want %q", tc.source, got, tc.want)
+		}
+	}
+}
+
 func TestDirectContextTypedStrictDecodeBoundsAndMerge(t *testing.T) {
 	raw := `{"directContext":[{"kind":"feed_comment","actor":"Alice","actorUrl":"https://www.linkedin.com/in/alice","observedText":"Alice commented","provenance":"observed_dom","target":{"kind":"comment","availability":"reference_only"}}]}`
 	var b Block

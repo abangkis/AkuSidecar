@@ -48,15 +48,12 @@ func (s *Store) directContext(ctx context.Context, item domain.TimelineItem) ([]
 		if domain.ValidateDirectContext(item.Source, []domain.DirectContext{value}) != nil {
 			continue
 		}
-		targetID := domain.ContextObjectIdentity(value.Target)
-		ownID := directPostIdentity(item.Source, block.Permalink)
-		if ownID == "" {
-			ownID = domain.ContextObjectIdentity(domain.ContextObject{Kind: "post", ID: block.PlatformID})
-		}
+		targetID := domain.ReplyPostIdentity(item.Source, value.Target.ID, value.Target.Permalink)
+		ownID := domain.ReplyPostIdentity(item.Source, block.PlatformID, block.Permalink)
 		if value.Target.Kind == "post" && targetID != "" && targetID == ownID {
 			continue
 		}
-		if value.Target.Kind == "post" && value.Target.Permalink == "" && targetID != "" {
+		if item.Source == domain.SourceX && value.Target.Kind == "post" && value.Target.Permalink == "" && targetID != "" {
 			value.Target.Permalink = "https://x.com/i/status/" + targetID
 		}
 		value.Target.EvidenceOrigin = "embedded_capture"
@@ -65,7 +62,7 @@ func (s *Store) directContext(ctx context.Context, item domain.TimelineItem) ([]
 			copy.EvidenceOrigin = "embedded_capture"
 			value.Parent = &copy
 		}
-		if value.Target.Kind == "post" && value.Target.Text == "" && !value.Target.HasMedia && targetID != "" {
+		if item.Source == domain.SourceX && value.Target.Kind == "post" && value.Target.Text == "" && !value.Target.HasMedia && targetID != "" {
 			resolved, err := s.resolveDirectPost(ctx, item.Source, targetID, value.Target)
 			if err != nil {
 				return nil, err

@@ -148,12 +148,20 @@
       const semantics = adapter.extractSemantics(container, helpers);
       const collapsed = Boolean(root && [...root.querySelectorAll(policy.buttonSelector)].some(b => /^(see more|show more|more)$/i.test(compactText(b))));
       const links = authoredLinks(adapter, container);
+      let directContext;
+      try {
+        const observed = adapter.extractDirectContext?.(container, { ...helpers, permalink: details.url, quotedPost: null });
+        if (Array.isArray(observed) && observed.length) directContext = observed.slice(0, 8);
+      } catch {
+        presentation.directContextStatus = 'extraction_failed';
+      }
       return { post: { id, permalink: details.url, permalinkProvenance: details.source, author, text,
         avatar: adapter.findAvatar(container, helpers), capturedAt, publishedAt: timestamp.publishedAt,
         timestampSource: timestamp.source, timestampEstimated: timestamp.estimated, timestampText: timestamp.text || presentation.timestampText,
         timestampEvidence: timestamp.evidence || null,
         hoverEvidence: state.cache.get(container)?.fingerprint === fingerprint(adapter, container) ? state.cache.get(container).diagnostics : null,
         ...semantics, presentation, links, media, mediaExpected,
+        ...(directContext ? {directContext} : {}),
         mediaEvidence: { status: expectedWithoutUrl.length ? 'missing_expected_url' : media.length ? 'observed_urls_partial' : 'no_media_observed', expectedWithoutUrl },
         textCollapsed: collapsed, textStatus: expansion,
         limitations: ['visible_dom_only', 'no_production_admission', 'no_structured_media_resolver',

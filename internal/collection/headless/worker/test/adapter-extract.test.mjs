@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import { toObservation } from '../observation.mjs';
 
 const shared = await readFile(new URL('../../../../../../AkuBridge/capture-primitives.js', import.meta.url), 'utf8');
+const registry = await readFile(new URL('../../../../../../AkuBridge/source-adapter-runtime.js', import.meta.url), 'utf8');
 const extractor = await readFile(new URL('../vendor/adapter-extract.js', import.meta.url), 'utf8');
 
 function element({ tagName = 'DIV', rect = { width: 500, height: 240, left: 0, right: 500, top: 20, bottom: 260 },
@@ -66,7 +68,7 @@ function candidate({ urn = null, anchors = [], images = [], times = [], body = '
   return root;
 }
 
-function run(source, adapter, url) {
+function run(source, adapter, url, useRegistry = false) {
   const context = vm.createContext({
     URL,setTimeout,clearTimeout,
     location: new URL(url),
@@ -79,9 +81,41 @@ function run(source, adapter, url) {
     AkuSourceAdapters: { get: id => id === source ? adapter : null },
   });
   vm.runInContext(shared, context);
+  if (useRegistry) {
+    vm.runInContext(registry, context);
+    context.AkuSourceAdapters.register(adapter);
+  }
   vm.runInContext(extractor, context);
   return context.XHeadlessPoC;
 }
+
+test('LinkedIn fixture emits a post-reply observation using only the shared adapter hook', async () => {
+  const parent = candidate({ urn: 'urn:li:activity:1234567890123456789', body: 'Parent fixture' });
+  const reply = candidate({ urn: 'urn:li:activity:1234567890123456790', body: 'Reply fixture' });
+  const url = 'https://www.linkedin.com/feed/';
+  const adapter = { ...baseAdapter('linkedin', [parent, reply]),
+    qualityProfile: 'social-post-v2', evidenceProfile: {contentFamily: 'feed_post', modalities: ['text']},
+    qualitySelectors: {}, freshness: {version: 'fixture', pendingContentPattern: /fixture/, revealSupported: false},
+    mediaAcquisition: {...baseAdapter('linkedin', []).mediaAcquisition, version: 'fixture'},
+    extractDirectContext: undefined,
+    extractReplyContext: container => container === reply ? {
+      provenance: 'observed_dom',
+      target: { kind: 'post', permalink: 'https://www.linkedin.com/feed/update/urn:li:activity:1234567890123456789/', availability: 'reference_only' },
+    } : null,
+  };
+  const snapshot = await run('linkedin', adapter, url, true).collect();
+  const observation = toObservation({ source: 'linkedin', requestedUrl: url, snapshots: [snapshot],
+    capturedAt: '2026-11-18T00:00:00Z', provenance: {}, stopReason: 'fixture' });
+  const [parentBlock, replyBlock] = observation.snapshots[0].blocks;
+  assert.equal(parentBlock.platformId, 'linkedin:activity:1234567890123456789');
+  assert.equal(replyBlock.platformId, 'linkedin:activity:1234567890123456790');
+  assert.equal(parentBlock.directContext.length, 0);
+  assert.equal(replyBlock.directContext[0].kind, 'replies_to');
+  assert.equal(replyBlock.directContext[0].target.permalink, parentBlock.permalink);
+  if (process.env.AKU_REPLY_FIXTURE_OBSERVATION) {
+    await writeFile(process.env.AKU_REPLY_FIXTURE_OBSERVATION, JSON.stringify(observation));
+  }
+});
 
 function baseAdapter(source, candidates) {
   const identityFor = value => {
