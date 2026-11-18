@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { projectLinkedInRecoveryBlockers } from './linkedin-recovery-diagnostics.mjs';
+
+export { projectLinkedInRecoveryBlockers };
 
 const SOURCE_READINESS_STATES = new Set(['source_unavailable', 'login_required',
   'feed_ready', 'feed_empty', 'feed_hydrating', 'loading', 'feed_not_visible', 'selector_mismatch', 'page_shell']);
@@ -62,70 +65,6 @@ export function projectDOMShadow(snapshot) {
     if (isCount(value.rejections?.[key])) rejections[key] = value.rejections[key];
   }
   return { sharedDOMShadow: { code: value.code, counts, rejections } };
-}
-
-// Diagnostic metadata cannot supply identity, release resources or admit a post.
-export function projectLinkedInRecoveryBlockers(snapshot, snapshotIndex = null) {
-  try {
-    if (ownValue(snapshot, 'source') !== 'linkedin') return {};
-    const values = ownValue(snapshot, 'linkedinRecoveryBlockers');
-    if (!Array.isArray(values) || values.length < 1 || values.length > 8) return {};
-    const count = value => Number.isSafeInteger(value) && value >= 0 && value <= 32;
-    const selectors = new Set(['role_menu', 'role_dialog', 'data_test_modal', 'artdeco_modal', 'unknown']);
-    const relations = new Set(['matches', 'different', 'absent', 'unknown']);
-    const flags = ['hasArea', 'intersectsViewport', 'displayed', 'cssVisible', 'opacityPositive', 'hiddenAttribute', 'ariaHidden', 'inert'];
-    const ancestorFlags = ['displayNone', 'visibilityHidden', 'opacityZero', 'hiddenAttribute', 'ariaHidden', 'inert'];
-    const indexValid = value => value === null || Number.isSafeInteger(value) && value >= 0 && value <= 1_000_000;
-    const projected = [];
-    for (let index = 0; index < values.length; index++) {
-      const value = ownValue(values, String(index));
-      const menuCount = ownValue(value, 'menuCount'), dialogCount = ownValue(value, 'dialogCount');
-      const complete = ownValue(value, 'complete'), samples = ownValue(value, 'samples');
-      const recordedIndex = ownValue(value, 'snapshotIndex'), candidateIndex = ownValue(value, 'candidateIndex');
-      if (ownValue(value, 'code') !== 'existing_surface' || !count(menuCount) ||
-          ownValue(value, 'phase') !== 'pre_recovery_guard' || !indexValid(recordedIndex) || !indexValid(snapshotIndex) ||
-          !indexValid(candidateIndex) ||
-          !(dialogCount === null || count(dialogCount)) || menuCount + (dialogCount ?? 0) < 1 ||
-          typeof complete !== 'boolean' || !Array.isArray(samples) || samples.length < 1 || samples.length > 4) return {};
-      const entries = [];
-      for (let n = 0; n < samples.length; n++) {
-        const sample = ownValue(samples, String(n));
-        const kind = ownValue(sample, 'kind'), selector = ownValue(sample, 'selector');
-        if (!['menu', 'dialog'].includes(kind) || !selectors.has(selector) ||
-            ownValue(sample, 'guardVisible') !== true) return {};
-        const aria = ownValue(sample, 'aria'), projectedARIA = {};
-        for (const field of ['labelledBy', 'controls', 'owns']) {
-          const relation = ownValue(aria, field);
-          if (!relations.has(relation)) return {};
-          projectedARIA[field] = relation;
-        }
-        const result = { kind, selector, aria: projectedARIA, guardVisible: true };
-        for (const field of flags) {
-          const flag = ownValue(sample, field);
-          if (flag !== null && typeof flag !== 'boolean') return {};
-          result[field] = flag;
-        }
-        const ancestors = ownValue(sample, 'ancestors');
-        const inspected = ownValue(ancestors, 'inspected'), ancestorComplete = ownValue(ancestors, 'complete');
-        if (!Number.isSafeInteger(inspected) || inspected < 0 || inspected > 16 || typeof ancestorComplete !== 'boolean') return {};
-        result.ancestors = { inspected, complete: ancestorComplete };
-        for (const field of ancestorFlags) {
-          const flag = ownValue(ancestors, field);
-          if (flag !== null && typeof flag !== 'boolean' || ancestorComplete && flag === null || !ancestorComplete && flag === false) return {};
-          result.ancestors[field] = flag;
-        }
-        entries.push(result);
-      }
-      if (entries.filter(entry => entry.kind === 'menu').length > menuCount ||
-          entries.filter(entry => entry.kind === 'dialog').length > (dialogCount ?? 0) ||
-          complete && (dialogCount === null || entries.length !== menuCount + dialogCount ||
-            entries.some(entry => flags.some(field => entry[field] === null) || !entry.ancestors.complete ||
-              Object.values(entry.aria).includes('unknown') || entry.selector === 'unknown'))) return {};
-      projected.push({ code: 'existing_surface', phase: 'pre_recovery_guard', snapshotIndex: snapshotIndex ?? recordedIndex,
-        candidateIndex, menuCount, dialogCount, samples: entries, complete });
-    }
-    return { linkedinRecoveryBlockers: projected };
-  } catch { return {}; }
 }
 
 const X_POST = /^\/([^/]+)\/status\/(\d+)(?:\/.*)?$/;

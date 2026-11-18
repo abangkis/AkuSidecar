@@ -21,6 +21,46 @@ const cases=[
   {name:'action ancestor',body:`<section><span data-view-name="feed-actor-name">Private Author</span>${link(primary)}${text}<button>Like</button><button>Comment</button></section>`,code:'ready'},
   {name:'missing native identity',body:card({id:null,links:''}),code:'no_valid_candidates',rejections:{missing_identity:1}},
   {name:'existing menu blocks recovery',body:blockedPost+'<div role="menu" style="width:120px;height:50px">Private menu</div>',code:'no_valid_candidates',recoveryBlocker:'role_menu'},
+  {name:'surface inspection separates navigation, feed sorting and dialog without entering recovery',
+    body:blockedPost.replace('id="post-control"','id="post-control" style="position:fixed;top:300px;left:30px"')+
+      '<nav><button aria-controls="Private-account-menu" aria-expanded="true">Private account</button><div id="Private-account-menu" role="menu" style="position:fixed;top:300px;left:20px;width:180px;height:80px"><button role="menuitem">Settings &amp; Privacy</button></div></nav>'+
+      '<section data-view-name="feed-sort-menu"><div role="menu" style="position:fixed;top:300px;left:220px;width:150px;height:80px"><button role="menuitem">Recent</button></div></section>'+
+      '<div role="dialog" style="position:fixed;top:400px;left:20px;width:150px;height:50px"><button>Close</button></div>',
+    code:'no_valid_candidates',recoveryBlocker:'role_menu',surfaceInspection:{dialogCount:1,complete:true,surfaces:[
+      {kind:'menu',slot:0,trail:['navigation','main'],actionHints:['account'],actionCount:1,ownerRelation:'unknown',triggerBinding:'target_reference',triggerTrail:['navigation','main'],triggerExpanded:true,openState:'open',controlOcclusion:'surface_hit'},
+      {kind:'menu',slot:1,trail:['feed_sort','main'],actionHints:['feed_order'],actionCount:1,ownerRelation:'unknown',triggerBinding:'unresolved',triggerTrail:[],triggerExpanded:null,openState:'unknown',controlOcclusion:'other_hit'},
+      {kind:'dialog',slot:2,trail:['main'],actionHints:['dismiss'],actionCount:1,ownerRelation:'unknown',triggerBinding:'unresolved',triggerTrail:[],triggerExpanded:null,openState:'unknown',controlOcclusion:'other_hit'},
+    ]}},
+  {name:'two menus report distinct triggers, open signals and hit tests',
+    body:blockedPost.replace('id="post-control"','id="post-control" aria-controls="Private:post-menu" aria-owns="Private:post-menu" aria-expanded="true"')+
+      '<div class="artdeco-dropdown__content artdeco-dropdown__content--is-open" id="Private:post-menu" role="menu" style="position:fixed;top:260px;left:20px;width:120px;height:50px"><button role="menuitem">Private action</button></div>'+
+      '<nav><button popovertarget="Private-nav-menu" aria-expanded="false">Private navigation</button><div aria-owns="Private-nav-menu" aria-expanded="true">Private owner</div></nav>'+
+      '<div popover id="Private-nav-menu" role="menu" style="display:block;position:fixed;inset:260px auto auto 200px;margin:0;width:120px;height:50px">Private nav menu</div>'+
+      '<div style="position:fixed;inset:250px auto auto 190px;width:170px;height:100px;z-index:10">Private overlay</div>',
+    code:'no_valid_candidates',recoveryBlocker:'role_menu',menuEvidence:[
+      {component:'artdeco_dropdown',scope:'feed_post',ariaOwnerRelation:'candidate',triggerBinding:'target_reference',triggerRelation:'candidate',triggerExpanded:true,popoverOpen:null,dropdownOpen:true,cssCheck:true,hitTest:{hit:5,covered:0,miss:0}},
+      {component:'popover',scope:'navigation',ariaOwnerRelation:'other',triggerBinding:'target_reference',triggerRelation:'other',triggerExpanded:false,popoverOpen:false,dropdownOpen:null,cssCheck:true,hitTest:{hit:0,covered:5,miss:0}},
+    ]},
+  {name:'clipped menu with competing trigger references stays blocked',
+    body:blockedPost.replace('id="post-control"','id="post-control" aria-controls="Private-clipped-menu"')+
+      '<button id="Private-foreign-trigger" aria-expanded="true">Private trigger</button>'+
+      '<div role="menu" id="Private-clipped-menu" aria-labelledby="Private-foreign-trigger" style="width:120px;height:50px;clip-path:inset(100%)">Private menu</div>',
+    code:'no_valid_candidates',recoveryBlocker:'role_menu',menuEvidence:[
+      {component:'unclassified',scope:'unclassified',ariaOwnerRelation:'absent',triggerBinding:'ambiguous',triggerRelation:'unknown',triggerExpanded:null,popoverOpen:null,dropdownOpen:null,cssCheck:true,hitTest:{hit:0,covered:0,miss:5}},
+    ]},
+  {name:'Artdeco toggle supplies a structural hint without ARIA references',
+    body:card({id:null,links:'',body:text+`<div class="artdeco-dropdown">
+      <button class="artdeco-dropdown__trigger" aria-label="Open control menu for post by Private Author" aria-expanded="false">Menu</button>
+      <div role="menu" class="artdeco-dropdown__content" style="width:120px;height:50px">Private dropdown</div>
+    </div>`}),code:'no_valid_candidates',recoveryBlocker:'role_menu',menuEvidence:[
+      {component:'artdeco_dropdown',scope:'feed_post',ariaOwnerRelation:'unknown',triggerBinding:'component_toggle',triggerRelation:'candidate',triggerExpanded:false,popoverOpen:null,dropdownOpen:false,cssCheck:true,hitTest:{hit:5,covered:0,miss:0}},
+    ]},
+  {name:'noninteractive ARIA owner cannot supply a menu trigger or expanded state',
+    body:blockedPost+'<nav><div aria-owns="Private-portal" aria-controls="Private-portal" aria-expanded="true">Private noninteractive owner</div></nav>'+
+      '<div id="Private-portal" role="menu" style="width:120px;height:50px">Private menu</div>',
+    code:'no_valid_candidates',recoveryBlocker:'role_menu',menuEvidence:[
+      {component:'unclassified',scope:'unclassified',ariaOwnerRelation:'other',triggerBinding:'unresolved',triggerRelation:'unknown',triggerExpanded:null,popoverOpen:null,dropdownOpen:null,cssCheck:true,hitTest:{hit:5,covered:0,miss:0}},
+    ]},
   {name:'existing dialog blocks recovery',body:blockedPost+'<div role="dialog" style="width:120px;height:50px">Private dialog</div>',code:'no_valid_candidates',recoveryBlocker:'role_dialog'},
   {name:'aria-hidden dialog remains a recovery blocker',body:blockedPost+'<div aria-hidden="true"><div role="dialog" style="width:120px;height:50px">Private hidden dialog</div></div>',code:'no_valid_candidates',recoveryBlocker:'role_dialog',ancestorFlag:'ariaHidden'},
   {name:'hidden dialog does not block recovery',body:blockedPost+'<div role="dialog" style="display:none">Private hidden dialog</div>',code:'no_valid_candidates',recoveryBlocker:null,recoveryAttempt:true},

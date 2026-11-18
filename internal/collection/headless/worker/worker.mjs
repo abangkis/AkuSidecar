@@ -78,7 +78,7 @@ export async function sourceAssets(bridgePath, source) {
         { relative: 'AkuBridge/bounded-capture-policy.js', path: resolve(bridge, 'bounded-capture-policy.js'), execute: true },
         { relative: 'AkuBridge/capture-quality-policy.js', path: resolve(bridge, 'capture-quality-policy.js'), execute: true },
         { relative: 'AkuBridge/media-post-processor.js', path: resolve(bridge, 'media-post-processor.js'), execute: true },
-        ...(source === 'linkedin' ? [{ relative: 'AkuBridge/linkedin-timestamp-policy.js', path: resolve(bridge, 'linkedin-timestamp-policy.js'), execute: true }] : []),
+        ...(source === 'linkedin' ? ['linkedin-timestamp-policy.js', 'diagnostics/linkedin-recovery.js'].map(name => ({ relative: 'AkuBridge/' + name, path: resolve(bridge, name), execute: true })) : []),
         { relative: `AkuBridge/adapters/${source}-adapter.js`, path: resolve(bridge, `adapters/${source}-adapter.js`), execute: true },
         { relative: 'worker/vendor/adapter-extract.js', path: resolve(root, 'vendor/adapter-extract.js'), execute: true },
       ];
@@ -96,7 +96,7 @@ export async function sourceAssets(bridgePath, source) {
       if (error?.code !== 'ENOENT') throw error;
     }
   }
-  const workerModules = ['capture-primitives.mjs', 'capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'structured-media.mjs', 'additional-source-media.mjs', 'photo-recapture.mjs', 'x-text-recovery.mjs', 'x-passive-evidence.mjs', 'headless-freshness.mjs', 'source-freshness-contract.mjs', 'source-concurrent-adapter.mjs', 'worker.mjs', 'package.json']
+  const workerModules = ['capture-primitives.mjs', 'capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'linkedin-recovery-diagnostics.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'structured-media.mjs', 'additional-source-media.mjs', 'photo-recapture.mjs', 'x-text-recovery.mjs', 'x-passive-evidence.mjs', 'headless-freshness.mjs', 'source-freshness-contract.mjs', 'source-concurrent-adapter.mjs', 'worker.mjs', 'package.json']
     .map(name => ({ relative: `worker/${name}`, path: resolve(root, name), execute: false }));
   const assets = [];
   for (const asset of [...shared, ...selected, ...workerModules]) {

@@ -19,7 +19,7 @@ test('additional sources load their own Bridge adapter and media runtime with ha
       ...(source==='linkedin' ? ['AkuBridge/linkedin-permalink-policy.js','AkuBridge/source-feed-routes.js'] : []),
       'AkuBridge/shared-dom-engine/browser-runtime.js',`AkuBridge/adapters/${source}-dom-shadow.js`,
       'AkuBridge/bounded-capture-policy.js','AkuBridge/capture-quality-policy.js','AkuBridge/media-post-processor.js',
-      ...(source==='linkedin' ? ['AkuBridge/linkedin-timestamp-policy.js'] : []),
+      ...(source==='linkedin' ? ['AkuBridge/linkedin-timestamp-policy.js','AkuBridge/diagnostics/linkedin-recovery.js'] : []),
       `AkuBridge/adapters/${source}-adapter.js`,'AkuBridge/source-freshness-runtime.js','worker/vendor/adapter-extract.js']);
     assert.ok(assets.every(a=>/^[a-f0-9]{64}$/.test(a.sha256)));
     assert.equal(assets.structuredMediaResolver.available,true);

@@ -150,6 +150,16 @@ export async function runDOMShadowParity({chrome,output,source,canonicalUrl,prob
           assert.equal(w.recoveryBlockers[0].snapshotIndex,0);assert.equal(w.recoveryBlockers[0].candidateIndex,0);
           if(spec.ancestorFlag)assert.equal(w.recoveryBlockers[0].samples[0].ancestors[spec.ancestorFlag],true);
           if(spec.aria)assert.deepEqual(w.recoveryBlockers[0].samples[0].aria,spec.aria);
+          if(spec.surfaceInspection){
+            assert.equal(w.recoveryBlockers[0].dialogCount,null,spec.name+' guard remains short-circuited');
+            assert.deepEqual(w.recoveryBlockers[0].surfaceInspection,spec.surfaceInspection,spec.name+' structural inspection');
+            assert.equal(w.recoveryClicks+h.recoveryClicks,0,spec.name+' no menu is operated');
+          }
+          if(spec.menuEvidence){
+            assert.equal(w.recoveryBlockers[0].menuCount,spec.menuEvidence.length);
+            assert.deepEqual(w.recoveryBlockers[0].samples.map(sample=>sample.menuEvidence),spec.menuEvidence);
+            assert.equal(w.recoveryClicks+h.recoveryClicks,0,spec.name+' passive recovery guard');
+          }
           assert.doesNotMatch(JSON.stringify(w.recoveryBlockers),new RegExp(privacyPattern));
         }
         if(spec.recoveryAttempt){assert.ok(w.recoveryClicks>0,spec.name+' Windowed recovery reached');assert.ok(h.recoveryClicks>0,spec.name+' Headless recovery reached');}

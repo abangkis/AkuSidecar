@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/linkedinrecovery"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
@@ -61,6 +62,7 @@ func (s *Store) saveObservationTx(ctx context.Context, tx *sql.Tx, commandID, ru
 		observation.Coverage = map[string]any{}
 	}
 	observation.Coverage["contentIdentity"] = identity
+	observation.Coverage = linkedinrecovery.ProjectCoverage(observation.Source, observation.Coverage)
 	raw, err := json.Marshal(observation)
 	if err != nil {
 		return err

@@ -200,11 +200,17 @@ func TestBridgeCommandsLinkedInRecoveryBlockersCoverage(t *testing.T) {
 	observation.Snapshots = append(observation.Snapshots, domain.Snapshot{Index: 1})
 	const blockerKey = "linkedinRecoveryBlockers"
 	const diagnostic = `[{"code":"existing_surface","phase":"pre_recovery_guard","snapshotIndex":1,"candidateIndex":0,
-		"menuCount":1,"dialogCount":null,"complete":false,"samples":[{"kind":"menu","selector":"role_menu",
+		"menuCount":1,"dialogCount":null,"complete":false,"surfaceInspection":{"dialogCount":0,"complete":true,
+		"surfaces":[{"kind":"menu","slot":0,"trail":["navigation"],"actionHints":["account"],"actionCount":2,
+		"ownerRelation":"unknown","triggerBinding":"unresolved","triggerTrail":[],"triggerExpanded":null,"openState":"unknown","controlOcclusion":"target_hit"}]},
+		"samples":[{"kind":"menu","selector":"role_menu",
 		"guardVisible":true,"aria":{"labelledBy":"absent","controls":"absent","owns":"absent"},
 		"hasArea":true,"intersectsViewport":true,"displayed":true,"cssVisible":true,"opacityPositive":true,
 		"hiddenAttribute":false,"ariaHidden":false,"inert":false,"ancestors":{"inspected":2,"complete":true,
-		"displayNone":false,"visibilityHidden":false,"opacityZero":true,"hiddenAttribute":false,"ariaHidden":false,"inert":false}}]}]`
+		"displayNone":false,"visibilityHidden":false,"opacityZero":true,"hiddenAttribute":false,"ariaHidden":false,"inert":false},
+		"menuEvidence":{"component":"artdeco_dropdown","scope":"feed_post","ariaOwnerRelation":"other","triggerBinding":"component_toggle",
+		"triggerRelation":"candidate","triggerExpanded":false,"popoverOpen":null,"dropdownOpen":false,
+		"cssCheck":false,"hitTest":{"hit":0,"covered":0,"miss":5}}}]}]`
 	var want any
 	if err := json.Unmarshal([]byte(diagnostic), &want); err != nil {
 		t.Fatal(err)
