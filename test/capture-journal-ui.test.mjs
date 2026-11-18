@@ -2,12 +2,65 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createCaptureJournalUI, requestCaptureJournal } from "../internal/httpapi/web/capture-journal-ui.js";
 import { createAutoUpdateUi } from "../internal/httpapi/web/auto-update-ui.js";
+import { renderOperationalBanner } from "../internal/httpapi/web/operational-banner.js";
 
 const full = { capacityBlocked: true, recordsUsed: 4095, capacity: 4096, protectedRecords: 3 };
 const preview = { ...full, eligibleRecords: 120, previewToken: "a".repeat(64), backupPolicy: "latest_verified" };
 const ready = { ...full, recordsUsed: 3975, capacityBlocked: false, archivedRecords: 120, outcome: "archived",
   backupRecords: 4095, preserved: { active: 1, pending: 1, retained: 1 } };
 const tick = () => new Promise(resolve => setImmediate(resolve));
+
+test("the banner only changes a button's disabled state when the caller supplies it", () => {
+  const $ = elements();
+  const banner = { panel: $("panel"), title: $("title"), detail: $("detail"), action: $("action") };
+  const notice = { title: "Paused", detail: "Review the current status", actionLabel: "Review" };
+  renderOperationalBanner(banner, { ...notice, actionDisabled: true });
+  renderOperationalBanner(banner, notice);
+  assert.equal(banner.action.disabled, true);
+  renderOperationalBanner(banner, { ...notice, actionDisabled: false });
+  assert.equal(banner.action.disabled, false);
+});
+
+test("polling leaves both Codex usage recovery buttons disabled until the request settles", async t => {
+  const originalWindow = globalThis.window;
+  t.after(() => {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  });
+  globalThis.window = { confirm: () => true };
+
+  const $ = elements();
+  let complete;
+  const pending = new Promise(resolve => { complete = resolve; });
+  const requests = [];
+  const autoUpdate = createAutoUpdateUi({
+    $, state: { bootstrap: {} }, api: (path, options) => { requests.push({ path, options }); return pending; },
+    renderNativeReaderNotice() {}, renderTimelineActions() {}, setNoticeText() {}, showError(error) { throw error; },
+    humanize: String, formatTokenCount: String, formatDate: String,
+  });
+  const paused = { enabled: true, state: "usage_limit_paused" };
+  const timeline = $("#auto-update-timeline-settings");
+  const settings = $("#confirm-codex-usage-restored");
+  autoUpdate.renderAutoUpdateStatus(paused);
+  assert.equal(timeline.textContent, "Confirm usage restored");
+
+  const recovery = autoUpdate.confirmCodexUsageRestored();
+  assert.equal(timeline.disabled, true);
+  assert.equal(settings.disabled, true);
+  try {
+    autoUpdate.renderAutoUpdateStatus(paused);
+    void autoUpdate.confirmCodexUsageRestored();
+    assert.equal(timeline.disabled, true);
+    assert.equal(settings.disabled, true);
+    assert.equal(requests.length, 1);
+  } finally {
+    complete({ autoUpdate: { enabled: true, state: "idle" } });
+    await recovery;
+  }
+  assert.equal(timeline.disabled, false);
+  assert.equal(settings.disabled, false);
+  assert.deepEqual(requests, [{ path: "/api/auto-update/usage-limit/restore", options: { method: "POST" } }]);
+});
 
 test("journal banner restores from the capture owner and clears after confirmed archival while quota stays visible", async () => {
   const $ = elements();

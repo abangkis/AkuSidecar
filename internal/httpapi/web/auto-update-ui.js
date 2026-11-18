@@ -5,6 +5,8 @@ import { renderOperationalBanner } from "./operational-banner.js";
 export function createAutoUpdateUi({
   $, api, formatDate, formatSchedulerMoment, formatTokenCount, humanize, renderNativeReaderNotice, renderSession, renderTimelineActions, setNoticeText, setView, showError, sourceLabel, startPolling, state
 }) {
+  let restoringCodexUsage = false;
+
   function renderAutoUpdateStatus(status) {
     const capturePause = status?.sourceCapturePause;
     renderSourceCapturePause({ panel: $("#x-capture-pause"), detail: $("#x-capture-pause-detail") }, capturePause);
@@ -142,7 +144,7 @@ export function createAutoUpdateUi({
     if (reset) reset.disabled = Boolean(state.session);
     if (confirmRestored) {
       confirmRestored.classList.toggle("hidden", !usageLimitPaused);
-      confirmRestored.disabled = Boolean(state.session);
+      confirmRestored.disabled = restoringCodexUsage || Boolean(state.session);
     }
     if (runNow) runNow.disabled = Boolean(state.session) || !status.enabled || status.state === "running" || usageLimitPaused;
     renderTimelineActions();
@@ -157,6 +159,7 @@ export function createAutoUpdateUi({
           ? `${formatTokenCount(dailyRemaining)} quota remains; the next run is estimated at ${formatTokenCount(estimate)}. Increase or reset today’s local quota in Settings, or wait until ${formatDate(status.budgetResetAt)}.`
           : status.reason || "Automatic work is waiting for an available boundary.",
       actionLabel: usageLimitPaused ? "Confirm usage restored" : "Review Auto Update",
+      actionDisabled: restoringCodexUsage,
     } : null);
   }
 
@@ -246,11 +249,13 @@ export function createAutoUpdateUi({
   }
 
   async function confirmCodexUsageRestored() {
+    if (restoringCodexUsage) return;
     if (state.session) {
       showError(new Error("Finish or cancel the active check before confirming restored Codex usage."));
       return;
     }
     if (!window.confirm("Confirm that your Codex usage limit has been restored? Auto Update may resume immediately.")) return;
+    restoringCodexUsage = true;
     const buttons = [$("#confirm-codex-usage-restored"), $("#auto-update-timeline-settings")].filter(Boolean);
     for (const button of buttons) button.disabled = true;
     try {
@@ -264,6 +269,7 @@ export function createAutoUpdateUi({
     } catch (error) {
       showError(error);
     } finally {
+      restoringCodexUsage = false;
       for (const button of buttons) button.disabled = Boolean(state.session);
     }
   }

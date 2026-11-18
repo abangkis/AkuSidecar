@@ -127,11 +127,21 @@ test("maintenance keeps saved permission but requires an explicit epoch-pinned R
 
 test("Timeline and Inbox warnings survive stale polls, clear on recovery, and only navigate to Settings", () => {
   const notices = [0, 1].map(() => ({ panel: new FakeElement(), title: new FakeElement(), detail: new FakeElement(), button: new FakeElement() }));
+  for (const notice of notices) {
+    const classes = new Set(["hidden"]);
+    notice.panel.classList = {
+      toggle: (name, enabled) => { if (enabled) classes.add(name); else classes.delete(name); },
+      contains: name => classes.has(name),
+    };
+    notice.button.textContent = "Review X settings";
+  }
   let settingsVisits = 0;
   const f = setup({ notices, onReviewSettings: () => settingsVisits++ });
   f.controller.reset(rememberedStatus({ state: "stopped", reason: "batch-failed", derivationAuthorized: false, cleanup: "uncertain" }));
   for (const notice of notices) {
     assert.equal(notice.panel.hidden, false);
+    assert.equal(notice.panel.classList.contains("hidden"), false);
+    assert.equal(notice.button.textContent, "Review X settings");
     assert.match(notice.detail.textContent, /cleanup could not be confirmed/);
     notice.button.click();
   }
@@ -143,7 +153,12 @@ test("Timeline and Inbox warnings survive stale polls, clear on recovery, and on
   assert.equal(notices[1].panel.hidden, false);
   assert.match(notices[1].title.textContent, /unavailable/);
   f.controller.applyRead(f.controller.beginRead(), rememberedStatus());
-  assert(notices.every(item => item.panel.hidden));
+  for (const notice of notices) {
+    assert.equal(notice.panel.hidden, true);
+    assert.equal(notice.panel.classList.contains("hidden"), true);
+    assert.equal(notice.title.textContent, "");
+    assert.equal(notice.detail.textContent, "");
+  }
   f.controller.reset(rememberedStatus({ state: "stopped", reason: "batch-failed", derivationAuthorized: false }));
   f.setContext({ epoch: "epoch-b", development: true });f.controller.beginRead();
   assert(notices.every(item => item.panel.hidden), "previous epoch must not supply failure state");

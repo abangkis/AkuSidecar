@@ -61,3 +61,40 @@ test('IG saved choice is restored only from fresh server status after an epoch c
   assert.match(dom.detail.textContent,/saved/);assert.match(dom.detail.textContent,/verification/);
   assert.equal(calls.length,0);controls.destroy();
 });
+
+test('IG trial shows the same retry and stale notices in Timeline and Inbox and opens only Settings', () => {
+  const dom = Object.fromEntries(['panel', 'status', 'detail', 'consent', 'startButton', 'stopButton', 'feedback'].map(key => [key, new Element()]));
+  const notices = ['timeline', 'inbox'].map(() => {
+    const banner = { panel: new Element(), title: new Element(), detail: new Element(), button: new Element() };
+    banner.button.textContent = 'Review IG trial';
+    return banner;
+  });
+  let visits = 0;
+  const calls = [];
+  const controls = createInstagramTrialControls({
+    ...dom, notices, readContext: () => context, readActiveSources: () => ['instagram', 'x'],
+    onReviewSettings: () => visits++, api: (...args) => calls.push(args),
+  });
+  controls.reset(status({ state: 'stopped', reason: 'batch-failed', rememberedPermission: true,
+    cleanup: 'verified', manualRetryAvailable: true }));
+  for (const banner of notices) {
+    assert.equal(banner.panel.hidden, false);
+    assert.equal(banner.title.textContent, 'IG capture failed; manual retry is available');
+    assert.match(banner.detail.textContent, /Retry IG in Settings/);
+    assert.equal(banner.button.textContent, 'Review IG trial');
+    banner.button.emit('click');
+  }
+  assert.equal(visits, 2);
+  assert.deepEqual(calls, []);
+
+  controls.rejectRead(controls.beginRead());
+  for (const banner of notices) {
+    assert.equal(banner.panel.hidden, false);
+    assert.equal(banner.title.textContent, 'IG status unavailable');
+  }
+  controls.applyRead(controls.beginRead(), status({ state: 'ready', reason: '', rememberedPermission: true, derivationAuthorized: true }));
+  assert(notices.every(banner => banner.panel.hidden && banner.detail.textContent === ''));
+  controls.destroy();
+  notices[0].button.emit('click');
+  assert.equal(visits, 2);
+});

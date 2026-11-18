@@ -1,4 +1,5 @@
 import { setSettingsClass, setSettingsText } from "./settings-render.js";
+import { renderOperationalBanner } from "./operational-banner.js";
 
 const X_DAILY_START = "/api/development/x-daily/start";
 const X_DAILY_STOP = "/api/development/x-daily/stop";
@@ -297,12 +298,7 @@ export function createDailySourceControls({
     setSettingsClass(status, `x-daily-status${view.visible ? "" : " x-daily-status-hidden"}`);
     setSettingsText(detail, copy(displayedDetail));
     const notice = deriveNotice(latestStatus, context, readActiveSources(), needsRefresh);
-    for (const item of notices) {
-      setHidden(item.panel, !notice.visible);
-      item.panel?.classList?.toggle("hidden", !notice.visible);
-      setSettingsText(item.title, notice.title);
-      setSettingsText(item.detail, notice.detail);
-    }
+    for (const item of notices) renderOperationalBanner(item, notice);
   }
 
   function beginRead() {
@@ -486,8 +482,7 @@ export function createDailySourceControls({
       stopButton?.removeEventListener?.("click", onStopClick);
       for (const item of notices) {
         item.button?.removeEventListener?.("click", onReviewClick);
-        setHidden(item.panel, true);
-        item.panel?.classList?.toggle("hidden", true);
+        renderOperationalBanner(item, null);
       }
     },
   };

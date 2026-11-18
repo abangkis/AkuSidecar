@@ -1,7 +1,9 @@
 import { setSettingsText } from "./settings-render.js";
 
 export function renderOperationalBanner({ panel, title, detail, action }, notice) {
-  panel.classList.toggle("hidden", !notice);
+  const hidden = !notice || notice.visible === false;
+  panel?.classList?.toggle("hidden", hidden);
+  if (panel && panel.hidden !== hidden) panel.hidden = hidden;
   if (!notice) return;
 
   setSettingsText(title, notice.title);
@@ -9,6 +11,6 @@ export function renderOperationalBanner({ panel, title, detail, action }, notice
   if (action) {
     action.hidden = !notice.actionLabel;
     if (notice.actionLabel) setSettingsText(action, notice.actionLabel);
-    action.disabled = Boolean(notice.actionDisabled);
+    if (typeof notice.actionDisabled === "boolean") action.disabled = notice.actionDisabled;
   }
 }
