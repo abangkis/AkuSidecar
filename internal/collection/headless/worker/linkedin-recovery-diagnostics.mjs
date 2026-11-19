@@ -5,6 +5,38 @@ const componentKinds = ['messaging', 'feed_sort', 'post', 'navigation', 'header'
 const actionKinds = ['post_link', 'save_post', 'report_post', 'account', 'message', 'feed_order', 'navigation', 'dismiss'];
 const count = (value, maximum) => Number.isSafeInteger(value) && value >= 0 && value <= maximum;
 
+const validScrollTop = value => Number.isFinite(value) && value >= 0 && value <= 10_000_000;
+
+function projectGeometryPoint(point) {
+  const scrollTop = ownValue(point, 'scrollTop');
+  const gapY = ownValue(point, 'gapY');
+  const correctedGapY = ownValue(point, 'correctedGapY');
+  if (!validScrollTop(scrollTop) || !Number.isFinite(gapY) || Math.abs(gapY) > 16_384 ||
+      (correctedGapY !== undefined && (!Number.isFinite(correctedGapY) || Math.abs(correctedGapY) > 16_384))) return null;
+  return { scrollTop, gapY, ...(correctedGapY !== undefined ? { correctedGapY } : {}) };
+}
+
+export function projectLinkedInAnchorGeometrySamples(snapshot, snapshotIndex = null) {
+  if (ownValue(snapshot, 'source') !== 'linkedin') return {};
+  const entries = ownValue(snapshot, 'linkedinAnchorGeometrySamples');
+  if (!Array.isArray(entries) || entries.length === 0 || entries.length > 8) return {};
+  const projected = [];
+  for (let i = 0; i < entries.length; i++) {
+    const entry = ownValue(entries, String(i));
+    const reportedSnapshot = ownValue(entry, 'snapshotIndex');
+    const candidateIndex = ownValue(entry, 'candidateIndex');
+    const scrollTopAtClick = ownValue(entry, 'scrollTopAtClick');
+    const rawFirst = ownValue(entry, 'first'), rawLast = ownValue(entry, 'last');
+    const first = projectGeometryPoint(rawFirst), last = projectGeometryPoint(rawLast);
+    if ((reportedSnapshot !== null && !count(reportedSnapshot, 1_000_000)) || !count(candidateIndex, 1_000_000) ||
+        !validScrollTop(scrollTopAtClick) || (first === null) !== (last === null) ||
+        (!first && (rawFirst !== null || rawLast !== null))) return {};
+    projected.push({ snapshotIndex: count(snapshotIndex, 1_000_000) ? snapshotIndex : reportedSnapshot,
+      candidateIndex, scrollTopAtClick, first, last });
+  }
+  return { linkedinAnchorGeometrySamples: projected };
+}
+
 export function projectLinkedInAnchorMismatchPolls(snapshot, snapshotIndex = null) {
   if (ownValue(snapshot, 'source') !== 'linkedin') return {};
   const entries = ownValue(snapshot, 'linkedinAnchorMismatchPolls');

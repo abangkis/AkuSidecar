@@ -14,6 +14,7 @@ import (
 const CoverageKey = "linkedinRecoveryBlockers"
 const permalinkFailureKey = "linkedinPermalinkRecoveryFailures"
 const anchorMismatchKey = "linkedinAnchorMismatchPolls"
+const anchorGeometryKey = "linkedinAnchorGeometrySamples"
 
 type permalinkFailure struct {
 	SnapshotIndex  *int   `json:"snapshotIndex"`
@@ -33,6 +34,20 @@ type anchorMismatch struct {
 	Persistence          string `json:"persistence"`
 	VerticalGapPolls     *int   `json:"verticalGapPolls,omitempty"`
 	VerticalOverlapPolls *int   `json:"verticalOverlapPolls,omitempty"`
+}
+
+type anchorGeometryPoint struct {
+	ScrollTop     *float64 `json:"scrollTop"`
+	GapY          *float64 `json:"gapY"`
+	CorrectedGapY *float64 `json:"correctedGapY,omitempty"`
+}
+
+type anchorGeometry struct {
+	SnapshotIndex    *int                 `json:"snapshotIndex"`
+	CandidateIndex   *int                 `json:"candidateIndex"`
+	ScrollTopAtClick *float64             `json:"scrollTopAtClick"`
+	First            *anchorGeometryPoint `json:"first"`
+	Last             *anchorGeometryPoint `json:"last"`
 }
 
 var permalinkFailureReasons = map[string][]string{
@@ -85,7 +100,8 @@ func ProjectCoverage(source domain.Source, coverage map[string]any) map[string]a
 	value, exists := coverage[CoverageKey]
 	failures, hasFailures := coverage[permalinkFailureKey]
 	anchorPolls, hasAnchorPolls := coverage[anchorMismatchKey]
-	if !exists && !hasFailures && !hasAnchorPolls {
+	geometry, hasGeometry := coverage[anchorGeometryKey]
+	if !exists && !hasFailures && !hasAnchorPolls && !hasGeometry {
 		return coverage
 	}
 	result := maps.Clone(coverage)
@@ -93,7 +109,15 @@ func ProjectCoverage(source domain.Source, coverage map[string]any) map[string]a
 		delete(result, CoverageKey)
 		delete(result, permalinkFailureKey)
 		delete(result, anchorMismatchKey)
+		delete(result, anchorGeometryKey)
 		return result
+	}
+	if hasGeometry {
+		if validated := projectAnchorGeometry(geometry); validated != nil {
+			result[anchorGeometryKey] = validated
+		} else {
+			delete(result, anchorGeometryKey)
+		}
 	}
 	if hasAnchorPolls {
 		if validated := projectAnchorMismatchPolls(anchorPolls); validated != nil {
@@ -139,6 +163,34 @@ func ProjectCoverage(source domain.Source, coverage map[string]any) map[string]a
 		projected[index] = entry
 	}
 	result[CoverageKey] = projected
+	return result
+}
+
+func projectAnchorGeometry(value any) []anchorGeometry {
+	raw, err := json.Marshal(value)
+	if err != nil || len(raw) > 4096 {
+		return nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var result []anchorGeometry
+	if decoder.Decode(&result) != nil || len(result) == 0 || len(result) > 8 {
+		return nil
+	}
+	validScroll := func(value *float64) bool {
+		return value != nil && *value >= 0 && *value <= 10_000_000
+	}
+	validPoint := func(point *anchorGeometryPoint) bool {
+		return point == nil || validScroll(point.ScrollTop) && point.GapY != nil && *point.GapY >= -16_384 && *point.GapY <= 16_384 &&
+			(point.CorrectedGapY == nil || *point.CorrectedGapY >= -16_384 && *point.CorrectedGapY <= 16_384)
+	}
+	for _, entry := range result {
+		if (entry.SnapshotIndex != nil && !countWithin(entry.SnapshotIndex, 1_000_000)) ||
+			!countWithin(entry.CandidateIndex, 1_000_000) || !validScroll(entry.ScrollTopAtClick) ||
+			(entry.First == nil) != (entry.Last == nil) || !validPoint(entry.First) || !validPoint(entry.Last) {
+			return nil
+		}
+	}
 	return result
 }
 

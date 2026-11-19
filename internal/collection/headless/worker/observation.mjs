@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import { projectLinkedInRecoveryBlockers, projectLinkedInPermalinkRecoveryFailures,
-  projectLinkedInAnchorMismatchPolls } from './linkedin-recovery-diagnostics.mjs';
+  projectLinkedInAnchorMismatchPolls, projectLinkedInAnchorGeometrySamples } from './linkedin-recovery-diagnostics.mjs';
 
-export { projectLinkedInRecoveryBlockers, projectLinkedInPermalinkRecoveryFailures, projectLinkedInAnchorMismatchPolls };
+export { projectLinkedInRecoveryBlockers, projectLinkedInPermalinkRecoveryFailures,
+  projectLinkedInAnchorMismatchPolls, projectLinkedInAnchorGeometrySamples };
 
 const SOURCE_READINESS_STATES = new Set(['source_unavailable', 'login_required',
   'feed_ready', 'feed_empty', 'feed_hydrating', 'loading', 'feed_not_visible', 'selector_mismatch', 'page_shell']);
@@ -324,6 +325,9 @@ export function toObservation({ source, requestedUrl, snapshots, provenance, cap
   const linkedinAnchorMismatchPolls = source === 'linkedin'
     ? snapshots.flatMap((snapshot, index) =>
       projectLinkedInAnchorMismatchPolls(snapshot, index).linkedinAnchorMismatchPolls ?? []).slice(0, 8) : [];
+  const linkedinAnchorGeometrySamples = source === 'linkedin'
+    ? snapshots.flatMap((snapshot, index) =>
+      projectLinkedInAnchorGeometrySamples(snapshot, index).linkedinAnchorGeometrySamples ?? []).slice(0, 8) : [];
   const domainSnapshots = snapshots.map((snapshot, index) => {
     const previousIds = new Set(snapshots.slice(0, index).flatMap(value => (value.posts || []).map(post => post.id)));
     const posts = Array.isArray(snapshot.posts) ? snapshot.posts.slice(0, 20) : [];
@@ -387,6 +391,7 @@ export function toObservation({ source, requestedUrl, snapshots, provenance, cap
         ? { linkedinRecoveryBlockers: snapshots.flatMap((snapshot, index) => projectLinkedInRecoveryBlockers(snapshot, index).linkedinRecoveryBlockers ?? []).slice(0, 8) } : {}),
       ...(linkedinPermalinkRecoveryFailures.length ? { linkedinPermalinkRecoveryFailures } : {}),
       ...(linkedinAnchorMismatchPolls.length ? { linkedinAnchorMismatchPolls } : {}),
+      ...(linkedinAnchorGeometrySamples.length ? { linkedinAnchorGeometrySamples } : {}),
       ...(source === 'x' && last.xObserverRegistration ? { xResponseObserver: {
         registration: last.xObserverRegistration,
         diagnostics: last.xResponseObserver ?? null,

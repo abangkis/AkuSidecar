@@ -7,7 +7,7 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {registeredScriptsForSources} from '../../AkuBridge/source-access-policy.js';
 import {sourceAssets} from '../internal/collection/headless/worker/worker.mjs';
 import {projectLinkedInRecoveryBlockers,projectLinkedInPermalinkRecoveryFailures,
-  projectLinkedInAnchorMismatchPolls} from '../internal/collection/headless/worker/observation.mjs';
+  projectLinkedInAnchorMismatchPolls,projectLinkedInAnchorGeometrySamples} from '../internal/collection/headless/worker/observation.mjs';
 
 const workspace=fileURLToPath(new URL('../../',import.meta.url));
 const bridge=join(workspace,'AkuBridge');
@@ -48,7 +48,7 @@ function browserFixture({assets,cases,mode,shadow,gate,source,canonicalUrl,probe
   // Compare capture behavior between runs. Check timing-sensitive anchor poll
   // diagnostics separately because sampling may differ between browser runs.
   const stable=value=>JSON.parse(JSON.stringify(value,(key,item)=>
-    ['sharedDOMShadow','elapsedMs','waitMs','linkedinAnchorMismatchPolls'].includes(key)?undefined:item));
+    ['sharedDOMShadow','elapsedMs','waitMs','linkedinAnchorMismatchPolls','linkedinAnchorGeometrySamples'].includes(key)?undefined:item));
   return (async()=>{
     const rows=[];
     for(const item of cases){
@@ -75,7 +75,8 @@ function browserFixture({assets,cases,mode,shadow,gate,source,canonicalUrl,probe
           observation=capture.observation;
           if(item.secondSnapshot && observation.snapshots.length!==2)throw Error('Fixture did not capture both Windowed snapshots');
           if(observation.snapshots.some(snapshot=>Object.hasOwn(snapshot,'linkedinRecoveryBlockers')||
-            Object.hasOwn(snapshot,'linkedinPermalinkRecoveryFailures')||Object.hasOwn(snapshot,'linkedinAnchorMismatchPolls'))){
+            Object.hasOwn(snapshot,'linkedinPermalinkRecoveryFailures')||Object.hasOwn(snapshot,'linkedinAnchorMismatchPolls')||
+            Object.hasOwn(snapshot,'linkedinAnchorGeometrySamples'))){
             throw Error('Windowed observation snapshots must conform to the strict Sidecar schema');
           }
           if(shadow && !item.failProbe && JSON.stringify(observation.coverage.sharedDOMShadow)!==JSON.stringify(probe.readiness.sharedDOMShadow))throw Error('Windowed projection lost shadow');
@@ -83,12 +84,14 @@ function browserFixture({assets,cases,mode,shadow,gate,source,canonicalUrl,probe
         rows.push({name:item.name,diagnostic:probe.readiness.sharedDOMShadow??null,
           recoveryClicks,recoveryBlockers:observation?.coverage?.linkedinRecoveryBlockers??[],
           anchorPolls:observation?.coverage?.linkedinAnchorMismatchPolls??[],
+          anchorGeometry:observation?.coverage?.linkedinAnchorGeometrySamples??[],
           recoveryFailures:observation?.coverage?.linkedinPermalinkRecoveryFailures??[],baseline:stable({readiness:probe.readiness,observation})});
       }else{
         const snapshot=item.secondSnapshot?await globalThis.XHeadlessPoC.collect(0):await globalThis.XHeadlessPoC.collect();
         const last=item.secondSnapshot?await globalThis.XHeadlessPoC.collect(1):snapshot;
         rows.push({name:item.name,diagnostic:snapshot.sharedDOMShadow??null,recoveryClicks,recoveryBlockers:last.linkedinRecoveryBlockers??[],
           anchorPolls:last.linkedinAnchorMismatchPolls??[],
+          anchorGeometry:last.linkedinAnchorGeometrySamples??[],
           recoveryFailures:last.linkedinPermalinkRecoveryFailures??[],baseline:stable(last)});
       }
     }
@@ -120,7 +123,8 @@ export async function runDOMShadowParity({chrome,output,source,canonicalUrl,prob
       const file=join(scratch,label+'.html');
       await writeFile(file,'<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\' \'unsafe-eval\'; style-src \'unsafe-inline\'"><base href="'+canonicalUrl+'"><style>'+style+'</style><main></main><pre id="result"></pre><script>'+script.replaceAll('</script','<\\/script')+'</script>');
       const temp=join(scratch,label+'-temp');await mkdir(temp);
-      const run=spawnSync(chrome,['--headless','--dump-dom','--virtual-time-budget=40000','--disable-background-networking','--disable-component-update',
+      const virtualTimeBudget=source==='linkedin'?50000:40000;
+      const run=spawnSync(chrome,['--headless','--dump-dom','--virtual-time-budget='+virtualTimeBudget,'--disable-background-networking','--disable-component-update',
         '--no-first-run','--no-default-browser-check','--host-resolver-rules=MAP * ~NOTFOUND','--window-size=1200,1000',
         '--user-data-dir='+join(scratch,label+'-profile'),pathToFileURL(file).href],
       {windowsHide:true,timeout:45000,encoding:'utf8',maxBuffer:32*1024*1024,env:{...process.env,TEMP:temp,TMP:temp}});
@@ -193,6 +197,14 @@ export async function runDOMShadowParity({chrome,output,source,canonicalUrl,prob
           assert.doesNotMatch(JSON.stringify(values),new RegExp(privacyPattern));
         }
       }
+      if(spec.anchorGeometry){
+        const key='linkedinAnchorGeometrySamples';
+        const windowed=projectLinkedInAnchorGeometrySamples({source,[key]:w.anchorGeometry},0)[key]??[];
+        const headless=projectLinkedInAnchorGeometrySamples({source,[key]:h.anchorGeometry},0)[key]??[];
+        assert.deepEqual(windowed,spec.anchorGeometry,spec.name+' Windowed geometry');
+        assert.deepEqual(headless,spec.anchorGeometry,spec.name+' Headless geometry');
+        assert.doesNotMatch(JSON.stringify([w.anchorGeometry,h.anchorGeometry]),new RegExp(privacyPattern));
+      }
       if(Object.hasOwn(spec,'recoveryBlocker')){
         const snapshotIndex=spec.secondSnapshot?1:0;
         const native=projectLinkedInRecoveryBlockers({source,linkedinRecoveryBlockers:h.recoveryBlockers},snapshotIndex).linkedinRecoveryBlockers??[];
@@ -225,6 +237,7 @@ export async function runDOMShadowParity({chrome,output,source,canonicalUrl,prob
         if(spec.recoveryAttempt){assert.ok(w.recoveryClicks>0,spec.name+' Windowed recovery reached');assert.ok(h.recoveryClicks>0,spec.name+' Headless recovery reached');}
       }
       return {name:spec.name,diagnostic:w.diagnostic,
+        ...(spec.anchorGeometry?{anchorGeometry:w.anchorGeometry}:{}),
         ...(spec.anchorPolls?{anchorPolls:{windowed:w.anchorPolls,headless:h.anchorPolls}}:{}),
         ...(spec.recoveryFailures?{batchScroll:spec.batchScroll,recoveryFailures:w.recoveryFailures}:{}),
         ...(Object.hasOwn(spec,'recoveryBlocker')?{recoveryBlockers:w.recoveryBlockers}:{}),

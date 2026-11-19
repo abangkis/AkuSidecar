@@ -231,6 +231,13 @@ func TestBridgeCommandsLinkedInRecoveryBlockersCoverage(t *testing.T) {
 		t.Fatal(err)
 	}
 	observation.Coverage[anchorKey] = wantAnchorPolls
+	const geometryKey = "linkedinAnchorGeometrySamples"
+	var wantGeometry any
+	if err := json.Unmarshal([]byte(`[{"snapshotIndex":1,"candidateIndex":2,"scrollTopAtClick":219.5,
+		"first":{"scrollTop":220,"gapY":-8.5,"correctedGapY":-0.5},"last":{"scrollTop":221,"gapY":8}}]`), &wantGeometry); err != nil {
+		t.Fatal(err)
+	}
+	observation.Coverage[geometryKey] = wantGeometry
 	target := "/api/bridge/commands/" + command.ID + "/observation"
 	submit := func(payload any) *httptest.ResponseRecorder {
 		t.Helper()
@@ -266,6 +273,9 @@ func TestBridgeCommandsLinkedInRecoveryBlockersCoverage(t *testing.T) {
 	}
 	if got := stored[0].Coverage[anchorKey]; !reflect.DeepEqual(got, wantAnchorPolls) {
 		t.Fatalf("stored anchor polls = %#v, want %#v", got, wantAnchorPolls)
+	}
+	if got := stored[0].Coverage[geometryKey]; !reflect.DeepEqual(got, wantGeometry) {
+		t.Fatalf("stored anchor geometry = %#v, want %#v", got, wantGeometry)
 	}
 	if len(stored[0].Snapshots) != 2 || stored[0].Snapshots[1].Index != 1 {
 		t.Fatalf("stored snapshots lost the diagnostic reference: %+v", stored[0].Snapshots)

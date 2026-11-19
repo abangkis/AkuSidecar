@@ -18,9 +18,15 @@ const wulfieShare='7528814955425382400';
 const wulfieIdentity={id:`linkedin:share:${wulfieShare}`,url:`https://www.linkedin.com/feed/update/urn:li:share:${wulfieShare}/`};
 const yosShare='7528960160740859904';
 const shikharShare='7529025358638067714';
+const ivoShare='7524891208469463040';
 const scrollLayout=(top,post)=>`<div style="height:${top}px"></div>${post}<div style="height:950px"></div>`;
 const shareIdentity=id=>({id:`linkedin:share:${id}`,url:`https://www.linkedin.com/feed/update/urn:li:share:${id}/`,
   sources:{windowed:'embed_urn',headless:'adapter_recovery'}});
+const anchorGeometry=(atClick,firstGap,lastGap=firstGap,lastScroll=atClick,correctedGapY)=>[{
+  snapshotIndex:0,candidateIndex:0,scrollTopAtClick:atClick,
+  first:{scrollTop:atClick,gapY:firstGap,...(correctedGapY===undefined?{}:{correctedGapY})},
+  last:{scrollTop:lastScroll,gapY:lastGap,...(correctedGapY===undefined?{}:{correctedGapY})},
+}];
 
 const adPromoUrl='https://www.linkedin.com/campaignmanager/claim-promo/?companyId=123&incentiveId=456';
 const premiumPromoUrl='https://www.linkedin.com/premium/products/?upsellSlotId=fixture';
@@ -32,11 +38,14 @@ const promoMenus=sidebarMenu(adPromoUrl,'Claim ad credits')+sidebarMenu(premiumP
 
 function wulfieCard({postId=wulfieShare,menuOwner='',expanded=true,offset=0,competingTrigger=false,existingMenus=false,keepOpen=false,
   author='Wulfie Bain',ownerAction='',templateID='fixture-menu',sameAuthorControl=false,embedVisible=true,
-  verticalOffset=0,settleAfterMs=0,removeMenuAfterMs=0}={}) {
-  const menu=`<div role="menu" ${menuOwner ? `aria-labelledby="${menuOwner}"` : ''}>
+  verticalOffset=0,settleAfterMs=0,settleScrollBy=0,removeMenuAfterMs=0,
+  placement='',popoverPadding=12,unfollowAction=''}={}) {
+  const menu=`<div role="menu" ${menuOwner ? `aria-labelledby="${menuOwner}"` : ''}
+    ${placement?`style="height:${360-2*popoverPadding}px"`:''}>
     <button role="menuitem">Copy link to post</button>
     <a role="menuitem" ${embedVisible?'':'hidden'} href="/preload/embed-modal/?targetUrn=urn%3Ali%3Ashare%3A${postId}">Embed this post</a>
     ${ownerAction ? `<button role="menuitem">Hide posts by ${ownerAction}</button>` : ''}
+    ${unfollowAction ? `<button role="menuitem">Unfollow ${unfollowAction}</button>` : ''}
   </div>`;
   const toggle=`onclick="const current = document.querySelector('[data-fixture-menu-portal]');
     if (current) {
@@ -46,17 +55,22 @@ function wulfieCard({postId=wulfieShare,menuOwner='',expanded=true,offset=0,comp
       const anchor = this.getBoundingClientRect();
       const portal = document.getElementById('${templateID}').content.firstElementChild.cloneNode(true);
       const popover = portal.firstElementChild;
-      popover.style.top = (anchor.bottom + 8 + ${verticalOffset}) + 'px';
+      popover.style.top = (${placement==='above'?'Math.round(anchor.top) - 360':placement==='below'?'Math.round(anchor.bottom)':'anchor.bottom + 8'} + ${verticalOffset}) + 'px';
       popover.style.left = (anchor.right - 256 + ${offset}) + 'px';
       document.body.append(portal);
       popover.showPopover();
-      ${settleAfterMs?`setTimeout(() => { popover.style.top = (anchor.bottom + 8) + 'px'; popover.style.left = (anchor.right - 256) + 'px'; }, ${settleAfterMs});`:''}
+      ${settleAfterMs?`setTimeout(() => {
+        ${settleScrollBy?`document.getElementById('workspace').scrollTop += ${settleScrollBy};`:''}
+        const settledAnchor = this.getBoundingClientRect();
+        popover.style.top = (settledAnchor.bottom + 8) + 'px';
+        popover.style.left = (settledAnchor.right - 256) + 'px';
+      }, ${settleAfterMs});`:''}
       ${removeMenuAfterMs?`setTimeout(() => portal.remove(), ${removeMenuAfterMs});`:''}
     }"`;
   return `<div data-testid="mainFeed" role="list"><div id="expanded-fixture-feed-entry">
     <div role="listitem" style="position:relative;width:600px;min-height:100px">
       <a href="/in/wulfie-bain/">${author}</a>
-      <button aria-label="Open control menu for post by ${author}" style="position:absolute;right:5px;top:8px" ${existingMenus?'':toggle}>Menu</button>
+      <button aria-label="Open control menu for post by ${author}" style="position:absolute;right:5px;top:8px${placement?';width:32px;height:32px':''}" ${existingMenus?'':toggle}>Menu</button>
       ${text}
       <button>Comment</button><button>Repost</button>
     </div>
@@ -64,7 +78,7 @@ function wulfieCard({postId=wulfieShare,menuOwner='',expanded=true,offset=0,comp
   <nav><button id="foreign-control" ${competingTrigger ? 'aria-label="Open control menu for post by Another Author" aria-expanded="true"' : ''}>Private navigation menu</button></nav>
   ${sameAuthorControl ? `<button aria-label="Open control menu for post by ${author}">Private second card control</button>` : ''}
   <template id="${templateID}"><div data-floating-ui-portal data-fixture-menu-portal>
-    <div popover="manual" style="position:fixed;inset:auto;margin:0;border:0;width:256px;padding:0">${menu}</div>
+    <div popover="manual" style="position:fixed;inset:auto;margin:0;border:0;width:256px;padding:0${placement?`;box-sizing:border-box;height:360px;margin-top:8px;padding:${popoverPadding}px 0`:''}">${menu}</div>
   </div></template>
   ${existingMenus ? `<div role="menu" style="position:fixed;top:240px">${link(other)}</div>
     <div role="menu" style="position:fixed;top:290px">${link(other)}</div>` : ''}`;
@@ -83,10 +97,37 @@ const cases=[
     code:'no_valid_candidates',rejections:{missing_identity:1},
     captureIdentity:{...wulfieIdentity,sources:{windowed:'embed_urn',headless:'adapter_recovery'}},
     recoveryClickCount:2,reportCaptureIdentity:true},
+  {name:'Ivo above the button recovers its permalink with the measured wrapper margin',
+    body:scrollLayout(977.5,wulfieCard({author:'Ivo Setyadi',postId:ivoShare,placement:'above'})),
+    batchScroll:433,code:'no_valid_candidates',captureIdentity:shareIdentity(ivoShare),recoveryClickCount:2,
+    anchorPolls:[],anchorGeometry:anchorGeometry(433,-8.5,-8.5,433,-0.5),reportCaptureIdentity:true},
+  {name:'Ivo centered below the button recovers through normal anchor geometry',
+    body:scrollLayout(977.5,wulfieCard({author:'Ivo Setyadi',postId:ivoShare,placement:'below'})),
+    batchScroll:581,code:'no_valid_candidates',captureIdentity:shareIdentity(ivoShare),recoveryClickCount:2,
+    anchorGeometry:anchorGeometry(581,8.5),reportCaptureIdentity:true},
+  {name:'Margin correction does not admit an actually overlapping menu body',
+    body:scrollLayout(977.5,wulfieCard({author:'Ivo Setyadi',postId:ivoShare,placement:'above',popoverPadding:0})),
+    batchScroll:433,code:'no_valid_candidates',captureSequence:[null],recoveryClickCount:1,
+    anchorPolls:[{persistence:'repeated',vertical:true,overlap:true}],anchorGeometry:anchorGeometry(433,-8.5)},
+  {name:'Margin correction cannot override a foreign ARIA reference',
+    body:scrollLayout(977.5,wulfieCard({author:'Ivo Setyadi',postId:ivoShare,placement:'above',menuOwner:'foreign-control'})),
+    batchScroll:433,code:'no_valid_candidates',captureSequence:[null],recoveryClickCount:1,
+    anchorGeometry:[{snapshotIndex:0,candidateIndex:0,scrollTopAtClick:433,first:null,last:null}]},
+  ...['Ivo Setyadi','Putra Adhiguna'].map(author=>({
+    name:`Unfollow closes the owned ${author} menu after binding fails and the next card recovers`,
+    body:wulfieCard({author,unfollowAction:author,offset:-175,embedVisible:false,templateID:'first-menu'})+wulfieCard(),
+    code:'no_valid_candidates',captureSequence:[null,wulfieIdentity.id],recoveryClickCount:4,recoveryBlocker:null,
+  })),
+  {name:'Unfollow cannot override a conflicting Hide posts by author',
+    body:wulfieCard({author:'Ivo Setyadi',unfollowAction:'Ivo Setyadi',ownerAction:'Other Author',offset:-175}),
+    code:'no_valid_candidates',captureSequence:[null],recoveryClickCount:1},
+  {name:'Unfollow cannot close a menu when two buttons have the same author',
+    body:wulfieCard({author:'Ivo Setyadi',unfollowAction:'Ivo Setyadi',sameAuthorControl:true,offset:-175}),
+    code:'no_valid_candidates',captureSequence:[null],recoveryClickCount:1},
   {name:'Yos layout at batch scroll recovers the verified share URL with a visible control',
     body:scrollLayout(3254,wulfieCard({author:'Yos Vincenzo',postId:yosShare,ownerAction:'Yos Vincenzo'})),
     batchScroll:3059,code:'no_valid_candidates',captureIdentity:shareIdentity(yosShare),
-    recoveryClickCount:2,recoveryFailures:[],reportCaptureIdentity:true},
+    recoveryClickCount:2,recoveryFailures:[],reportCaptureIdentity:true,anchorGeometry:anchorGeometry(3059,8)},
   {name:'Yos layout at batch scroll diagnoses a clipped control and a misaligned popover',
     body:scrollLayout(3043,wulfieCard({author:'Yos Vincenzo',postId:yosShare,ownerAction:'Yos Vincenzo',offset:-60})),
     batchScroll:3059,code:'no_valid_candidates',captureSequence:[null],recoveryClickCount:2,
@@ -107,12 +148,13 @@ const cases=[
   {name:'Shikhar layout records persistent excessive vertical overlap',
     body:scrollLayout(3455,wulfieCard({author:'Shikhar Kwatra',postId:shikharShare,ownerAction:'Shikhar Kwatra',verticalOffset:-20})),
     batchScroll:3059,code:'no_valid_candidates',captureSequence:[null],recoveryClickCount:2,
-    anchorPolls:[{persistence:'repeated',vertical:true,overlap:true}]},
-  {name:'Shikhar layout records a two-axis mismatch that settles before permalink recovery',
+    anchorPolls:[{persistence:'repeated',vertical:true,overlap:true}],anchorGeometry:anchorGeometry(3059,-12)},
+  {name:'Shikhar layout records a two-axis mismatch that settles after the feed scrolls during polling',
     body:scrollLayout(3455,wulfieCard({author:'Shikhar Kwatra',postId:shikharShare,ownerAction:'Shikhar Kwatra',
-      offset:-60,verticalOffset:50,settleAfterMs:160})),
+      offset:-60,verticalOffset:50,settleAfterMs:160,settleScrollBy:91})),
     batchScroll:3059,code:'no_valid_candidates',captureIdentity:shareIdentity(shikharShare),recoveryClickCount:2,
-    reportCaptureIdentity:true,anchorPolls:[{persistence:'resolved',horizontal:true,vertical:true,gap:true}]},
+    reportCaptureIdentity:true,anchorPolls:[{persistence:'resolved',horizontal:true,vertical:true,gap:true}],
+    anchorGeometry:anchorGeometry(3059,58,8,3150)},
   {name:'Popover disappearing after one mismatch interrupts the polling sequence',
     body:wulfieCard({offset:-60,removeMenuAfterMs:20}),code:'no_valid_candidates',captureSequence:[null],recoveryClickCount:1,
     anchorPolls:[{persistence:'interrupted',horizontal:true}]},
@@ -264,7 +306,7 @@ const cases=[
 
 export async function runLinkedInShadowParity(chrome,output) {
   return runDOMShadowParity({chrome,output,source:'linkedin',canonicalUrl:'https://www.linkedin.com/feed/',probeGlobal:'AkuLinkedInDOMShadow',cases,
-    privacyPattern:`Private|1234567890123456789|9876543210987654321|${wulfieShare}|${yosShare}|${shikharShare}|Wulfie Bain|Yos Vincenzo|Shikhar Kwatra|licdn|linkedin:|fixture-author`,
+    privacyPattern:`Private|1234567890123456789|9876543210987654321|${wulfieShare}|${yosShare}|${shikharShare}|${ivoShare}|Wulfie Bain|Yos Vincenzo|Shikhar Kwatra|Ivo Setyadi|Putra Adhiguna|licdn|linkedin:|fixture-author`,
     style:'article,.feed-shared-update-v2,section{width:600px;min-height:100px}span{display:block}'});
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){

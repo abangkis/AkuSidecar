@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {projectLinkedInRecoveryBlockers, projectLinkedInPermalinkRecoveryFailures,
-  projectLinkedInAnchorMismatchPolls, toObservation} from '../observation.mjs';
+  projectLinkedInAnchorMismatchPolls, projectLinkedInAnchorGeometrySamples, toObservation} from '../observation.mjs';
 import {emptyCaptureDiagnostics} from '../capture.mjs';
 
 const sample = {kind:'dialog',selector:'role_dialog',aria:{labelledBy:'absent',controls:'absent',owns:'absent'},guardVisible:true,
@@ -9,6 +9,25 @@ const sample = {kind:'dialog',selector:'role_dialog',aria:{labelledBy:'absent',c
   ancestors:{inspected:0,complete:true,displayNone:false,visibilityHidden:false,opacityZero:false,hiddenAttribute:false,ariaHidden:false,inert:false}};
 const diagnostic = {code:'existing_surface',phase:'pre_recovery_guard',snapshotIndex:0,candidateIndex:0,menuCount:0,dialogCount:1,samples:[sample],complete:true};
 const snapshot = extra => ({source:'linkedin',posts:[],linkedinRecoveryBlockers:[diagnostic],...extra});
+
+test('anchor geometry retains paired recovery measurements and supports attempts without a panel',()=>{
+  const key='linkedinAnchorGeometrySamples';
+  const entry={snapshotIndex:0,candidateIndex:2,scrollTopAtClick:219.5,
+    first:{scrollTop:220,gapY:-2.25},last:{scrollTop:221,gapY:8}};
+  const noMenu={...entry,candidateIndex:3,first:null,last:null};
+  const valid=snapshot({[key]:[{...entry,author:'Private',first:{...entry.first,top:120}},noMenu]});
+  assert.deepEqual(projectLinkedInAnchorGeometrySamples(valid),{[key]:[entry,noMenu]});
+  for(const extra of [{first:null},{first:{scrollTop:220,gapY:20000}},{scrollTopAtClick:-1}]){
+    assert.deepEqual(projectLinkedInAnchorGeometrySamples(snapshot({[key]:[{...entry,...extra}]})),{});
+  }
+  assert.deepEqual(projectLinkedInAnchorGeometrySamples({...valid,source:'instagram'}),{});
+  assert.deepEqual(projectLinkedInAnchorGeometrySamples(snapshot({[key]:Array(9).fill(entry)})),{});
+  assert.deepEqual(emptyCaptureDiagnostics([valid]).samples[0][key],[entry,noMenu]);
+  const observation=toObservation({source:'linkedin',requestedUrl:'https://www.linkedin.com/feed/',
+    snapshots:[snapshot(),valid],capturedAt:'2026-11-17T00:00:00Z'});
+  assert.deepEqual(observation.coverage[key],[entry,noMenu].map(value=>({...value,snapshotIndex:1})));
+  assert.ok(observation.snapshots.every(value=>!Object.hasOwn(value,key)));
+});
 
 test('anchor poll diagnostics retain resolved mismatches and exclude invalid counts',()=>{
   const key='linkedinAnchorMismatchPolls';

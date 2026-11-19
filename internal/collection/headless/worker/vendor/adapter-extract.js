@@ -613,6 +613,7 @@
     const linkedinRecoveryBlockers=[];
     const linkedinPermalinkRecoveryFailures=[];
     const linkedinAnchorMismatchPolls=[];
+    const linkedinAnchorGeometrySamples=[];
     let targetFallbackStatus='not_needed';
     if(source==='instagram' && candidates.length===0) {
       const route=instagramIdentity(location.href);
@@ -642,6 +643,7 @@
             if(recovery?.blockerDiagnostic && linkedinRecoveryBlockers.length<8)linkedinRecoveryBlockers.push(recovery.blockerDiagnostic);
             if(recovery?.failureDiagnostic && linkedinPermalinkRecoveryFailures.length<8)linkedinPermalinkRecoveryFailures.push(recovery.failureDiagnostic);
             if(recovery?.anchorMismatchDiagnostic && linkedinAnchorMismatchPolls.length<8)linkedinAnchorMismatchPolls.push(recovery.anchorMismatchDiagnostic);
+            if(recovery?.anchorGeometryDiagnostic && linkedinAnchorGeometrySamples.length<8)linkedinAnchorGeometrySamples.push(recovery.anchorGeometryDiagnostic);
             if(adapter.validateRecoveredPermalink && !adapter.validateRecoveredPermalink(root,recovery))continue;
             const post=globalThis.AkuLinkedInPermalinkPolicy?.nativePostFromUrl(recovery?.url);
             if(post)bindings.set(root,{id:post.id,permalink:post.url,provenance:'adapter_recovery',recovery});
@@ -723,6 +725,7 @@
       ...(linkedinRecoveryBlockers.length ? {linkedinRecoveryBlockers} : {}),
       ...(linkedinPermalinkRecoveryFailures.length ? {linkedinPermalinkRecoveryFailures} : {}),
       ...(linkedinAnchorMismatchPolls.length ? {linkedinAnchorMismatchPolls} : {}),
+      ...(linkedinAnchorGeometrySamples.length ? {linkedinAnchorGeometrySamples} : {}),
       ...shadow,
       ...(sourceReadinessAssessment ? { sourceReadinessAssessment } : {}),
       candidateDiagnostics:{structuralCandidates:discovery.readinessCandidates?.length ?? discovery.semanticCandidateCount ?? 0,

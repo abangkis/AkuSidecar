@@ -1,6 +1,7 @@
 import { applyQuoteRecovery, probeQuoteNavigation } from './quote-navigation.mjs';
 import { canonicalSourceURL, captureError, toObservation, projectSourceReadiness, projectDOMShadow,
-  projectLinkedInRecoveryBlockers, projectLinkedInPermalinkRecoveryFailures, projectLinkedInAnchorMismatchPolls } from './observation.mjs';
+  projectLinkedInRecoveryBlockers, projectLinkedInPermalinkRecoveryFailures, projectLinkedInAnchorMismatchPolls,
+  projectLinkedInAnchorGeometrySamples } from './observation.mjs';
 import { sourceProvenance } from './provenance.mjs';
 import { resolveStructuredMedia } from './structured-media.mjs';
 import { resolveAdditionalSourceMedia, resolveInstagramNativeTarget, createInstagramVideoRecovery } from './additional-source-media.mjs';
@@ -517,6 +518,7 @@ export function emptyCaptureDiagnostics(snapshots) {
     ...projectLinkedInRecoveryBlockers(snapshot, snapshotIndex),
     ...projectLinkedInPermalinkRecoveryFailures(snapshot, snapshotIndex),
     ...projectLinkedInAnchorMismatchPolls(snapshot, snapshotIndex),
+    ...projectLinkedInAnchorGeometrySamples(snapshot, snapshotIndex),
     candidateCount:count(snapshot.candidateCount), rejected:count(snapshot.rejected),
     photoEvidence:{status:['not_photo_route','evidence_limit','photo_metadata_missing','conflicting_photo_binding','photo_owner_missing','photo_image_not_visible','verified_photo_media'].includes(snapshot.photoEvidence?.status)?snapshot.photoEvidence.status:null,
       postBinding:snapshot.photoEvidence?.postBinding==='unverified'?'unverified':null},
