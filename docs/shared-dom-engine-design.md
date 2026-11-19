@@ -62,6 +62,49 @@ The probe port belongs at the binding boundary. `ReadonlyDOMContext` is a
 read-only contract for trusted application adapters. It is not a sandbox for
 third-party code. The evaluator does not execute the probe or accept callbacks.
 
+## Card-first adapter contract
+
+The [CardDOMAdapter interface](../../AkuBridge/shared-dom-engine/card-dom-adapter.d.ts)
+is the migration target for all source adapters. Keep these three steps in order.
+
+1. **Find cards.** The adapter's `discoverCandidates` returns candidate roots
+   using platform-specific selectors and structure. The binding assigns a
+   sample-local reference and supplies visibility. Discovery can succeed when
+   the card has no native post ID.
+2. **Read evidence owned by each card.** The adapter's `readCardEvidence` returns
+   normalized claims and field availability scoped to that root. A repost,
+   quote, comment or neighboring card cannot supply the primary post's fields.
+   Source-specific interactive recovery is a separate, optional operation
+   owned by the adapter and controller. Revalidate the card before binding
+   recovered evidence.
+3. **Evaluate evidence.** The binding passes plain card evidence and the
+   versioned source policy to `assessDOM`. The evaluator applies shared identity,
+   ownership and field rules. The controller owns actions and final admission.
+
+LinkedIn's shadow probe uses the card evidence shape as an initial integration.
+The [rollout track](shared-dom-engine-roadmap.md#card-first-adapter-contract)
+covers production adoption and parity for every supported source.
+
+## Scoped locators and browser fixtures
+
+Adopt [Playwright locator semantics](https://playwright.dev/docs/locators) in the
+browser binding. A locator describes an element within an identified card and
+resolves against the current DOM before each action. Zero or multiple matches
+produce explicit outcomes. If a re-render
+replaces the card, require the same native identity or sufficient unchanged card
+evidence before operating on the replacement. Keep the query and ownership
+evidence source-specific.
+
+Use isolated, real-browser fixtures with sanitized markup, controlled time and
+scroll position, and identifiable expected outcomes. Run the same inputs through
+the actual Windowed and Headless entry points. Assert the intended target,
+permalink, rejected foreign candidates and action counts. Include a DOM
+replacement, a missing control and multiple matches, including two cards by the
+same author. The [locator and fixtures track](shared-dom-engine-roadmap.md#scoped-locators-and-browser-fixtures)
+owns this pilot and rollout.
+
+## Assessment input
+
 `AssessmentInput` contains a current sample, an optional earlier sample, and a
 versioned data-only evidence policy. The binding combines the controller's
 access, route, and sample scope with the adapter's structure and candidate

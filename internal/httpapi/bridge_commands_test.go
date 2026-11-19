@@ -203,6 +203,7 @@ func TestBridgeCommandsLinkedInRecoveryBlockersCoverage(t *testing.T) {
 		"menuCount":1,"dialogCount":null,"complete":false,"surfaceInspection":{"dialogCount":0,"complete":true,
 		"surfaces":[{"kind":"menu","slot":0,"trail":["navigation"],"actionHints":["account"],"actionCount":2,
 		"ownerRelation":"unknown","triggerBinding":"unresolved","triggerTrail":[],"triggerExpanded":null,"openState":"unknown","controlOcclusion":"target_hit"}]},
+		"priorRecoveryMenus":[{"slot":0,"attemptSnapshotIndex":0,"attemptCandidateIndex":0,"sameButton":true,"menuBound":false,"triggerExpanded":true,"cleanup":"still_visible"}],
 		"samples":[{"kind":"menu","selector":"role_menu",
 		"guardVisible":true,"aria":{"labelledBy":"absent","controls":"absent","owns":"absent"},
 		"hasArea":true,"intersectsViewport":true,"displayed":true,"cssVisible":true,"opacityPositive":true,
@@ -216,6 +217,20 @@ func TestBridgeCommandsLinkedInRecoveryBlockersCoverage(t *testing.T) {
 		t.Fatal(err)
 	}
 	observation.Coverage[blockerKey] = want
+	const failureKey = "linkedinPermalinkRecoveryFailures"
+	var wantFailures any
+	if err := json.Unmarshal([]byte(`[{"snapshotIndex":1,"candidateIndex":2,"stage":"ownership",
+		"reason":"anchor_mismatch","viewport":"visible","scrollRoot":"partial"}]`), &wantFailures); err != nil {
+		t.Fatal(err)
+	}
+	observation.Coverage[failureKey] = wantFailures
+	const anchorKey = "linkedinAnchorMismatchPolls"
+	var wantAnchorPolls any
+	if err := json.Unmarshal([]byte(`[{"snapshotIndex":1,"candidateIndex":2,"mismatchPolls":12,
+		"horizontalPolls":0,"verticalPolls":12,"persistence":"repeated","verticalGapPolls":9,"verticalOverlapPolls":3}]`), &wantAnchorPolls); err != nil {
+		t.Fatal(err)
+	}
+	observation.Coverage[anchorKey] = wantAnchorPolls
 	target := "/api/bridge/commands/" + command.ID + "/observation"
 	submit := func(payload any) *httptest.ResponseRecorder {
 		t.Helper()
@@ -245,6 +260,12 @@ func TestBridgeCommandsLinkedInRecoveryBlockersCoverage(t *testing.T) {
 	}
 	if got := stored[0].Coverage[blockerKey]; !reflect.DeepEqual(got, want) {
 		t.Fatalf("stored blocker diagnostics = %#v, want %#v", got, want)
+	}
+	if got := stored[0].Coverage[failureKey]; !reflect.DeepEqual(got, wantFailures) {
+		t.Fatalf("stored permalink failure diagnostics = %#v, want %#v", got, wantFailures)
+	}
+	if got := stored[0].Coverage[anchorKey]; !reflect.DeepEqual(got, wantAnchorPolls) {
+		t.Fatalf("stored anchor polls = %#v, want %#v", got, wantAnchorPolls)
 	}
 	if len(stored[0].Snapshots) != 2 || stored[0].Snapshots[1].Index != 1 {
 		t.Fatalf("stored snapshots lost the diagnostic reference: %+v", stored[0].Snapshots)

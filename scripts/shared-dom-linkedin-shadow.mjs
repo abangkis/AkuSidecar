@@ -11,6 +11,65 @@ const card=({body=text,links=link(primary),id=primary,author=true,tag='article',
   `<${tag} class="feed-shared-update-v2" ${id?`data-urn="urn:li:activity:${id}"`:''} ${attributes}>${author?'<span data-view-name="feed-actor-name">Private Author</span>':''}${links}${body}</${tag}>`;
 const post=card();
 const blockedPost=card({id:null,links:'',body:text+'<button id="post-control" aria-label="Open control menu for post by Private Author">Menu</button>'});
+
+// The live activity card has no native ID. Its unlabelled popover opens in a
+// document-level portal, aligned to the control that toggles aria-expanded.
+const wulfieShare='7528814955425382400';
+const wulfieIdentity={id:`linkedin:share:${wulfieShare}`,url:`https://www.linkedin.com/feed/update/urn:li:share:${wulfieShare}/`};
+const yosShare='7528960160740859904';
+const shikharShare='7529025358638067714';
+const scrollLayout=(top,post)=>`<div style="height:${top}px"></div>${post}<div style="height:950px"></div>`;
+const shareIdentity=id=>({id:`linkedin:share:${id}`,url:`https://www.linkedin.com/feed/update/urn:li:share:${id}/`,
+  sources:{windowed:'embed_urn',headless:'adapter_recovery'}});
+
+const adPromoUrl='https://www.linkedin.com/campaignmanager/claim-promo/?companyId=123&incentiveId=456';
+const premiumPromoUrl='https://www.linkedin.com/premium/products/?upsellSlotId=fixture';
+const sidebarMenu=(url,label,attributes='',additionalAction='')=>`<div role="menu" ${attributes} style="min-height:24px">
+  <div data-display-contents="true"><a href="${url}" tabindex="0" ${url===adPromoUrl?'role="menuitem"':''}>${label}</a></div>${additionalAction}
+</div>`;
+const sidebar=contents=>`<aside aria-label="Sidebar">${contents}</aside>`;
+const promoMenus=sidebarMenu(adPromoUrl,'Claim ad credits')+sidebarMenu(premiumPromoUrl,'Start Premium Page');
+
+function wulfieCard({postId=wulfieShare,menuOwner='',expanded=true,offset=0,competingTrigger=false,existingMenus=false,keepOpen=false,
+  author='Wulfie Bain',ownerAction='',templateID='fixture-menu',sameAuthorControl=false,embedVisible=true,
+  verticalOffset=0,settleAfterMs=0,removeMenuAfterMs=0}={}) {
+  const menu=`<div role="menu" ${menuOwner ? `aria-labelledby="${menuOwner}"` : ''}>
+    <button role="menuitem">Copy link to post</button>
+    <a role="menuitem" ${embedVisible?'':'hidden'} href="/preload/embed-modal/?targetUrn=urn%3Ali%3Ashare%3A${postId}">Embed this post</a>
+    ${ownerAction ? `<button role="menuitem">Hide posts by ${ownerAction}</button>` : ''}
+  </div>`;
+  const toggle=`onclick="const current = document.querySelector('[data-fixture-menu-portal]');
+    if (current) {
+      ${keepOpen?'':"this.setAttribute('aria-expanded','false'); current.remove();"}
+    } else {
+      ${expanded ? "this.setAttribute('aria-expanded','true');" : ''}
+      const anchor = this.getBoundingClientRect();
+      const portal = document.getElementById('${templateID}').content.firstElementChild.cloneNode(true);
+      const popover = portal.firstElementChild;
+      popover.style.top = (anchor.bottom + 8 + ${verticalOffset}) + 'px';
+      popover.style.left = (anchor.right - 256 + ${offset}) + 'px';
+      document.body.append(portal);
+      popover.showPopover();
+      ${settleAfterMs?`setTimeout(() => { popover.style.top = (anchor.bottom + 8) + 'px'; popover.style.left = (anchor.right - 256) + 'px'; }, ${settleAfterMs});`:''}
+      ${removeMenuAfterMs?`setTimeout(() => portal.remove(), ${removeMenuAfterMs});`:''}
+    }"`;
+  return `<div data-testid="mainFeed" role="list"><div id="expanded-fixture-feed-entry">
+    <div role="listitem" style="position:relative;width:600px;min-height:100px">
+      <a href="/in/wulfie-bain/">${author}</a>
+      <button aria-label="Open control menu for post by ${author}" style="position:absolute;right:5px;top:8px" ${existingMenus?'':toggle}>Menu</button>
+      ${text}
+      <button>Comment</button><button>Repost</button>
+    </div>
+  </div></div>
+  <nav><button id="foreign-control" ${competingTrigger ? 'aria-label="Open control menu for post by Another Author" aria-expanded="true"' : ''}>Private navigation menu</button></nav>
+  ${sameAuthorControl ? `<button aria-label="Open control menu for post by ${author}">Private second card control</button>` : ''}
+  <template id="${templateID}"><div data-floating-ui-portal data-fixture-menu-portal>
+    <div popover="manual" style="position:fixed;inset:auto;margin:0;border:0;width:256px;padding:0">${menu}</div>
+  </div></template>
+  ${existingMenus ? `<div role="menu" style="position:fixed;top:240px">${link(other)}</div>
+    <div role="menu" style="position:fixed;top:290px">${link(other)}</div>` : ''}`;
+}
+
 const cases=[
   {name:'native article',body:post,code:'ready'},
   {name:'native wrapper',body:card({tag:'div'}),code:'ready'},
@@ -20,6 +79,100 @@ const cases=[
   {name:'public activity anchor',body:card({id:null,links:`<a href="/posts/fixture-author_activity-${primary}-abc">Post</a>`}),code:'ready',captureIdentity:ownIdentity},
   {name:'action ancestor',body:`<section><span data-view-name="feed-actor-name">Private Author</span>${link(primary)}${text}<button>Like</button><button>Comment</button></section>`,code:'ready'},
   {name:'missing native identity',body:card({id:null,links:''}),code:'no_valid_candidates',rejections:{missing_identity:1}},
+  {name:'Wulfie card recovers the live share URL from its anchored popover',body:wulfieCard(),
+    code:'no_valid_candidates',rejections:{missing_identity:1},
+    captureIdentity:{...wulfieIdentity,sources:{windowed:'embed_urn',headless:'adapter_recovery'}},
+    recoveryClickCount:2,reportCaptureIdentity:true},
+  {name:'Yos layout at batch scroll recovers the verified share URL with a visible control',
+    body:scrollLayout(3254,wulfieCard({author:'Yos Vincenzo',postId:yosShare,ownerAction:'Yos Vincenzo'})),
+    batchScroll:3059,code:'no_valid_candidates',captureIdentity:shareIdentity(yosShare),
+    recoveryClickCount:2,recoveryFailures:[],reportCaptureIdentity:true},
+  {name:'Yos layout at batch scroll diagnoses a clipped control and a misaligned popover',
+    body:scrollLayout(3043,wulfieCard({author:'Yos Vincenzo',postId:yosShare,ownerAction:'Yos Vincenzo',offset:-60})),
+    batchScroll:3059,code:'no_valid_candidates',captureSequence:[null],recoveryClickCount:2,
+    recoveryFailures:[{snapshotIndex:0,candidateIndex:0,stage:'ownership',reason:'anchor_mismatch',viewport:'visible',scrollRoot:'partial'}],
+    anchorPolls:[{persistence:'repeated',horizontal:true}]},
+  {name:'Shikhar layout at batch scroll recovers the verified share URL with a visible control',
+    body:scrollLayout(3455,wulfieCard({author:'Shikhar Kwatra',postId:shikharShare,ownerAction:'Shikhar Kwatra'})),
+    batchScroll:3059,code:'no_valid_candidates',captureIdentity:shareIdentity(shikharShare),
+    recoveryClickCount:2,recoveryFailures:[],reportCaptureIdentity:true},
+  {name:'Shikhar layout at batch scroll diagnoses a bound menu without visible permalink evidence',
+    body:scrollLayout(3455,wulfieCard({author:'Shikhar Kwatra',postId:shikharShare,ownerAction:'Shikhar Kwatra',embedVisible:false})),
+    batchScroll:3059,code:'no_valid_candidates',captureSequence:[null],recoveryClickCount:2,
+    recoveryFailures:[{snapshotIndex:0,candidateIndex:0,stage:'menu_evidence',reason:'no_visible_urn_or_embed_action',viewport:'visible',scrollRoot:'visible'}]},
+  {name:'Shikhar layout records persistent vertical mismatch across polls',
+    body:scrollLayout(3455,wulfieCard({author:'Shikhar Kwatra',postId:shikharShare,ownerAction:'Shikhar Kwatra',verticalOffset:50})),
+    batchScroll:3059,code:'no_valid_candidates',captureSequence:[null],recoveryClickCount:2,
+    anchorPolls:[{persistence:'repeated',vertical:true,gap:true}]},
+  {name:'Shikhar layout records persistent excessive vertical overlap',
+    body:scrollLayout(3455,wulfieCard({author:'Shikhar Kwatra',postId:shikharShare,ownerAction:'Shikhar Kwatra',verticalOffset:-20})),
+    batchScroll:3059,code:'no_valid_candidates',captureSequence:[null],recoveryClickCount:2,
+    anchorPolls:[{persistence:'repeated',vertical:true,overlap:true}]},
+  {name:'Shikhar layout records a two-axis mismatch that settles before permalink recovery',
+    body:scrollLayout(3455,wulfieCard({author:'Shikhar Kwatra',postId:shikharShare,ownerAction:'Shikhar Kwatra',
+      offset:-60,verticalOffset:50,settleAfterMs:160})),
+    batchScroll:3059,code:'no_valid_candidates',captureIdentity:shareIdentity(shikharShare),recoveryClickCount:2,
+    reportCaptureIdentity:true,anchorPolls:[{persistence:'resolved',horizontal:true,vertical:true,gap:true}]},
+  {name:'Popover disappearing after one mismatch interrupts the polling sequence',
+    body:wulfieCard({offset:-60,removeMenuAfterMs:20}),code:'no_valid_candidates',captureSequence:[null],recoveryClickCount:1,
+    anchorPolls:[{persistence:'interrupted',horizontal:true}]},
+  {name:'Wulfie recovers its own menu while two static sidebar promotions are visible',
+    body:wulfieCard()+sidebar(promoMenus),code:'no_valid_candidates',recoveryBlocker:null,
+    captureIdentity:{...wulfieIdentity,sources:{windowed:'embed_urn',headless:'adapter_recovery'}},
+    recoveryClickCount:2,reportCaptureIdentity:true},
+  {name:'Sidebar promotions do not exempt a visible dialog',
+    body:wulfieCard()+sidebar(promoMenus)+'<div role="dialog" style="height:50px">Private dialog</div>',
+    code:'no_valid_candidates',recoveryBlocker:'role_dialog',recoveryMenuCount:0,
+    captureIdentity:{headlessRejection:'missing_identity'},recoveryClickCount:0},
+  {name:'Sidebar promotions do not exempt a separate player menu',
+    body:wulfieCard()+sidebar(promoMenus)+'<ul role="menu" class="vjs-menu-content"><li role="menuitem">Playback rate</li></ul>',
+    code:'no_valid_candidates',recoveryBlocker:'role_menu',recoveryMenuCount:1,
+    captureIdentity:{headlessRejection:'missing_identity'},recoveryClickCount:0},
+  ...[
+    ['similar path',sidebar(sidebarMenu('https://www.linkedin.com/premium/products/other','Private other product'))],
+    ['foreign origin',sidebar(sidebarMenu('https://foreign.test/premium/products/','Private foreign product'))],
+    ['promo link outside the sidebar',sidebarMenu(premiumPromoUrl,'Private external menu')],
+    ['extra action in promo menu',sidebar(sidebarMenu(premiumPromoUrl,'Private premium','','<button>Private action</button>'))],
+    ['promo destination under a named menu',sidebar(sidebarMenu(premiumPromoUrl,'Private premium','aria-labelledby="foreign-control"'))],
+  ].map(([label,body])=>({name:`Recovery still blocks ${label}`,body:wulfieCard()+body,code:'no_valid_candidates',
+    recoveryBlocker:'role_menu',recoveryMenuCount:1,captureIdentity:{headlessRejection:'missing_identity'},recoveryClickCount:0})),
+  {name:'Wulfie card rejects a menu labelled for another control',
+    body:wulfieCard({menuOwner:'foreign-control',postId:other}),
+    code:'no_valid_candidates',rejections:{missing_identity:1},
+    captureIdentity:{headlessRejection:'missing_identity'},recoveryClickCount:1,reportCaptureIdentity:true},
+  {name:'Wulfie card leaves two pre-existing menus alone',
+    body:wulfieCard({existingMenus:true}),code:'no_valid_candidates',rejections:{missing_identity:1},
+    captureIdentity:{headlessRejection:'missing_identity'},recoveryBlocker:'role_menu',
+    recoveryMenuCount:2,recoveryClickCount:0,reportCaptureIdentity:true},
+  {name:'Wulfie card rejects a portal when its control did not expand',body:wulfieCard({expanded:false,postId:other}),
+    code:'no_valid_candidates',captureIdentity:{headlessRejection:'missing_identity'},recoveryClickCount:1,reportCaptureIdentity:true},
+  {name:'Wulfie card rejects a portal anchored elsewhere despite expansion',body:wulfieCard({offset:-175,postId:other}),
+    code:'no_valid_candidates',captureIdentity:{headlessRejection:'missing_identity'},recoveryClickCount:1,reportCaptureIdentity:true},
+  {name:'Unbound popover from an earlier recovery attempt correlates across snapshots',
+    body:wulfieCard({offset:-175}),secondSnapshot:true,code:'no_valid_candidates',recoveryBlocker:'role_menu',recoveryClickCount:1,
+    priorRecoveryMenus:[{slot:0,attemptSnapshotIndex:0,attemptCandidateIndex:0,sameButton:true,menuBound:false,triggerExpanded:true,cleanup:'not_attempted'}]},
+  {name:'A bound menu that stays visible after cleanup correlates across snapshots',
+    body:wulfieCard({keepOpen:true}),secondSnapshot:true,code:'no_valid_candidates',recoveryBlocker:'role_menu',recoveryClickCount:2,
+    priorRecoveryMenus:[{slot:0,attemptSnapshotIndex:0,attemptCandidateIndex:0,sameButton:true,menuBound:true,triggerExpanded:true,cleanup:'still_visible'}]},
+  {name:'Explicit foreign menu remains blocked across snapshots without self-attribution',
+    body:wulfieCard({menuOwner:'foreign-control',postId:other,offset:-175,ownerAction:'Wulfie Bain'}),secondSnapshot:true,code:'no_valid_candidates',recoveryBlocker:'role_menu',
+    recoveryClickCount:1,priorRecoveryMenus:null},
+  {name:'Verified cleanup closes a shifted menu without accepting its URL and allows the next post',
+    body:wulfieCard({offset:-175,postId:other,author:'Private Recovery Author',ownerAction:'Private Recovery Author',templateID:'first-menu'})+wulfieCard(),
+    code:'no_valid_candidates',recoveryBlocker:null,recoveryClickCount:4,reportCaptureIdentity:true,
+    captureSequence:[null,wulfieIdentity.id]},
+  {name:'A failed cleanup of a shifted owned menu is still correlated without URL binding',
+    body:wulfieCard({offset:-175,ownerAction:'Wulfie Bain',keepOpen:true}),secondSnapshot:true,code:'no_valid_candidates',
+    recoveryBlocker:'role_menu',recoveryClickCount:2,
+    priorRecoveryMenus:[{slot:0,attemptSnapshotIndex:0,attemptCandidateIndex:0,sameButton:true,menuBound:false,triggerExpanded:true,cleanup:'still_visible'}]},
+  {name:'Cleanup does not operate a shifted menu labelled with a different author',
+    body:wulfieCard({offset:-175,ownerAction:'Different Author'}),code:'no_valid_candidates',
+    recoveryBlocker:null,recoveryClickCount:1,captureIdentity:{headlessRejection:'missing_identity'}},
+  {name:'Cleanup does not use an author action when two post controls share the author',
+    body:wulfieCard({offset:-175,ownerAction:'Wulfie Bain',sameAuthorControl:true}),code:'no_valid_candidates',
+    recoveryBlocker:null,recoveryClickCount:1,captureIdentity:{headlessRejection:'missing_identity'}},
+  {name:'Wulfie card rejects a portal when another post control is also expanded',body:wulfieCard({competingTrigger:true,postId:other}),
+    code:'no_valid_candidates',captureIdentity:{headlessRejection:'missing_identity'},recoveryClickCount:1,reportCaptureIdentity:true},
   {name:'existing menu blocks recovery',body:blockedPost+'<div role="menu" style="width:120px;height:50px">Private menu</div>',code:'no_valid_candidates',recoveryBlocker:'role_menu'},
   {name:'surface inspection separates navigation, feed sorting and dialog without entering recovery',
     body:blockedPost.replace('id="post-control"','id="post-control" style="position:fixed;top:300px;left:30px"')+
@@ -111,7 +264,7 @@ const cases=[
 
 export async function runLinkedInShadowParity(chrome,output) {
   return runDOMShadowParity({chrome,output,source:'linkedin',canonicalUrl:'https://www.linkedin.com/feed/',probeGlobal:'AkuLinkedInDOMShadow',cases,
-    privacyPattern:'Private|1234567890123456789|9876543210987654321|licdn|linkedin:|fixture-author',
+    privacyPattern:`Private|1234567890123456789|9876543210987654321|${wulfieShare}|${yosShare}|${shikharShare}|Wulfie Bain|Yos Vincenzo|Shikhar Kwatra|licdn|linkedin:|fixture-author`,
     style:'article,.feed-shared-update-v2,section{width:600px;min-height:100px}span{display:block}'});
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){

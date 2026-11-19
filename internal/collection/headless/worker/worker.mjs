@@ -49,13 +49,15 @@ export async function sourceAssets(bridgePath, source) {
   ];
   if (source === 'linkedin') {
     shared.push({ relative: 'AkuBridge/linkedin-permalink-policy.js', path: resolve(bridge, 'linkedin-permalink-policy.js'), execute: true });
-    const routePolicy = resolve(bridge, 'source-feed-routes.js');
-    try {
-      await stat(routePolicy);
-      shared.push({ relative: 'AkuBridge/source-feed-routes.js', path: routePolicy, execute: true });
-    } catch (error) {
-      // An older Bridge still supplies its own canonical-only route matcher.
-      if (error?.code !== 'ENOENT') throw error;
+    // Older Bridge checkouts implement route matching and geometry in place.
+    for (const name of ['source-feed-routes.js', 'anchor-geometry.js']) {
+      const path = resolve(bridge, name);
+      try {
+        await stat(path);
+        shared.push({ relative: 'AkuBridge/' + name, path, execute: true });
+      } catch (error) {
+        if (error?.code !== 'ENOENT') throw error;
+      }
     }
   }
   const selected = source === 'x'

@@ -3,6 +3,7 @@
 (() => {
   const MAX_CANDIDATES = 80;
   const MAX_MEDIA = 20;
+  const linkedinMenuTracker = globalThis.AkuLinkedInRecoveryDiagnostics?.createMenuTracker?.();
   const COMMENT_SELECTOR = '.comments-comment-item, .comments-comment-entity, [data-id^="urn:li:comment:"], [data-comment-id], [id^="replaceableComment_urn:li:comment:"], [componentkey^="replaceableComment_urn:li:comment:"]';
   const compactText = value => String(typeof value === 'object' && value !== null
     ? value.innerText ?? value.textContent ?? '' : value ?? '').replace(/\s+/g, ' ').trim();
@@ -589,7 +590,7 @@
     return { post };
   }
 
-  async function collect() {
+  async function collect(diagnosticSnapshotIndex = globalThis.AkuHeadlessCapturePolicy?.diagnosticSnapshotIndex ?? null) {
     const selected = sourceAdapter();
     const source = selected.source;
     const adapter = selected.adapter;
@@ -610,6 +611,8 @@
     let candidates = uniqueElements(discovery.candidates).filter(Boolean);
     const bindings=new WeakMap();
     const linkedinRecoveryBlockers=[];
+    const linkedinPermalinkRecoveryFailures=[];
+    const linkedinAnchorMismatchPolls=[];
     let targetFallbackStatus='not_needed';
     if(source==='instagram' && candidates.length===0) {
       const route=instagramIdentity(location.href);
@@ -621,7 +624,8 @@
       }
     }
     const bounded = candidates.slice(0, MAX_CANDIDATES);
-    base.scroll=scrollInfo(chooseScrollRoot(adapter,bounded));
+    const scrollRoot=chooseScrollRoot(adapter,bounded);
+    base.scroll=scrollInfo(scrollRoot);
     if(source==='linkedin' && typeof adapter.recoverPermalinks==='function') {
       const missing=bounded.filter(root=>isVisible(root) && !authorAmbiguous(root,source)
         && compactText(adapter.findAuthor(root,helpers)) && postIdentity(source,adapter,root).reason==='missing_identity');
@@ -629,12 +633,15 @@
         const deadline=Date.now()+5000;
         try {
           const recovered=await adapter.recoverPermalinks(missing,deadline,{...helpers,isVisibleInViewport:isVisible,
+            diagnosticMenuTracker:linkedinMenuTracker, diagnosticSnapshotIndex, diagnosticScrollRoot:scrollRoot,
             diagnosticCandidateIndex:root=>bounded.indexOf(root),
             findPermalinkDetails:root=>{const identity=postIdentity(source,adapter,root).identity;return identity ? {url:identity.permalink} : null;},
             waitForValue:async(fn,attempts,interval)=>{for(let n=0;n<attempts && Date.now()<deadline;n++){const value=fn();if(value)return value;await new Promise(r=>setTimeout(r,Math.min(interval,Math.max(0,deadline-Date.now()))));}return null;}});
           for(const root of missing) {
             const recovery=recovered?.get(root);
             if(recovery?.blockerDiagnostic && linkedinRecoveryBlockers.length<8)linkedinRecoveryBlockers.push(recovery.blockerDiagnostic);
+            if(recovery?.failureDiagnostic && linkedinPermalinkRecoveryFailures.length<8)linkedinPermalinkRecoveryFailures.push(recovery.failureDiagnostic);
+            if(recovery?.anchorMismatchDiagnostic && linkedinAnchorMismatchPolls.length<8)linkedinAnchorMismatchPolls.push(recovery.anchorMismatchDiagnostic);
             if(adapter.validateRecoveredPermalink && !adapter.validateRecoveredPermalink(root,recovery))continue;
             const post=globalThis.AkuLinkedInPermalinkPolicy?.nativePostFromUrl(recovery?.url);
             if(post)bindings.set(root,{id:post.id,permalink:post.url,provenance:'adapter_recovery',recovery});
@@ -714,6 +721,8 @@
     }
     return { ...base, sourceReadiness, candidateCount: candidates.length, discoveryStrategy: discovery.strategy || 'unknown',
       ...(linkedinRecoveryBlockers.length ? {linkedinRecoveryBlockers} : {}),
+      ...(linkedinPermalinkRecoveryFailures.length ? {linkedinPermalinkRecoveryFailures} : {}),
+      ...(linkedinAnchorMismatchPolls.length ? {linkedinAnchorMismatchPolls} : {}),
       ...shadow,
       ...(sourceReadinessAssessment ? { sourceReadinessAssessment } : {}),
       candidateDiagnostics:{structuralCandidates:discovery.readinessCandidates?.length ?? discovery.semanticCandidateCount ?? 0,

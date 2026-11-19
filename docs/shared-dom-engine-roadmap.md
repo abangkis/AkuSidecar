@@ -22,3 +22,25 @@ deployment follow their own authorization boundaries.
 
 [Stage 04 verification](shared-dom-engine-stage-04-verification.md) records the
 offline fixture and guard results alongside the two authorized live X runs.
+
+## Card-first adapter contract
+
+- Define the port for discovery, owned card evidence and shared evaluation.
+  Use the LinkedIn shadow probe as an initial integration.
+- Migrate X, LinkedIn, Instagram and Facebook in slices. For each source,
+  demonstrate that discovery can identify a card without a permanent ID and
+  that nested or neighboring content cannot supply its primary fields.
+- Run the same corpus through Windowed and Headless. Record source-specific
+  exceptions and each mode's admission behavior before moving a source to
+  shared production evaluation.
+
+## Scoped locators and browser fixtures
+
+- Pilot strict, scoped locators with real-browser fixtures. Cover re-rendered
+  and recycled cards, zero or multiple matches, same-author cards and foreign
+  popovers. Assert identity and side effects through both capture entry points.
+- Use the same sanitized fixture and expectations for Windowed and Headless.
+  Control clocks and scroll position where the behavior depends on them.
+- Qualify one real adapter path before making scoped locators the default for
+  additional interactions. Keep live evidence and source activation separate
+  from fixture acceptance.

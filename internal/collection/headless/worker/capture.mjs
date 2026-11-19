@@ -1,5 +1,6 @@
 import { applyQuoteRecovery, probeQuoteNavigation } from './quote-navigation.mjs';
-import { canonicalSourceURL, captureError, toObservation, projectSourceReadiness, projectDOMShadow, projectLinkedInRecoveryBlockers } from './observation.mjs';
+import { canonicalSourceURL, captureError, toObservation, projectSourceReadiness, projectDOMShadow,
+  projectLinkedInRecoveryBlockers, projectLinkedInPermalinkRecoveryFailures, projectLinkedInAnchorMismatchPolls } from './observation.mjs';
 import { sourceProvenance } from './provenance.mjs';
 import { resolveStructuredMedia } from './structured-media.mjs';
 import { resolveAdditionalSourceMedia, resolveInstagramNativeTarget, createInstagramVideoRecovery } from './additional-source-media.mjs';
@@ -340,7 +341,7 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
         const previousScrollY = Number.isFinite(snapshot?.scroll?.y) ? Math.trunc(snapshot.scroll.y) : null;
         await page.evaluate(`globalThis.XHeadlessPoC?.scrollSourceBy ? globalThis.XHeadlessPoC.scrollSourceBy(${options.scrollFraction}) : window.scrollBy(0,Math.round(innerHeight*${options.scrollFraction}))`, timeLeft(deadline));
         await sleep(Math.min(options.scrollSettleMs, timeLeft(deadline)));
-        snapshot = await collect(page, source, deadline);
+        snapshot = await collect(page, source, deadline, scroll);
         snapshot = applyQuoteRecovery(snapshot, quoteRecovery);
         const nextError = sourceStateError(snapshot);
         if (nextError) throw nextError;
@@ -514,6 +515,8 @@ export function emptyCaptureDiagnostics(snapshots) {
     ...projectSourceReadiness(snapshot),
     ...projectDOMShadow(snapshot),
     ...projectLinkedInRecoveryBlockers(snapshot, snapshotIndex),
+    ...projectLinkedInPermalinkRecoveryFailures(snapshot, snapshotIndex),
+    ...projectLinkedInAnchorMismatchPolls(snapshot, snapshotIndex),
     candidateCount:count(snapshot.candidateCount), rejected:count(snapshot.rejected),
     photoEvidence:{status:['not_photo_route','evidence_limit','photo_metadata_missing','conflicting_photo_binding','photo_owner_missing','photo_image_not_visible','verified_photo_media'].includes(snapshot.photoEvidence?.status)?snapshot.photoEvidence.status:null,
       postBinding:snapshot.photoEvidence?.postBinding==='unverified'?'unverified':null},
@@ -554,11 +557,12 @@ async function inject(page, assets, deadline) {
   for (const asset of assets) if (asset.execute) await page.evaluate(asset.content, timeLeft(deadline));
 }
 
-async function collect(page, source, deadline) {
+async function collect(page, source, deadline, snapshotIndex = 0) {
   ensureTime(deadline);
   // Freshness qualification may provide a shorter phase deadline. In-page
   // expansion must stop at that boundary as well as the overall capture limit.
-  await page.evaluate(`if(globalThis.AkuHeadlessCapturePolicy)globalThis.AkuHeadlessCapturePolicy.deadlineAt=${deadline}`, timeLeft(deadline));
+  const diagnosticIndex = source === 'linkedin' ? `;if(globalThis.AkuHeadlessCapturePolicy)globalThis.AkuHeadlessCapturePolicy.diagnosticSnapshotIndex=${snapshotIndex}` : '';
+  await page.evaluate(`if(globalThis.AkuHeadlessCapturePolicy)globalThis.AkuHeadlessCapturePolicy.deadlineAt=${deadline}${diagnosticIndex}`, timeLeft(deadline));
   const targets = await page.evaluate('globalThis.XHeadlessPoC?.prepareEvidenceTargets?.() || []', timeLeft(deadline));
   if (Array.isArray(targets)) {
     for (const target of targets.slice(0, 4)) {

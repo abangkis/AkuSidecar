@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
-import { projectLinkedInRecoveryBlockers } from './linkedin-recovery-diagnostics.mjs';
+import { projectLinkedInRecoveryBlockers, projectLinkedInPermalinkRecoveryFailures,
+  projectLinkedInAnchorMismatchPolls } from './linkedin-recovery-diagnostics.mjs';
 
-export { projectLinkedInRecoveryBlockers };
+export { projectLinkedInRecoveryBlockers, projectLinkedInPermalinkRecoveryFailures, projectLinkedInAnchorMismatchPolls };
 
 const SOURCE_READINESS_STATES = new Set(['source_unavailable', 'login_required',
   'feed_ready', 'feed_empty', 'feed_hydrating', 'loading', 'feed_not_visible', 'selector_mismatch', 'page_shell']);
@@ -317,6 +318,12 @@ function isVerifiedStructuredVideo(source, item) {
 export function toObservation({ source, requestedUrl, snapshots, provenance, capturedAt, stopReason, performedScrolls, scrollStopReason, frontier, freshness, captureMode = 'headless_worker', xMediaPolicy = null, xCandidateQualityPolicy = null, instagramCandidateQualityPolicy = null, linkedinCandidateQualityPolicy = null }) {
   const first = snapshots[0] || {};
   const hasPosts = snapshots.some(snapshot => (snapshot.posts || []).length > 0);
+  const linkedinPermalinkRecoveryFailures = source === 'linkedin'
+    ? snapshots.flatMap((snapshot, index) =>
+      projectLinkedInPermalinkRecoveryFailures(snapshot, index).linkedinPermalinkRecoveryFailures ?? []).slice(0, 8) : [];
+  const linkedinAnchorMismatchPolls = source === 'linkedin'
+    ? snapshots.flatMap((snapshot, index) =>
+      projectLinkedInAnchorMismatchPolls(snapshot, index).linkedinAnchorMismatchPolls ?? []).slice(0, 8) : [];
   const domainSnapshots = snapshots.map((snapshot, index) => {
     const previousIds = new Set(snapshots.slice(0, index).flatMap(value => (value.posts || []).map(post => post.id)));
     const posts = Array.isArray(snapshot.posts) ? snapshot.posts.slice(0, 20) : [];
@@ -378,6 +385,8 @@ export function toObservation({ source, requestedUrl, snapshots, provenance, cap
       ...(['x','instagram','linkedin'].includes(source) ? projectDOMShadow(last) : {}),
       ...(source === 'linkedin' && snapshots.some(snapshot => projectLinkedInRecoveryBlockers(snapshot).linkedinRecoveryBlockers?.length)
         ? { linkedinRecoveryBlockers: snapshots.flatMap((snapshot, index) => projectLinkedInRecoveryBlockers(snapshot, index).linkedinRecoveryBlockers ?? []).slice(0, 8) } : {}),
+      ...(linkedinPermalinkRecoveryFailures.length ? { linkedinPermalinkRecoveryFailures } : {}),
+      ...(linkedinAnchorMismatchPolls.length ? { linkedinAnchorMismatchPolls } : {}),
       ...(source === 'x' && last.xObserverRegistration ? { xResponseObserver: {
         registration: last.xObserverRegistration,
         diagnostics: last.xResponseObserver ?? null,

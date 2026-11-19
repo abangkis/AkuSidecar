@@ -5,6 +5,71 @@ const componentKinds = ['messaging', 'feed_sort', 'post', 'navigation', 'header'
 const actionKinds = ['post_link', 'save_post', 'report_post', 'account', 'message', 'feed_order', 'navigation', 'dismiss'];
 const count = (value, maximum) => Number.isSafeInteger(value) && value >= 0 && value <= maximum;
 
+export function projectLinkedInAnchorMismatchPolls(snapshot, snapshotIndex = null) {
+  if (ownValue(snapshot, 'source') !== 'linkedin') return {};
+  const entries = ownValue(snapshot, 'linkedinAnchorMismatchPolls');
+  if (!Array.isArray(entries) || entries.length === 0 || entries.length > 8) return {};
+  const projected = [];
+  for (let i = 0; i < entries.length; i++) {
+    const entry = ownValue(entries, String(i));
+    const reportedSnapshot = ownValue(entry, 'snapshotIndex');
+    const candidateIndex = ownValue(entry, 'candidateIndex');
+    const mismatchPolls = ownValue(entry, 'mismatchPolls');
+    const horizontalPolls = ownValue(entry, 'horizontalPolls');
+    const verticalPolls = ownValue(entry, 'verticalPolls');
+    const verticalGapPolls = ownValue(entry, 'verticalGapPolls');
+    const verticalOverlapPolls = ownValue(entry, 'verticalOverlapPolls');
+    const persistence = ownValue(entry, 'persistence');
+    const hasVerticalBreakdown = verticalGapPolls !== undefined || verticalOverlapPolls !== undefined;
+    if ((reportedSnapshot !== null && !count(reportedSnapshot, 1_000_000)) || !count(candidateIndex, 1_000_000) ||
+        !count(mismatchPolls, 32) || mismatchPolls === 0 || !count(horizontalPolls, mismatchPolls) ||
+        !count(verticalPolls, mismatchPolls) || horizontalPolls + verticalPolls < mismatchPolls ||
+        !['single_sample', 'repeated', 'resolved', 'interrupted'].includes(persistence) ||
+        (persistence === 'single_sample' && mismatchPolls !== 1) ||
+        (persistence === 'repeated' && mismatchPolls < 2) ||
+        (hasVerticalBreakdown && (!count(verticalGapPolls, verticalPolls) ||
+          !count(verticalOverlapPolls, verticalPolls) || verticalGapPolls + verticalOverlapPolls !== verticalPolls))) return {};
+    projected.push({ snapshotIndex: count(snapshotIndex, 1_000_000) ? snapshotIndex : reportedSnapshot,
+      candidateIndex, mismatchPolls, horizontalPolls, verticalPolls, persistence,
+      ...(hasVerticalBreakdown ? { verticalGapPolls, verticalOverlapPolls } : {}) });
+  }
+  return { linkedinAnchorMismatchPolls: projected };
+}
+
+const permalinkFailures = new Map([
+  ['candidate', ['snapshot_budget', 'owner_missing', 'owner_changed']],
+  ['menu', ['menu_not_observed', 'multiple_menus']],
+  ['ownership', ['foreign_reference', 'control_already_expanded', 'control_not_uniquely_expanded',
+    'popover_not_anchored', 'missing_geometry', 'anchor_mismatch', 'menu_replaced']],
+  ['menu_evidence', ['stale_urn', 'conflicting_urns', 'multiple_embed_actions', 'no_visible_urn_or_embed_action']],
+  ['embed_dialog', ['dialog_not_started', 'dialog_not_observed', 'multiple_dialogs', 'foreign_reference',
+    'dialog_replaced', 'stale_urn', 'conflicting_urns', 'no_urn']],
+  ['revalidation', ['binding_or_evidence_changed']],
+]);
+const buttonVisibility = ['unavailable', 'hidden', 'outside', 'partial', 'visible'];
+
+export function projectLinkedInPermalinkRecoveryFailures(snapshot, snapshotIndex = null) {
+  if (ownValue(snapshot, 'source') !== 'linkedin') return {};
+  const entries = ownValue(snapshot, 'linkedinPermalinkRecoveryFailures');
+  if (!Array.isArray(entries) || entries.length === 0 || entries.length > 8) return {};
+  const projected = [];
+  for (let i = 0; i < entries.length; i++) {
+    const entry = ownValue(entries, String(i));
+    const reportedSnapshot = ownValue(entry, 'snapshotIndex');
+    const candidateIndex = ownValue(entry, 'candidateIndex');
+    const stage = ownValue(entry, 'stage');
+    const reason = ownValue(entry, 'reason');
+    const viewport = ownValue(entry, 'viewport');
+    const scrollRoot = ownValue(entry, 'scrollRoot');
+    if ((reportedSnapshot !== null && !count(reportedSnapshot, 1_000_000)) || !count(candidateIndex, 1_000_000) ||
+        !permalinkFailures.get(stage)?.includes(reason) || !buttonVisibility.includes(viewport) ||
+        !buttonVisibility.includes(scrollRoot)) return {};
+    projected.push({ snapshotIndex: count(snapshotIndex, 1_000_000) ? snapshotIndex : reportedSnapshot,
+      candidateIndex, stage, reason, viewport, scrollRoot });
+  }
+  return { linkedinPermalinkRecoveryFailures: projected };
+}
+
 function projectList(value, limit, allowed) {
   if (!Array.isArray(value) || value.length > limit) return null;
   const list = Array.from({ length: value.length }, (_, index) => ownValue(value, String(index)));
@@ -65,6 +130,26 @@ function projectLinkedInMenuEvidence(value) {
         points[0] + points[1] + points[2] !== 5) return null;
     const [hit, covered, miss] = points;
     return { ...result, hitTest: { hit, covered, miss } };
+}
+
+function projectPriorRecoveryMenus(value, menuCount, snapshotIndex) {
+  if (!Array.isArray(value) || !value.length || value.length > 2) return null;
+  const result = [];
+  for (let index = 0; index < value.length; index++) {
+    const menu = ownValue(value, String(index));
+    const slot = ownValue(menu, 'slot'), cleanup = ownValue(menu, 'cleanup');
+    const attemptSnapshotIndex = ownValue(menu, 'attemptSnapshotIndex');
+    const attemptCandidateIndex = ownValue(menu, 'attemptCandidateIndex');
+    const sameButton = ownValue(menu, 'sameButton'), menuBound = ownValue(menu, 'menuBound');
+    const triggerExpanded = ownValue(menu, 'triggerExpanded');
+    if (!count(slot, Math.min(1, menuCount - 1)) || result.some(entry => entry.slot >= slot) ||
+        (attemptSnapshotIndex !== null && !count(attemptSnapshotIndex, snapshotIndex ?? 1_000_000)) ||
+        (attemptCandidateIndex !== null && !count(attemptCandidateIndex, 1_000_000)) ||
+        [sameButton, menuBound, triggerExpanded].some(flag => typeof flag !== 'boolean') ||
+        !(menuBound || triggerExpanded) || !['not_attempted', 'still_visible'].includes(cleanup)) return null;
+    result.push({slot, attemptSnapshotIndex, attemptCandidateIndex, sameButton, menuBound, triggerExpanded, cleanup});
+  }
+  return result;
 }
 
 // Diagnostic metadata cannot supply identity, release resources or admit a post.
@@ -129,7 +214,9 @@ export function projectLinkedInRecoveryBlockers(snapshot, snapshotIndex = null) 
             entries.some(entry => flags.some(field => entry[field] === null) || !entry.ancestors.complete ||
               Object.values(entry.aria).includes('unknown') || entry.selector === 'unknown'))) return {};
       const surfaceInspection = projectSurfaceInspection(ownValue(value, 'surfaceInspection'));
-      projected.push({ ...(surfaceInspection ? { surfaceInspection } : {}), code: 'existing_surface', phase: 'pre_recovery_guard', snapshotIndex: snapshotIndex ?? recordedIndex,
+      const priorRecoveryMenus = projectPriorRecoveryMenus(ownValue(value, 'priorRecoveryMenus'), menuCount, snapshotIndex ?? recordedIndex);
+      projected.push({ ...(surfaceInspection ? { surfaceInspection } : {}), ...(priorRecoveryMenus ? { priorRecoveryMenus } : {}),
+        code: 'existing_surface', phase: 'pre_recovery_guard', snapshotIndex: snapshotIndex ?? recordedIndex,
         candidateIndex, menuCount, dialogCount, samples: entries, complete });
     }
     return { linkedinRecoveryBlockers: projected };
