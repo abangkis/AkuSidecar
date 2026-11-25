@@ -195,8 +195,11 @@
           quotedPost.textStatus = quotedPost.textCollapsed ? 'requires_permalink_capture' : 'visible_text_no_collapse_control';
           quotedPost.textCompleteness = primitives.textCompleteness({ collapsed: quotedPost.textCollapsed, textStatus: quotedPost.textStatus });
         }
+        let replyDOM;
         const directContext = typeof adapter.extractDirectContext === 'function'
-          ? adapter.extractDirectContext(container, { ...helpers, permalink, quotedPost }) : [];
+          ? adapter.extractDirectContext(container, {
+            ...helpers, permalink, quotedPost, recordReplyDOM: value => { replyDOM = value; },
+          }) : [];
         if (!text && !media.length && !mediaExpected.length &&
             !(quote && (!sharedIdentity || !adapter.captureReadinessRejections(container, helpers)))) {
           rejected++;
@@ -207,6 +210,7 @@
           text, publishedAt: timestamp ? timestamp.publishedAt : times.find(t => canonical(t.closest('a[href]')?.href) === permalink)?.dateTime || null,
           ...semantics, presentation, links, media, mediaExpected: [...new Set(mediaExpected)], mediaEvidence: mediaEvidence(media, [...new Set(mediaExpected)]),
           directContext: Array.isArray(directContext) ? directContext.slice(0, 8) : [],
+          ...(replyDOM ? { replyDOM } : {}),
           avatarEvidenceKeys: [`x:status:${id}`,
             globalThis.AkuXMediaEvidence?.avatarKeyFromContainer?.(container)].filter(Boolean).slice(0, 2),
           quotedPostObserved: Boolean(quote),

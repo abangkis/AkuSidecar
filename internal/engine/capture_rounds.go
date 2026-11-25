@@ -4,6 +4,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/xreply"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
@@ -12,12 +13,12 @@ func mergeObservations(values []domain.Observation) domain.Observation {
 	result.Snapshots = nil
 	// Candidate evidence spans all rounds; navigation and planning telemetry
 	// belongs exclusively to the last round. Missing latest fields stay unknown.
-	result.Coverage = cloneCoverageMap(result.Coverage)
+	result.Coverage = cloneCoverageMap(xreply.WithoutReport(result.Coverage))
 	result.Coverage["acquisitionRounds"] = len(values)
 	rounds := make([]map[string]any, 0, len(values))
 	for _, value := range values {
 		result.Snapshots = append(result.Snapshots, value.Snapshots...)
-		rounds = append(rounds, value.Coverage)
+		rounds = append(rounds, xreply.WithoutReport(value.Coverage))
 	}
 	result.Snapshots = reconcileCapturedSnapshots(result.Source, result.Snapshots)
 	result.Coverage["rounds"] = rounds

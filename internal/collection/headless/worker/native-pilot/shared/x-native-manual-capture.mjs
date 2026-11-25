@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import {captureIsolated,validateCapture,NATIVE_CAPTURE_CAPABILITIES} from '../../capture.mjs';
 import {sourceAssets} from '../../worker.mjs';
+import {withoutXReplyDiagnostics} from '../../x-passive-evidence.mjs';
 import {HeaderSafetyGuard} from './x-manual-header-safety.mjs';
 import {MANUAL_TIMING} from './x-manual-timing-policy.mjs';
 import {CaptureTrafficDiagnostics} from './x-capture-traffic-diagnostics.mjs';
@@ -147,10 +148,16 @@ export async function captureNativeXTarget({request,bridgePath,loadAssets=()=>so
     await command('Runtime.evaluate',{expression:'void 0',returnByValue:true},session);
     if(expired()||guard.rejection()!=='unknown')throw record(null,'coverage',signal?.aborted?'canceled':unsafe?'header_guard':'deadline');
     stage='serialization';
-    const observationJSON=JSON.stringify(observation);
-    if(Buffer.byteLength(observationJSON)>512*1024)throw fail();
-    wire={schema:'aku.x.manual-capture.v1',correlation:request.correlation,pins:request.pins,captureTarget:target,observationJSON,digest:createHash('sha256').update(observationJSON).digest('hex')};
-    if(Buffer.byteLength(JSON.stringify(wire))>768*1024)throw fail();
+    function boundedWire(value){
+      const observationJSON=JSON.stringify(value);
+      if(Buffer.byteLength(observationJSON)>512*1024)return null;
+      const envelope={schema:'aku.x.manual-capture.v1',correlation:request.correlation,pins:request.pins,
+        captureTarget:target,observationJSON,digest:createHash('sha256').update(observationJSON).digest('hex')};
+      return Buffer.byteLength(JSON.stringify(envelope))<=768*1024?envelope:null;
+    }
+    wire=boundedWire(observation);
+    if(!wire&&observation.coverage?.xReplyDiagnostics)wire=boundedWire(withoutXReplyDiagnostics(observation));
+    if(!wire)throw fail();
   } catch(error) {
     const code=data(error,'code');
     record(error,stage,signal?.aborted?'canceled':Date.now()>=request.deadlineMS||code==='capture_timeout'?'deadline':stage==='worker'?(['invalid_payload','navigation_failed','empty_unverified','invalid_observation','worker_not_ready','target_unavailable','login_required','source_unavailable'].includes(code)?code:'worker_other'):'unavailable');

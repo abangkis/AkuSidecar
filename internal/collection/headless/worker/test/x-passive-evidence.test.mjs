@@ -9,9 +9,10 @@ import {MAX_SINGLE_POST_BYTES, toObservation} from '../observation.mjs';
 
 const bridge = new URL('../../../../../../AkuBridge/', import.meta.url);
 const names = ['x-response-evidence-adapter.js', 'x-media-evidence-runtime.js', 'capture-primitives.js', 'bounded-capture-policy.js', 'capture-quality-policy.js',
-  'source-adapter-runtime.js', 'adapters/x-adapter.js', 'shared-dom-engine/browser-runtime.js', 'adapters/x-dom-shadow.js'];
+  'source-adapter-runtime.js', 'adapters/x-adapter.js', 'shared-dom-engine/browser-runtime.js', 'adapters/x-dom-shadow.js',
+  'diagnostics/state-core.js', 'diagnostics/recorder.js', 'diagnostics/x-reply.js'];
 const templates = await Promise.all(names.map(async name => ({relative: 'AkuBridge/' + name,
-  execute: !name.startsWith('x-'), content: await readFile(new URL(name, bridge), 'utf8')})));
+  execute: !name.startsWith('x-') && !name.startsWith('diagnostics/'), content: await readFile(new URL(name, bridge), 'utf8')})));
 for (const name of ['x-quote-identity.js', 'x-extract.js']) templates.push({relative: 'worker/vendor/' + name,
   execute: true, content: await readFile(new URL('../vendor/' + name, import.meta.url), 'utf8')});
 const ownID = '2106867448746021278', parentID = '2106867448746021279';
@@ -345,6 +346,11 @@ async function captureGraphQLReply(afterSnapshotRead) {
   assert.equal(block.directContext[0].target.availability, 'reference_only');
   assert.equal(block.relationshipType, 'reply');
   assert.equal(block.parentPermalink, `https://x.com/i/status/${parentID}`);
+  assert.deepEqual(JSON.parse(JSON.stringify(output.coverage.xReplyDiagnostics)), {
+    schema: 'aku.x.reply-diagnostics.v1', complete: true,
+    candidates: [{ snapshotIndex: 0, candidateId: `x:status:${ownID}`, dom: 'missing', lookup: 'hit', merge: 'retained_response' }],
+  });
+  assert.equal(Object.hasOwn(block, 'replyDOM'), false);
   if (!afterSnapshotRead) assert.equal(block.avatarUrl, avatar);
   assert.equal(block.text, 'DOM caption');
   assert.equal(JSON.stringify(output).includes('PRIVATE_GRAPHQL_BODY'), false);
@@ -364,10 +370,13 @@ test('final reread respects snapshot identity, earlier conflicting evidence, and
   state.result = [[ownID, parentID]];
   const finalize = (changes = {}) => finalizeXReplyEvidence({browser, page, assets: value, snapshots,
     deadlineAt: Date.now() + 1000, remainingBytes: 8000, ...changes});
-  await finalize({browser: {backend: 'browser_quiet_hidden'}});
-  await finalize({deadlineAt: Date.now() - 1});
+  const borrowedReport = await finalize({browser: {backend: 'browser_quiet_hidden'}});
+  const expiredReport = await finalize({deadlineAt: Date.now() - 1});
+  assert.equal(borrowedReport.candidates[0].lookup, 'unavailable');
+  assert.equal(expiredReport.candidates[0].lookup, 'deadline');
   assert.equal(state.reads, 0);
-  await finalize({remainingBytes: 0});
+  const budgetReport = await finalize({remainingBytes: 0});
+  assert.equal(budgetReport.candidates[0].merge, 'budget_skipped');
   assert.ok(snapshots.slice(0, 2).every(snapshot => !snapshot.posts[0].directContext));
   assert.equal(snapshots[3].posts[0].presentation.directContextStatus, 'ambiguous');
   await finalize();

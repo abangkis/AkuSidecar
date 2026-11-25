@@ -11,6 +11,7 @@ extraction, not a new published library or a new telemetry backend.
 | `observability` | AkuSidecar instrumentation vocabulary and adapter over the published telemetry runtime | Product adapter; composition-root lifecycle and explicit export configuration |
 | `timeline` | Closed browser-performance report schema, numeric/shape validation, cloning, and latest-report composition | AkuBrowser adapter; stage names, bounds, UTC receipt time and privacy policy stay here |
 | `instagram` | Existing IG catalogs, attempt ownership, wire/public projection and validation | AkuBrowser adapter; does not grant capture, retry or mutation authority |
+| `xreply` | Closed candidate outcomes and exact-observation binding using the AI4UDiagnostics count policy | AkuBrowser adapter; persisted with source observations |
 | `linkedinrecovery` | Closed projection of LinkedIn surface inspection using the AI4UDiagnostics count policy | Optional observation coverage; independent of capture admission |
 | `nativecapture` | Existing bounded platform-specific native-window observations and classification | AkuBrowser/Windows adapter; process classification and capture lifecycle stay here |
 

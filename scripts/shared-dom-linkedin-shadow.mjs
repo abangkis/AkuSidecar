@@ -39,7 +39,7 @@ const promoMenus=sidebarMenu(adPromoUrl,'Claim ad credits')+sidebarMenu(premiumP
 function wulfieCard({postId=wulfieShare,menuOwner='',expanded=true,offset=0,competingTrigger=false,existingMenus=false,keepOpen=false,
   author='Wulfie Bain',ownerAction='',templateID='fixture-menu',sameAuthorControl=false,embedVisible=true,
   verticalOffset=0,settleAfterMs=0,settleScrollBy=0,removeMenuAfterMs=0,
-  placement='',popoverPadding=12,unfollowAction=''}={}) {
+  placement='',popoverPadding=12,unfollowAction='',socialContext='',content=text}={}) {
   const menu=`<div role="menu" ${menuOwner ? `aria-labelledby="${menuOwner}"` : ''}
     ${placement?`style="height:${360-2*popoverPadding}px"`:''}>
     <button role="menuitem">Copy link to post</button>
@@ -69,9 +69,10 @@ function wulfieCard({postId=wulfieShare,menuOwner='',expanded=true,offset=0,comp
     }"`;
   return `<div data-testid="mainFeed" role="list"><div id="expanded-fixture-feed-entry">
     <div role="listitem" style="position:relative;width:600px;min-height:100px">
+      ${socialContext ? `<div>${socialContext}</div>` : ''}
       <a href="/in/wulfie-bain/">${author}</a>
       <button aria-label="Open control menu for post by ${author}" style="position:absolute;right:5px;top:8px${placement?';width:32px;height:32px':''}" ${existingMenus?'':toggle}>Menu</button>
-      ${text}
+      ${content}
       <button>Comment</button><button>Repost</button>
     </div>
   </div></div>
@@ -84,8 +85,26 @@ function wulfieCard({postId=wulfieShare,menuOwner='',expanded=true,offset=0,comp
     <div role="menu" style="position:fixed;top:290px">${link(other)}</div>` : ''}`;
 }
 
+const oraclePreview='<a href="https://blogs.oracle.com/fixture" style="display:block;width:480px;min-height:54px">'+
+  '<img src="https://media.licdn.com/fixture-thumbnail.jpg" width="64" height="40" alt="">'+
+  '<div>Announcing Oracle WebLogic Server and Coherence 26</div><div>blogs.oracle.com</div></a>';
+const alibabaPoster='<div><img src="https://media.licdn.com/fixture-poster.jpg" style="display:block;width:470px;height:240px" alt="Conference poster"></div>';
+const missingImage='<div class="update-components-image" style="width:470px;height:240px"><img width="470" height="240" alt="Image pending"></div>';
+
 const cases=[
   {name:'native article',body:post,code:'ready'},
+  {name:'Lambertus link preview keeps its thumbnail and offers no media recapture',
+    body:wulfieCard({author:'Lambertus Setiawan W.',socialContext:'Resaldi Ramadhan Putra likes this',content:text+oraclePreview}),
+    code:'no_valid_candidates',captureIdentity:shareIdentity(wulfieShare),
+    captureMedia:{attachments:['link_preview'],thumbnail:true,images:0,recapture:false,windowedTrace:'owner_unverified',
+      socialContext:'Resaldi Ramadhan Putra likes this'}},
+  {name:'Alibaba Cloud keeps its captured conference image and offers no media recapture',
+    body:wulfieCard({author:'Alibaba Cloud',content:text+alibabaPoster}),
+    code:'no_valid_candidates',captureIdentity:shareIdentity(wulfieShare),
+    captureMedia:{attachments:[],images:1,recapture:false,windowedTrace:'owner_unverified',socialContext:''}},
+  {name:'A LinkedIn primary image shell without a URL offers media recapture',
+    body:card({body:text+missingImage}),code:'ready',captureIdentity:ownIdentity,
+    captureMedia:{attachments:[],images:0,recapture:true}},
   {name:'native wrapper',body:card({tag:'div'}),code:'ready'},
   {name:'root URN without anchor',body:card({links:''}),code:'ready',captureIdentity:ownIdentity},
   {name:'ugcPost root',body:card({id:null,links:'',attributes:`data-id="urn:li:ugcPost:${primary}"`}),code:'ready'},

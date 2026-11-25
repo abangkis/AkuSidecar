@@ -8,16 +8,27 @@ const stores = new WeakMap();
 const MAX_RESPONSE_BYTES = 256 * 1024;
 const responsePath = 'AkuBridge/x-response-evidence-adapter.js';
 const runtimePath = 'AkuBridge/x-media-evidence-runtime.js';
+const diagnosticPaths = ['state-core.js', 'recorder.js', 'x-reply.js'].map(name => `AkuBridge/diagnostics/${name}`);
+
+export function withoutXReplyDiagnostics(observation) {
+  if (!observation?.coverage?.xReplyDiagnostics) return observation;
+  const {xReplyDiagnostics: _omitted, ...coverage} = observation.coverage;
+  return {...observation, coverage};
+}
 
 function storeFor(assets) {
   if (stores.has(assets)) return stores.get(assets);
   const runtime = assets.find(asset => asset.relative === runtimePath);
   if (typeof runtime?.content !== 'string') return null;
   const context = createContext({URL});
+  for (const relative of diagnosticPaths) {
+    const asset = assets.find(entry => entry.relative === relative);
+    if (typeof asset?.content === 'string') runInContext(asset.content, context, {timeout: 1000, filename: relative});
+  }
   runInContext(runtime.content, context, {timeout: 1000, filename: runtimePath});
   const api = context.AkuXMediaEvidence;
   if (!api?.validResponseEvidenceEnvelope) return null;
-  const store = {api, avatars: api.createAvatarCache(), media: api.createCache()};
+  const store = {api, diagnostics: context.AkuXReplyDiagnostics, avatars: api.createAvatarCache(), media: api.createCache()};
   stores.set(assets, store);
   return store;
 }
@@ -29,6 +40,8 @@ export async function prepareXPassiveEvidence({browser, page, assets, deadlineAt
   if (browser?.backend !== 'headless_worker' || typeof page?.send !== 'function') return 'not_applicable';
   const scripts = [responsePath, runtimePath].map(relative => assets?.find(asset => asset.relative === relative));
   if (scripts.some(asset => typeof asset?.content !== 'string')) return 'unavailable';
+  const diagnostic = assets.find(asset => asset.relative === diagnosticPaths.at(-1));
+  if (typeof diagnostic?.content === 'string') scripts.unshift(diagnostic);
   const previous = installations.get(page);
   if (previous) return previous.identifier ? 'registered' : 'unavailable';
   const left = deadlineAt - Date.now();
@@ -99,46 +112,70 @@ function readFinalXReplyIdsInPage(ids) {
   if (typeof runtime?.lookupReplyTo !== 'function') return null;
   const replies = [];
   for (const id of ids) {
-    const parent = runtime.lookupReplyTo('x:status:' + id);
+    const candidateId = 'x:status:' + id;
+    const entry = runtime.lookupReplyTarget?.(candidateId);
+    const parent = entry ? entry.parentId : runtime.lookupReplyTo(candidateId);
     if (typeof parent === 'string' && /^\d{5,30}$/.test(parent)) replies.push([id, parent]);
+    else if (entry?.status === 'expired') replies.push([id, null]);
   }
   return replies;
 }
 
 export async function finalizeXReplyEvidence({browser, page, assets, snapshots, deadlineAt, remainingBytes}) {
-  if (browser?.backend !== 'headless_worker' || !installations.get(page)?.identifier || deadlineAt <= Date.now()) return;
+  const registered = browser?.backend === 'headless_worker' && Boolean(installations.get(page)?.identifier);
+  let report;
+  try { report = storeFor(assets)?.diagnostics?.createReport(); } catch { /* Optional diagnostics. */ }
+  if (!registered && !report) return;
   const primitives = capturePrimitivesFor(assets);
   const owners = snapshots.map(snapshot => primitives.xReplySnapshotOwners(snapshot.posts));
   const ids = [...new Set(owners.flatMap(indices => [...indices.keys()]))];
   if (!ids.length) return;
-  let parents;
-  try {
-    const timeoutMs = Math.min(900, deadlineAt - Date.now());
-    if (timeoutMs <= 0) return;
-    parents = await page.evaluate(`(${readFinalXReplyIdsInPage.toString()})(${JSON.stringify(ids)})`, timeoutMs);
-  } catch { return; }
-  if (!Array.isArray(parents) || parents.length > ids.length || deadlineAt <= Date.now()) return;
+  let lookupStatus = 'unavailable';
   const requested = new Set(ids);
   const byId = new Map();
-  for (const pair of parents) {
-    if (!Array.isArray(pair) || pair.length !== 2 || !requested.has(pair[0])) return;
-    const [id, parent] = pair;
-    byId.set(id, byId.has(id) ? null : parent);
+  if (registered) {
+    try {
+      const timeoutMs = Math.min(900, deadlineAt - Date.now());
+      const parents = timeoutMs > 0
+        ? await page.evaluate(`(${readFinalXReplyIdsInPage.toString()})(${JSON.stringify(ids)})`, timeoutMs)
+        : null;
+      if (deadlineAt <= Date.now()) lookupStatus = 'deadline';
+      else if (Array.isArray(parents) && parents.length <= ids.length && parents.every(pair =>
+        Array.isArray(pair) && pair.length === 2 && requested.has(pair[0]))) {
+        lookupStatus = 'miss';
+        for (const [id, parentId] of parents) {
+          if (byId.has(id)) byId.set(id, { status: 'error', parentId: null });
+          else if (parentId === null) byId.set(id, { status: 'expired', parentId });
+          else if (typeof parentId === 'string' && /^\d{5,30}$/.test(parentId) && parentId !== id) {
+            byId.set(id, { status: 'hit', parentId });
+          } else byId.set(id, { status: 'error', parentId: null });
+        }
+      } else if (parents !== null) lookupStatus = 'error';
+    } catch {
+      lookupStatus = deadlineAt <= Date.now() ? 'deadline' : 'error';
+    }
   }
   for (const [snapshotIndex, indices] of owners.entries()) {
     const {posts} = snapshots[snapshotIndex];
     for (const [id, index] of indices) {
       const post = posts[index];
-      const merged = primitives.mergeXResponseReply(post, byId.get(id));
-      if (merged === post) continue;
-      const mergedBytes = Buffer.byteLength(JSON.stringify(merged));
-      if (mergedBytes > MAX_SINGLE_POST_BYTES) continue;
-      const delta = mergedBytes - Buffer.byteLength(JSON.stringify(post));
-      if (delta > remainingBytes) continue;
-      posts[index] = merged;
-      remainingBytes -= delta;
+      const entry = byId.get(id);
+      const merged = primitives.mergeXResponseReply(post, entry?.parentId);
+      let budgetSkipped = false;
+      if (merged !== post) {
+        const mergedBytes = Buffer.byteLength(JSON.stringify(merged));
+        const delta = mergedBytes - Buffer.byteLength(JSON.stringify(post));
+        budgetSkipped = mergedBytes > MAX_SINGLE_POST_BYTES || delta > remainingBytes;
+        if (!budgetSkipped) {
+          posts[index] = merged;
+          remainingBytes -= delta;
+        }
+      }
+      if (index < 20) report?.record({snapshotIndex, id, dom: post.replyDOM, lookupStatus: entry?.status ?? lookupStatus,
+        post: posts[index], budgetSkipped});
     }
   }
+  return report?.snapshot();
 }
 
 export async function resolveXPassiveEvidence({browser, page, assets, posts, deadlineAt, onDiagnostics}) {

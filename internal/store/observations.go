@@ -5,10 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"maps"
 	"strings"
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/diagnostics/linkedinrecovery"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/xreply"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
@@ -63,6 +65,14 @@ func (s *Store) saveObservationTx(ctx context.Context, tx *sql.Tx, commandID, ru
 	}
 	observation.Coverage["contentIdentity"] = identity
 	observation.Coverage = linkedinrecovery.ProjectCoverage(observation.Source, observation.Coverage)
+	roundCoverage := xreply.WithoutReport(observation.Coverage)
+	if value, exists := observation.Coverage[xreply.CoverageKey]; exists {
+		observation.Coverage = roundCoverage
+		if report := xreply.Bind(observation, value); report != nil {
+			observation.Coverage = maps.Clone(roundCoverage)
+			observation.Coverage[xreply.CoverageKey] = report
+		}
+	}
 	raw, err := json.Marshal(observation)
 	if err != nil {
 		return err
@@ -74,7 +84,7 @@ func (s *Store) saveObservationTx(ctx context.Context, tx *sql.Tx, commandID, ru
 	if err = tx.QueryRowContext(ctx, `SELECT coverage_json FROM runs WHERE id=?`, runID).Scan(&coverageRaw); err != nil {
 		return err
 	}
-	coverage := durableCaptureCoverage(coverageRaw, observation.Coverage)
+	coverage := durableCaptureCoverage(coverageRaw, roundCoverage)
 	durableCoverageRaw, err := json.Marshal(coverage)
 	if err != nil {
 		return err

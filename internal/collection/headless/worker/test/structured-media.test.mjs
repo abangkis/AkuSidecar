@@ -114,6 +114,9 @@ test('sourceAssets hashes the original Bridge resolver and keeps the derived fun
     assert.equal(sourceProvenance(assets).sources.find(asset => asset.path === passive.relative).sha256, hash);
   }
   assert.ok(assets.some(asset => asset.relative === 'worker/x-passive-evidence.mjs'));
+  const replyDiagnostics = assets.find(asset => asset.relative === 'AkuBridge/diagnostics/x-reply.js');
+  assert.equal(replyDiagnostics.execute, false);
+  assert.equal(sourceProvenance(assets).sources.find(asset => asset.path === replyDiagnostics.relative).sha256, replyDiagnostics.sha256);
   assert.equal(sourceProvenance(assets).sources.some(asset => asset.path.includes('derived')), false);
   const facebookPath = resolve(bridgePath, 'facebook-main-world-media-resolver.js');
   const facebookHash = createHash('sha256').update(await readFile(facebookPath)).digest('hex');

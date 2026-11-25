@@ -429,8 +429,8 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
   } else sourceFrontiers.delete(source);
   if (options.restoreScroll) await page.evaluate(`globalThis.XHeadlessPoC?.scrollSourceTo ? globalThis.XHeadlessPoC.scrollSourceTo(${originalScrollY}) : window.scrollTo({top:${originalScrollY},behavior:'instant'})`, timeLeft(deadline)).catch(() => {});
   try {
-    if (source === 'x') await finalizeXReplyEvidence({browser, page, assets, snapshots, deadlineAt: deadline,
-      remainingBytes: MAX_POST_EVIDENCE_BYTES - postEvidenceBytes});
+    const xReplyDiagnostics = source === 'x' ? await finalizeXReplyEvidence({browser, page, assets, snapshots,
+      deadlineAt: deadline, remainingBytes: MAX_POST_EVIDENCE_BYTES - postEvidenceBytes}) : null;
     const observation=toObservation({
       source, requestedUrl, snapshots, provenance, capturedAt, stopReason,
       performedScrolls: performedScrollsKnown ? performedScrolls : undefined, scrollStopReason,
@@ -447,6 +447,7 @@ async function captureScoped(browser, assetsBySource, source, payload, sourceFro
         ? linkedinCandidateQualityPolicyFor(assets) : null,
     });
     if (headlessNavigation) observation.coverage.headlessNavigation = headlessNavigation;
+    if (xReplyDiagnostics) observation.coverage.xReplyDiagnostics = xReplyDiagnostics;
     if(photoResolution) observation.coverage.photoParentResolution={status:'verified',photoId:photoResolution.photoId,
       parentPlatformId:photoResolution.nativeId,provenance:'structured_photo_parent_and_matching_native_post'};
     return observation;

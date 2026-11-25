@@ -7,7 +7,8 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {registeredScriptsForSources} from '../../AkuBridge/source-access-policy.js';
 import {sourceAssets} from '../internal/collection/headless/worker/worker.mjs';
 import {projectLinkedInRecoveryBlockers,projectLinkedInPermalinkRecoveryFailures,
-  projectLinkedInAnchorMismatchPolls,projectLinkedInAnchorGeometrySamples} from '../internal/collection/headless/worker/observation.mjs';
+  projectLinkedInAnchorMismatchPolls,projectLinkedInAnchorGeometrySamples,toObservation} from '../internal/collection/headless/worker/observation.mjs';
+import {primaryMediaMissing} from '../internal/httpapi/web/video-recapture-policy.js';
 
 const workspace=fileURLToPath(new URL('../../',import.meta.url));
 const bridge=join(workspace,'AkuBridge');
@@ -165,6 +166,22 @@ export async function runDOMShadowParity({chrome,output,source,canonicalUrl,prob
       if(spec.captureSequence){
         assert.deepEqual(blocks.map(block=>block.platformId??null),spec.captureSequence,spec.name+' Windowed capture sequence');
         assert.deepEqual(h.baseline.posts.map(post=>post.id),spec.captureSequence.filter(Boolean),spec.name+' Headless capture sequence');
+      }
+      if(spec.captureMedia){
+        const projected=toObservation({source,requestedUrl:canonicalUrl,snapshots:[h.baseline],provenance:{},
+          capturedAt:'2026-11-19T00:00:00Z',stopReason:'fixture'});
+        const expected=spec.captureMedia;
+        for(const [mode,block] of [['Windowed',blocks[0]],['Headless',projected.snapshots[0].blocks[0]]]){
+          const label=spec.name+' '+mode;
+          assert.ok(block?.permalink,label+' native post link');
+          assert.deepEqual(block.attachments.map(item=>item.kind),expected.attachments,label+' attachments');
+          if(expected.thumbnail)assert.ok(block.attachments[0].imageUrl,label+' thumbnail');
+          assert.equal(block.media.filter(item=>item.kind==='image').length,expected.images,
+            label+' primary images: '+JSON.stringify(block.mediaRecovery.candidateDiagnostics??block.mediaRecovery.evidence??[]));
+          assert.equal(primaryMediaMissing(block,source),expected.recapture,label+' media recapture');
+          if(expected.socialContext!==undefined)assert.equal(block.presentation.socialContext,expected.socialContext,label+' social context');
+        }
+        if(expected.windowedTrace)assert.ok(blocks[0].mediaRecovery.trace.includes(expected.windowedTrace),spec.name+' Windowed media diagnostic');
       }
       if(Object.hasOwn(spec,'recoveryClickCount')){
         assert.equal(w.recoveryClicks,spec.recoveryClickCount,spec.name+' Windowed recovery clicks');

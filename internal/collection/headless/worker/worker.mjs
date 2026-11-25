@@ -9,6 +9,7 @@ import { parseWindowedIdentity, validateIdentitySources } from './windowed-ident
 import { createBorrowedChrome, createBorrowedRPC } from './borrowed.mjs';
 import { capture } from './capture.mjs';
 import { sourceProvenance } from './provenance.mjs';
+import { withoutXReplyDiagnostics } from './x-passive-evidence.mjs';
 export { createSourceConcurrentAdapter } from './source-concurrent-adapter.mjs';
 
 export const WORKER_VERSION = '1.0.0';
@@ -101,6 +102,17 @@ export async function sourceAssets(bridgePath, source) {
   const workerModules = ['capture-primitives.mjs', 'capture.mjs', 'chrome.mjs', 'borrowed.mjs', 'observation.mjs', 'linkedin-recovery-diagnostics.mjs', 'provenance.mjs', 'quote-navigation.mjs', 'structured-media.mjs', 'additional-source-media.mjs', 'photo-recapture.mjs', 'x-text-recovery.mjs', 'x-passive-evidence.mjs', 'headless-freshness.mjs', 'source-freshness-contract.mjs', 'source-concurrent-adapter.mjs', 'worker.mjs', 'package.json']
     .map(name => ({ relative: `worker/${name}`, path: resolve(root, name), execute: false }));
   const assets = [];
+  if (source === 'x') {
+    const diagnostics = ['state-core.js', 'recorder.js', 'x-reply.js'].map(name => ({
+      relative: `AkuBridge/diagnostics/${name}`, path: resolve(bridge, 'diagnostics', name), execute: false,
+    }));
+    try {
+      const files = await Promise.all(diagnostics.map(asset => stat(asset.path)));
+      if (files.every(file => file.isFile() && file.size <= 1024 * 1024)) shared.push(...diagnostics);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+  }
   for (const asset of [...shared, ...selected, ...workerModules]) {
     const info = await stat(asset.path);
     if (!info.isFile() || info.size > 1024 * 1024) throw requestError('invalid_init', `required source asset is unavailable: ${asset.relative}`);
@@ -189,6 +201,9 @@ export async function runWorker({
   const write = value => {
     if (output.destroyed) return Promise.resolve();
     let line = JSON.stringify(value);
+    if (value.result?.coverage?.xReplyDiagnostics && Buffer.byteLength(line, 'utf8') > MAX_RESPONSE_BYTES) {
+      line = JSON.stringify({...value, result: withoutXReplyDiagnostics(value.result)});
+    }
     if (Buffer.byteLength(line, 'utf8') > MAX_RESPONSE_BYTES) {
       line = JSON.stringify(responseFor(value.id, false, undefined, { code: 'response_too_large', message: 'response exceeded the 8 MiB limit' }));
     }

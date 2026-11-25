@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { sourceTextIsPartial } from '../internal/httpapi/web/source-text-completeness.js';
+import { primaryMediaMissing } from '../internal/httpapi/web/video-recapture-policy.js';
 
 test('short feed excerpts remain explicitly partial independently of collapse thresholds', () => {
   assert.equal(sourceTextIsPartial({ textStatus: 'requires_permalink_capture' }), true);
@@ -27,7 +28,7 @@ test('source cards omit the incomplete-text notice and preserve expansion for lo
   const expander = app.slice(app.indexOf('function buildExpandableText('), app.indexOf('function buildMedia('));
   const recaptureReason = app.slice(app.indexOf('function mediaRecaptureReasonForEntry('), app.indexOf('function buildMediaRecaptureButton('));
   const context = vm.createContext({ document: { createElement: () => new Element() },
-    sourceTextIsPartial, SOURCE_TEXT_COLLAPSE_CHARACTERS: 420, SOURCE_TEXT_COLLAPSE_LINES: 6,
+    sourceTextIsPartial, primaryMediaMissing, SOURCE_TEXT_COLLAPSE_CHARACTERS: 420, SOURCE_TEXT_COLLAPSE_LINES: 6,
     sourceDescriptor: () => ({}), sourceIdentity: () => ({ displayName: 'Theo' }),
     buildAvatar: () => new Element(), postHeaderContext: () => '', formatDate: () => '',
     applyPostFreshness() {}, postHeaderContexts: new WeakMap(), state: { expandedTimelineText: new Set() },

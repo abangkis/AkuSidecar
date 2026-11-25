@@ -68,3 +68,25 @@ older-check provenance, source/brief cues and accessible parent navigation.
 The browser preview is synthetic; it does not confirm a specific relationship
 on live X or rewrite already saved captures. Activate the compatible runtime
 pair separately before checking newly captured real posts.
+
+## Retained reply diagnostics
+
+New X observations can include `coverage.xReplyDiagnostics`. Each row identifies
+an exact captured post and snapshot and records the DOM marker outcome, final
+reply-cache lookup, and resulting relation. A cache hit can bypass the DOM scan,
+which is recorded as `not_checked`. The final lookup distinguishes a miss,
+expiry, unavailable observer, error, and capture deadline. The relation outcome
+records which evidence was retained, unresolved or ambiguous relations, and
+Headless merge attempts skipped for the observation byte budget.
+
+The producer retains up to 64 rows per observation. A truncated report or one
+with unbound candidates has `complete: false`. Completeness describes the
+recorded rows. The passive observer still reports its own coverage. Report rows
+carry the captured candidate ID and outcome enums. They do not carry DOM text,
+response bodies, or parent identifiers.
+
+Sidecar binds the report to the retained X observation and omits it from
+run-level coverage. Malformed reports are discarded while valid post evidence
+is admitted. Bridge and worker transports omit the diagnostic report when
+necessary to stay within their existing byte limits. Timeline grouping
+continues to use the observed reply relation.

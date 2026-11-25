@@ -97,6 +97,27 @@ with the current trigger/surface. Each is `matches`, `different`, `absent` or
 Neither result establishes ownership or authorizes cleanup. Raw text, labels,
 exception messages, URLs and DOM IDs are never copied.
 
+Each sampled menu can also carry `menuEvidence` from the same pre-recovery
+check. `component` recognizes an Artdeco dropdown or native popover, and `scope`
+records a detected feed-post or navigation context. `ariaOwnerRelation` records
+elements outside the surface that reference it with `aria-owns`, independently of
+the trigger. A single owner is classified relative to the candidate's button.
+Competing owners are `multiple`, and an unresolvable lookup is `unknown`.
+
+The trigger lookup checks `aria-controls`, `popovertarget` and `aria-labelledby`
+references to interactive controls, then looks for a local interactive Artdeco
+toggle. Competing controls stay ambiguous. Noninteractive ARIA owners supply
+neither the trigger nor its expanded state. An Artdeco toggle is a structural
+hint and grants no ownership authority.
+
+`triggerExpanded`, `popoverOpen` and `dropdownOpen` retain separate open-state
+signals, with `null` for unavailable reads. `cssCheck` is the browser's CSS
+visibility check. The hit test samples five points in the menu's viewport
+intersection and counts hits, covered points and misses. A miss can reflect
+clipping, pointer-event behavior or another hit-testing limitation. These
+observations do not change the guard or certify what was painted. Headless
+retains allowlisted values in observation coverage and empty-capture diagnostics.
+
 Each record carries `phase:pre_recovery_guard`, `snapshotIndex` and `candidateIndex`.
 Indices are bounded to 0..1,000,000 or null when unavailable. Candidate position
 refers to the consumer's discovery list, not a persistent post or DOM identifier.

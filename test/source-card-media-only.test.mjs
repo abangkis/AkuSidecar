@@ -6,6 +6,7 @@ import vm from "node:vm";
 import { boundedTimelineMedia, shouldUseTimelineCarousel } from "../internal/httpapi/web/timeline-media-carousel.js";
 import { reserveMediaDimensions } from "../internal/httpapi/web/timeline-media-layout.js";
 import { timelineHlsPlayback } from "../internal/httpapi/web/timeline-hls-policies.js";
+import { primaryMediaMissing, videoPlaybackMissing } from "../internal/httpapi/web/video-recapture-policy.js";
 
 class Element {
   children = []; className = ""; value = "";
@@ -25,22 +26,28 @@ function renderer() {
     URL, document: { createElement: tag => new Element(tag) },
     SOURCE_TEXT_COLLAPSE_CHARACTERS: 420, SOURCE_TEXT_COLLAPSE_LINES: 6,
     QUOTE_TEXT_COLLAPSE_CHARACTERS: 320, QUOTE_TEXT_COLLAPSE_LINES: 4,
-    sourceDescriptor: () => ({ nativeHosts: ["x.com"], nativePathTokens: ["/status/"] }),
+    sourceDescriptor: source => source === "linkedin"
+      ? { nativeHosts: ["www.linkedin.com"], nativePathTokens: ["/feed/update/", "/posts/"], playbackRecoveryCapability: "native_post_recapture" }
+      : { nativeHosts: ["x.com"], nativePathTokens: ["/status/"] },
     sourceIdentity: author => ({ displayName: author }), sourceLabel: () => "X",
     buildAvatar: () => new Element("span"), postHeaderContext: () => "", formatDate: () => "",
     applyPostFreshness() {}, postHeaderContexts: new WeakMap(),
-    state: { expandedTimelineText: new Set() }, buildAttachments: () => null,
-    buildEngagement: () => null, videoPlaybackMissing: () => false,
+    state: { expandedTimelineText: new Set(), foregroundRecaptureOffers: new Map() },
+    buildEngagement: () => null, primaryMediaMissing, videoPlaybackMissing,
+    collectionModeState: () => ({ canCollect: true }),
     boundedTimelineMedia, shouldUseTimelineCarousel, reserveMediaDimensions, timelineHlsPlayback,
     safePlaybackUrl: () => null, openMedia() {},
+    configureNativePostLink: (link, href) => { link.href = href; },
   });
   vm.runInContext([
     slice("buildSourceCard", "applyPostFreshness"),
+    slice("buildAttachments", "buildEngagement"),
     slice("buildQuotedPost", "buildMedia"),
     slice("buildMedia", "buildTimelineMediaCarousel"),
     slice("buildImageMediaControl", "buildVideoMedia"),
+    slice("buildVideoMedia", "activateInlineVideo"),
     slice("safeMediaUrl", "safePlaybackUrl"),
-    slice("safeSourceUrl", "buildMediaRecaptureButton"),
+    slice("safeSourceUrl", "buildForegroundRecaptureOffer"),
   ].join("\n"), context);
   return entry => context.buildSourceCard(entry);
 }
@@ -70,6 +77,59 @@ test("image captions preserve authored names, numbers and paragraph breaks", () 
   assert.deepEqual(byClass(card, "expandable-text-copy").map(node => node.textContent), [caption]);
   assert.equal(nodes(card, node => node.tagName === "IMG").length, 1);
   assert.doesNotMatch(card.textContent, /AI summary/);
+});
+
+test("a captured LinkedIn image does not show a missing-media warning after cancelled acquisition", () => {
+  const card = render({ ...entry({
+    media: [{ ...photo, url: "https://media.licdn.com/synthetic.jpg" }],
+    mediaRecovery: { outcome: "unavailable", trace: ["acquisition_cancelled"], expectedKinds: [] },
+  }), source: "linkedin" });
+  assert.equal(nodes(card, node => node.tagName === "IMG").length, 1);
+  assert.equal(byClass(card, "source-layout-media-unavailable").length, 0);
+  assert.equal(byClass(card, "recapture-button").length, 0);
+});
+
+test("a LinkedIn link preview stays visible without offering recapture for its thumbnail", () => {
+  for (const trace of [["acquisition_cancelled"], ["owner_unverified"], ["deadline_exceeded"]]) {
+    const card = render({ ...entry({
+      permalink: "https://www.linkedin.com/feed/update/urn:li:share:1234567890/",
+      attachments: [{ kind: "link_preview", title: "Oracle WebLogic", url: "https://blogs.oracle.com/fixture",
+        imageUrl: "https://media.licdn.com/fixture-thumbnail.jpg" }],
+      mediaRecovery: { outcome: "unavailable", trace, expectedKinds: [] },
+    }), source: "linkedin" });
+    assert.equal(byClass(card, "source-layout-attachment")[0].href, "https://blogs.oracle.com/fixture");
+    assert.equal(nodes(card, node => node.tagName === "IMG")[0].src, "https://media.licdn.com/fixture-thumbnail.jpg");
+    assert.equal(byClass(card, "source-layout-media-unavailable").length, 0);
+    assert.equal(byClass(card, "recapture-button").length, 0);
+  }
+});
+
+test("missing LinkedIn media offers recapture only with a native post link", () => {
+  for (const mediaRecovery of [
+    { outcome: "unavailable", expectedKinds: ["image"] },
+    { outcome: "observed_dom_only", status: "missing_expected_url", expected: ["image"] },
+  ]) {
+    const post = { ...entry({ mediaRecovery }), source: "linkedin" };
+    const withoutLink = render(post);
+    assert.match(byClass(withoutLink, "source-layout-media-unavailable")[0].textContent, /native post link was not captured/);
+    assert.equal(byClass(withoutLink, "recapture-button").length, 0);
+
+    const withLink = render({ ...post, evidence: { ...post.evidence,
+      permalink: "https://www.linkedin.com/feed/update/urn:li:activity:123/" } });
+    assert.equal(byClass(withLink, "recapture-button")[0].textContent, "Recapture");
+    assert.doesNotMatch(withLink.textContent, /native post link was not captured/);
+  }
+});
+
+test("a LinkedIn video poster still offers video recapture with a native post link", () => {
+  const card = render({ ...entry({
+    permalink: "https://www.linkedin.com/feed/update/urn:li:activity:123/",
+    contentKind: "video",
+    media: [{ ...photo, kind: "video_poster", url: "https://media.licdn.com/synthetic.jpg" }],
+    mediaRecovery: { outcome: "unavailable" },
+  }), source: "linkedin" });
+  assert.match(byClass(card, "source-layout-media-unavailable")[0].textContent, /Video playback was not captured/);
+  assert.equal(byClass(card, "recapture-button")[0].textContent, "Recapture video");
 });
 
 test("a quote without parent text stays nested and is not promoted to a parent caption", () => {

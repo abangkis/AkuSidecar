@@ -48,6 +48,9 @@ func newBridgeMediaRecaptureFixture(t *testing.T, route string) bridgeMediaRecap
 	}
 	key := string(source) + ":http-recapture"
 	block := domain.Block{EvidenceKey: key, PlatformID: "1234567890123456789", Permalink: native, Author: "Fixture", Text: "Offline recapture evidence", MediaRecovery: map[string]any{"outcome": "unavailable"}}
+	if source == domain.SourceLinkedIn {
+		block.MediaRecovery["expectedKinds"] = []string{"image"}
+	}
 	observation := domain.Observation{Source: source, CapturedAt: domain.Now(), Snapshots: []domain.Snapshot{{Blocks: []domain.Block{block}}}, Coverage: map[string]any{"quality": "complete"}}
 	raw, err := json.Marshal(observation)
 	if err != nil {

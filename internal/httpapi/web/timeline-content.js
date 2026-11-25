@@ -1,4 +1,5 @@
 import { classifyPostFreshness, postHeaderContext } from "./post-freshness.js";
+import { primaryMediaMissing } from "./video-recapture-policy.js";
 
 export function createTimelineContent({
   QUOTE_TEXT_COLLAPSE_CHARACTERS, QUOTE_TEXT_COLLAPSE_LINES, SOURCE_TEXT_COLLAPSE_CHARACTERS, SOURCE_TEXT_COLLAPSE_LINES, buildAIDetectionControls, buildActions, buildForegroundRecaptureOffer, buildMedia, buildMediaRecaptureButton, buildSourceIcon, buildTimelineContentContextAnchor, closeTimelineContentContextDrawer, formatDate, humanize, initials, mediaRecaptureReasonForEntry, getPostScreenshotUI, safeMediaUrl, safeSourceUrl, sourceDescriptor, sourceIdentity, sourceLabel, state, syncTimelineContentContextTabs
@@ -197,7 +198,8 @@ export function createTimelineContent({
     const media = buildMedia(evidence.media, source, evidence.contentKind, nativePostUrl, entry);
     if (media) card.append(media);
     const recaptureReason = mediaRecaptureReasonForEntry(entry);
-    if (recaptureReason === "unresolved_video" || evidence.mediaRecovery?.outcome === "unavailable") {
+    const missingMedia = primaryMediaMissing(evidence, source);
+    if (recaptureReason === "unresolved_video" || missingMedia) {
       const unavailable = document.createElement("div");
       unavailable.className = "source-layout-media-unavailable";
       const message = document.createElement("span");
@@ -205,9 +207,13 @@ export function createTimelineContent({
         ? "Video playback was not captured."
         : "Media was present at the source but unavailable in this captured view.";
       unavailable.append(message);
-      unavailable.append(state.foregroundRecaptureOffers.has(entry.id) && state.bootstrap?.collectionRuntime?.effective !== "headless"
-        ? buildForegroundRecaptureOffer(entry)
-        : buildMediaRecaptureButton(entry, recaptureReason));
+      if (nativePostUrl) {
+        unavailable.append(state.foregroundRecaptureOffers.has(entry.id) && state.bootstrap?.collectionRuntime?.effective !== "headless"
+          ? buildForegroundRecaptureOffer(entry)
+          : buildMediaRecaptureButton(entry, recaptureReason));
+      } else {
+        message.textContent += " The native post link was not captured.";
+      }
       card.append(unavailable);
     }
     const engagement = buildEngagement(evidence.engagement, source);

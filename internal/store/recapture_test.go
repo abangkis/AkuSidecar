@@ -117,6 +117,35 @@ func TestForegroundMediaRecaptureRequiresUnavailableBackgroundAttempt(t *testing
 	}
 }
 
+func TestLinkedInRecaptureRequiresPrimaryMediaEvidence(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		recovery map[string]any
+		hasImage bool
+		want     bool
+	}{
+		{"legacy cancelled preview", map[string]any{"outcome": "unavailable", "trace": []any{"acquisition_cancelled"}}, false, false},
+		{"unverified owner with captured image", map[string]any{"outcome": "unavailable", "trace": []any{"owner_unverified"}}, true, false},
+		{"Windowed missing image", map[string]any{"outcome": "unavailable", "expectedKinds": []any{"image"}}, false, true},
+		{"Headless missing image", map[string]any{"outcome": "observed_dom_only", "status": "missing_expected_url", "expected": []any{"image"}}, false, true},
+		{"unknown media kind", map[string]any{"outcome": "unavailable", "expectedKinds": []any{"unknown"}}, false, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			block := domain.Block{MediaRecovery: test.recovery}
+			if test.hasImage {
+				block.Media = []map[string]any{{"kind": "image", "url": "https://media.licdn.com/fixture.jpg"}}
+			}
+			if got := primaryMediaMissing(block, domain.SourceLinkedIn); got != test.want {
+				t.Fatalf("primaryMediaMissing = %v, want %v", got, test.want)
+			}
+		})
+	}
+	block := domain.Block{MediaRecovery: map[string]any{"expectedKinds": []any{"video"}}}
+	if !unresolvedVideo(block, domain.SourceLinkedIn) {
+		t.Fatal("explicit Windowed video evidence must remain eligible for playback recapture")
+	}
+}
+
 func TestLinkedInPlaybackErrorRecaptureRequiresAFreshProgressiveURL(t *testing.T) {
 	ctx := context.Background()
 	state := openTestStore(t)

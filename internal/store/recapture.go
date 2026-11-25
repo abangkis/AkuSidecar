@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/abangkis/AkuSidecar/internal/batchbehavior"
@@ -90,7 +91,7 @@ func (s *Store) createOwnedMediaRecapture(ctx context.Context, timelineID string
 			return domain.MediaRecapture{}, errors.New("this item does not have unresolved captured video")
 		}
 	case domain.MediaRecaptureMissingMedia:
-		if len(block.Media) > 0 || stringValue(block.MediaRecovery, "outcome") != "unavailable" {
+		if !primaryMediaMissing(block, source) {
 			return domain.MediaRecapture{}, errors.New("this item does not have unavailable captured media")
 		}
 	case domain.MediaRecapturePlaybackError:
@@ -1081,21 +1082,26 @@ func unresolvedVideo(block domain.Block, source domain.Source) bool {
 			return true
 		}
 	}
-	switch expected := block.MediaRecovery["expected"].(type) {
-	case []any:
-		for _, kind := range expected {
-			if kind == "video" {
-				return true
-			}
-		}
-	case []string:
-		for _, kind := range expected {
-			if kind == "video" {
-				return true
-			}
-		}
+	return mediaRecoveryExpects(block.MediaRecovery, "video")
+}
+
+func primaryMediaMissing(block domain.Block, source domain.Source) bool {
+	if len(block.Media) > 0 {
+		return false
 	}
-	return false
+	outcome := stringValue(block.MediaRecovery, "outcome")
+	if source != domain.SourceLinkedIn {
+		return outcome == "unavailable"
+	}
+	unavailable := outcome == "unavailable" ||
+		(outcome == "observed_dom_only" && stringValue(block.MediaRecovery, "status") == "missing_expected_url")
+	return unavailable && (mediaRecoveryExpects(block.MediaRecovery, "image") ||
+		mediaRecoveryExpects(block.MediaRecovery, "video") || mediaRecoveryExpects(block.MediaRecovery, "document"))
+}
+
+func mediaRecoveryExpects(recovery map[string]any, kind string) bool {
+	return slices.Contains(stringValues(recovery["expectedKinds"]), kind) ||
+		slices.Contains(stringValues(recovery["expected"]), kind)
 }
 
 func withoutInlinePlayback(values []map[string]any) []map[string]any {
