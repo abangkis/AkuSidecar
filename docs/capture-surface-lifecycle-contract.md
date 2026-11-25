@@ -24,8 +24,11 @@ Navigation outside a recognized feed preserves the tab and records pending
 cleanup. It does not assert a transfer to the user or erase the record. Closure
 is successful only after a successful scoped inventory verifies absence.
 Failed storage, inventory or removal cannot manufacture a completed receipt.
-Pending cleanup survives worker restart and prevents new Browser surfaces from
-silently accumulating behind an unresolved predecessor.
+At full release of the current lease, if each remaining live binding is a
+batch tab whose only failed check is its off-feed URL, the Bridge atomically
+removes that lease's managed state and ledger bindings and records each tab as
+`isolated`. It leaves the windows open. Subsequent managed captures allocate
+fresh bindings. Other pending cleanup continues to block admission.
 Malformed journal data is not treated as an empty ledger. The journal is bounded
 at 4,096 records without silently evicting unresolved ownership or tombstones;
 capacity exhaustion reports pending cleanup and requires operator resolution.
@@ -47,13 +50,14 @@ The key contains the exact pre-archive journal, including any prior archive.
 ## Receipt
 
 `aku.surface-cleanup.v1` echoes the lease and optional source and accounts for
-`expected`, `closed`, `transferred`, `retained` and `pending` surfaces. All counts
+`expected`, `closed`, `transferred`, `retained`, `pending` and optional `isolated`
+surfaces. Older receipts imply zero isolated surfaces. All counts
 are bounded nonnegative integers and must balance. Success requires `complete`
 and zero pending surfaces. A source release may retain an identified shared
 placeholder; terminal Browser release must not retain batch-owned surfaces.
 
-No current path infers user transfer from navigation. Unknown/native-post
-navigation stays pending while the tab is preserved. An explicit future
+The isolated count records relinquished capture bindings. A preserved tab
+counts as closed only after inventory verifies absence. An explicit future
 user-transfer action must establish its own evidence before counting a transfer.
 An empty or missing outcome, a lease mismatch, or an unverified legacy
 `no_owned_surface` reply is not completion proof. Background dispatch, UI polling

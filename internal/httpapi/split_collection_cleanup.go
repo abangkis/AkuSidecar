@@ -99,6 +99,7 @@ func browserCollectionCleanupResult(result *splitActionResult, requestedLeaseID 
 				Closed      *float64        `json:"closed"`
 				Transferred *float64        `json:"transferred"`
 				Retained    *float64        `json:"retained"`
+				Isolated    json.RawMessage `json:"isolated"`
 				Pending     *float64        `json:"pending"`
 				Complete    *bool           `json:"complete"`
 			} `json:"cleanup"`
@@ -123,6 +124,13 @@ func browserCollectionCleanupResult(result *splitActionResult, requestedLeaseID 
 		return errors.New("Browser collection cleanup receipt belongs to another source")
 	}
 	counts := []*float64{cleanup.Expected, cleanup.Closed, cleanup.Transferred, cleanup.Retained, cleanup.Pending}
+	var isolated *float64
+	if len(cleanup.Isolated) != 0 {
+		if err := json.Unmarshal(cleanup.Isolated, &isolated); err != nil {
+			return errors.New("Browser collection cleanup receipt has an invalid isolated count")
+		}
+		counts = append(counts, isolated)
+	}
 	for _, count := range counts {
 		if count == nil || math.IsNaN(*count) || math.IsInf(*count, 0) || *count < 0 || math.Trunc(*count) != *count || *count > 9007199254740991 {
 			return errors.New("Browser collection cleanup receipt has invalid counts")
@@ -131,7 +139,11 @@ func browserCollectionCleanupResult(result *splitActionResult, requestedLeaseID 
 			return errors.New("Browser collection cleanup receipt exceeds the record bound")
 		}
 	}
-	if *cleanup.Expected != *cleanup.Closed+*cleanup.Transferred+*cleanup.Retained+*cleanup.Pending {
+	accounted := *cleanup.Closed + *cleanup.Transferred + *cleanup.Retained + *cleanup.Pending
+	if isolated != nil {
+		accounted += *isolated
+	}
+	if *cleanup.Expected != accounted {
 		return errors.New("Browser collection cleanup receipt counts do not conserve the ledger")
 	}
 	if cleanup.Complete == nil || !*cleanup.Complete || *cleanup.Pending != 0 {

@@ -767,9 +767,10 @@ export function createInboxUi({
     }
     const cleanup = events.filter((event) => event.detail?.cleanup?.schema === "aku.surface-cleanup.v1")
       .at(-1)?.detail.cleanup;
-    const cleanupSummary = cleanup && [cleanup.expected, cleanup.closed, cleanup.retained, cleanup.pending]
+    const cleanupSummary = cleanup && [cleanup.expected, cleanup.closed, cleanup.retained, cleanup.pending,
+      cleanup.isolated === undefined ? 0 : cleanup.isolated]
       .every((value) => Number.isInteger(value) && value >= 0 && value <= 4096)
-      ? `${cleanup.closed} closed / ${cleanup.expected} tracked · ${cleanup.retained} lease-retained · ${cleanup.pending} pending`
+      ? `${cleanup.closed} closed / ${cleanup.expected} tracked${cleanup.isolated ? ` · ${cleanup.isolated} isolated` : ""} · ${cleanup.retained} lease-retained · ${cleanup.pending} pending`
       : null;
     rollup.textContent = [
       cleanupSummary,

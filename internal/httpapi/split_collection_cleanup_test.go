@@ -85,6 +85,7 @@ func TestBrowserCollectionCleanupRequiresVerifiedLeaseOutcome(t *testing.T) {
 		}
 	}
 	for _, raw := range []string{
+		`{"outcome":{"reason":"no_owned_surface","cleanup":{"schema":"aku.surface-cleanup.v1","leaseId":"session_fixture","source":null,"expected":5,"closed":4,"isolated":1,"transferred":0,"retained":0,"pending":0,"complete":true}}}`,
 		`{"outcome":{"cleanup":{"schema":"aku.surface-cleanup.v1","leaseId":"session_fixture","source":null,"expected":2,"closed":1,"transferred":1,"retained":0,"pending":0,"complete":true}}}`,
 		`{"outcome":{"reason":"no_owned_surface","cleanup":{"schema":"aku.surface-cleanup.v1","leaseId":"session_fixture","source":null,"expected":0,"closed":0,"transferred":0,"retained":0,"pending":0,"complete":true}}}`,
 		`{"outcome":{"reason":"no_owned_surface","cleanup":{"schema":"aku.surface-cleanup.v1","leaseId":"session_fixture","source":null,"expected":1,"closed":1,"transferred":0,"retained":0,"pending":0,"complete":true}}}`,
