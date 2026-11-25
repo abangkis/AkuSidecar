@@ -46,6 +46,18 @@ test('observer registration is once per owned target and never modifies borrowed
   assert.equal(state.sends, 1);
 });
 
+test('new-document media cache can validate the poster and playback URL before page capture starts', async () => {
+  const context = vm.createContext({URL});
+  await registered({send: async (_method, {source}) => {
+    vm.runInContext(source, context);
+    return {identifier: 'observer'};
+  }});
+  const cache = context.AkuXMediaEvidence.createCache();
+  const evidence = candidate();
+  cache.put(evidence.candidateId, evidence.media, 'x_response_graphql');
+  assert.equal(cache.get(evidence.candidateId)[0]?.playbackUrl, playback);
+});
+
 test('hanging registration is bounded, failure-soft and cannot create duplicate late hooks', async () => {
   let sends = 0, finish;
   const page = {send: () => {sends++; return new Promise(resolve => {finish = resolve;});}};

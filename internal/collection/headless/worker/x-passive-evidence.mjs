@@ -8,6 +8,7 @@ const stores = new WeakMap();
 const MAX_RESPONSE_BYTES = 256 * 1024;
 const responsePath = 'AkuBridge/x-response-evidence-adapter.js';
 const runtimePath = 'AkuBridge/x-media-evidence-runtime.js';
+const policyPath = 'AkuBridge/bounded-capture-policy.js';
 const diagnosticPaths = ['state-core.js', 'recorder.js', 'x-reply.js'].map(name => `AkuBridge/diagnostics/${name}`);
 
 export function withoutXReplyDiagnostics(observation) {
@@ -21,7 +22,7 @@ function storeFor(assets) {
   const runtime = assets.find(asset => asset.relative === runtimePath);
   if (typeof runtime?.content !== 'string') return null;
   const context = createContext({URL});
-  for (const relative of diagnosticPaths) {
+  for (const relative of [policyPath, ...diagnosticPaths]) {
     const asset = assets.find(entry => entry.relative === relative);
     if (typeof asset?.content === 'string') runInContext(asset.content, context, {timeout: 1000, filename: relative});
   }
@@ -38,7 +39,7 @@ function storeFor(assets) {
 // hooks or a second evidence bridge on those pages.
 export async function prepareXPassiveEvidence({browser, page, assets, deadlineAt}) {
   if (browser?.backend !== 'headless_worker' || typeof page?.send !== 'function') return 'not_applicable';
-  const scripts = [responsePath, runtimePath].map(relative => assets?.find(asset => asset.relative === relative));
+  const scripts = [policyPath, responsePath, runtimePath].map(relative => assets?.find(asset => asset.relative === relative));
   if (scripts.some(asset => typeof asset?.content !== 'string')) return 'unavailable';
   const diagnostic = assets.find(asset => asset.relative === diagnosticPaths.at(-1));
   if (typeof diagnostic?.content === 'string') scripts.unshift(diagnostic);
