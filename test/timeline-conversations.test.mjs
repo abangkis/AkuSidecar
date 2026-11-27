@@ -68,7 +68,7 @@ test("conversation cues use safe text, preserve older-check provenance and navig
     documentRef, navigateToParent: id => navigated.push(id),
   }));
   const cue = cards[1].children[0];
-  assert.equal(cue.children[0].children[1].textContent, "Reply to <img onerror=unsafe>");
+  assert.equal(cue.children[0].textContent, "View parent");
   assert.equal(cue.children[0].attributes["aria-label"], "View parent post by <img onerror=unsafe>");
   cue.children[0].listeners.click();
   assert.deepEqual(navigated, ["root"]);
@@ -123,7 +123,7 @@ test("actual Timeline rendering preserves batch boundaries, observes each card a
   assert.deepEqual(filtered.state.timelineItems.map(entry => entry.id), ["reply", "unrelated", "root"]);
 });
 
-test("reply chips stay beside source identity and remain available in brief mode", () => {
+test("source and brief views show a compact parent action with a descriptive accessible name", () => {
   const group = planTimelineConversations([post("reply", "root"), post("root")])[0];
   const card = element("article"), identity = element(), brief = element();
   card.querySelector = selector => selector === ".source-layout-card > header > div" ? identity
@@ -133,11 +133,13 @@ test("reply chips stay beside source identity and remain available in brief mode
     navigateToParent: id => visited.push(id), formatAuthor: name => name.toUpperCase() });
   assert.equal(identity.children.length, 1);
   assert.equal(brief.children.length, 1);
-  const button = identity.children[0].children[0];
-  assert.equal(button.children[1].textContent, "Reply to ROOT");
-  assert.equal(button.children[2].textContent, "View parent");
-  assert.equal(button.type, "button");
-  button.listeners.click(); brief.children[0].children[0].listeners.click();
+  for (const view of [identity, brief]) {
+    const button = view.children[0].children[0];
+    assert.equal(button.textContent, "View parent");
+    assert.equal(button.attributes["aria-label"], "View parent post by ROOT");
+    assert.equal(button.type, "button");
+    button.listeners.click();
+  }
   assert.deepEqual(visited, ["root", "root"]);
 });
 
@@ -163,11 +165,11 @@ test("Timeline draws C3 for the stored LinkedIn fixture", { skip: !process.env.A
   assert.equal(cards[1].children.filter(child => child.className === "timeline-reply-connector").length, 1);
 });
 
-test("branch chips name their immediate parent while unresolved replies have no connector or guessed destination", () => {
+test("parent actions identify the immediate parent while unresolved replies have no connector or guessed destination", () => {
   const group = planTimelineConversations([post("leaf", "middle"), post("sibling", "root"), post("middle", "root"), post("root")])[0];
   for (const member of group.members.filter(value => value.parentID)) {
     const card = element(); decorateTimelineConversation(card, member, group, { documentRef });
-    assert.equal(card.children[0].children[0].children[1].textContent, `Reply to ${member.parentID}`);
+    assert.equal(card.children[0].children[0].attributes["aria-label"], `View parent post by ${member.parentID}`);
   }
   for (const status of ["not_in_view", "ambiguous"]) {
     const entry = post("orphan", "", {conversation:{kind:"replies_to",status,provenance:"observed_dom"}});

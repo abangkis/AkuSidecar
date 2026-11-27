@@ -96,18 +96,7 @@ export function decorateTimelineConversation(card, member, group, {
       link.type = "button"; link.className = "timeline-reply-parent";
       link.title = `View parent post by ${author}`;
       link.setAttribute("aria-label", link.title);
-      const arrow = documentRef.createElement("span");
-      arrow.className = "timeline-reply-arrow";
-      arrow.textContent = "↳";
-      arrow.setAttribute("aria-hidden", "true");
-      const name = documentRef.createElement("span");
-      name.className = "timeline-reply-name";
-      name.textContent = `Reply to ${author}`;
-      const hint = documentRef.createElement("span");
-      hint.className = "timeline-reply-action";
-      hint.textContent = "View parent";
-      hint.setAttribute("aria-hidden", "true");
-      link.append(arrow, name, hint);
+      link.textContent = "View parent";
       link.addEventListener("click", () => navigateToParent(parentID));
       cue.append(link);
     } else {
