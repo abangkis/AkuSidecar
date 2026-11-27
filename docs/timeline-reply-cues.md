@@ -9,17 +9,10 @@ times, published times, batch membership, and AI routing remain unchanged.
 An older parent retains the `From another check` label. The grouping does not
 fetch more pages or force filtered parents back into the view.
 
-The chip beneath the author names the immediate parent, not the conversation
-root. A muted 2px rail and small nodes identify the group; adjacent members use
-a 6px gap within the existing 16px Timeline grid. Branches stay at one visual
-indent level so sibling replies are not presented as replies to one another.
-The chip also remains available in brief mode and compact report cards.
-
-`View parent` focuses the exact loaded parent and adds a temporary outline.
-Reduced-motion users get an immediate jump. On narrow screens the secondary
-action hint is hidden, while the native button retains its descriptive
-accessible name. Unknown, conflicting and out-of-view parents get a neutral
-status label and no connecting rail or guessed navigation target.
+Source and Brief show a connector between adjacent cards when the second card
+is a direct reply to the first. Siblings stay at the same indent level. The
+conversation count appears on the root card. Unknown, conflicting and
+out-of-view parents get a neutral status label.
 
 ## Tradeoffs
 
@@ -64,7 +57,7 @@ for that diagnostic does not create a Store edge or a connector.
 Synthetic regressions cover late response evidence, exact-owner binding,
 conflicting parents, quote coexistence, detail-page reply preservation,
 Observation serialization, grouping, branches, missing parents, AI filtering,
-older-check provenance, source/brief cues and accessible parent navigation.
+older-check provenance and Source/Brief conversation cues.
 The browser preview is synthetic; it does not confirm a specific relationship
 on live X or rewrite already saved captures. Activate the compatible runtime
 pair separately before checking newly captured real posts.

@@ -9,7 +9,7 @@ import { createTimelineRefreshCoordinator } from "./timeline-refresh-coordinator
 import { createTimelineRefreshUi, renderWithReadingAnchor } from "./timeline-refresh-ui.js";
 
 export function createTimelineRendering({
-  $, AI_DEEP_POLL_INTERVAL_MS, BACK_TO_TOP_THRESHOLD_PX, DEFAULT_TIMELINE_BATCH_GAP_PX, DEFAULT_TIMELINE_BOUNDARY_RETURN_MS, api, buildTimelineItem, closeTimelineContentContextDrawer, formatDate, measureTimelineContentContextTabs, renderAutoUpdateStatus, schedulePassiveMediaEnrichment, scheduleTimelineContentContextPosition, getScrollPerformanceTrace, getScrollUIFrames, showError, showNotice, sourceIdentity, startVisibleUpdate, state, stopObservingInlineVideoVisibilityWithin, syncRunButtons, syncTimelineContentContextTabs, getTimelineScrollIdle
+  $, AI_DEEP_POLL_INTERVAL_MS, BACK_TO_TOP_THRESHOLD_PX, DEFAULT_TIMELINE_BATCH_GAP_PX, DEFAULT_TIMELINE_BOUNDARY_RETURN_MS, api, buildTimelineItem, closeTimelineContentContextDrawer, formatDate, measureTimelineContentContextTabs, renderAutoUpdateStatus, schedulePassiveMediaEnrichment, scheduleTimelineContentContextPosition, getScrollPerformanceTrace, getScrollUIFrames, showError, showNotice, startVisibleUpdate, state, stopObservingInlineVideoVisibilityWithin, syncRunButtons, syncTimelineContentContextTabs, getTimelineScrollIdle
 }) {
   const backgroundRefresh = createTimelineBackgroundRefresh();
   let backgroundApplication = false;
@@ -502,22 +502,10 @@ export function createTimelineRendering({
       for (const member of group.members) {
         const rendered = buildTimelineItem(member.entry);
         rendered.dataset.timelineId = member.entry.id;
-        rendered.setAttribute("tabindex", "-1");
         decorateTimelineConversation(rendered, member, group, {
           documentRef: document,
           formatDate,
-          formatAuthor: (author, source) => sourceIdentity(author, source).displayName,
           checkedAt: value => batchBySession.get(value.sessionId)?.completedAt || value.createdAt,
-          navigateToParent: timelineID => {
-            const parent = [...container.querySelectorAll(":scope > [data-timeline-id]")]
-              .find(card => card.dataset.timelineId === timelineID);
-            parent?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start" });
-            parent?.focus({ preventScroll: true });
-            if (parent) {
-              parent.classList.add("timeline-conversation-target");
-              window.setTimeout(() => parent.classList.remove("timeline-conversation-target"), 1600);
-            }
-          },
         });
         if (member.parentID && member.parentID === previousMemberID) {
           const connector = document.createElement("span");

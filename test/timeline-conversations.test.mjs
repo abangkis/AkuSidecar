@@ -48,30 +48,22 @@ test("cycles fail closed without dropping cards, and a long reply chain is stack
 
 function element(tag = "div") {
   const classes = new Set();
-  return { tag, children: [], dataset: {}, attributes: {}, textContent: "", listeners: {},
+  return { tag, children: [], dataset: {}, attributes: {}, textContent: "",
     classList: { add: (...values) => values.forEach(value => classes.add(value)), remove: value => classes.delete(value), contains: value => classes.has(value) },
     setAttribute(name, value) { this.attributes[name] = value; },
     append(...values) { this.children.push(...values); }, prepend(...values) { this.children.unshift(...values); },
     replaceChildren(...values) { this.children = values; },
-    addEventListener(name, callback) { this.listeners[name] = callback; },
-    querySelectorAll() { return this.children.filter(child => child.dataset.timelineId); },
-    scrollIntoView(options) { this.scrollOptions = options; }, focus(options) { this.focusOptions = options; },
   };
 }
 const documentRef = { createElement: element };
 
-test("conversation cues use safe text, preserve older-check provenance and navigate to the immediate parent", () => {
-  const groups = planTimelineConversations([post("reply", "root"), post("root", "", { sessionId: "old", item: { author: "<img onerror=unsafe>" }, createdAt: "2026-10-12" })]);
-  const cards = groups[0].members.map(() => element("article"));
-  const navigated = [];
-  groups[0].members.forEach((member, index) => decorateTimelineConversation(cards[index], member, groups[0], {
-    documentRef, navigateToParent: id => navigated.push(id),
-  }));
-  const cue = cards[1].children[0];
-  assert.equal(cue.children[0].textContent, "View parent");
-  assert.equal(cue.children[0].attributes["aria-label"], "View parent post by <img onerror=unsafe>");
-  cue.children[0].listeners.click();
-  assert.deepEqual(navigated, ["root"]);
+test("conversation cues preserve older-check provenance and missing-parent status", () => {
+  const groupWithReply = planTimelineConversations([post("reply", "root"), post("root", "", { sessionId: "old", createdAt: "2026-10-12" })])[0];
+  const cards = groupWithReply.members.map(member => {
+    const card = element("article");
+    decorateTimelineConversation(card, member, groupWithReply, { documentRef });
+    return card;
+  });
   assert.equal(cards[0].children[0].children[1].textContent, "From another check · 2026-10-12");
   assert.equal(cards[0].dataset.conversationId, "root");
   const missing = post("orphan", "", { conversation: { kind: "replies_to", status: "not_in_view", provenance: "observed_dom" } });
@@ -84,11 +76,10 @@ const app = readFrontendAppSource();
 function render(items, mode = "drawer") {
   const elements = new Map();
   const $ = selector => { if (!elements.has(selector)) elements.set(selector, element()); return elements.get(selector); };
-  const observed = [], drawer = [], timers = [];
+  const observed = [], drawer = [];
   const state = { bootstrap: { settings: { aiDetectionPresentation: mode } }, seenTimelineItems: new Set(),
     passiveMediaEvidenceAttempts: new Map(), expandedTimelineText: new Set(), expandedAIDetails: new Set(), expandedAIFeedbackOptions: new Set(), timelineContentContext: new Map() };
-  const context = { $, state, document: documentRef, window: { matchMedia: () => ({ matches: true }), setTimeout: callback => timers.push(callback) }, planTimelineConversations, decorateTimelineConversation,
-    sourceIdentity: author => ({ displayName: author }),
+  const context = { $, state, document: documentRef, planTimelineConversations, decorateTimelineConversation,
     schedulePassiveMediaEnrichment() {}, renderTimelineSidePane: values => drawer.push(...values), scheduleAIDeepRefresh() {}, stopObservingInlineVideoVisibilityWithin() {},
     formatTimelineCheckSummary: () => "2 updates", formatDate: value => value, renderTimelineActions() {},
     buildTimelineItem: () => element("article"), observeTimelineItem: (_, id) => observed.push(id), syncTimelineContentContextTabs() {}, scheduleBackToTop() {}, scheduleTimelineContentContextPosition() {} };
@@ -97,7 +88,7 @@ function render(items, mode = "drawer") {
   vm.runInContext(app.slice(app.indexOf("function renderTimelineNow("), app.indexOf("function renderTimelineActions(")), context);
   context.items = items;
   vm.runInContext('renderTimelineNow(items, {sessionId:"new",completedAt:"new-time"}, [{sessionId:"new",completedAt:"new-time"},{sessionId:"old",completedAt:"old-time"}])', context);
-  return { elements, state, observed, drawer, timers };
+  return { elements, state, observed, drawer };
 }
 
 test("actual Timeline rendering preserves batch boundaries, observes each card and keeps AI filtering authoritative", () => {
@@ -111,36 +102,30 @@ test("actual Timeline rendering preserves batch boundaries, observes each card a
   assert.equal(markers[1].classList.contains("timeline-history-boundary"), true);
   const cards = rows.filter(row => row.dataset.timelineId);
   assert.equal(cards[0].children[0].children[1].textContent, "From another check · old-time");
-  cards[1].children[0].children[0].listeners.click();
-  assert.equal(cards[0].scrollOptions.behavior, "instant");
-  assert.equal(cards[0].focusOptions.preventScroll, true);
-  assert.equal(cards[0].classList.contains("timeline-conversation-target"), true);
-  rendered.timers[0]();
-  assert.equal(cards[0].classList.contains("timeline-conversation-target"), false);
+  assert.deepEqual(cards[1].children.map(child => child.className), ["timeline-reply-connector"]);
   const filtered = render([...items.slice(0, 2), { ...parent, aiDetection: { routeToSignals: true } }]);
   assert.deepEqual(filtered.observed, ["reply", "unrelated"]);
   assert.deepEqual(filtered.drawer.map(entry => entry.id), ["root"]);
   assert.deepEqual(filtered.state.timelineItems.map(entry => entry.id), ["reply", "unrelated", "root"]);
 });
 
-test("source and brief views show a compact parent action with a descriptive accessible name", () => {
-  const group = planTimelineConversations([post("reply", "root"), post("root")])[0];
+test("source and brief views leave the reply header empty except for cross-check provenance", () => {
+  const group = planTimelineConversations([post("root"), post("reply", "root")])[0];
   const card = element("article"), identity = element(), brief = element();
   card.querySelector = selector => selector === ".source-layout-card > header > div" ? identity
     : selector.split(", ").includes(":scope > .presentable-item > .item-layout-view") ? brief : null;
-  const visited = [];
-  decorateTimelineConversation(card, group.members[1], group, { documentRef,
-    navigateToParent: id => visited.push(id), formatAuthor: name => name.toUpperCase() });
-  assert.equal(identity.children.length, 1);
-  assert.equal(brief.children.length, 1);
+  const reply = group.members[1];
+  decorateTimelineConversation(card, reply, group, { documentRef });
+  assert.equal(identity.children.length, 0);
+  assert.equal(brief.children.length, 0);
+
+  reply.entry.sessionId = "older-check";
+  decorateTimelineConversation(card, reply, group, { documentRef });
   for (const view of [identity, brief]) {
-    const button = view.children[0].children[0];
-    assert.equal(button.textContent, "View parent");
-    assert.equal(button.attributes["aria-label"], "View parent post by ROOT");
-    assert.equal(button.type, "button");
-    button.listeners.click();
+    const labels = view.children[0].children;
+    assert.deepEqual(labels.map(label => label.tag), ["small"]);
+    assert.match(labels[0].textContent, /^From another check/);
   }
-  assert.deepEqual(visited, ["root", "root"]);
 });
 
 test("Timeline connects only adjacent direct replies, including for another source", () => {
@@ -165,12 +150,7 @@ test("Timeline draws C3 for the stored LinkedIn fixture", { skip: !process.env.A
   assert.equal(cards[1].children.filter(child => child.className === "timeline-reply-connector").length, 1);
 });
 
-test("parent actions identify the immediate parent while unresolved replies have no connector or guessed destination", () => {
-  const group = planTimelineConversations([post("leaf", "middle"), post("sibling", "root"), post("middle", "root"), post("root")])[0];
-  for (const member of group.members.filter(value => value.parentID)) {
-    const card = element(); decorateTimelineConversation(card, member, group, { documentRef });
-    assert.equal(card.children[0].children[0].attributes["aria-label"], `View parent post by ${member.parentID}`);
-  }
+test("unresolved replies show a status without a connector", () => {
   for (const status of ["not_in_view", "ambiguous"]) {
     const entry = post("orphan", "", {conversation:{kind:"replies_to",status,provenance:"observed_dom"}});
     const single = planTimelineConversations([entry])[0], card = element();

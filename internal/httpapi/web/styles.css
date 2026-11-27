@@ -243,12 +243,7 @@ h3 { letter-spacing: -0.02em; }
 .timeline-conversation-label::before { content: ""; width: 5px; height: 5px; border: 1px solid currentColor; border-radius: 50%; }
 .timeline-conversation-unresolved { color: var(--muted); font-size: 0.71rem; }
 .timeline-conversation-cue small { color: var(--muted); font-size: 0.72rem; }
-.timeline-reply-parent { min-height: 24px; padding: 0; border: 0; background: transparent; color: #c8e6ad; font: inherit; text-decoration: underline; text-underline-offset: 0.2em; cursor: pointer; }
-.timeline-reply-parent:hover { color: var(--accent); }
 .source-layout-card .timeline-conversation-cue .timeline-conversation-label { color: #c7dcba; font-size: 0.69rem; }
-.timeline-reply-parent:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
-.timeline-conversation-member:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
-.timeline-conversation-target { outline: 2px solid var(--accent); outline-offset: 3px; }
 .presentable-item { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-raised); }
 .semantic-duplicate-item { border-color: #414b3b; background: #252d25; }
 .semantic-duplicate-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px; padding: 15px 18px; }

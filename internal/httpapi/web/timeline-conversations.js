@@ -72,7 +72,6 @@ export function planTimelineConversations(items = []) {
 
 export function decorateTimelineConversation(card, member, group, {
   documentRef = document, formatDate = value => value || "", checkedAt = entry => entry.createdAt,
-  navigateToParent = () => {}, formatAuthor = value => value,
 } = {}) {
   const { entry, parentID } = member;
   const grouped = group.members.length > 1;
@@ -86,20 +85,12 @@ export function decorateTimelineConversation(card, member, group, {
     card.dataset.conversationDepth = String(member.depth);
     card.classList.add(parentID ? "timeline-conversation-reply" : "timeline-conversation-root");
   }
+  const fromAnotherCheck = entry.sessionId !== group.anchor.sessionId;
+  if (parentID && !fromAnotherCheck) return;
   const buildCue = () => {
     const cue = documentRef.createElement("div");
     cue.className = "timeline-conversation-cue";
-    if (parentID) {
-      const parent = group.members.find(value => value.entry.id === parentID)?.entry;
-      const author = formatAuthor(parent?.evidence?.author || parent?.item?.author || "post", parent?.source);
-      const link = documentRef.createElement("button");
-      link.type = "button"; link.className = "timeline-reply-parent";
-      link.title = `View parent post by ${author}`;
-      link.setAttribute("aria-label", link.title);
-      link.textContent = "View parent";
-      link.addEventListener("click", () => navigateToParent(parentID));
-      cue.append(link);
-    } else {
+    if (!parentID) {
       const label = documentRef.createElement("span");
       label.className = grouped ? "timeline-conversation-label" : "timeline-conversation-unresolved";
       label.textContent = grouped ? `Conversation · ${group.members.length} posts`
@@ -107,7 +98,7 @@ export function decorateTimelineConversation(card, member, group, {
           : relation?.status === "resolved" ? "Reply · parent could not be matched in this view" : "Reply · parent not in this view";
       cue.append(label);
     }
-    if (entry.sessionId !== group.anchor.sessionId) {
+    if (fromAnotherCheck) {
       const date = documentRef.createElement("small");
       date.textContent = `From another check · ${formatDate(checkedAt(entry))}`;
       cue.append(date);

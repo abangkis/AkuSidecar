@@ -422,7 +422,6 @@ const {
   getScrollUIFrames: () => scrollUIFrames,
   showError,
   showNotice,
-  sourceIdentity,
   startVisibleUpdate: (...args) => startVisibleUpdate(...args),
   state,
   stopObservingInlineVideoVisibilityWithin: (...args) => stopObservingInlineVideoVisibilityWithin(...args),
