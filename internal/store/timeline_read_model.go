@@ -46,26 +46,30 @@ func (s *Store) ListTimeline(ctx context.Context, limit, offset int) ([]domain.T
 	if err != nil {
 		return nil, err
 	}
+	var items []domain.TimelineItem
 	if settings.SemanticEventMode == "show_all" {
-		items, err := s.listItems(ctx, `WHERE COALESCE((SELECT state FROM auto_update_batches b WHERE b.session_id=timeline_items.session_id),batch_state) IN ('','visible')`+timelinePresentationOrderSQL+` LIMIT ? OFFSET ?`, limit, offset)
+		items, err = s.listItems(ctx, `WHERE COALESCE((SELECT state FROM auto_update_batches b WHERE b.session_id=timeline_items.session_id),batch_state) IN ('','visible')`+timelinePresentationOrderSQL+` LIMIT ? OFFSET ?`, limit, offset)
 		if err != nil {
 			return nil, err
 		}
 		for index := range items {
 			items[index].SemanticEvent = nil
 		}
-		projectTimelineRelations(items)
-		return items, nil
+	} else {
+		ids, err := s.timelinePageIDs(ctx, settings.SemanticEventMode, limit, offset)
+		if err != nil {
+			return nil, err
+		}
+		items, err = s.hydrateTimelinePage(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
 	}
-	ids, err := s.timelinePageIDs(ctx, settings.SemanticEventMode, limit, offset)
+	recaptured, err := s.timelineRecapturedParents(ctx, items)
 	if err != nil {
 		return nil, err
 	}
-	items, err := s.hydrateTimelinePage(ctx, ids)
-	if err != nil {
-		return nil, err
-	}
-	projectTimelineRelations(items)
+	projectTimelineRelations(items, recaptured)
 	return items, nil
 }
 

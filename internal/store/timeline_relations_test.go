@@ -24,7 +24,7 @@ func TestProjectTimelineRelationsResolvesLoadedParentAndIDOnlyReference(t *testi
 			t.Fatal(err)
 		}
 		items := []domain.TimelineItem{parent, reply}
-		projectTimelineRelations(items)
+		projectTimelineRelations(items, nil)
 		conversation := items[1].Conversation
 		if conversation == nil || conversation.Kind != "replies_to" || conversation.Status != "resolved" || conversation.TargetTimelineID != "parent" || conversation.Provenance != "observed_response" {
 			t.Fatalf("conversation=%+v", conversation)
@@ -47,7 +47,7 @@ func TestProjectTimelineRelationsIgnoresInvalidQuoteFeedCommentAndSelfEdges(t *t
 		{Kind: "replies_to", Provenance: "observed_response", Target: domain.ContextObject{Kind: "post", ID: "12345", Availability: "reference_only"}},
 	})
 	items := []domain.TimelineItem{item}
-	projectTimelineRelations(items)
+	projectTimelineRelations(items, nil)
 	if items[0].Conversation != nil {
 		t.Fatalf("unexpected conversation projection: %+v", items[0].Conversation)
 	}
@@ -69,7 +69,7 @@ func TestProjectTimelineRelationsRequiresOwnIdentityAndRetainsCorroboratingProve
 		{"", "", false},
 	} {
 		items := []domain.TimelineItem{parent, timelineRelationItem("reply", domain.SourceX, test.platformID, test.permalink, relations)}
-		projectTimelineRelations(items)
+		projectTimelineRelations(items, nil)
 		if test.resolved {
 			if got := items[1].Conversation; got == nil || got.Status != "resolved" || got.Provenance != "observed_response" {
 				t.Fatalf("corroborating observations lost: %+v", got)
@@ -89,7 +89,7 @@ func TestProjectTimelineRelationsMarksDuplicateAndConflictingParentsAmbiguous(t 
 		timelineRelationItem("parent-b", domain.SourceX, "12345", "https://x.com/other/status/12345", nil),
 		duplicateParentReply,
 	}
-	projectTimelineRelations(duplicateParents)
+	projectTimelineRelations(duplicateParents, nil)
 	if got := duplicateParents[2].Conversation; got == nil || got.Status != "ambiguous" || got.TargetTimelineID != "" {
 		t.Fatalf("duplicate parent conversation=%+v", got)
 	}
@@ -99,7 +99,7 @@ func TestProjectTimelineRelationsMarksDuplicateAndConflictingParentsAmbiguous(t 
 		{Kind: "replies_to", Provenance: "observed_response", Target: domain.ContextObject{Kind: "post", ID: "54321", Availability: "reference_only"}},
 	})
 	conflicting := []domain.TimelineItem{conflictingReply}
-	projectTimelineRelations(conflicting)
+	projectTimelineRelations(conflicting, nil)
 	if got := conflicting[0].Conversation; got == nil || got.Status != "ambiguous" || got.TargetTimelineID != "" {
 		t.Fatalf("conflicting parent conversation=%+v", got)
 	}
@@ -111,7 +111,7 @@ func TestProjectTimelineRelationsKeepsIdentitySourceScopedAndReportsMissingParen
 		Kind: "replies_to", Provenance: "observed_response", Target: domain.ContextObject{Kind: "post", ID: "12345", Availability: "reference_only"},
 	}})
 	items := []domain.TimelineItem{linkedinItem, reply}
-	projectTimelineRelations(items)
+	projectTimelineRelations(items, nil)
 	if got := items[1].Conversation; got == nil || got.Status != "not_in_view" || got.TargetTimelineID != "" {
 		t.Fatalf("cross-source conversation=%+v", got)
 	}
@@ -216,13 +216,18 @@ func TestListTimelineProjectsRelationsAfterPageSelectionInBothModes(t *testing.T
 	replyEvidenceKey := "x:relation-reply"
 	reply := domain.Block{
 		EvidenceKey: replyEvidenceKey, PlatformID: "x:status:67890", Permalink: "https://x.com/bob/status/67890",
-		DirectContext: []domain.DirectContext{{Kind: "replies_to", Provenance: "observed_response", Target: domain.ContextObject{Kind: "post", ID: "12345", Availability: "reference_only"}}},
 	}
 	itemRaw, _ := json.Marshal(domain.ReasonedItem{EvidenceKey: replyEvidenceKey, Source: domain.SourceX, WhatChanged: "Reply item"})
 	evidenceRaw, _ := json.Marshal(reply)
 	if _, err := s.db.ExecContext(ctx, `INSERT INTO timeline_items(id,session_id,run_id,source,evidence_key,rank,item_json,assessment_json,coverage_json,created_at,evidence_snapshot_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, replyID, session.ID, runs[0].ID, domain.SourceX, replyEvidenceKey, 1, string(itemRaw), "{}", "{}", domain.Now(), string(evidenceRaw)); err != nil {
 		t.Fatal(err)
 	}
+
+	recapture := reply
+	recapture.Permalink = "https://x.com/status/status/67890"
+	recapture.DirectContext = []domain.DirectContext{{Kind: "replies_to", Provenance: "observed_response",
+		Target: domain.ContextObject{Kind: "post", ID: "12345", Availability: "reference_only"}}}
+	saveTimelineReplyRecapture(t, s, recapture.Permalink, recapture)
 
 	for _, mode := range []string{"show_all", "hide"} {
 		settings, err := s.GetSettings(ctx)
@@ -249,6 +254,70 @@ func TestListTimelineProjectsRelationsAfterPageSelectionInBothModes(t *testing.T
 		if got := page[1].Conversation; got == nil || got.Status != "resolved" || got.TargetTimelineID != parentID {
 			t.Fatalf("mode=%s loaded parent conversation=%+v", mode, got)
 		}
+		if len(page[1].Evidence.DirectContext) != 0 || page[1].Evidence.Permalink != reply.Permalink {
+			t.Fatal("recapture replaced the original evidence")
+		}
+	}
+
+	// A second exact capture that disagrees must suppress the link.
+	recapture.DirectContext[0].Target.ID = "98765"
+	saveTimelineReplyRecapture(t, s, recapture.Permalink, recapture)
+	page, err := s.ListTimeline(ctx, 2, 0)
+	if err != nil || len(page) != 2 || page[1].Conversation == nil || page[1].Conversation.Status != "ambiguous" || page[1].Conversation.TargetTimelineID != "" {
+		t.Fatalf("conflicting recapture: page=%+v err=%v", page, err)
+	}
+}
+
+func saveTimelineReplyRecapture(t *testing.T, s *Store, target string, block domain.Block) {
+	t.Helper()
+	ctx := context.Background()
+	settings, err := s.GetSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.ActiveSources = []domain.Source{domain.SourceX}
+	session, err := s.CreateUpdateSession(ctx, "recapture", settings, domain.UpdatePolicy{
+		Trigger: domain.UpdateTriggerUser, Delivery: domain.UpdateDeliveryVisible, BudgetAuthority: domain.BudgetAuthorityUser,
+		CaptureTarget: &domain.CaptureTarget{Source: domain.SourceX, Permalink: target},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := session.Runs[0]
+	command, err := s.StartRun(ctx, run.ID, map[string]any{"source": "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ClaimCommand(ctx, run.ID, "recapture-fixture"); err != nil {
+		t.Fatal(err)
+	}
+	observation := domain.Observation{Source: domain.SourceX, PageURL: target, CapturedAt: domain.Now(),
+		Snapshots: []domain.Snapshot{{Blocks: []domain.Block{block}}}}
+	if err := s.SaveObservation(ctx, command.ID, run.ID, observation); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CompleteRun(ctx, run, domain.ReasoningResult{}, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.FinalizeSession(ctx, session.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRecapturedParentRequiresMatchingBlockAndCaptureTarget(t *testing.T) {
+	s := openTestStore(t)
+	const target = "https://x.com/owner/status/12345"
+	block := domain.Block{EvidenceKey: "x:fixture", PlatformID: "x:status:67890", Permalink: "https://x.com/other/status/67890",
+		DirectContext: []domain.DirectContext{{Kind: "replies_to", Provenance: "observed_response",
+			Target: domain.ContextObject{Kind: "post", ID: "22222", Availability: "reference_only"}}}}
+	saveTimelineReplyRecapture(t, s, target, block)
+	items := []domain.TimelineItem{
+		timelineRelationItem("target", domain.SourceX, "12345", target, nil),
+		timelineRelationItem("other", domain.SourceX, "67890", block.Permalink, nil),
+	}
+	parents, err := s.timelineRecapturedParents(context.Background(), items)
+	if err != nil || len(parents) != 0 {
+		t.Fatalf("unrelated recapture attached: %+v, %v", parents, err)
 	}
 }
 
