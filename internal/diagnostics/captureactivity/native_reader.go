@@ -2,6 +2,7 @@ package captureactivity
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 	"time"
@@ -57,3 +58,27 @@ func (n *NativeReader) Finish(err error) {
 
 // Total records only the HTTP request lifetime, including cancellation.
 func (n *NativeReader) Total() { n.observe("observed") }
+
+// BridgeReaderNavigation projects only the worker's tab API observation. The
+// caller supplies the matched action ID independently of the diagnostic body.
+func BridgeReaderNavigation(logger *log.Logger, action string, raw json.RawMessage) Event {
+	id := opaqueID(action, "split_")
+	if len(raw) == 0 || len(raw) > 256 || id == "" {
+		return Event{}
+	}
+	var sample struct {
+		Phase      d.Phase `json:"phase"`
+		Outcome    string  `json:"outcome"`
+		DurationMS *int64  `json:"durationMs"`
+	}
+	if json.Unmarshal(raw, &sample) != nil || sample.DurationMS == nil || *sample.DurationMS < 0 ||
+		(sample.Outcome != "accepted" && sample.Outcome != "rejected") {
+		return Event{}
+	}
+	switch sample.Phase {
+	case "reuse_post_tab", "create_post_tab", "navigate_marker_tab":
+		return newTrace(logger, "native_reader", time.Now()).project(sample.Phase, d.Observed[time.Duration]{},
+			record{Producer: "bridge", Scope: "navigation", Action: id, DurationMS: sample.DurationMS, Outcome: sample.Outcome})
+	}
+	return Event{}
+}

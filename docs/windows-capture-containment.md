@@ -85,10 +85,13 @@ it does not repair them or identify the activating caller.
 Unverified readback becomes a failure after one second; tracking is capped at
 128 HWNDs and reader exemptions at 32. No titles, URLs, post text, credentials or
 external application identity enter these records. Hook failure is explicitly
-logged with the fallback interval. `reader_broker` records native-call acceptance,
-helper readback and independent verification; `reader_foreground` is readback-only. The
-`split_reader` phase records identify whether an explicit request reached
-preparation, foregrounding and final result, without recording the post URL.
+logged with the fallback interval. In current Supervisor output, join
+`capture_activity` records by `action`. The `reader_broker` attachment also
+carries the request ID used for helper receipt and readback. The
+`native_reader` window scope records foreground verification, and the Bridge
+navigation scope records the tab API outcome. The `split_action` result carries
+the final foreground state. For archived builds, retain the historical
+`reader_foreground`, `native_reader_timing` and `split_reader` filters.
 
 Schema 29 also keeps at most 512 `split_action_audit` transitions for explicit
 `open_source` and `open_native_post` actions. Each row has only an opaque action
@@ -100,6 +103,32 @@ themselves prove why Chromium activated or that containment succeeded.
 Tests cover ownership/anchor/reader rejection before a write, valid and invalid
 readback, platform gating, authenticated claimed-action fencing and replay,
 new/reused/minimized reader ordering, marker cleanup and surfaced rejection.
+
+### Windows development qualification, 2026-11-28
+
+At 06:56:54 UTC one Timeline click produced action
+`split_cf6f759d919ab18430075d862a24fc3d` and broker request
+`broker_be944e022bc843d28f8225b37227f5fd`. The development bundle used
+AkuBridge 0.9.14 (`source-adapters-v141`) and a local Sidecar build based on
+`c0880cd`, SHA-256 `6e2f220074f5044e154ad7d49e0d86681b64ad82d63afdc61bc084cf50be6a72`.
+The capture worker claimed the action. Bridge reported `navigate_marker_tab`
+accepted in 9 ms. The helper observed the exact visible reader, Sidecar
+verified foreground, and the action settled as accepted in 229 ms. These
+durations use their respective process clocks. The click did not measure
+remote page readiness.
+
+The v140 baseline action `split_d94d41c77797e09088779abdcde0b3ca` also
+settled with verified foreground. Filtering Supervisor output by either the
+action or its matched broker ID yielded 13 records for v140 and 14 for v141.
+The additional record was the Bridge tab observation. Both actions had the
+same eight audit rows from queue admission through accepted result, and the
+subsequent idle poll reported an empty queue.
+
+Direct-reader coverage used the HTTP fixture that completes without a Bridge
+claim. The cancellation fixture drained the direct action before opening a
+reader. In the appshell fixture, cancelling before the navigation callback
+ended at `navigation_guard` with outcome `cancelled` and zero post dispatches.
+Changed or expired bindings ended at the same guard with outcome `rejected`.
 
 ## Packaging and development
 

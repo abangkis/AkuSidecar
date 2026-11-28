@@ -90,6 +90,14 @@ Remote page readiness requires a separate observation. The canonical
 `split_action` result carries the foreground state (`verified`, `manual_required`
 or `unverified`). The HTTP request total measures time until its handler exits.
 
+For a Bridge-assisted claim, filter by the same `action` and
+`producer=bridge`, `operation=native_reader`, `scope=navigation`.
+The worker times the Chrome tab API call. `navigate_marker_tab` sends the post
+URL to the bound marker tab, `create_post_tab` opens a tab in an existing
+reader window, and `reuse_post_tab` activates an exact URL match. Sidecar
+projects the optional sample on result delivery. Log arrival can therefore
+follow foreground verification. Older workers omit this sample.
+
 The reusable browser sampler lives in
 `internal/httpapi/web/diagnostics/browser-performance.js`, because it runs in the
 browser rather than in Go. It owns opt-in observations, bounds, timers, cleanup

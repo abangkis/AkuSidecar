@@ -1308,7 +1308,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 						s.persistSplitActionAudit(r.Context(), claimAudit)
 					}
 					finishPoll("claimed", &action)
-					return writeJSON(w, 200, map[string]any{"instanceEpoch": s.engine.Epoch(), "action": action, "sourceWindowLifetime": sourceLifetime, "captureHostClose": hostClose, "captureHostOnlyRetirement": hostOnly})
+					return writeJSON(w, 200, map[string]any{"instanceEpoch": s.engine.Epoch(), "action": action, "sourceWindowLifetime": sourceLifetime, "captureHostClose": hostClose, "captureHostOnlyRetirement": hostOnly, "readerNavigation": action.Type == "open_native_post"})
 				}
 			}
 			t.mu.Unlock()
@@ -1330,15 +1330,20 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 	}
 	if strings.HasPrefix(p, "/api/bridge/split-capture/results/") && r.Method == http.MethodPost {
 		id := strings.TrimPrefix(p, "/api/bridge/split-capture/results/")
-		var result splitActionResult
+		var envelope struct {
+			splitActionResult
+			ReaderNavigation json.RawMessage `json:"readerNavigation"`
+		}
 		r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
-		if err := readJSON(r, &result); err != nil {
+		if err := readJSON(r, &envelope); err != nil {
 			return err
 		}
-		var resultEvent captureactivity.Event
+		result := envelope.splitActionResult
+		var navigationEvent, resultEvent captureactivity.Event
 		t.mu.Lock()
 		defer func() {
 			t.mu.Unlock()
+			navigationEvent.Write()
 			resultEvent.Write()
 		}()
 		for _, entry := range t.actions {
@@ -1373,6 +1378,9 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 				case entry.result <- result:
 					entry.completed = true
 					entry.completionResult = &result
+					if entry.action.Type == "open_native_post" {
+						navigationEvent = captureactivity.BridgeReaderNavigation(s.logger, id, envelope.ReaderNavigation)
+					}
 					resultEvent = entry.activity.Result(result.OK, entry.readerForegroundVerified, entry.readerManualForegroundRequired)
 					entry.runtimeLease.Release()
 					entry.runtimeLease = nil

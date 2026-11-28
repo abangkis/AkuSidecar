@@ -137,7 +137,7 @@ func TestSplitReaderResultRequiresThisActionsSuccessfulForeground(t *testing.T) 
 					t.Fatalf("foreground=%d %s", w.Code, w.Body)
 				}
 			}
-			w := splitRequest(s, token, s.splitCapture.key, "POST", "/api/bridge/split-capture/results/"+entry.action.ID, `{"ok":true,"result":{"windowId":2}}`)
+			w := splitRequest(s, token, s.splitCapture.key, "POST", "/api/bridge/split-capture/results/"+entry.action.ID, `{"ok":true,"result":{"windowId":2},"readerNavigation":{"phase":"reuse_post_tab","outcome":"accepted","durationMs":13}}`)
 			if w.Code != 204 {
 				t.Fatalf("result=%d %s", w.Code, w.Body)
 			}
@@ -150,11 +150,18 @@ func TestSplitReaderResultRequiresThisActionsSuccessfulForeground(t *testing.T) 
 				if result.OK {
 					wantOutcome, wantForeground = "accepted", "verified"
 				}
-				var terminals []activityLine
+				var terminals, navigation []activityLine
 				for _, event := range readActivityLines(t, logs.String()) {
+					if event.Operation == "native_reader" && event.Producer == "bridge" {
+						navigation = append(navigation, event)
+					}
 					if event.Operation == "split_action" && event.Phase == "result" && event.Action == entry.action.ID {
 						terminals = append(terminals, event)
 					}
+				}
+				if len(navigation) != 1 || navigation[0].Action != entry.action.ID || navigation[0].Phase != "reuse_post_tab" ||
+					navigation[0].Outcome != "accepted" || navigation[0].Duration == nil || *navigation[0].Duration != 13 {
+					t.Fatal(navigation)
 				}
 				if len(terminals) != 1 || terminals[0].Outcome != wantOutcome || terminals[0].Foreground != wantForeground {
 					t.Fatalf("unexpected terminal activity: %+v", terminals)
