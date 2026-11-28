@@ -24,6 +24,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/collection/headless"
 	"github.com/abangkis/AkuSidecar/internal/collection/quiet"
 	"github.com/abangkis/AkuSidecar/internal/config"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/captureactivity"
 	"github.com/abangkis/AkuSidecar/internal/diagnostics/observability"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/engine"
@@ -448,6 +449,7 @@ func discoverChromium(options config.Options) int {
 }
 
 func launchAppShell(logger *log.Logger, options config.Options, cfg config.Config, address string, server *httpapi.Server, runtime *engine.Engine, collectionCtx context.Context) (*appshell.Session, *captureruntime.Manager, *collection.Coordinator, func(context.Context) error) {
+	launchTrace := captureactivity.NewLaunch(logger)
 	discoveryCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	result, err := appshell.Discover(discoveryCtx, options.ChromiumPath)
 	cancel()
@@ -537,7 +539,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 		profilePath = uiProfile
 		extensionPath = uiBrokerPath
 		uiArgs = []string{"--disable-extensions-except=" + extensionPath, "--enable-features=LaunchWindowsNativeHostsDirectly"}
-		logger.Printf("windows_capture_split capture_pid=%d capture_executable=%q ui_executable=%q ui_version=%s", capture.PID(), result.Executable, uiResult.Executable, uiResult.Version)
+		launchTrace.Process("capture_started", capture.PID(), result.Executable, result.Version)
 	}
 	showStartupStatus, markStartupReady, statusErr := startupStatusPolicy(cfg.Deployment, profilePath)
 	if statusErr != nil {
@@ -569,7 +571,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 		capture.Terminate()
 		fatal(logger, err)
 	}
-	logger.Printf("app_shell executable=%s version=%s pid=%d url=%s", uiResult.Executable, uiResult.Version, window.PID(), target)
+	launchTrace.Process("ui_started", window.PID(), uiResult.Executable, uiResult.Version)
 	if cfg.WindowsCaptureSplit || manualUI {
 		go func() {
 			if err := window.ServeReaderBroker(context.Background(), server.HandleReaderBroker); err != nil {
@@ -594,7 +596,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 			server.SetInstagramBootstrapCorroborationDiagnosticAction(instagramBootstrapCorroborationDiagnosticAction(capture.CaptureProtocol(), captureManager, capture.PID()))
 		}
 		captureManager.SetTimingObserver(func(stage string, elapsed time.Duration, ok bool) {
-			logger.Printf("capture_transition_timing stage=%s elapsed_ms=%d ok=%t", stage, elapsed.Milliseconds(), ok)
+			captureactivity.Transition(logger, stage, elapsed, &ok)
 		})
 		captureProfile, _, profileErr := appshell.SplitProfilePaths(browserProfilePath(options, cfg))
 		fatal(logger, profileErr)
@@ -716,7 +718,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 			}
 		}, func() error { return headless.Validate(headlessOptions) })
 		collector.SetTimingObserver(func(stage string, elapsed time.Duration) {
-			logger.Printf("capture_transition_timing stage=%s elapsed_ms=%d", stage, elapsed.Milliseconds())
+			captureactivity.Transition(logger, stage, elapsed, nil)
 		})
 		initializeCapture = func(ctx context.Context) error {
 			url, err := server.SplitCaptureLaunchURL(target)

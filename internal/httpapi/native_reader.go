@@ -199,6 +199,7 @@ func (s *Server) runDirectNativeReader(ctx context.Context, t *splitCaptureTrans
 			result.Result, _ = json.Marshal(map[string]string{"source": entry.action.Source, "state": "native_post_opened", "url": entry.action.URL})
 		}
 		entry.completed, entry.completionResult = true, &result
+		resultEvent := entry.activity.Result(result.OK)
 		select {
 		case <-entry.brokerReady:
 		default:
@@ -219,6 +220,7 @@ func (s *Server) runDirectNativeReader(ctx context.Context, t *splitCaptureTrans
 		case entry.result <- result:
 		default:
 		}
+		resultEvent.Write()
 	}()
 	// API admission alone grants no native foreground capability. Wait for the
 	// OS-authenticated helper with the identical request ID, source and URL.

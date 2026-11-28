@@ -315,7 +315,11 @@ func splitTestServer(t *testing.T) (*Server, string) {
 	return s, token
 }
 func splitRequest(s *Server, token, key, method, path, body string) *httptest.ResponseRecorder {
-	r := httptest.NewRequest(method, "http://127.0.0.1:11122"+path, strings.NewReader(body))
+	return splitRequestContext(context.Background(), s, token, key, method, path, body)
+}
+
+func splitRequestContext(ctx context.Context, s *Server, token, key, method, path, body string) *httptest.ResponseRecorder {
+	r := httptest.NewRequest(method, "http://127.0.0.1:11122"+path, strings.NewReader(body)).WithContext(ctx)
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("X-Aku-Bridge-Contract", domain.BridgeContractVersion)
 	r.Header.Set("X-Aku-Bridge-Token", token)
@@ -376,6 +380,51 @@ func TestSplitCaptureFenceLeavesUIRelayRoutesAvailable(t *testing.T) {
 		if !splitCaptureOwnedRoute(r) {
 			t.Fatalf("capture worker route was not fenced: %s", route)
 		}
+	}
+}
+
+func TestCapturePollDiagnosticCorrelatesClaim(t *testing.T) {
+	s, token := splitTestServer(t)
+	var output strings.Builder
+	s.logger = log.New(&output, "", 0)
+	actionID := domain.NewID("split")
+	requestID := domain.NewID("broker")
+	s.splitCapture.actions = []*pendingSplitAction{{action: splitCaptureAction{
+		ID: actionID, Type: "open_native_post", RequestID: requestID,
+	}}}
+	w := splitRequest(s, token, s.splitCapture.key, "GET", "/api/bridge/split-capture/next", "")
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body)
+	}
+	type pollRecord struct {
+		Operation, Phase, Poll, Action, Outcome string
+		Sequence                                int
+		RequestID                               string `json:"request_id"`
+		Elapsed                                 *int64 `json:"elapsed_ms"`
+		Queue                                   struct{ Total, Claimed int }
+	}
+	var records []pollRecord
+	for _, line := range strings.Split(output.String(), "\n") {
+		if payload, ok := strings.CutPrefix(line, "capture_activity "); ok {
+			var one pollRecord
+			if err := json.Unmarshal([]byte(payload), &one); err != nil {
+				t.Fatal(err)
+			}
+			records = append(records, one)
+		}
+	}
+	if len(records) != 2 {
+		t.Fatalf("poll records: %v", records)
+	}
+	start, end := records[0], records[1]
+	if start.Operation != "capture_poll" || start.Phase != "start" || start.Sequence != 1 || start.Elapsed != nil ||
+		!strings.HasPrefix(start.Poll, "splitpoll_") || end.Poll != start.Poll || end.Phase != "end" || end.Sequence != 2 ||
+		end.Elapsed == nil || end.Outcome != "claimed" || end.Action != actionID || end.RequestID != requestID ||
+		end.Queue.Total != 1 || end.Queue.Claimed != 1 {
+		t.Fatalf("unexpected poll records: %+v", records)
+	}
+	if strings.Contains(output.String(), token) || strings.Contains(output.String(), s.splitCapture.key) {
+		t.Fatal("credentials in poll diagnostics")
 	}
 }
 

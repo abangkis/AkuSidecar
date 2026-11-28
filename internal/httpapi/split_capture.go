@@ -18,6 +18,7 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
 	"github.com/abangkis/AkuSidecar/internal/collection"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/captureactivity"
 	"github.com/abangkis/AkuSidecar/internal/diagnostics/capturestartup"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
@@ -98,6 +99,7 @@ type pendingSplitAction struct {
 	browserRecaptureGeneration          uint64
 	action                              splitCaptureAction
 	queuedAt                            time.Time
+	activity                            *captureactivity.SplitAction
 	claimed                             bool
 	result                              chan splitActionResult
 	readerPreparing                     bool
@@ -508,6 +510,7 @@ func (s *Server) CancelReaderBroker(req readerbroker.Request) error {
 	}
 	now := time.Now()
 	var wake bool
+	var results []captureactivity.Event
 	t.mu.Lock()
 	t.pruneReaderBrokersLocked(now)
 	if t.readerBrokers == nil {
@@ -557,6 +560,7 @@ func (s *Server) CancelReaderBroker(req readerbroker.Request) error {
 		}
 		result := splitActionResult{Error: "reader_broker_cancelled", Message: "Native reader click was canceled before helper attachment."}
 		entry.completed, entry.completionResult = true, &result
+		results = append(results, entry.activity.Result(result.OK))
 		select {
 		case entry.result <- result:
 		default:
@@ -567,6 +571,9 @@ func (s *Server) CancelReaderBroker(req readerbroker.Request) error {
 	t.mu.Unlock()
 	if wake {
 		t.notifyCapture()
+	}
+	for _, event := range results {
+		event.Write()
 	}
 	return nil
 }
@@ -824,48 +831,23 @@ func splitSource(v string) bool {
 	return v == "x" || v == "linkedin" || v == "facebook" || v == "instagram"
 }
 
-// splitBrokerRequestID returns only the fixed-format opaque broker ID. This
-// keeps log fields safe even for native-post actions created without the broker
-// transport enabled.
-func splitBrokerRequestID(action splitCaptureAction) string {
-	const prefix = "broker_"
-	if action.Type != "open_native_post" || len(action.RequestID) != len(prefix)+32 || !strings.HasPrefix(action.RequestID, prefix) {
-		return "-"
-	}
-	for _, c := range action.RequestID[len(prefix):] {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
-			return "-"
-		}
-	}
-	return action.RequestID
-}
-
-type splitActionQueueSnapshot struct {
-	total               int
-	unclaimed           int
-	claimed             int
-	nativeUnclaimed     int
-	nativeWaitingBroker int
-	nativeReady         int
-}
-
-func snapshotSplitActionQueue(actions []*pendingSplitAction) splitActionQueueSnapshot {
-	var snapshot splitActionQueueSnapshot
-	snapshot.total = len(actions)
+func snapshotSplitActionQueue(actions []*pendingSplitAction) captureactivity.Queue {
+	var snapshot captureactivity.Queue
+	snapshot.Total = len(actions)
 	for _, entry := range actions {
 		if entry.claimed {
-			snapshot.claimed++
+			snapshot.Claimed++
 			continue
 		}
-		snapshot.unclaimed++
+		snapshot.Unclaimed++
 		if entry.action.Type != "open_native_post" {
 			continue
 		}
-		snapshot.nativeUnclaimed++
+		snapshot.NativeUnclaimed++
 		if entry.brokerReady != nil && !entry.brokerAttached {
-			snapshot.nativeWaitingBroker++
+			snapshot.NativeWaitingBroker++
 		} else {
-			snapshot.nativeReady++
+			snapshot.NativeReady++
 		}
 	}
 	return snapshot
@@ -1278,14 +1260,14 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		entry.queuedAt = time.Now()
 		t.actions = append(t.actions, entry)
 		queued = true
-		queueSnapshot := snapshotSplitActionQueue(t.actions)
+		var admission captureactivity.Event
+		if a.Type == "open_native_post" {
+			entry.activity, admission = captureactivity.AdmitSplitAction(s.logger, a.ID, a.RequestID, entry.queuedAt, snapshotSplitActionQueue(t.actions))
+		}
 		actionTimeout := t.actionTimeout
 		queuedAudit, queuedAuditReady := s.splitActionAuditRecord(entry.action, "queued", "accepted")
 		directPrepare := t.directReader
 		t.mu.Unlock()
-		if entry.action.Type == "open_native_post" && s.logger != nil {
-			s.logger.Printf("split_action action=%s request_id=%s phase=queued outcome=accepted queue_total=%d unclaimed=%d claimed=%d native_unclaimed=%d native_waiting_broker=%d native_ready=%d", entry.action.ID, splitBrokerRequestID(entry.action), queueSnapshot.total, queueSnapshot.unclaimed, queueSnapshot.claimed, queueSnapshot.nativeUnclaimed, queueSnapshot.nativeWaitingBroker, queueSnapshot.nativeReady)
-		}
 		if queuedAuditReady {
 			s.persistSplitActionAudit(r.Context(), queuedAudit)
 		}
@@ -1309,38 +1291,35 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		if entry.brokerReady != nil {
 			timeout = readerbroker.PreparationLifetime
 		}
-		finishAction := func(outcome string) {
-			if entry.action.Type == "open_native_post" && s.logger != nil {
-				s.logger.Printf("split_action action=%s request_id=%s phase=terminal outcome=%s elapsed_ms=%d", entry.action.ID, splitBrokerRequestID(entry.action), outcome, time.Since(entry.queuedAt).Milliseconds())
-			}
+		endWait := func(outcome captureactivity.WaitOutcome) {
+			t.mu.Lock()
+			event := entry.activity.WaitEnded(outcome)
+			t.mu.Unlock()
+			event.Write()
 		}
 		timer := time.NewTimer(timeout)
 		defer timer.Stop()
+		admission.Write()
 		select {
 		case result := <-entry.result:
-			outcome := "rejected"
-			if result.OK {
-				outcome = "accepted"
-			}
-			finishAction(outcome)
 			return writeJSON(w, 200, result)
 		case <-t.done:
-			finishAction("transport_stopped")
+			endWait(captureactivity.TransportStopped)
 			return apiError{Status: 503, Code: "capture_stopped", Message: "Capture process stopped."}
 		case <-r.Context().Done():
-			finishAction("client_cancelled")
+			if errors.Is(r.Context().Err(), context.DeadlineExceeded) {
+				endWait(captureactivity.TimedOut)
+			} else {
+				endWait(captureactivity.ClientCancelled)
+			}
 			return r.Context().Err()
 		case <-timer.C:
-			finishAction("timed_out")
+			endWait(captureactivity.TimedOut)
 			return apiError{Status: 504, Code: "capture_timeout", Message: "Capture action timed out; an already claimed action may still finish. It was not replayed."}
 		}
 	}
 	if p == "/api/bridge/split-capture/next" && r.Method == http.MethodGet {
-		pollID := domain.NewID("splitpoll")
-		pollStartedAt := time.Now()
-		if s.logger != nil {
-			s.logger.Printf("split_capture_poll poll=%s phase=start outcome=active", pollID)
-		}
+		poll := captureactivity.BeginPoll(s.logger, domain.NewID("splitpoll"))
 		finishPoll := func(outcome string, action *splitCaptureAction) {
 			if s.logger == nil {
 				return
@@ -1348,12 +1327,14 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			t.mu.Lock()
 			snapshot := snapshotSplitActionQueue(t.actions)
 			t.mu.Unlock()
-			actionID, requestID := "-", "-"
+			var actionID, requestID string
 			if action != nil {
 				actionID = action.ID
-				requestID = splitBrokerRequestID(*action)
+				if action.Type == "open_native_post" {
+					requestID = action.RequestID
+				}
 			}
-			s.logger.Printf("split_capture_poll poll=%s phase=end outcome=%s elapsed_ms=%d queue_total=%d unclaimed=%d claimed=%d native_unclaimed=%d native_waiting_broker=%d native_ready=%d action=%s request_id=%s", pollID, outcome, time.Since(pollStartedAt).Milliseconds(), snapshot.total, snapshot.unclaimed, snapshot.claimed, snapshot.nativeUnclaimed, snapshot.nativeWaitingBroker, snapshot.nativeReady, actionID, requestID)
+			poll.End(outcome, snapshot, actionID, requestID)
 		}
 		timer := time.NewTimer(20 * time.Second)
 		defer timer.Stop()
@@ -1361,6 +1342,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			t.mu.Lock()
 			if t.key != r.Header.Get("X-Aku-Capture-Instance") {
 				t.mu.Unlock()
+				finishPoll("owner_changed", nil)
 				return apiError{Status: 409, Code: "capture_instance_mismatch", Message: "Capture owner changed."}
 			}
 			for _, entry := range t.actions {
@@ -1403,8 +1385,12 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		if err := readJSON(r, &result); err != nil {
 			return err
 		}
+		var resultEvent captureactivity.Event
 		t.mu.Lock()
-		defer t.mu.Unlock()
+		defer func() {
+			t.mu.Unlock()
+			resultEvent.Write()
+		}()
 		for _, entry := range t.actions {
 			if t.key != r.Header.Get("X-Aku-Capture-Instance") {
 				return apiError{Status: 409, Code: "capture_instance_mismatch", Message: "Capture owner changed."}
@@ -1442,6 +1428,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 				case entry.result <- result:
 					entry.completed = true
 					entry.completionResult = &result
+					resultEvent = entry.activity.Result(result.OK)
 					entry.runtimeLease.Release()
 					entry.runtimeLease = nil
 					if entry.interactionRelease != nil {
