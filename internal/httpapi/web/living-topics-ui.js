@@ -38,7 +38,7 @@ export function createLivingTopicsUi({
       state.livingTopicNotifications = normalizeLivingTopicNotifications(response?.notifications);
       renderLivingTopicNotificationBadge();
     } catch (error) {
-      console.warn("Living Topics notification refresh deferred.", error);
+      globalThis.AkuWebDiagnostics?.issue("notification_refresh", error);
     } finally {
       topicsState.notificationLoading = false;
     }

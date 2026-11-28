@@ -1,4 +1,5 @@
 import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
+import { webDiagnosticsScripts } from "./fixtures/web-diagnostics.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -107,6 +108,9 @@ function createAppHarness({ nextOutcome, session, initialPoller = null }) {
     clearTimeout() {},
     startPolling() { calls.startPolling += 1; state.poller = "restarted-poller"; },
   };
+  context.window.dispatchEvent = () => {};
+  context.CustomEvent = class {};
+  vm.runInNewContext(webDiagnosticsScripts, context);
   vm.runInNewContext(appCleanupFunctions, context, { filename: "AkuSidecar app cleanup functions" });
   return { context, state, calls, listenerCount: fakeBrowserWindow.listenerCount };
 }
@@ -158,6 +162,12 @@ test("actual app cancelSession preserves the cancelled session and restarts poll
   assert.equal(harness.state.poller, "restarted-poller");
   assert.equal(harness.calls.startPolling, 1);
   assert.deepEqual(harness.calls.clearedIntervals, ["poller-2"]);
+  assert.equal(harness.calls.warnings.length, 1);
+  const [marker, event] = harness.calls.warnings[0];
+  assert.equal(marker, "ui_activity");
+  assert.equal(event.operation, "web_ui");
+  assert.equal(event.phase, "session_cancel_cleanup");
+  assert.equal(event.reason, "cleanup_unverified");
 });
 
 function createUIElement() {

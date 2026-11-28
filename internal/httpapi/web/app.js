@@ -794,10 +794,7 @@ window.addEventListener("message", (event) => {
     if (state.dispatchKey?.startsWith(`${runId}:`)) state.dispatchKey = null;
     state.dispatchRetryAfter.set(runId, Date.now() + (expectedLaneWait ? 1500 : 500));
     if (!expectedLaneWait) {
-      console.warn("AkuBridge dispatch stopped; waiting for the authoritative Sidecar run outcome.", {
-        runId,
-        message: event.data.message,
-      });
+      globalThis.AkuWebDiagnostics?.issue("dispatch_stopped", event.data.message, runId);
     }
   }
 });
@@ -1906,12 +1903,11 @@ function feedbackButton(label) {
 }
 
 function logInteractionTrace(action, trace, phase, details = {}) {
-  console.info(`${action}_trace`, { trace, phase, ...details });
+  if (action === "timeline_feedback") globalThis.AkuWebDiagnostics?.feedback(trace, phase, details);
 }
 
 function logNativePostTrace(trace, phase, details = {}) {
-  if (window.akuNativePostDiagnostics) window.akuNativePostDiagnostics.record(trace, phase, details);
-  else logInteractionTrace("native_post", trace, phase, details);
+  window.akuNativePostDiagnostics?.record(trace, phase, details);
 }
 
 // Frontend feature: timeline-media.js#openMedia
@@ -1962,7 +1958,7 @@ function setPill(selector, text, tone) {
 
 function showError(error) {
   if (error?.recoveryInitiated) return;
-  console.error(error);
+  globalThis.AkuWebDiagnostics?.issue("show_error", error);
   const notice = $("#provider-notice");
   notice.className = "notice notice-danger";
   notice.setAttribute("role", "alert");

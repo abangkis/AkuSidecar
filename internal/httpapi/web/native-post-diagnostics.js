@@ -4,7 +4,7 @@
   const key = "akuNativePostDiagnostics.v1";
   const limit = 64;
   const maxAgeMs = 24 * 60 * 60 * 1000;
-  const tracePattern = /^(?:broker_[a-f0-9]{32}|pointer_[a-f0-9]{32}|native_post_\d+_[a-f0-9]+)$/;
+  const tracePattern = /^(?:broker_[a-f0-9]{32}|pointer_[a-f0-9]{32}|native_post_\d{1,16}_[a-f0-9]{1,32})$/;
   const phases = new Set([
     "broker_ready", "broker_unavailable",
     "broker_listener_ready", "broker_startup_error",
@@ -45,10 +45,10 @@
     if (!Number.isFinite(at) || at > Date.now() + 60_000 || Date.now() - at > maxAgeMs) return null;
     const entry = {
       at: new Date(at).toISOString(),
-      trace: tracePattern.test(value.trace ?? "") ? value.trace : "invalid",
+      trace: typeof value.trace === "string" && tracePattern.test(value.trace) ? value.trace : "invalid",
       phase: value.phase,
     };
-    if (tracePattern.test(value.gesture ?? "") && value.gesture.startsWith("pointer_")) entry.gesture = value.gesture;
+    if (typeof value.gesture === "string" && value.gesture.startsWith("pointer_") && tracePattern.test(value.gesture)) entry.gesture = value.gesture;
     if (outcomes.has(value.outcome)) entry.outcome = value.outcome;
     if (errorKinds.has(value.errorKind)) entry.errorKind = value.errorKind;
     if (Number.isInteger(value.status) && value.status >= 100 && value.status <= 599) entry.status = value.status;
@@ -75,11 +75,11 @@
     } catch {
       // Storage is diagnostic only; denied or full storage must not block a click.
     }
-    console.info("native_post_trace", entry);
+    globalThis.AkuWebDiagnostics?.nativePost(entry);
   }
 
   const recovered = read();
-  if (recovered.length) console.info("native_post_trace_recovered", { count: recovered.length, events: recovered });
+  if (recovered.length) globalThis.AkuWebDiagnostics?.recovered(recovered);
   window.akuNativePostDiagnostics = Object.freeze({ record, read, errorKind });
   window.dispatchEvent(new CustomEvent("aku-native-post-diagnostics-ready"));
 })();

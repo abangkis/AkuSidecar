@@ -346,7 +346,7 @@ export function createTimelineMedia({
   }
 
   function drainPlaybackRecovery() {
-    void getPlaybackRecovery().drain().catch((error) => console.warn("Video refresh queue deferred.", error));
+    void getPlaybackRecovery().drain().catch((error) => globalThis.AkuWebDiagnostics?.issue("video_refresh_queue", error));
   }
 
   function pauseOtherInlineVideos(activeVideo) {

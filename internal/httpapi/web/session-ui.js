@@ -51,7 +51,7 @@ export function createSessionUi({
         await releaseCaptureSurface(leaseId);
       } catch (error) {
         state.captureCleanupPending = leaseId;
-        console.warn("Capture-surface cleanup after cancellation failed", error);
+        globalThis.AkuWebDiagnostics?.issue("session_cancel_cleanup", error);
         renderSession();
         startPolling();
         return;
@@ -89,7 +89,7 @@ export function createSessionUi({
         releaseSource: releaseCaptureSurface,
       });
       if (!captureSurfaceBarrier.ready) {
-        console.warn("Capture-surface cleanup deferred before the next source.", captureSurfaceBarrier.error);
+        globalThis.AkuWebDiagnostics?.issue("next_source_cleanup", captureSurfaceBarrier.error);
       }
       renderSession();
       const captureActive = session.runs?.some((run) => run.status === "waiting_for_bridge" && run.bridgeCommandStatus === "claimed");
@@ -102,7 +102,7 @@ export function createSessionUi({
           await releaseCaptureSurface(session.id);
         } catch (error) {
           state.captureCleanupPending = session.id;
-          console.warn("Capture-surface cleanup after session completion failed", error);
+          globalThis.AkuWebDiagnostics?.issue("session_complete_cleanup", error);
           renderSession();
           return;
         }
@@ -133,7 +133,7 @@ export function createSessionUi({
           await releaseCaptureSurface(sessionId);
         } catch (cleanupError) {
           state.captureCleanupPending = sessionId;
-          console.warn("Capture-surface cleanup for a missing session is still pending.", cleanupError);
+          globalThis.AkuWebDiagnostics?.issue("missing_session_cleanup", cleanupError);
           renderSession();
           return;
         }

@@ -310,7 +310,7 @@ export function createCaptureUi({
           }, endpoint);
         }
       } catch (error) {
-        console.warn("Bridge action relay paused", error);
+        globalThis.AkuWebDiagnostics?.issue("action_relay", error);
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     }

@@ -28,7 +28,7 @@ export function createAppLifecycle({
         renderAutoUpdateStatus(autoUpdate);
       })
       .catch((error) => {
-        console.warn("Recent user activity could not be recorded.", error);
+        globalThis.AkuWebDiagnostics?.issue("user_activity", error);
       });
   }
 
@@ -145,7 +145,7 @@ export function createAppLifecycle({
         startPolling();
       }
     } catch (error) {
-      console.warn("Auto Update status refresh deferred.", error);
+      globalThis.AkuWebDiagnostics?.issue("auto_update_refresh", error);
     }
     void refreshLivingTopicNotificationProjection();
   }
@@ -157,7 +157,7 @@ export function createAppLifecycle({
       const { databaseHealth } = await api("/api/database/health");
       renderDatabaseHealth(databaseHealth);
     } catch (error) {
-      console.warn("Database health refresh deferred.", error);
+      globalThis.AkuWebDiagnostics?.issue("database_health_refresh", error);
     } finally {
       databaseHealthPollInFlight = false;
     }

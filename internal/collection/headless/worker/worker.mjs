@@ -4,6 +4,7 @@ import { resolve, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { StringDecoder } from 'node:string_decoder';
+import { createWorkerDiagnostics } from './worker-diagnostics.mjs';
 import { launchChrome } from './chrome.mjs';
 import { parseWindowedIdentity, validateIdentitySources } from './windowed-identity.mjs';
 import { createBorrowedChrome, createBorrowedRPC } from './borrowed.mjs';
@@ -209,7 +210,7 @@ export async function runWorker({
     }
     return new Promise(resolveWrite => output.write(line + '\n', resolveWrite));
   };
-  const log = message => errorOutput?.write(`[headless-worker] ${message}\n`);
+  const reportIssue = createWorkerDiagnostics(errorOutput);
   const cancelIdleTimer = () => {
     idleTimerGeneration++;
     if (idleTimer !== null) {
@@ -235,7 +236,7 @@ export async function runWorker({
             await closeBrowser();
           }
         } catch (error) {
-          log(`idle Chrome close error: ${String(error?.message || error).slice(0, 300)}`);
+          reportIssue('idle_close', error);
         } finally {
           idleCloseQueued = false;
           scheduleIdleTimer();
@@ -290,13 +291,13 @@ export async function runWorker({
       scheduleIdleTimer();
     });
   };
-  const appendBrowserClose = context => {
+  const appendBrowserClose = phase => {
     queued = queued.then(async () => {
       await closeBrowser();
     }, async () => {
       await closeBrowser();
     }).catch(error => {
-      log(`${context}: ${String(error?.message || error).slice(0, 300)}`);
+      reportIssue(phase, error);
     });
   };
   const borrowedRPC = createBorrowedRPC(write);
@@ -369,7 +370,7 @@ export async function runWorker({
         ...(['empty_unverified','invalid_observation'].includes(error?.code) && error.diagnostics ? {diagnostics:error.diagnostics} : {}),
       };
       await write(responseFor(id, false, undefined, safe));
-      if (errorOutput && error?.stack) errorOutput.write(`[headless-worker] ${safe.code}: ${safe.message}\n`);
+      reportIssue('request_failed', error);
     }
   };
 
@@ -401,14 +402,14 @@ export async function runWorker({
     borrowedRPC.close();
     lineBuffer += decoder.end();
     if (lineBuffer.trim()) enqueueRequest(lineBuffer);
-    appendBrowserClose('shutdown error');
+    appendBrowserClose('shutdown_close');
   };
   input.on('end', finishInput);
   const interrupt = () => {
     cancelIdleTimer();
     borrowedRPC.close();
     shuttingDown = true;
-    appendBrowserClose('interrupt close error');
+    appendBrowserClose('interrupt_close');
   };
   process.once('SIGINT', interrupt);
   process.once('SIGTERM', interrupt);
@@ -456,7 +457,7 @@ function isAbsolutePath(value) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   void runWorker().catch(error => {
-    process.stderr.write(`[headless-worker] fatal: ${String(error?.message || error).slice(0, 300)}\n`);
+    createWorkerDiagnostics(process.stderr)('fatal', error);
     process.exitCode = 1;
   });
 }

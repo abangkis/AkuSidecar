@@ -22,7 +22,6 @@
       window.akuNativePostDiagnostics.record(requestId, phase, details);
     } else {
       if (pendingNativeTraces.length < 16) pendingNativeTraces.push([requestId, phase, details]);
-      console.info("native_post_trace", { trace: requestId, phase, ...details });
     }
   };
   let readerBrokerReady = false;

@@ -2,9 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
+import { webDiagnosticsScripts as diagnosticsScript } from "./fixtures/web-diagnostics.mjs";
 
 const script = fs.readFileSync(new URL("../internal/httpapi/split_ui_bridge.js", import.meta.url), "utf8");
-const diagnosticsScript = fs.readFileSync(new URL("../internal/httpapi/web/native-post-diagnostics.js", import.meta.url), "utf8");
 const origin = "http://127.0.0.1:11122";
 
 test("capture journal confirmation sends the exact preview to the authenticated capture owner", async () => {

@@ -1,10 +1,9 @@
 import { readFrontendAppSource } from "./fixtures/frontend-source.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { webDiagnosticsScripts as script } from "./fixtures/web-diagnostics.mjs";
 import vm from "node:vm";
 
-const script = readFileSync(new URL("../internal/httpapi/web/native-post-diagnostics.js", import.meta.url), "utf8");
 const app = readFrontendAppSource();
 
 function load(storage, messages = []) {
@@ -37,9 +36,27 @@ test("native post trace survives a reload and stores only allowlisted fields", (
   assert.equal(recovered[0].errorKind, "epoch_mismatch");
   assert.equal(recovered[0].status, 409);
   assert.equal(messages[0].label, "native_post_trace_recovered");
+  assert.equal(messages[0].detail.operation, "native_post");
+  assert.equal(messages[0].detail.phase, "recovered");
+  assert.equal(messages[0].detail.sequence, 1);
   assert.equal(JSON.stringify([...values.values()]).includes("linkedin.com"), false);
   assert.equal(JSON.stringify([...values.values()]).includes("secret-token"), false);
   assert.equal(JSON.stringify([...values.values()]).includes("private error text"), false);
+});
+
+test("reload expires old entries and preserves pre-migration records with a failing console", () => {
+  const trace = "broker_" + "b".repeat(32);
+  const stored = [
+    { trace, phase: "click", at: new Date(Date.now() - 86_500_000).toISOString() },
+    { trace, phase: "terminal", outcome: "opened", at: new Date().toISOString(), privateText: "discard" },
+  ];
+  const diagnostics = load({ getItem: () => JSON.stringify(stored) }, { push() { throw Error("sink failed"); } });
+  const [entry] = diagnostics.read();
+  assert.equal(diagnostics.read().length, 1);
+  assert.equal(entry.outcome, "opened");
+  assert.equal(entry.trace, trace);
+  assert.equal(Object.hasOwn(entry, "privateText"), false);
+  assert.doesNotThrow(() => diagnostics.record(trace, "click"));
 });
 
 test("a pressed native-post link remains traceable if no click follows", () => {

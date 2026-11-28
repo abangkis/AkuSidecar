@@ -12,6 +12,14 @@ import {verifySharedDiagnosticCore} from './build-x-native-owner.mjs';
 const bridge=new URL('../../AkuBridge/diagnostics/',import.meta.url);
 const sources=['state-core.js','recorder.js','bridge-contract.js','chrome-transport.js'].map(name=>readFileSync(new URL(name,bridge),'utf8'));
 const plain=value=>JSON.parse(JSON.stringify(value));
+test('UI and Headless ship the same core and recorder as AkuBridge', () => {
+  for (const [canonical, packaged] of [['state-core.js', 'diagnostic-state-core.js'], ['recorder.js', 'diagnostic-recorder.js']]) {
+    const expected = readFileSync(new URL(canonical, bridge));
+    for (const dir of ['httpapi/web', 'collection/headless/worker/vendor']) {
+      assert.deepEqual(readFileSync(new URL('../internal/' + dir + '/' + packaged, import.meta.url)), expected);
+    }
+  }
+});
 function pair({sequenceLimit=10000,throwProgress=false}={}){
  const realm=vm.createContext({});for(const source of sources)vm.runInContext(source,realm);
  const clock={time:1000.5,throwNow:false},frames=[];

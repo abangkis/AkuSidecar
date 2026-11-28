@@ -55,12 +55,12 @@ export function createPassiveMediaUi({
           );
           updated ||= result?.updated === true;
         } catch (error) {
-          console.debug("Passive X media enrichment was not applied", error);
+          globalThis.AkuWebDiagnostics?.issue("media_enrichment", error);
         }
       }
       if (updated) queueBackgroundTimelineRefresh();
     } catch (error) {
-      console.debug("Passive X media evidence is not available yet", error);
+      globalThis.AkuWebDiagnostics?.issue("media_evidence", error);
     } finally {
       state.passiveMediaEnrichmentActive = false;
     }
