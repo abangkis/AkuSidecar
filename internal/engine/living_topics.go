@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/livingtopics"
 	"github.com/abangkis/AkuSidecar/internal/store"
@@ -515,7 +516,7 @@ func (e *Engine) ResumeLivingTopicUnderstanding(ctx context.Context) error {
 func (e *Engine) launchLivingTopicUnderstanding(topicID, trigger string) {
 	if topicID != "" {
 		if _, err := e.store.QueueLivingTopicUnderstanding(context.Background(), topicID, trigger); err != nil {
-			e.logger.Printf("Living Topics understanding queue degraded safely for topic %s: %v", topicID, err)
+			operational.Problem(e.logger, "living_topics", "enqueue_understanding", "degraded", err, topicID)
 			return
 		}
 	}
@@ -544,7 +545,7 @@ func (e *Engine) launchLivingTopicUnderstanding(topicID, trigger string) {
 			job, err := e.store.ClaimLivingTopicUnderstanding(ctx)
 			if err != nil {
 				if !errors.Is(err, context.Canceled) {
-					e.logger.Printf("Living Topics understanding claim degraded safely: %v", err)
+					operational.Problem(e.logger, "living_topics", "claim_understanding", "degraded", err, "")
 				}
 				return
 			}
@@ -560,10 +561,10 @@ func (e *Engine) launchLivingTopicUnderstanding(topicID, trigger string) {
 				snapshotID = snapshot.ID
 			}
 			if finishErr := e.store.FinishLivingTopicUnderstanding(context.Background(), *job, outcome, digest, snapshotID, refreshErr); finishErr != nil {
-				e.logger.Printf("Living Topics understanding job %s could not persist: %v", job.ID, finishErr)
+				operational.Problem(e.logger, "living_topics", "persist_understanding", "failed", finishErr, job.ID)
 			}
 			if refreshErr != nil {
-				e.logger.Printf("Living Topics understanding for topic %s degraded safely: %v", job.TopicID, refreshErr)
+				operational.Problem(e.logger, "living_topics", "refresh_understanding", "degraded", refreshErr, job.TopicID)
 			}
 		}
 	}()
@@ -588,7 +589,7 @@ func (e *Engine) ResumeLivingTopicActivation(ctx context.Context) error {
 func (e *Engine) launchLivingTopicActivation(topicID, trigger string) {
 	if topicID != "" {
 		if _, err := e.store.QueueLivingTopicActivation(context.Background(), topicID, trigger); err != nil {
-			e.logger.Printf("Living Topics activation queue degraded safely for topic %s: %v", topicID, err)
+			operational.Problem(e.logger, "living_topics", "enqueue_activation", "degraded", err, topicID)
 			return
 		}
 	}
@@ -617,7 +618,7 @@ func (e *Engine) launchLivingTopicActivation(topicID, trigger string) {
 			job, err := e.store.ClaimLivingTopicActivation(ctx)
 			if err != nil {
 				if !errors.Is(err, context.Canceled) {
-					e.logger.Printf("Living Topics activation claim degraded safely: %v", err)
+					operational.Problem(e.logger, "living_topics", "claim_activation", "degraded", err, "")
 				}
 				return
 			}
@@ -629,10 +630,10 @@ func (e *Engine) launchLivingTopicActivation(topicID, trigger string) {
 				return
 			}
 			if finishErr := e.store.FinishLivingTopicActivation(context.Background(), *job, result, activationErr); finishErr != nil {
-				e.logger.Printf("Living Topics activation job %s could not persist: %v", job.ID, finishErr)
+				operational.Problem(e.logger, "living_topics", "persist_activation", "failed", finishErr, job.ID)
 			}
 			if activationErr != nil {
-				e.logger.Printf("Living Topics activation for topic %s degraded safely: %v", job.TopicID, activationErr)
+				operational.Problem(e.logger, "living_topics", "activate", "degraded", activationErr, job.TopicID)
 			}
 		}
 	}()
@@ -694,7 +695,7 @@ func (e *Engine) activateLivingTopic(ctx context.Context, job domain.LivingTopic
 				values, usage, duration, routeErr := router.RouteWithProfile(ctx, livingTopicTimelineFromMemory(candidate.item), []domain.LivingTopic{topic}, examples, settings.ReasoningEvaluationProfile)
 				e.recordLivingTopicModelInvocation("living_topic_routing", job.ID+":"+candidate.item.ID, settings.ReasoningEvaluationProfile, usage, duration, routeErr)
 				if routeErr != nil {
-					e.logger.Printf("Living Topics activation semantic routing degraded to local score for topic %s item %s: %v", topic.ID, candidate.item.ID, routeErr)
+					operational.Problem(e.logger, "living_topics", "score_activation", "fallback", routeErr, topic.ID)
 				} else if len(values) == 1 {
 					decision = values[0]
 				}
@@ -721,7 +722,7 @@ func livingTopicTimelineFromMemory(item domain.MemoryItem) domain.TimelineItem {
 func (e *Engine) launchLivingTopicRouting(sessionID string) {
 	if sessionID != "" {
 		if _, err := e.store.QueueLivingTopicRouting(context.Background(), sessionID); err != nil {
-			e.logger.Printf("Living Topics routing queue degraded safely for session %s: %v", sessionID, err)
+			operational.Problem(e.logger, "living_topics", "enqueue_routing", "degraded", err, sessionID)
 			return
 		}
 	}
@@ -739,7 +740,7 @@ func (e *Engine) launchLivingTopicRouting(sessionID string) {
 		defer func() {
 			for topicID := range dirtyTopics {
 				if _, err := e.store.QueueLivingTopicUnderstanding(context.Background(), topicID, "routed_evidence_batch"); err != nil {
-					e.logger.Printf("Living Topics understanding queue degraded safely for routed topic %s: %v", topicID, err)
+					operational.Problem(e.logger, "living_topics", "enqueue_routed_understanding", "degraded", err, topicID)
 				}
 			}
 			e.mu.Lock()
@@ -759,7 +760,7 @@ func (e *Engine) launchLivingTopicRouting(sessionID string) {
 			job, err := e.store.ClaimLivingTopicRouting(ctx)
 			if err != nil {
 				if !errors.Is(err, context.Canceled) {
-					e.logger.Printf("Living Topics routing claim degraded safely: %v", err)
+					operational.Problem(e.logger, "living_topics", "claim_routing", "degraded", err, "")
 				}
 				return
 			}
@@ -771,10 +772,10 @@ func (e *Engine) launchLivingTopicRouting(sessionID string) {
 				dirtyTopics[topicID] = true
 			}
 			if finishErr := e.store.FinishLivingTopicRouting(context.Background(), job.ID, decisions, routeErr); finishErr != nil {
-				e.logger.Printf("Living Topics routing job %s could not persist: %v", job.ID, finishErr)
+				operational.Problem(e.logger, "living_topics", "persist_routing", "failed", finishErr, job.ID)
 			}
 			if routeErr != nil {
-				e.logger.Printf("Living Topics routing job %s degraded safely: %v", job.ID, routeErr)
+				operational.Problem(e.logger, "living_topics", "route", "degraded", routeErr, job.ID)
 			}
 			if errors.Is(ctx.Err(), context.Canceled) {
 				return
@@ -822,7 +823,7 @@ func (e *Engine) routeLivingTopicItem(ctx context.Context, timelineID string) ([
 		llm, usage, duration, routeErr := router.RouteWithProfile(ctx, item, remaining, examples, settings.ReasoningEvaluationProfile)
 		e.recordLivingTopicModelInvocation("living_topic_routing", timelineID, settings.ReasoningEvaluationProfile, usage, duration, routeErr)
 		if routeErr != nil {
-			e.logger.Printf("Living Topics semantic routing degraded to deterministic for Timeline %s: %v", timelineID, routeErr)
+			operational.Problem(e.logger, "living_topics", "score_timeline", "fallback", routeErr, timelineID)
 		} else {
 			decisions = append(decisions, llm...)
 		}
@@ -853,7 +854,7 @@ func (e *Engine) recordLivingTopicModelInvocation(category, ownerID, profile str
 		status = "failed"
 	}
 	if err := e.store.RecordLivingTopicModelInvocation(context.Background(), category, ownerID, status, e.topics.Name(), model.DisplayModel(), model.DisplayEffort(), duration, usage); err != nil {
-		e.logger.Printf("Living Topics model usage receipt degraded safely for %s %s: %v", category, ownerID, err)
+		operational.Problem(e.logger, "living_topics", "usage_receipt", "degraded", err, "")
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
@@ -30,7 +31,7 @@ func (e *Engine) finalizeSessionLocked(ctx context.Context, sessionID string) er
 			_, eventErr = e.events.ProcessSession(ctx, sessionID, settings)
 		}
 		if eventErr != nil {
-			e.logger.Printf("semantic event resolution for session %s degraded safely: %v", sessionID, eventErr)
+			operational.Problem(e.logger, "session_finalization", "semantic_resolution", "degraded", eventErr, sessionID)
 			e.pauseAutoUpdateForUsageLimit(context.Background(), sessionID, eventErr)
 		}
 	}
@@ -45,7 +46,7 @@ func (e *Engine) finalizeSessionLocked(ctx context.Context, sessionID string) er
 			return stageErr
 		}
 		if detectionErr := e.runFastDetection(ctx, sessionID); detectionErr != nil {
-			e.logger.Printf("AI Fast Detection for session %s degraded safely: %v", sessionID, detectionErr)
+			operational.Problem(e.logger, "session_finalization", "fast_detection", "degraded", detectionErr, sessionID)
 		}
 	}
 	if stageErr := e.store.SetSessionPipelineStage(ctx, sessionID, "finalizing"); stageErr != nil {
@@ -61,15 +62,15 @@ func (e *Engine) finalizeSessionLocked(ctx context.Context, sessionID string) er
 	e.clearAutoUpdateUsageLimitAfterSuccessfulUserSession(ctx, completedSession)
 	if completedSession.Delivery == domain.UpdateDeliveryPrepared {
 		if recordErr := e.store.RecordAutoUpdateSuccess(ctx); recordErr != nil {
-			e.logger.Printf("record auto update success for session %s failed: %v", sessionID, recordErr)
+			operational.Problem(e.logger, "session_finalization", "record_update", "failed", recordErr, sessionID)
 		}
 		e.scheduler.notify()
 	}
 	if _, retentionErr := e.store.EnforceRetention(ctx, settings); retentionErr != nil {
-		e.logger.Printf("retention after session %s failed: %v", sessionID, retentionErr)
+		operational.Problem(e.logger, "session_finalization", "retention", "failed", retentionErr, sessionID)
 	}
 	if _, calibrationErr := e.ensurePendingFirstCalibration(ctx, sessionID); calibrationErr != nil {
-		e.logger.Printf("first-run calibration for session %s could not start: %v", sessionID, calibrationErr)
+		operational.Problem(e.logger, "session_finalization", "start_calibration", "failed", calibrationErr, sessionID)
 	}
 	if settings.AIDetectionEnabled && !onboardingFastPath && (completedSession.BudgetAuthority != domain.BudgetAuthorityAutomatic || e.autoDeepDetectionAllowed(ctx, settings)) {
 		e.launchDeepDetection(sessionID)

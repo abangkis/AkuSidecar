@@ -377,7 +377,13 @@ func TestEngineSelectionCorrectionsCharacterizationErrors(t *testing.T) {
 			correction, item, err := f.e.CorrectSelection(ctx, f.run.ID, f.ref)
 			correctionLocksReleased(t, f.e)
 			if mode == "semantic" || mode == "knowledge" || mode == "fast" || mode == "topics" {
-				if err != nil || correction.ID == "" || item.ID == "" || !strings.Contains(f.log.String(), "offline "+mode) {
+				expected := map[string][3]string{
+					"semantic":  {"selection_correction", "semantic_resolution", "degraded"},
+					"knowledge": {"selection_correction", "continuity", "failed"},
+					"fast":      {"selection_correction", "fast_detection", "degraded"},
+					"topics":    {"living_topics", "enqueue_routing", "degraded"},
+				}[mode]
+				if err != nil || correction.ID == "" || item.ID == "" || !hasActivity(f.log.String(), expected[0], expected[1], expected[2]) {
 					t.Fatalf("best-effort error=%v correction=%+v item=%+v log=%s", err, correction, item, f.log.String())
 				}
 				wantKnowledge := 1

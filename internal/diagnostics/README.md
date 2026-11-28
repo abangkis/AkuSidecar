@@ -9,6 +9,7 @@ extraction, not a new published library or a new telemetry backend.
 | `recording` | Concurrent progress snapshots, first observed cause, independent cleanup/delivery, explicit completeness | Reusable candidate; caller supplies vocabulary and observations |
 | `snapshot` | Single latest value with copy-on-save/copy-on-read and concurrency control | Reusable candidate; the value supplies its deep-clone operation |
 | `observability` | AkuSidecar instrumentation vocabulary and adapter over the published telemetry runtime | Product adapter; composition-root lifecycle and explicit export configuration |
+| `operational` | One JSON observation per application, engine or HTTP log site | Product-owned projection with AI4UDiagnostics operation, phase and duration types |
 | `capturestartup` | First split-owner launch, navigation, bootstrap, heartbeat and two document samples | Development supervisor log using `recording` and AI4UDiagnostics elapsed-time projection |
 | `captureactivity` | Chrome process launches, owner transition timing and individual HTTP polls | Local supervisor log using the same recorder and elapsed-time projection |
 | `timeline` | Closed browser-performance report schema, numeric/shape validation, cloning, and latest-report composition | AkuBrowser adapter; stage names, bounds, UTC receipt time and privacy policy stay here |
@@ -23,6 +24,33 @@ Neither package knows HTTP, browser selectors, native profiles, source identity,
 timing acquisition, collector configuration, UI labels, or storage databases.
 Independent-consumer tests use unrelated operations/value types rather than
 claiming another application has already adopted these candidates.
+
+## Application, engine and HTTP logs
+
+Parse the JSON following the literal `sidecar_activity ` marker in Sidecar output.
+Filter by `operation`, `phase` and `outcome`. Where present, `reason` is a stable
+error category (a known CLI startup guard can also supply a fixed operator hint), `id` is an opaque application ID, and `detail` contains the
+owner's measurements or catalog values. An unclassified error has reason
+`unavailable`. Private error messages, credential references and paths are omitted.
+
+| Previous log family | Operation and fields to inspect | Emitter (Go package / file) |
+| --- | --- | --- |
+| Startup, shutdown, app shell, discovery | `app_startup`, `app_shutdown`, `app_shell`; shutdown completion includes `detail.duration_ms` | cmd/akusidecar; appshell/capture_zorder_windows |
+| Provider lifecycle, Auto Update | `reasoning_provider`, `auto_update`; switch reports previous/current provider families | engine/provider_swap, auto_update, scheduler_lifecycle, process_recovery |
+| Capture recovery, daily source, native worker | `capture_recovery`, `source_daily`, `main_transport_worker`; use the source and generation when available | engine/capture_runtime, source_daily_runtime; cmd/akusidecar |
+| Capture window positioning | `capture_zorder`, phases `counters` and `hook`; counters remain aggregated | appshell/capture_zorder_windows |
+| Living Topics, AI detection and feedback | `living_topics`, `ai_detection`, `ai_feedback`; phase identifies the affected queue, resolver or store operation | engine/living_topics, ai_detection, ai_feedback |
+| Media, selection, planning, finalization | `media_recapture`, `media_provenance`, `selection_correction`, `planning_shadow`, `session_finalization`; planning comparisons include usage and agreement | engine/media_recapture, media_provenance, selection_corrections, acquisition_planning_shadow, session_finalization |
+| HTTP failures, calibration, credential storage | `http/request`, `calibration/append_ledger`, `configuration/write_credential` (operation/phase) | httpapi/server, calibration, reasoning_configuration |
+| Timeline feedback request trace | `timeline_feedback/request`; match `detail.trace` to the response header and inspect timing and pool counters under `detail` | httpapi/timeline_feedback |
+
+Configuration loading and validation return errors to `cmd/akusidecar`, where
+startup failures carry the owning phase. Other engine worker failures use
+`run_lifecycle`. HTTP failures to append a split-action audit or record native
+capture telemetry use `split_action/persist_audit` or `native_capture/record_telemetry`.
+
+The independent `capture_startup` and `capture_activity` streams keep their
+existing filters, including split-action, reader-broker and native-reader IDs.
 
 ## Browser boundary
 

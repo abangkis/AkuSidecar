@@ -15,6 +15,7 @@ import (
 	"unsafe"
 
 	"github.com/abangkis/AkuSidecar/internal/diagnostics/captureactivity"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 	"golang.org/x/sys/windows"
 )
@@ -251,7 +252,10 @@ func (c *captureZOrder) logStats() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.logger != nil && (c.attempted > 0 || c.readback > 0 || c.failed > 0 || c.foregroundCycles > 0) {
-		c.logger.Printf("capture_zorder foreground_cycles=%d attempted=%d applied=%d readback=%d failed=%d last_failure=%s", c.foregroundCycles, c.attempted, c.applied, c.readback, c.failed, c.lastFailure)
+		operational.Report(c.logger, "capture_zorder", "counters", "observed", operational.Fields{
+			"foreground_cycles": c.foregroundCycles, "attempted": c.attempted, "applied": c.applied,
+			"readback": c.readback, "failed": c.failed, "last_failure": c.lastFailure,
+		})
 	}
 	c.foregroundCycles, c.attempted, c.applied, c.readback, c.failed = 0, 0, 0, 0, 0
 	c.lastFailure = ""
@@ -311,7 +315,7 @@ func startCaptureZOrderHook(pid uint32, wake chan struct{}, logger *log.Logger) 
 		})
 		hook, _, _ := captureSetHook.Call(0x8002, 0x800B, 0, callback, uintptr(pid), 0, 0)
 		if hook == 0 && logger != nil {
-			logger.Printf("capture_zorder hook_failed=true fallback_poll_ms=250")
+			operational.Report(logger, "capture_zorder", "hook", "fallback", operational.Fields{"fallback_poll_ms": 250})
 		}
 		ready <- windows.GetCurrentThreadId()
 		for {

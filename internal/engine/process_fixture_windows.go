@@ -23,6 +23,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
 	"github.com/abangkis/AkuSidecar/internal/collection"
 	"github.com/abangkis/AkuSidecar/internal/config"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/ownedprocess"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
@@ -530,7 +531,7 @@ func runAuthSessionProcessFixtureConfigured(input io.Reader, output io.Writer, d
 		return err
 	}
 	if !scanner.Scan() {
-		return errors.New("fixture startup grant missing")
+		return operational.FixtureGrantMissing
 	}
 	var start processFixtureStart
 	if err = json.Unmarshal(scanner.Bytes(), &start); err != nil {

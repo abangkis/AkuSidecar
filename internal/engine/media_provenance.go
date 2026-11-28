@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/mediaprovenance"
 )
@@ -40,7 +41,7 @@ func (e *Engine) launchMediaProvenance(sessionID string) {
 	}
 	items, err := e.store.ListSessionItems(context.Background(), sessionID)
 	if err != nil {
-		e.logger.Printf("C2PA image provenance could not load session %s: %v", sessionID, err)
+		operational.Problem(e.logger, "media_provenance", "load_session", "failed", err, sessionID)
 		return
 	}
 	e.launchMediaProvenanceItems(items)
@@ -53,7 +54,7 @@ func (e *Engine) launchMediaProvenanceItems(items []domain.TimelineItem) {
 	}
 	if len(items) > 0 {
 		if _, err := e.store.QueueMediaProvenance(context.Background(), items, inspector.Name(), inspector.Version()); err != nil {
-			e.logger.Printf("C2PA image provenance queue degraded safely: %v", err)
+			operational.Problem(e.logger, "media_provenance", "enqueue", "degraded", err, "")
 			return
 		}
 	}
@@ -76,7 +77,7 @@ func (e *Engine) launchMediaProvenanceItems(items []domain.TimelineItem) {
 			assessment, err := e.store.ClaimMediaProvenance(ctx, inspector.Version())
 			if err != nil {
 				if !errors.Is(err, context.Canceled) {
-					e.logger.Printf("C2PA image provenance claim degraded safely: %v", err)
+					operational.Problem(e.logger, "media_provenance", "claim", "degraded", err, "")
 				}
 				return
 			}
@@ -92,7 +93,7 @@ func (e *Engine) launchMediaProvenanceItems(items []domain.TimelineItem) {
 			}
 			result, inspectErr := inspector.Inspect(ctx, *assessment, descriptor.TrustedMediaHostSuffixes)
 			if finishErr := e.store.FinishMediaProvenance(context.Background(), assessment.ID, result, inspectErr); finishErr != nil {
-				e.logger.Printf("C2PA image provenance result %s could not persist: %v", assessment.ID, finishErr)
+				operational.Problem(e.logger, "media_provenance", "persist", "failed", finishErr, assessment.ID)
 			}
 			if errors.Is(ctx.Err(), context.Canceled) {
 				return

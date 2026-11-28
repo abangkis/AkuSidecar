@@ -3,10 +3,11 @@
 package main
 
 import (
-	"errors"
-	"github.com/abangkis/AkuSidecar/internal/config"
-	"github.com/abangkis/AkuSidecar/internal/engine"
 	"io"
+
+	"github.com/abangkis/AkuSidecar/internal/config"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
+	"github.com/abangkis/AkuSidecar/internal/engine"
 )
 
 func dispatchDevelopmentSession(options config.Options, input io.Reader, output io.Writer) (bool, error) {
@@ -14,7 +15,7 @@ func dispatchDevelopmentSession(options config.Options, input io.Reader, output 
 		return false, nil
 	}
 	if !options.Dev || (options.DevelopmentSessionReuse != "synthetic-x-manual-fixture" && options.DevelopmentSessionReuse != "synthetic-concurrent-chrome-fixture" && options.DevelopmentSessionReuse != "synthetic-concurrent-fixture" && options.DevelopmentSessionReuse != "synthetic-fixture" && options.DevelopmentSessionReuse != "synthetic-policy-fixture" && options.DevelopmentSessionReuse != "synthetic-broker-fixture" && options.DevelopmentSessionReuse != "synthetic-frontend-fixture" && options.DevelopmentSessionReuse != "synthetic-frontend-native-fixture") {
-		return false, errors.New("development session requires --dev and supported synthetic-fixture provider")
+		return false, operational.DevSelectorRequired
 	}
 	if options.DevelopmentSessionReuse == "synthetic-x-manual-fixture" {
 		// The manual startup connector is accountless here and exits before

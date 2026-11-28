@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
@@ -15,7 +16,7 @@ func (e *Engine) AddAIFeedback(ctx context.Context, timelineID string, input dom
 	}
 	settings, settingsErr := e.store.GetSettings(ctx)
 	if settingsErr != nil {
-		e.logger.Printf("AI Deep Detection could not inspect settings for feedback %s: %v", feedback.ID, settingsErr)
+		operational.Problem(e.logger, "ai_feedback", "load_settings", "failed", settingsErr, feedback.ID)
 		return feedback, nil
 	}
 	if !settings.AIDetectionEnabled {
@@ -23,7 +24,7 @@ func (e *Engine) AddAIFeedback(ctx context.Context, timelineID string, input dom
 	}
 	item, itemErr := e.store.TimelineItem(ctx, timelineID)
 	if itemErr != nil {
-		e.logger.Printf("AI Deep Detection could not load feedback item %s: %v", feedback.ID, itemErr)
+		operational.Problem(e.logger, "ai_feedback", "load_item", "failed", itemErr, feedback.ID)
 		return feedback, nil
 	}
 	e.launchDeepDetectionItems(item.SessionID, []domain.TimelineItem{item})

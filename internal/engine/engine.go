@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/abangkis/AkuSidecar/internal/activationguard"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"strings"
 	"sync"
 	"time"
@@ -13,9 +14,9 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/collection"
 	collectionbridge "github.com/abangkis/AkuSidecar/internal/collection/bridge"
 	"github.com/abangkis/AkuSidecar/internal/config"
+	igdiagnostic "github.com/abangkis/AkuSidecar/internal/diagnostics/instagram"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	semanticengine "github.com/abangkis/AkuSidecar/internal/eventengine"
-	igdiagnostic "github.com/abangkis/AkuSidecar/internal/diagnostics/instagram"
 	"github.com/abangkis/AkuSidecar/internal/livingtopics"
 	"github.com/abangkis/AkuSidecar/internal/mediaprovenance"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
@@ -167,7 +168,7 @@ func (e *Engine) RecordHeartbeat(value domain.BridgeHeartbeat) BridgeStatus {
 	}
 	e.mu.Unlock()
 	if err := e.recoverExpiredBridgeCommands(context.Background(), time.Now()); err != nil {
-		e.logger.Printf("recover expired Bridge command: %v", err)
+		operational.Problem(e.logger, "capture_recovery", "recover_expired_command", "failed", err, "")
 	}
 	e.reloads.Observe(value)
 	e.scheduler.notify()

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/aidetector"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
@@ -24,7 +25,7 @@ func (e *Engine) launchDeepDetection(sessionID string) {
 	items, err := e.store.ListSessionItems(context.Background(), sessionID)
 	if err != nil || len(items) == 0 {
 		if err != nil {
-			e.logger.Printf("AI Deep Detection could not load session %s: %v", sessionID, err)
+			operational.Problem(e.logger, "ai_detection", "load_session", "failed", err, sessionID)
 		}
 		return
 	}
@@ -49,7 +50,7 @@ func (e *Engine) launchDeepDetectionItems(sessionID string, items []domain.Timel
 	e.mu.Unlock()
 	settings, settingsErr := e.store.GetSettings(context.Background())
 	if settingsErr != nil {
-		e.logger.Printf("AI Deep Detection could not load reasoning profile for session %s: %v", sessionID, settingsErr)
+		operational.Problem(e.logger, "ai_detection", "load_profile", "failed", settingsErr, sessionID)
 		return
 	}
 	if !settings.AIDetectionEnabled {
@@ -64,7 +65,7 @@ func (e *Engine) launchDeepDetectionItems(sessionID string, items []domain.Timel
 		Effort: model.Effort, CandidateCount: len(items),
 	})
 	if err != nil {
-		e.logger.Printf("AI Deep Detection could not queue session %s: %v", sessionID, err)
+		operational.Problem(e.logger, "ai_detection", "enqueue", "failed", err, sessionID)
 		return
 	}
 	key := "ai:" + sessionID + ":" + job.ID
@@ -85,7 +86,7 @@ func (e *Engine) launchDeepDetectionItems(sessionID string, items []domain.Timel
 			}
 			_ = e.store.FinishAIDetectionJob(context.Background(), job.ID, status, 0, domain.ModelUsage{}, err)
 			if status != "cancelled" {
-				e.logger.Printf("AI Deep Detection could not start session %s: %v", sessionID, err)
+				operational.Problem(e.logger, "ai_detection", "start", "failed", err, sessionID)
 			}
 			return
 		}
@@ -105,7 +106,7 @@ func (e *Engine) launchDeepDetectionItems(sessionID string, items []domain.Timel
 			}
 			_ = e.store.FinishAIDetectionJob(context.Background(), job.ID, status, duration.Milliseconds(), usage, resolveErr)
 			if status != "cancelled" {
-				e.logger.Printf("AI Deep Detection for session %s degraded safely: %v", sessionID, resolveErr)
+				operational.Problem(e.logger, "ai_detection", "resolve", "degraded", resolveErr, sessionID)
 				e.pauseAutoUpdateForUsageLimit(context.Background(), sessionID, resolveErr)
 			}
 			return
@@ -127,7 +128,7 @@ func (e *Engine) launchDeepDetectionItems(sessionID string, items []domain.Timel
 		}
 		if err := e.store.SaveAIAssessments(context.Background(), assessments); err != nil {
 			_ = e.store.FinishAIDetectionJob(context.Background(), job.ID, "failed", duration.Milliseconds(), usage, err)
-			e.logger.Printf("AI Deep Detection could not persist session %s: %v", sessionID, err)
+			operational.Problem(e.logger, "ai_detection", "persist", "failed", err, sessionID)
 			return
 		}
 		_ = e.store.FinishAIDetectionJob(context.Background(), job.ID, "completed", duration.Milliseconds(), usage, nil)

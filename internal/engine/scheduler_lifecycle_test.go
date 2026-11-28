@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -130,8 +129,8 @@ func TestSchedulerLifecycleStartPublishesHandleBeforeQueuedWake(t *testing.T) {
 		t.Fatal(err)
 	}
 	observed := make(chan bool, 1)
-	e.logger = schedulerLogFunc(func(format string, _ ...any) {
-		if strings.HasPrefix(format, "recover expired Bridge command:") {
+	e.logger = schedulerLogFunc(func(format string, args ...any) {
+		if hasActivity(fmt.Sprintf(format, args...), "auto_update", "recover_expired_command", "failed") {
 			e.mu.RLock()
 			started := e.scheduler.hasStarted()
 			e.mu.RUnlock()
@@ -185,11 +184,11 @@ func TestSchedulerLifecycleLoopWaitsAndAttemptsUpdateAfterRecoveryError(t *testi
 	}
 	checkStep := func() {
 		t.Helper()
-		for _, prefix := range []string{"recover expired Bridge command:", "Auto Update deferred:"} {
+		for _, expected := range [][2]string{{"recover_expired_command", "failed"}, {"schedule", "deferred"}} {
 			select {
 			case event := <-events:
-				if !strings.HasPrefix(event, prefix) {
-					t.Fatalf("step order: expected %q, got %q", prefix, event)
+				if !hasActivity(event, "auto_update", expected[0], expected[1]) {
+					t.Fatalf("step order: expected %q, got %q", expected, event)
 				}
 			case <-time.After(2 * time.Second):
 				t.Fatal("scheduler step was suppressed")
@@ -225,7 +224,7 @@ func TestSchedulerLifecycleRecoversExpiredCommandBeforeDisabledUpdate(t *testing
 	}
 	recovered := make(chan bool, 1)
 	e.logger = schedulerLogFunc(func(format string, args ...any) {
-		if strings.HasPrefix(fmt.Sprintf(format, args...), "Auto Update deferred: Auto Update is disabled") {
+		if row, ok := findActivity(fmt.Sprintf(format, args...), "auto_update", "schedule", "deferred"); ok && row.Detail["gate"] == "disabled" {
 			current, readErr := state.GetSession(ctx, session.ID)
 			recovered <- readErr == nil && len(current.Runs) > 0 && current.Runs[0].Error != nil && current.Runs[0].Error.Code == "capture_dispatch_timeout"
 		}

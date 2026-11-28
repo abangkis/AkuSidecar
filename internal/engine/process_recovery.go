@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 )
@@ -110,7 +111,7 @@ func (e *Engine) pauseAutoUpdateForUsageLimit(ctx context.Context, sessionID str
 	}
 	pause := domain.AutoUpdateUsageLimitPause{Message: message, SessionID: sessionID}
 	if pauseErr := e.store.PauseAutoUpdateForUsageLimit(ctx, pause); pauseErr != nil {
-		e.logger.Printf("pause Auto Update after Codex usage limit: %v", pauseErr)
+		operational.Problem(e.logger, "auto_update", "pause_usage_limit", "failed", pauseErr, "")
 		return false
 	}
 	e.scheduler.notify()
@@ -123,7 +124,7 @@ func (e *Engine) clearAutoUpdateUsageLimitAfterSuccessfulUserSession(ctx context
 	}
 	pause, err := e.store.AutoUpdateUsageLimitPause(ctx)
 	if err != nil {
-		e.logger.Printf("read Auto Update usage-limit pause after successful user session %s: %v", session.ID, err)
+		operational.Problem(e.logger, "auto_update", "read_pause", "failed", err, session.ID)
 		return
 	}
 	if pause == nil {
@@ -131,17 +132,17 @@ func (e *Engine) clearAutoUpdateUsageLimitAfterSuccessfulUserSession(ctx context
 	}
 	report, err := e.store.SessionModelUsage(ctx, session.ID)
 	if err != nil {
-		e.logger.Printf("read model usage before restoring Auto Update after user session %s: %v", session.ID, err)
+		operational.Problem(e.logger, "auto_update", "read_usage", "failed", err, session.ID)
 		return
 	}
 	if !modelUsageProvesCodexRestored(report) {
 		return
 	}
 	if err := e.store.ConfirmAutoUpdateUsageRestored(ctx); err != nil {
-		e.logger.Printf("restore Auto Update after successful user session %s: %v", session.ID, err)
+		operational.Problem(e.logger, "auto_update", "restore_after_session", "failed", err, session.ID)
 		return
 	}
-	e.logger.Printf("restored Auto Update after model-backed user session %s completed successfully", session.ID)
+	operational.Report(e.logger, "auto_update", "restore_after_session", "restored", operational.Fields{"session": operational.OpaqueID(session.ID)})
 	e.scheduler.notify()
 }
 

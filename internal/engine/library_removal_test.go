@@ -307,7 +307,7 @@ func TestEngineLibraryRemovalCharacterizationQueueFailureContinuesWithBackground
 			defer cancel()
 			log := &libraryRemovalLog{observe: func(message string) {
 				libraryRemovalLocksFree(t, f.e)
-				if !strings.Contains(message, f.topics[0]) || !strings.Contains(message, "first-library-queue-failed") {
+				if row, ok := findActivity(message, "living_topics", "enqueue_understanding", "degraded"); !ok || row.ID != f.topics[0] || row.Reason != "unavailable" || strings.Contains(message, "first-library-queue-failed") {
 					t.Error("queue error was not logged for first topic", message)
 				}
 				cancel()

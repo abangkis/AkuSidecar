@@ -76,7 +76,8 @@ bind it again with a fresh action ID.
 
 ## Bounded evidence
 
-`capture_zorder` emits aggregate counters at most once every five seconds while
+Filter `sidecar_activity` JSON for `operation=capture_zorder` and `phase=counters`.
+The `detail` object contains aggregate counters emitted at most once every five seconds while
 there is activity, plus a final flush: `foreground_cycles`, `attempted`, `applied`, `readback`, `failed`,
 and one fixed `last_failure` code. `applied` means Windows accepted asynchronous
 positioning; only `readback` proves a subsequent below-anchor observation.

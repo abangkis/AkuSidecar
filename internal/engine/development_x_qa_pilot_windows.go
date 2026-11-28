@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/config"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
@@ -99,7 +100,7 @@ func (q *XApplicationQAPilot) GoString() string { return q.String() }
 
 func OpenXApplicationQAPilot(parent context.Context, options XApplicationQAOptions) (q *XApplicationQAPilot, err error) {
 	if !options.Dev || parent == nil || parent.Err() != nil || options.PlanPath == "" || options.Synthetic && newXQASyntheticKit == nil {
-		return nil, errors.New("isolated QA requires explicit supported development opt-in")
+		return nil, operational.QAOptInRequired
 	}
 	s, err := openXQASelection(parent, options.PlanPath)
 	if err != nil {

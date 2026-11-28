@@ -85,8 +85,18 @@ func TestAcquisitionPlanningShadowDoesNotControlRun(t *testing.T) {
 			if test.wantCalls == 1 {
 				var got planningShadowResult
 				for _, line := range strings.Split(logs.String(), "\n") {
-					if raw, ok := strings.CutPrefix(line, "planning_shadow "); ok {
-						if err := json.Unmarshal([]byte(raw), &got); err != nil {
+					if raw, ok := strings.CutPrefix(line, "sidecar_activity "); ok {
+						var event struct {
+							Operation string
+							Detail    json.RawMessage
+						}
+						if err := json.Unmarshal([]byte(raw), &event); err != nil {
+							t.Fatal(err)
+						}
+						if event.Operation != "planning_shadow" {
+							continue
+						}
+						if err := json.Unmarshal(event.Detail, &got); err != nil {
 							t.Fatal(err)
 						}
 					}

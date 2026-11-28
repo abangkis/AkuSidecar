@@ -8,6 +8,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/aidetector"
 	"github.com/abangkis/AkuSidecar/internal/codexselection"
 	"github.com/abangkis/AkuSidecar/internal/config"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	semanticengine "github.com/abangkis/AkuSidecar/internal/eventengine"
 	"github.com/abangkis/AkuSidecar/internal/livingtopics"
@@ -95,7 +96,7 @@ func (e *Engine) planProviderSwapWithFactory(ctx context.Context, target string,
 		}
 		settings.RememberReasoningProfileSet(target)
 		if migrated {
-			e.logger.Printf("migrated reasoning profiles for provider %s", candidate.Name())
+			operational.Report(e.logger, "reasoning_provider", "migrate_profiles", "completed", operational.Fields{"provider": operational.Provider(candidate.Name())})
 		}
 	}
 	if structured, ok := candidate.(reasoning.StructuredInvoker); ok {
@@ -122,7 +123,7 @@ func (plan *providerSwapPlan) apply(e *Engine) {
 	previous := e.ProviderName()
 	if closer, ok := e.provider.(interface{ Close() error }); ok {
 		if err := closer.Close(); err != nil {
-			e.logger.Printf("previous reasoning provider %s shutdown failed: %v", previous, err)
+			operational.Problem(e.logger, "reasoning_provider", "close_previous", "failed", err, "")
 		}
 	}
 	e.provider = plan.candidate
@@ -133,7 +134,7 @@ func (plan *providerSwapPlan) apply(e *Engine) {
 			if resolved != "" && settings.ReasoningExecutablePath != resolved {
 				settings.ReasoningExecutablePath = resolved
 				if err := e.store.SaveSettings(context.Background(), settings); err != nil {
-					e.logger.Printf("could not persist swapped provider executable path: %v", err)
+					operational.Problem(e.logger, "reasoning_provider", "persist_executable", "failed", err, "")
 				}
 			}
 		}
@@ -143,7 +144,7 @@ func (plan *providerSwapPlan) apply(e *Engine) {
 	}
 	e.aiDeep = plan.aiResolver
 	e.topics = plan.topicsResolver
-	e.logger.Printf("reasoning provider switched %s -> %s", previous, plan.candidate.Name())
+	operational.Report(e.logger, "reasoning_provider", "switch", "completed", operational.Fields{"previous": operational.Provider(previous), "current": operational.Provider(plan.candidate.Name())})
 	e.scheduler.notify()
 }
 

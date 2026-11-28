@@ -20,6 +20,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/collection"
 	"github.com/abangkis/AkuSidecar/internal/diagnostics/captureactivity"
 	"github.com/abangkis/AkuSidecar/internal/diagnostics/capturestartup"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 	"github.com/abangkis/AkuSidecar/internal/store"
@@ -60,7 +61,7 @@ func (s *Server) splitActionAuditRecord(action splitCaptureAction, phase, outcom
 func (s *Server) persistSplitActionAudit(ctx context.Context, value store.SplitActionAudit) {
 	err := s.engine.RecordSplitActionAudit(ctx, value)
 	if err != nil && s.logger != nil {
-		s.logger.Printf("split action audit unavailable")
+		operational.Problem(s.logger, "split_action", "persist_audit", "unavailable", err, "")
 	}
 }
 

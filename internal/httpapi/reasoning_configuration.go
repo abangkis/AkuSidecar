@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/abangkis/AkuSidecar/internal/config"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 )
 
@@ -47,7 +48,7 @@ func (s *Server) saveReasoningCredential(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	if err := s.credentials.Put(credentialRef, secret); err != nil {
-		s.logger.Printf("secure credential write failed for ref %q: %v", credentialRef, err)
+		operational.Problem(s.logger, "configuration", "write_credential", "failed", err, "")
 		return apiError{Status: http.StatusInternalServerError, Code: "credential_store_failed", Message: "AkuBrowser could not save this credential securely."}
 	}
 	body.Secret = ""

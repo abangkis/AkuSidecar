@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -870,7 +871,28 @@ func TestXDailyStartupCauseSurvivesStopAndCleanupFailure(t *testing.T) {
 	if !errors.Is(retained, private) {
 		t.Fatal("private first cause was discarded")
 	}
-	if strings.Contains(output.String(), "private account") || !strings.Contains(output.String(), "x_daily_startup stage=seed_rpc condition=rpc cause=unavailable") {
+	found := false
+	for _, line := range strings.Split(output.String(), "\n") {
+		raw, ok := strings.CutPrefix(line, "sidecar_activity ")
+		if !ok {
+			continue
+		}
+		var event struct {
+			Operation, Phase string
+			Detail           struct {
+				Source     string
+				Diagnostic XDailyStartupDiagnostic
+			}
+		}
+		if err := json.Unmarshal([]byte(raw), &event); err != nil {
+			t.Fatal(err)
+		}
+		if event.Operation == "source_daily" && event.Phase == "startup" && event.Detail.Source == "x" {
+			d := event.Detail.Diagnostic
+			found = d.Stage == "seed_rpc" && d.Condition == "rpc" && d.Cause == "unavailable"
+		}
+	}
+	if strings.Contains(output.String(), "private account") || !found {
 		t.Fatal("terminal log lost safe predicate or exposed private cause")
 	}
 	// Test teardown may now finish the intentionally uncertain synthetic cleanup.

@@ -330,14 +330,14 @@ func TestEngineMediaProvenanceCharacterizationErrors(t *testing.T) {
 	for _, mode := range []string{"queue", "claim", "inspect", "finish", "load-session"} {
 		t.Run(mode, func(t *testing.T) {
 			f := newProvenanceEngineFixture(t)
-			wantLog, wantStatus, wantCalls := "", "", int32(0)
+			wantLog, wantOutcome, wantStatus, wantCalls := "", "degraded", "", int32(0)
 			switch mode {
 			case "queue":
 				f.inspector.version = ""
-				wantLog = "queue degraded safely"
+				wantLog = "enqueue"
 			case "claim":
 				f.exec(t, `CREATE TRIGGER provenance_claim_abort BEFORE UPDATE OF status ON media_provenance_assessments WHEN NEW.status='running' BEGIN SELECT RAISE(ABORT,'offline claim rejected'); END`)
-				wantLog, wantStatus = "claim degraded safely", "queued"
+				wantLog, wantStatus = "claim", "queued"
 			case "inspect":
 				f.inspector.inspect = func(context.Context, domain.MediaProvenanceAssessment, []string) (mediaprovenance.Result, error) {
 					return mediaprovenance.Result{}, errors.New("offline inspector rejected")
@@ -345,10 +345,10 @@ func TestEngineMediaProvenanceCharacterizationErrors(t *testing.T) {
 				wantStatus, wantCalls = "failed", 1
 			case "finish":
 				f.exec(t, `CREATE TRIGGER provenance_finish_abort BEFORE UPDATE OF status ON media_provenance_assessments WHEN NEW.status='completed' AND OLD.target_url LIKE '%offline-0.jpg' BEGIN SELECT RAISE(ABORT,'offline finish rejected'); END`)
-				wantLog, wantStatus, wantCalls = "could not persist", "running", 2
+				wantLog, wantOutcome, wantStatus, wantCalls = "persist", "failed", "running", 2
 			case "load-session":
 				f.exec(t, `ALTER TABLE timeline_items RENAME TO offline_timeline_items`)
-				wantLog = "could not load session"
+				wantLog, wantOutcome = "load_session", "failed"
 			}
 			if mode == "load-session" {
 				f.e.launchMediaProvenance("media-session")
@@ -363,7 +363,7 @@ func TestEngineMediaProvenanceCharacterizationErrors(t *testing.T) {
 			if f.inspector.calls.Load() != wantCalls {
 				t.Fatalf("inspections=%d want=%d", f.inspector.calls.Load(), wantCalls)
 			}
-			if wantLog != "" && !strings.Contains(f.log.String(), wantLog) {
+			if wantLog != "" && !hasActivity(f.log.String(), "media_provenance", wantLog, wantOutcome) {
 				t.Fatalf("log=%q want=%q", f.log.String(), wantLog)
 			}
 			if wantStatus == "" {

@@ -217,7 +217,7 @@ func TestEngineProcessRecoveryCharacterizationFailure(t *testing.T) {
 			} else if session != "failed" {
 				t.Fatalf("session=%s", session)
 			}
-			if mode == "pause-error" && !strings.Contains(f.log.String(), "stop-pause") {
+			if mode == "pause-error" && (!hasActivity(f.log.String(), "auto_update", "pause_usage_limit", "failed") || strings.Contains(f.log.String(), "stop-pause")) {
 				t.Fatal("best-effort pause failure not logged")
 			}
 			if !early && mode != "readback-error" {
@@ -293,7 +293,8 @@ func TestEngineProcessRecoveryCharacterizationPause(t *testing.T) {
 					t.Fatalf("pause=%+v", pause)
 				}
 			}
-			if (mode == "store-error" || mode == "cancelled-context") && !strings.Contains(f.log.String(), "pause Auto Update") {
+			wantReason := map[string]string{"store-error": "unavailable", "cancelled-context": "cancelled"}[mode]
+			if row, ok := findActivity(f.log.String(), "auto_update", "pause_usage_limit", "failed"); wantReason != "" && (!ok || row.Reason != wantReason) {
 				t.Fatal("persistence failure not logged")
 			}
 		})

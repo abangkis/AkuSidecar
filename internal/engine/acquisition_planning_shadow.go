@@ -2,10 +2,10 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 )
@@ -44,8 +44,11 @@ func (e *Engine) startPlanningShadow(parent context.Context, run domain.Run, obs
 
 	input := reasoning.NewGLMPlanningShadowInput(run, observation)
 	result := planningShadowResult{
-		RunID: run.ID, Source: run.Source, Model: reasoning.GLMPlanningShadowModel,
-		PrimaryProvider: provider, Agreement: "unavailable",
+		RunID: operational.OpaqueID(run.ID), Source: run.Source, Model: reasoning.GLMPlanningShadowModel,
+		PrimaryProvider: operational.Provider(provider), Agreement: "unavailable",
+	}
+	if !result.Source.Valid() {
+		result.Source = ""
 	}
 	if primaryErr == nil && (primary.Decision == "finish" || primary.Decision == "request_follow_up") {
 		result.PrimaryDecision = primary.Decision
@@ -65,7 +68,7 @@ func (e *Engine) startPlanningShadow(parent context.Context, run domain.Run, obs
 		}
 		started := time.Now()
 		decision, usage, err := shadow.plan(ctx, input)
-		result.LatencyMS = time.Since(started).Milliseconds()
+		result.LatencyMS = operational.Milliseconds(time.Since(started))
 		result.InputTokens, result.OutputTokens, result.ReasoningTokens = usage.Input, usage.Output, usage.ReasoningOutput
 		switch {
 		case errors.Is(ctx.Err(), context.Canceled):
@@ -75,10 +78,22 @@ func (e *Engine) startPlanningShadow(parent context.Context, run domain.Run, obs
 		case err != nil:
 			result.Status = "failed"
 			if failure, ok := reasoning.ProviderFailureFrom(err); ok {
-				result.FailureCode, result.ProviderStatus = failure.Code, failure.ProviderStatus
+				switch failure.Code {
+				case "invalid_request", "configuration", "transport", "provider", "rate_limited", "quota", "unavailable", "response", "incomplete_response", "validation", "canceled", "timeout", "closed", "internal":
+					result.FailureCode = failure.Code
+				default:
+					result.FailureCode = "unknown"
+				}
+				result.ProviderStatus = failure.ProviderStatus
 			}
 		default:
-			result.Status, result.Decision = "completed", decision
+			result.Status = "completed"
+			switch decision {
+			case "finish", "request_follow_up":
+				result.Decision = decision
+			default:
+				result.Decision = "unknown"
+			}
 			if result.PrimaryDecision != "" {
 				result.Agreement = "different"
 				if result.PrimaryDecision == decision {
@@ -86,8 +101,7 @@ func (e *Engine) startPlanningShadow(parent context.Context, run domain.Run, obs
 				}
 			}
 		}
-		raw, _ := json.Marshal(result)
-		e.logger.Printf("planning_shadow %s", raw)
+		operational.Report(e.logger, "planning_shadow", "compare", result.Status, result)
 	}(run.SessionID)
 }
 

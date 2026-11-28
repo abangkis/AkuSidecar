@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 )
 
 func (e *Engine) launchProcess(runID string, allowPlanning bool) {
@@ -38,7 +40,7 @@ func (e *Engine) launchProcessWithPolicy(runID string, allowPlanning, queueIfAct
 			} else if run, runErr := e.store.GetRun(context.Background(), runID); runErr == nil {
 				if session, sessionErr := e.store.GetSession(context.Background(), run.SessionID); sessionErr == nil && hybridCollectionSession(session) {
 					if _, advanceErr := e.startNext(context.Background(), session.ID); advanceErr != nil {
-						e.logger.Printf("retry hybrid collection admission for session %s after worker drain: %v", session.ID, advanceErr)
+						operational.Problem(e.logger, "run_lifecycle", "retry_after_worker_drain", "failed", advanceErr, session.ID)
 					}
 				}
 			}
@@ -46,12 +48,12 @@ func (e *Engine) launchProcessWithPolicy(runID string, allowPlanning, queueIfAct
 		}()
 		if err := e.process(ctx, runID, allowPlanning); err != nil {
 			if e.shouldPauseForShutdown(ctx, err) {
-				e.logger.Printf("run %s paused during shutdown and will resume from accepted capture", runID)
+				operational.Problem(e.logger, "run_lifecycle", "shutdown", "paused", err, runID)
 				return
 			}
-			e.logger.Printf("run %s failed: %v", runID, err)
+			operational.Problem(e.logger, "run_lifecycle", "process", "failed", err, runID)
 			if failErr := e.failRunAfterProcessError(context.Background(), runID, err); failErr != nil {
-				e.logger.Printf("record failed run %s: %v", runID, failErr)
+				operational.Problem(e.logger, "run_lifecycle", "persist_failure", "failed", failErr, runID)
 			}
 			return
 		}

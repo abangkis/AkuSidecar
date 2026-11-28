@@ -347,7 +347,8 @@ only bounded acquisition telemetry with `zdr: true`, `data_collection: "deny"`,
 and `store: false`. Each sample has a 10-second deadline and a 2,048-token output
 budget. One sample may be in flight per process, with no retries or backlog.
 The authoritative planner continues independently. Search service logs for
-`planning_shadow` to compare decisions, latency, usage, and failure codes.
+`sidecar_activity` records with `operation=planning_shadow` and `phase=compare`.
+The `detail` object carries decisions, latency, usage, and failure codes.
 Prompts, post content, and model explanations are excluded from shadow logs.
 Remove the flag from the next development launch to disable the observer.
 

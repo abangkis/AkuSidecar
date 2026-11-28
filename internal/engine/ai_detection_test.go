@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -238,7 +237,7 @@ func TestEngineAIDetectionCharacterizationSessionLoading(t *testing.T) {
 			} else if f.countAI(t, false) != 0 || f.resolver.calls.Load() != 0 {
 				t.Fatal("empty/error session launched work")
 			}
-			if mode == "load-before-resolver-guard" && !strings.Contains(f.log.String(), "could not load session") {
+			if mode == "load-before-resolver-guard" && !hasActivity(f.log.String(), "ai_detection", "load_session", "failed") {
 				t.Fatal("resolver guard bypassed the session read/error contract")
 			}
 		})
@@ -386,7 +385,7 @@ func TestEngineAIDetectionCharacterizationErrors(t *testing.T) {
 			} else if pause != nil {
 				t.Fatal("unrelated error paused Auto Update")
 			}
-			if mode == "resolve-cancelled" && strings.Contains(f.log.String(), "degraded safely") {
+			if mode == "resolve-cancelled" && hasActivity(f.log.String(), "ai_detection", "resolve", "degraded") {
 				t.Fatal("cancellation logged as ordinary failure")
 			}
 		})

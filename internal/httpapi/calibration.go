@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
 	"github.com/abangkis/ai4u-inference-sdk-go/calibration"
 )
@@ -105,7 +106,7 @@ func (s *Server) runCalibrationDiagnostic(w http.ResponseWriter, r *http.Request
 		return apiError{Status: status, Code: code, Message: calErr.Error()}
 	}
 	if appendErr := appendCalibrationReport(s.calibrationLedgerPath(), report); appendErr != nil {
-		s.logger.Printf("calibration ledger append failed: %v", appendErr)
+		operational.Problem(s.logger, "calibration", "append_ledger", "failed", appendErr, "")
 	}
 	payload := map[string]any{"report": report}
 	if calErr != nil {

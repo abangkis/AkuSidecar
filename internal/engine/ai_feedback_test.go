@@ -271,13 +271,13 @@ func TestEngineAIFeedbackCharacterizationErrors(t *testing.T) {
 					t.Fatalf("durable result=%+v err=%v", feedback, err)
 				}
 				log := f.feedbackLog.String()
-				if mode == "settings" && !strings.Contains(log, "could not inspect settings for feedback "+feedback.ID+": decode settings: ") {
+				if row, ok := findActivity(log, "ai_feedback", "load_settings", "failed"); mode == "settings" && (!ok || row.ID != feedback.ID || row.Reason != "unavailable") {
 					t.Fatalf("settings log=%s", log)
 				}
-				if mode == "item" && !strings.Contains(log, "could not load feedback item "+feedback.ID+": sql: no rows") {
+				if row, ok := findActivity(log, "ai_feedback", "load_item", "failed"); mode == "item" && (!ok || row.ID != feedback.ID || row.Reason != "not_found") {
 					t.Fatalf("item log=%s", log)
 				}
-				if mode == "queue" && !strings.Contains(log, "offline review queue rejected") {
+				if mode == "queue" && !hasActivity(log, "ai_detection", "enqueue", "failed") {
 					t.Fatalf("queue log=%s", log)
 				}
 				if (mode == "ai-bypasses-settings" || mode == "disabled-bypasses-item" || mode == "nil-resolver") && log != "" {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 )
@@ -309,23 +310,17 @@ func (d dailyController) queue(run domain.Run, payload map[string]any) error {
 			close(done)
 			d.state.mu.Unlock()
 			if cause != nil {
-				e.logger.Printf(string(d.source)+"_daily_batch phase=terminal reason=batch-failed generation=%d", generation)
-				if status := d.status(); status.RetryAt != "" {
-					e.logger.Printf(string(d.source)+"_daily_retry state=waiting attempt=%d limit=%d", status.RetryCount, status.RetryLimit)
+				status := d.status()
+				operational.Report(e.logger, "source_daily", "batch", "failed", operational.Fields{"source": d.source, "generation": generation, "reason": "batch-failed"})
+				if status.RetryAt != "" {
+					operational.Report(e.logger, "source_daily", "retry", "waiting", operational.Fields{"source": d.source, "attempt": status.RetryCount, "limit": status.RetryLimit, "generation": generation})
 				}
-				if detail := d.status().StartupDiagnostic; detail != nil {
-					e.logger.Printf(string(d.source)+"_daily_startup stage=%s condition=%s cause=%s broker_reason=%s %s", detail.Stage, detail.Condition, detail.Cause, detail.BrokerReason, detail.Origin)
-					if cdp := detail.SeedCDP; cdp != nil {
-						e.logger.Printf(string(d.source)+"_daily_seed_cdp method=%s category=%s", cdp.Method, cdp.Category)
-					}
-					if cleanup := detail.EnrollmentCleanup; cleanup != nil {
-						e.logger.Printf(string(d.source)+"_daily_enrollment_cleanup observer_attachment=%s runtime_disable=%s observer_detach=%s context_continuity=%s seed_guard=%s",
-							cleanup.ObserverAttachment, cleanup.RuntimeDisable, cleanup.ObserverDetach, cleanup.ContextContinuity, cleanup.SeedGuard)
-					}
+				if detail := status.StartupDiagnostic; detail != nil {
+					operational.Report(e.logger, "source_daily", "startup", "failed", operational.Fields{"source": d.source, "generation": generation, "diagnostic": detail})
 				}
 			}
 			if detail := d.status().CleanupDiagnostic; detail != nil {
-				e.logger.Printf(string(d.source)+"_daily_cleanup %s", detail.String())
+				operational.Report(e.logger, "source_daily", "cleanup", "observed", operational.Fields{"source": d.source, "generation": generation, "diagnostic": detail.closed()})
 			}
 			if !cleanupFailed {
 				_, _ = e.startNext(context.Background(), run.SessionID)

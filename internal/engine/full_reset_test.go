@@ -331,10 +331,10 @@ func TestEngineFullResetCharacterizationSwapOrder(t *testing.T) {
 			if err != nil || result.CompletedAt == "" || calls != 1 || f.e.ProviderName() != "deterministic" {
 				t.Fatalf("result=%+v err=%v closes=%d provider=%s", result, err, calls, f.e.ProviderName())
 			}
-			if failClose && !strings.Contains(messages.String(), "previous reasoning provider previous shutdown failed: previous-close-fixture") {
+			if hasActivity(messages.String(), "reasoning_provider", "close_previous", "failed") != failClose || strings.Contains(messages.String(), "previous-close-fixture") {
 				t.Fatal("Close failure was not logged")
 			}
-			if !strings.Contains(messages.String(), "reasoning provider switched previous -> deterministic") {
+			if row, ok := findActivity(messages.String(), "reasoning_provider", "switch", "completed"); !ok || row.Detail["previous"] != "other" || row.Detail["current"] != "deterministic" {
 				t.Fatal("swap completion not logged")
 			}
 			fullResetLocksReleased(t, f.e)

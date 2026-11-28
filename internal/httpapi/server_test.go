@@ -432,6 +432,44 @@ func (store *httpCredentialStore) Delete(reference credentialstore.Reference) er
 	return nil
 }
 
+type failingCredentialStore struct{ httpCredentialStore }
+
+func (*failingCredentialStore) Put(reference credentialstore.Reference, value string) error {
+	return errors.New("private-provider-error " + string(reference) + " " + value)
+}
+
+func TestCredentialFailureAndHTTPRequestLogExcludePrivateValues(t *testing.T) {
+	var out bytes.Buffer
+	s := &Server{logger: log.New(&out, "", 0), credentials: credentials.NewManager(&failingCredentialStore{}, nil)}
+	s.config.Reasoning.Providers = map[string]config.ProviderConfig{"fixture": {CredentialRef: "fixture.private"}}
+	req := httptest.NewRequest(http.MethodPut, "/api/reasoning/credentials", strings.NewReader(`{"provider":"fixture","secret":"private-fixture-secret"}`))
+	req.Header.Set("Content-Type", "application/json")
+	refusal := s.saveReasoningCredential(httptest.NewRecorder(), req)
+	if refusal == nil {
+		t.Fatal("credential write unexpectedly succeeded")
+	}
+	res := httptest.NewRecorder()
+	s.writeError(res, refusal)
+	if res.Code != 500 || !strings.Contains(res.Body.String(), "credential_store_failed") {
+		t.Fatal("credential failure contract changed", res.Code)
+	}
+	res = httptest.NewRecorder()
+	s.writeError(res, errors.New("private-request-value"))
+	if res.Code != 500 || !strings.Contains(res.Body.String(), "internal_error") {
+		t.Fatal("internal error contract changed", res.Code)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected one diagnostic per failure, got %d", len(lines))
+	}
+	for i, phase := range []string{"write_credential", "request"} {
+		var row struct{ Phase, Outcome, Reason string }
+		if !strings.HasPrefix(lines[i], "sidecar_activity ") || json.Unmarshal([]byte(strings.TrimPrefix(lines[i], "sidecar_activity ")), &row) != nil || row.Phase != phase || row.Outcome != "failed" || row.Reason != "unavailable" || strings.Contains(lines[i], "private") {
+			t.Error("unsafe or malformed diagnostic", lines[i])
+		}
+	}
+}
+
 func TestReasoningCredentialWriteUsesConfiguredReferenceAndNeverEchoesSecret(t *testing.T) {
 	state, err := store.Open(filepath.Join(t.TempDir(), "sidecar.db"), domain.DefaultSettings("expanded", "quiet", "promote_unused_budget", true))
 	if err != nil {

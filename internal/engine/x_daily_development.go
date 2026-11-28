@@ -9,6 +9,7 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/appshell"
 	"github.com/abangkis/AkuSidecar/internal/config"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
@@ -98,7 +99,7 @@ func PrepareXDailyDevelopment(cfg config.Config, options config.Options) (*XDail
 		return nil, nil
 	}
 	if !xDailyBuildSupported || !cfg.Dev || !options.Dev || cfg.Deployment.Mode != "" && cfg.Deployment.Mode != "development" {
-		return nil, errors.New("concurrent X capture requires the Windows auth_session_dev development build")
+		return nil, operational.ConcurrentBuildRequired
 	}
 	if cfg.Capture.XUsesMainProfile() && (!cfg.WindowsCaptureSplit || !options.AppShell) {
 		return nil, errors.New("main-profile X concurrency requires the ordinary Windows capture/UI split")

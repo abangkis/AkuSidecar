@@ -2,7 +2,10 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"time"
+
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 )
 
 // autoUpdateLifecycle owns the start-once handle and an immutable wake channel.
@@ -72,10 +75,12 @@ func (e *Engine) autoUpdateLoopOnTicks(ctx context.Context, ticks <-chan time.Ti
 		}
 		// Recovery must also run when the Bridge is silent or Auto Update is disabled.
 		if err := e.recoverExpiredBridgeCommands(ctx, time.Now()); err != nil {
-			e.logger.Printf("recover expired Bridge command: %v", err)
+			operational.Problem(e.logger, "auto_update", "recover_expired_command", "failed", err, "")
 		}
-		if err := e.maybeStartAutoUpdate(ctx); err != nil {
-			e.logger.Printf("Auto Update deferred: %v", err)
+		if err := e.maybeStartAutoUpdate(ctx); errors.Is(err, errAutoUpdateDisabled) {
+			operational.Report(e.logger, "auto_update", "schedule", "deferred", operational.Fields{"gate": "disabled"})
+		} else if err != nil {
+			operational.Problem(e.logger, "auto_update", "schedule", "deferred", err, "")
 		}
 	}
 }

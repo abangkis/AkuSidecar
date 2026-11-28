@@ -199,7 +199,8 @@ reported separately; an unknown exception is never used as a public label.
 The worker records its first operational failure before cancellation and cleanup.
 A subsequent Stop or cleanup error cannot replace that diagnostic. Cleanup
 pending/uncertainty and revoked authority remain separate status fields. The
-terminal `x_daily_startup` log uses the same closed projection. Private errors
+terminal `sidecar_activity` event with `operation=source_daily` and `phase=startup`
+exposes the same closed projection under `detail.diagnostic`. Private errors
 retain `errors.Is` / `errors.As` support but their arbitrary message, paths,
 account values, cookies and raw replies are never formatted into this output.
 

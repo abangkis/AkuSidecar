@@ -4,8 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/abangkis/AkuSidecar/internal/domain"
 	nativetrace "github.com/abangkis/AkuSidecar/internal/diagnostics/nativecapture"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
+	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
 // SetAppShellPID uses the live session owner, including user-requested retries.
@@ -41,7 +42,7 @@ func (s *Server) startNativeCaptureTrace(command *domain.BridgeCommand) {
 			Detail: map[string]any{"schema": "windows-capture-native-v1", "phase": "command_claimed_capture_cleanup_window", "commandId": command.ID, "browserRootPID": pid, "native": sample},
 		})
 		if err != nil && s.logger != nil {
-			s.logger.Printf("native capture telemetry unavailable")
+			operational.Problem(s.logger, "native_capture", "record_telemetry", "unavailable", err, "")
 		}
 	})
 }

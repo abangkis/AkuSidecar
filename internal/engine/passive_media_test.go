@@ -158,7 +158,7 @@ func TestEnginePassiveMediaCharacterizationSuccessAndHandoff(t *testing.T) {
 			if availableCalls != wantAvailable {
 				t.Fatalf("inspector availability calls=%d want=%d", availableCalls, wantAvailable)
 			}
-			if mode == "queue-error" && !strings.Contains(log.String(), "passive-queue-failed") {
+			if mode == "queue-error" && (!hasActivity(log.String(), "media_provenance", "enqueue", "degraded") || strings.Contains(log.String(), "passive-queue-failed")) {
 				t.Fatal("post-commit queue error not logged")
 			}
 			if mode == "timeline-error" {

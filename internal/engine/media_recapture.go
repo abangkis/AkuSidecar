@@ -8,6 +8,7 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
 	"github.com/abangkis/AkuSidecar/internal/collection"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
@@ -66,7 +67,7 @@ func (e *Engine) QueueMediaRecaptureForReason(ctx context.Context, timelineID st
 			return domain.MediaRecapture{}, err
 		}
 		if err := e.beginBrowserCollectionHold(job.ID, item.Source); err != nil {
-			e.logger.Printf("Facebook recapture %s is queued pending Browser collection admission: %v", job.ID, err)
+			operational.Problem(e.logger, "media_recapture", "browser_admission", "deferred", err, job.ID)
 		}
 		return job, nil
 	}

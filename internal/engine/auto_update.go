@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
@@ -46,7 +47,7 @@ func (e *Engine) estimatedAutoUpdateTokens(ctx context.Context) int64 {
 
 func (e *Engine) RecordUIAccess(ctx context.Context) {
 	if err := e.store.RecordAutoUpdateUIAccess(ctx); err != nil {
-		e.logger.Printf("record UI access for Auto Update failed: %v", err)
+		operational.Problem(e.logger, "auto_update", "record_ui_access", "failed", err, "")
 	}
 	e.scheduler.notify()
 }
@@ -190,10 +191,10 @@ func (e *Engine) RevealPreparedBatch(ctx context.Context, sessionID, presentatio
 	batch, err := e.store.RevealPreparedBatch(ctx, sessionID, presentation)
 	if err == nil {
 		if settings, settingsErr := e.store.GetSettings(ctx); settingsErr != nil {
-			e.logger.Printf("read adaptive mode after batch reveal failed: %v", settingsErr)
+			operational.Problem(e.logger, "auto_update", "read_adaptive_mode", "failed", settingsErr, "")
 		} else if settings.AutoUpdateMode == "adaptive" {
 			if activityErr := e.store.RecordAutoUpdateUIAccess(ctx); activityErr != nil {
-				e.logger.Printf("record adaptive demand after batch reveal failed: %v", activityErr)
+				operational.Problem(e.logger, "auto_update", "record_demand", "failed", activityErr, "")
 			}
 		}
 		e.scheduler.notify()
@@ -226,6 +227,8 @@ func (e *Engine) ConfirmAutoUpdateUsageRestored(ctx context.Context) (domain.Aut
 	return e.AutoUpdateStatus(ctx)
 }
 
+var errAutoUpdateDisabled = errors.New("Auto Update is disabled")
+
 func (e *Engine) maybeStartAutoUpdate(ctx context.Context) error {
 	_, err := e.startAutoUpdate(ctx, false)
 	return err
@@ -252,7 +255,7 @@ func (e *Engine) startAutoUpdateMode(ctx context.Context, force, preserveAdaptiv
 	settings, err := e.store.GetSettings(ctx)
 	if err != nil || !settings.AutoUpdateEnabled {
 		if err == nil {
-			err = fmt.Errorf("Auto Update is disabled")
+			err = errAutoUpdateDisabled
 		}
 		return domain.Session{}, err
 	}
@@ -294,7 +297,7 @@ func (e *Engine) startAutoUpdateMode(ctx context.Context, force, preserveAdaptiv
 			completed.SessionID = session.ID
 		}
 		if err := e.store.CompleteAutoUpdateSchedulerTick(context.Background(), completed); err != nil {
-			e.logger.Printf("complete Auto Update scheduler receipt: %v", err)
+			operational.Problem(e.logger, "auto_update", "scheduler_receipt", "failed", err, "")
 		}
 	}()
 	if !force {

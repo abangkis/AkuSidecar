@@ -25,6 +25,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/credentials"
 	"github.com/abangkis/AkuSidecar/internal/diagnostics/capturestartup"
 	nativetrace "github.com/abangkis/AkuSidecar/internal/diagnostics/nativecapture"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/diagnostics/timeline"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/engine"
@@ -141,7 +142,7 @@ func (s *Server) Start() (net.Addr, error) {
 	s.listener = listener
 	go func() {
 		if err := s.http.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			s.logger.Printf("HTTP server failed: %v", err)
+			operational.Problem(s.logger, "http", "serve", "failed", err, "")
 		}
 	}()
 	return listener.Addr(), nil
@@ -600,9 +601,8 @@ func writeJSON(w http.ResponseWriter, status int, value any) error {
 }
 func (s *Server) writeError(w http.ResponseWriter, err error) {
 	value := apiError{Status: http.StatusInternalServerError, Code: "internal_error", Message: "internal server error"}
-	if errors.As(err, &value) {
-	} else {
-		s.logger.Printf("request failed: %v", err)
+	if !errors.As(err, &value) {
+		operational.Problem(s.logger, "http", "request", "failed", err, "")
 	}
 	_ = writeJSON(w, value.Status, map[string]any{"error": value.Code, "message": value.Message, "details": value.Details})
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 )
 
@@ -26,11 +27,11 @@ func (e *Engine) CorrectSelection(ctx context.Context, runID, candidateRef strin
 	}
 	if e.events != nil && settings.SemanticEventMode != "show_all" {
 		if _, eventErr := e.events.ProcessTimelineItem(ctx, item.ID, settings); eventErr != nil {
-			e.logger.Printf("semantic event resolution for selection correction %s degraded safely: %v", correction.ID, eventErr)
+			operational.Problem(e.logger, "selection_correction", "semantic_resolution", "degraded", eventErr, correction.ID)
 		}
 	}
 	if err := e.store.SaveSelectionCorrectionKnowledge(ctx, correction.ID); err != nil {
-		e.logger.Printf("knowledge continuity for selection correction %s degraded safely: %v", correction.ID, err)
+		operational.Problem(e.logger, "selection_correction", "continuity", "failed", err, correction.ID)
 	}
 	item, err = e.store.TimelineItem(ctx, item.ID)
 	if err != nil {
@@ -38,7 +39,7 @@ func (e *Engine) CorrectSelection(ctx context.Context, runID, candidateRef strin
 	}
 	if settings.AIDetectionEnabled {
 		if err := e.store.SaveAIAssessments(ctx, e.aiFast.Detect([]domain.TimelineItem{item})); err != nil {
-			e.logger.Printf("AI Fast Detection for selection correction %s degraded safely: %v", correction.ID, err)
+			operational.Problem(e.logger, "selection_correction", "fast_detection", "degraded", err, correction.ID)
 		}
 	}
 	item, err = e.store.TimelineItem(ctx, item.ID)

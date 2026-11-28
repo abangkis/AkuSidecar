@@ -263,6 +263,43 @@ func TestHTTPFeatureExtractionCharacterizationFeedbackTrace(t *testing.T) {
 	}
 }
 
+func TestTimelineFeedbackRecordsOneTimingEventPerRequest(t *testing.T) {
+	f := newHTTPTimelineFixture(t)
+	f.visible(t, 1)
+	var out strings.Builder
+	f.s.logger.SetOutput(&out)
+	for _, test := range []struct {
+		body    string
+		code    int
+		outcome string
+	}{
+		{`{"direction":"more"}`, 201, "ok"}, {`{`, 400, "error"},
+	} {
+		out.Reset()
+		req := featureExtractionRequest("POST", "/api/timeline/item-00/feedback", strings.NewReader(test.body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Aku-Feedback-Trace", "private-invalid-trace")
+		resp := f.serve(req)
+		trace := resp.Header().Get("X-Aku-Feedback-Trace")
+		if resp.Code != test.code || !strings.HasPrefix(trace, "feedbacktrace_") {
+			t.Fatal("unexpected response", resp.Code, resp.Body.String(), trace)
+		}
+		line := out.String()
+		var row struct {
+			Operation, Phase, Outcome string
+			Detail                    map[string]any
+		}
+		if strings.Count(line, "\n") != 1 || !strings.HasPrefix(line, "sidecar_activity ") || json.Unmarshal([]byte(strings.TrimPrefix(line, "sidecar_activity ")), &row) != nil || row.Operation != "timeline_feedback" || row.Phase != "request" || row.Outcome != test.outcome || row.Detail["trace"] != trace || strings.Contains(line, "private-invalid-trace") {
+			t.Fatal("unexpected timing record", line)
+		}
+		for _, key := range []string{"handler_ms", "store_ms", "lookup_ms", "hydration_ms", "begin_tx_ms", "transaction_ms", "commit_ms", "pool_wait_count_delta", "pool_wait_ms_delta"} {
+			if n, ok := row.Detail[key].(float64); !ok || n < 0 {
+				t.Errorf("invalid %s: %v", key, row.Detail[key])
+			}
+		}
+	}
+}
+
 func TestHTTPFeatureExtractionCharacterizationSharedSecurity(t *testing.T) {
 	for _, target := range []string{"/api/settings", "/api/library/items", "/api/living-topics", "/api/auto-update/status", "/api/operations/full-reset", "/api/bridge/capture-surfaces/events"} {
 		t.Run(target, func(t *testing.T) {

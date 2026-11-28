@@ -9,6 +9,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
 	"github.com/abangkis/AkuSidecar/internal/collection"
 	"github.com/abangkis/AkuSidecar/internal/collection/headless"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
@@ -129,7 +130,7 @@ func (e *Engine) AttachCollectionCoordinator(runtime *collection.Coordinator) {
 			}
 			if markerErr == nil && exists && needsHold && admission.Policy == domain.MediaRecaptureAdmissionHybridHeadlessV1 {
 				if err := e.beginBrowserCollectionHold(id, domain.SourceFacebook); err != nil {
-					e.logger.Printf("restore Facebook recapture collection intent for job %s: %v", id, err)
+					operational.Problem(e.logger, "capture_recovery", "restore_recapture", "failed", err, id)
 				}
 			}
 		}
@@ -144,7 +145,7 @@ func (e *Engine) AttachCollectionCoordinator(runtime *collection.Coordinator) {
 				driver, ok := hybridDriverForRun(*active, run.Source)
 				if ok && run.Source == domain.SourceFacebook && driver == "browser" {
 					if err := e.beginHybridBrowserCollection(active.ID, run.Source); err != nil {
-						e.logger.Printf("restore hybrid Facebook collection intent for session %s: %v", active.ID, err)
+						operational.Problem(e.logger, "capture_recovery", "restore_hybrid", "failed", err, active.ID)
 					}
 				}
 				restored = true
@@ -157,7 +158,7 @@ func (e *Engine) AttachCollectionCoordinator(runtime *collection.Coordinator) {
 					if driverErr == nil && collectorErr == nil && planned && stamped && hasCollector &&
 						driver == "browser" && stampedDriver == driver && collector == collection.BackendBridge {
 						if err := e.beginHybridBrowserCollection(active.ID, run.Source); err != nil {
-							e.logger.Printf("restore hybrid Facebook collection intent for session %s: %v", active.ID, err)
+							operational.Problem(e.logger, "capture_recovery", "restore_hybrid", "failed", err, active.ID)
 						}
 					}
 				}
@@ -179,7 +180,7 @@ func (e *Engine) AttachCollectionCoordinator(runtime *collection.Coordinator) {
 					driver == "browser" && stampedDriver == driver && collector == collection.BackendBridge &&
 					e.captureOwner != nil && e.captureOwner.Snapshot().State == captureruntime.Ready && e.captureOwner.Snapshot().Driver == "browser" {
 					if err := e.beginHybridBrowserCollection(active.ID, run.Source); err != nil {
-						e.logger.Printf("restore terminal hybrid Facebook collection intent for session %s: %v", active.ID, err)
+						operational.Problem(e.logger, "capture_recovery", "restore_terminal", "failed", err, active.ID)
 					}
 				}
 				break
@@ -269,7 +270,7 @@ func (e *Engine) StartHeadlessCollection(ctx context.Context) {
 			e.processHybridBrowserMediaRecaptures(ctx)
 			if active, err := e.store.ActiveSession(ctx); err == nil && active != nil && hybridCollectionSession(*active) {
 				if _, err := e.startNext(ctx, active.ID); err != nil {
-					e.logger.Printf("retry hybrid collection admission for session %s: %v", active.ID, err)
+					operational.Problem(e.logger, "capture_recovery", "retry_admission", "deferred", err, active.ID)
 				}
 			}
 			collector, driver, workerID := collection.BackendQuiet, "browser", "aku-browser-quiet-v1"
@@ -335,7 +336,7 @@ func (e *Engine) processHybridBrowserMediaRecaptures(ctx context.Context) {
 		}
 		admission, marked, err := store.MediaRecaptureAdmission(job.Payload)
 		if err != nil {
-			e.logger.Printf("Facebook recapture %s has an invalid Browser admission marker: %v", id, err)
+			operational.Problem(e.logger, "capture_recovery", "validate_admission", "rejected", err, id)
 			continue
 		}
 		if !marked || admission.Policy != domain.MediaRecaptureAdmissionHybridHeadlessV1 {
@@ -380,7 +381,7 @@ func (e *Engine) processHybridBrowserMediaRecaptures(ctx context.Context) {
 					lease.Release()
 					e.captureMu.Unlock()
 					if bindErr != nil {
-						e.logger.Printf("admit Facebook recapture %s to Browser: %v", id, bindErr)
+						operational.Problem(e.logger, "capture_recovery", "bind_recapture", "failed", bindErr, id)
 					}
 					continue
 				}
@@ -496,7 +497,7 @@ func (e *Engine) processHybridBrowserMediaRecaptures(ctx context.Context) {
 				}
 				e.captureMu.Unlock()
 				if dispatchErr != nil {
-					e.logger.Printf("dispatch Browser Facebook recapture %s: %v", dispatchID, dispatchErr)
+					operational.Problem(e.logger, "capture_recovery", "dispatch_recapture", "failed", dispatchErr, dispatchID)
 				}
 				e.releaseTerminalCaptureSessions(context.Background())
 			}()
@@ -1145,7 +1146,7 @@ func (e *Engine) releaseTerminalCaptureSessions(ctx context.Context) {
 				persistErr := e.store.SetMediaRecaptureCaptureCleanupState(persistCtx, cleanup.leaseID, "released")
 				persistCancel()
 				if persistErr != nil {
-					e.logger.Printf("persist Browser recapture cleanup acknowledgement for lease %s: %v", cleanup.leaseID, persistErr)
+					operational.Problem(e.logger, "capture_recovery", "acknowledge_cleanup", "failed", persistErr, cleanup.leaseID)
 					err = errors.New("Browser cleanup acknowledgement could not be saved.")
 				}
 			}
@@ -1178,7 +1179,7 @@ func (e *Engine) releaseTerminalCaptureSessions(ctx context.Context) {
 				if e.collectionRuntime != nil {
 					e.collectionRuntime.SetBrowserCollectionFailure(cleanup.leaseID, err.Error())
 				}
-				e.logger.Printf("release hybrid Facebook capture surface for lease %s: %v", cleanup.leaseID, err)
+				operational.Problem(e.logger, "capture_recovery", "release_surface", "failed", err, cleanup.leaseID)
 			}
 			if err == nil {
 				if e.collectionRuntime != nil {

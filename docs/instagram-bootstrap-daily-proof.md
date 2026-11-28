@@ -167,7 +167,7 @@ recorder, with control-read outcome, process exit and owned-tree cleanup as
 independent observations. These fields are not retry authority. IG failure
 status exposes a revalidated `workerDiagnostic` sideband; ordinary/X failures
 retain their existing error contract. A validated lifecycle snapshot is logged
-as `main_transport_worker`. No stderr, command parameters, resource IDs, account
+under `detail` in `sidecar_activity` records with `operation=main_transport_worker` and `phase=snapshot`. No stderr, command parameters, resource IDs, account
 identifiers, paths, response bodies or cookie/token values are included.
 Missing delivery remains incomplete with an unknown cause, even if an exit
 code is subsequently observed. An exit code of zero alone is not evidence that

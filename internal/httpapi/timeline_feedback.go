@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/operational"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/store"
 )
@@ -21,7 +22,13 @@ func (s *Server) addTimelineFeedback(w http.ResponseWriter, r *http.Request, p s
 	outcome := "error"
 	defer func() {
 		if s.logger != nil {
-			s.logger.Printf("timeline_feedback_trace trace=%s outcome=%s handler_ms=%d store_ms=%d lookup_ms=%d hydration_ms=%d begin_tx_ms=%d transaction_ms=%d commit_ms=%d pool_wait_count_delta=%d pool_wait_ms_delta=%d", traceID, outcome, time.Since(started).Milliseconds(), timing.Total.Milliseconds(), timing.Lookup.Milliseconds(), timing.Hydration.Milliseconds(), timing.BeginTx.Milliseconds(), timing.Transaction.Milliseconds(), timing.Commit.Milliseconds(), timing.PoolWaitCountDelta, timing.PoolWaitDurationDelta.Milliseconds())
+			operational.Report(s.logger, "timeline_feedback", "request", outcome, operational.Fields{
+				"trace": traceID, "handler_ms": operational.Milliseconds(time.Since(started)), "store_ms": operational.Milliseconds(timing.Total),
+				"lookup_ms": operational.Milliseconds(timing.Lookup), "hydration_ms": operational.Milliseconds(timing.Hydration),
+				"begin_tx_ms": operational.Milliseconds(timing.BeginTx), "transaction_ms": operational.Milliseconds(timing.Transaction),
+				"commit_ms": operational.Milliseconds(timing.Commit), "pool_wait_count_delta": timing.PoolWaitCountDelta,
+				"pool_wait_ms_delta": operational.Milliseconds(timing.PoolWaitDurationDelta),
+			})
 		}
 	}()
 	id := path.Base(strings.TrimSuffix(p, "/feedback"))
