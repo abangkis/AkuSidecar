@@ -18,6 +18,7 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
 	"github.com/abangkis/AkuSidecar/internal/collection"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/capturestartup"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 	"github.com/abangkis/AkuSidecar/internal/store"
@@ -29,6 +30,8 @@ import (
 const splitActionLimit = 32
 const splitActionTimeout = 115 * time.Second
 const readerBrokerConversationLimit = 256
+
+func (s *Server) CaptureStartupTrace() *capturestartup.Trace { return s.captureStartup }
 
 // split-action audit records only the metadata needed to correlate explicit
 // user actions with native foreground samples. Never pass action payloads,
@@ -702,6 +705,7 @@ func (s *Server) RotateSplitCapture() error {
 	}
 	t.actions = nil
 	t.key = hex.EncodeToString(secret[:])
+	s.captureStartup.Retire()
 	t.prepareReader, t.prepareBrokerReader, t.prepareSourceWindow = nil, nil, nil
 	t.directReader, t.directReaderReadiness = nil, nil
 	t.sourceTrackingSupported, t.untrackedSourceOutcome, t.hostCloseSupported, t.hostOnlySupported = false, false, false, false
@@ -880,6 +884,9 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		return notFound("Windows capture split")
 	}
 	w.Header().Set("Cache-Control", "no-store")
+	if p == "/api/bridge/split-capture/startup-sample" && r.Method == http.MethodPost {
+		return s.captureStartupSample(w, r)
+	}
 	if p == "/api/bridge/split-capture/wake" && r.Method == http.MethodGet {
 		return t.serveHostWake(w, r)
 	}
@@ -910,6 +917,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		t.hostCloseSupported = capability.CaptureHostClose == 1
 		t.hostOnlySupported = capability.CaptureHostOnlyRetirement == 1 && capability.CaptureHostClose == 1
 		hostOnlySupported := t.hostOnlySupported
+		s.captureStartup.Bootstrap()
 		t.mu.Unlock()
 		return writeJSON(w, 200, map[string]any{"token": token, "instanceEpoch": s.engine.Epoch(), "protocolMajor": 2, "captureHostClose": capability.CaptureHostClose == 1, "captureHostOnlyRetirement": hostOnlySupported})
 	}
@@ -1505,9 +1513,21 @@ func (s *Server) serveSplitCaptureAsset(w http.ResponseWriter, r *http.Request) 
 		w.Header().Set("Content-Type", "application/javascript")
 		_, _ = w.Write(splitUIBridge)
 		return true
+	case "/split-capture-startup.js":
+		if s.captureStartup == nil {
+			http.NotFound(w, r)
+			return true
+		}
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		_, _ = w.Write(captureStartupScript)
+		return true
 	case "/split-capture-host":
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = io.WriteString(w, `<!doctype html><html><head><title>AkuBrowser capture host</title></head><body><h1>Experimental capture host</h1><p id="split-capture-status" role="status">Waiting for the capture extension. If this message remains, update or reload AkuBridge in this capture profile, then restart AkuBrowser.</p><p>This separate Windows browser owns your source sign-ins. Keep this minimized window open while AkuBrowser runs. Closing its last window stops the app. Source permission and sign-in windows open here only when requested.</p></body></html>`)
+		script := ""
+		if number := s.captureStartup.HostServed(); number != 0 {
+			script = `<script defer src="/split-capture-startup.js" data-document="` + strconv.Itoa(number) + `"></script>`
+		}
+		_, _ = io.WriteString(w, `<!doctype html><html><head><title>AkuBrowser capture host</title>`+script+`</head><body><h1>Experimental capture host</h1><p id="split-capture-status" role="status">Waiting for the capture extension. If this message remains, update or reload AkuBridge in this capture profile, then restart AkuBrowser.</p><p>This separate Windows browser owns your source sign-ins. Keep this minimized window open while AkuBrowser runs. Closing its last window stops the app. Source permission and sign-in windows open here only when requested.</p></body></html>`)
 		return true
 	case "/", "/index.html":
 		data, err := embeddedAssets.ReadFile("web/index.html")

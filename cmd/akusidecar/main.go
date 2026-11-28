@@ -514,6 +514,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 				}
 			}
 		}
+		server.CaptureStartupTrace().Launch()
 		capture, err = appshell.Launch(context.Background(), appshell.LaunchOptions{
 			Executable: result.Executable, ExtensionPath: extensionPath,
 			UserDataDir: captureProfile, URL: captureURL, StartMinimized: true, PrivateCDP: true, ExtraArgs: []string{"--start-minimized", "--profile-directory=" + captureProfileDirectory},
@@ -727,7 +728,9 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 					return err
 				}
 			}
-			return appshell.NavigateCaptureHost(ctx, capture.CaptureProtocol(), url)
+			err = appshell.NavigateCaptureHost(ctx, capture.CaptureProtocol(), url)
+			server.CaptureStartupTrace().Navigation(err == nil)
+			return err
 		}
 	}
 	return window, captureManager, collector, initializeCapture

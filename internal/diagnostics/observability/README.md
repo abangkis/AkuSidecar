@@ -25,7 +25,7 @@ All signals use scope
 `github.com/abangkis/AkuSidecar/internal/diagnostics/observability`.
 Their only attributes are `operation` and `outcome`. Operations are limited to
 `ui_timeline_read`, `ui_timeline_write`, `instagram_reader`,
-`instagram_bootstrap`, and `instagram_corroboration`. Outcomes are limited to
+`instagram_bootstrap`, `instagram_corroboration`, and `capture_startup_sample`. Outcomes are limited to
 `success`, `rejected`, and `unavailable`.
 
 The API accepts no raw paths, URLs, source/post IDs, worker output, tokens, or

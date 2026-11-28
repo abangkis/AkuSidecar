@@ -30,6 +30,8 @@ func diagnosticOperation(method, path string) observability.Operation {
 	}
 	if method == http.MethodPost {
 		switch path {
+		case "/api/bridge/split-capture/startup-sample":
+			return observability.CaptureStartupSample
 		case "/api/diagnostics/instagram-reader":
 			return observability.InstagramReader
 		case "/api/diagnostics/instagram-bootstrap":

@@ -33,7 +33,9 @@ func (s *Server) bridgeHeartbeat(w http.ResponseWriter, r *http.Request) error {
 			return apiError{Status: 409, Code: "capture_instance_mismatch", Message: "Capture owner changed."}
 		}
 	}
-	return writeJSON(w, http.StatusAccepted, map[string]any{"instanceEpoch": s.engine.Epoch(), "bridge": s.engine.RecordHeartbeat(body.Capabilities)})
+	status := s.engine.RecordHeartbeat(body.Capabilities)
+	s.captureStartup.Heartbeat()
+	return writeJSON(w, http.StatusAccepted, map[string]any{"instanceEpoch": s.engine.Epoch(), "bridge": status})
 }
 
 func (s *Server) bridgeHealth(w http.ResponseWriter, r *http.Request) error {

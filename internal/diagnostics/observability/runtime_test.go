@@ -133,7 +133,7 @@ func TestBoundedSignalsPreserveParentAndExcludeAmbientData(t *testing.T) {
 func TestClosedVocabulary(t *testing.T) {
 	runtime, recorder, reader := recordingRuntime(t)
 	ctx := context.Background()
-	for _, operation := range []Operation{0, 6, 255} {
+	for _, operation := range []Operation{0, 7, 255} {
 		child, finish := runtime.Begin(ctx, operation)
 		if child != ctx {
 			t.Fatal("unknown operation changed context")
@@ -143,8 +143,8 @@ func TestClosedVocabulary(t *testing.T) {
 	if len(recorder.Started()) != 0 || len(collect(t, reader).ScopeMetrics) != 0 {
 		t.Fatal("unknown operations emitted telemetry")
 	}
-	operations := []Operation{UITimelineRead, UITimelineWrite, InstagramReader, InstagramBootstrap, InstagramCorroboration}
-	names := []string{"ui_timeline_read", "ui_timeline_write", "instagram_reader", "instagram_bootstrap", "instagram_corroboration"}
+	operations := []Operation{UITimelineRead, UITimelineWrite, InstagramReader, InstagramBootstrap, InstagramCorroboration, CaptureStartupSample}
+	names := []string{"ui_timeline_read", "ui_timeline_write", "instagram_reader", "instagram_bootstrap", "instagram_corroboration", "capture_startup_sample"}
 	for i, operation := range operations {
 		_, finish := runtime.Begin(ctx, operation)
 		finish(Outcome(255))

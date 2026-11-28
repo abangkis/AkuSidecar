@@ -28,6 +28,7 @@ const (
 	InstagramReader
 	InstagramBootstrap
 	InstagramCorroboration
+	CaptureStartupSample
 )
 
 func (o Operation) name() string {
@@ -42,6 +43,8 @@ func (o Operation) name() string {
 		return "instagram_bootstrap"
 	case InstagramCorroboration:
 		return "instagram_corroboration"
+	case CaptureStartupSample:
+		return "capture_startup_sample"
 	default:
 		return ""
 	}

@@ -23,6 +23,7 @@ import (
 	"github.com/abangkis/AkuSidecar/internal/appshell"
 	"github.com/abangkis/AkuSidecar/internal/config"
 	"github.com/abangkis/AkuSidecar/internal/credentials"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/capturestartup"
 	nativetrace "github.com/abangkis/AkuSidecar/internal/diagnostics/nativecapture"
 	"github.com/abangkis/AkuSidecar/internal/diagnostics/timeline"
 	"github.com/abangkis/AkuSidecar/internal/domain"
@@ -53,6 +54,7 @@ type Server struct {
 	nativeTrace         nativetrace.Manager
 	appShellPID         func() int
 	splitCapture        *splitCaptureTransport
+	captureStartup      *capturestartup.Trace
 
 	instagramReaderDiagnostic                 func(context.Context, string) (json.RawMessage, error)
 	instagramBootstrapDiagnostic              func(context.Context, string) (json.RawMessage, error)
@@ -80,6 +82,9 @@ func New(cfg config.Config, state *store.Store, runtime *engine.Engine, logger *
 	}
 	if (cfg.WindowsCaptureSplit || cfg.Dev && runtime.XConcurrentConfigured()) && goruntime.GOOS == "windows" {
 		server.splitCapture = newSplitCaptureTransport()
+		if cfg.Dev {
+			server.captureStartup = capturestartup.New(logger)
+		}
 		runtime.SetBrowserCollectionCleanup(server.ReleaseBrowserCollectionSurfaces)
 		runtime.SetBrowserMediaRecaptureDispatch(server.DispatchBrowserMediaRecapture)
 	}

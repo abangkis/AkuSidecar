@@ -9,6 +9,7 @@ extraction, not a new published library or a new telemetry backend.
 | `recording` | Concurrent progress snapshots, first observed cause, independent cleanup/delivery, explicit completeness | Reusable candidate; caller supplies vocabulary and observations |
 | `snapshot` | Single latest value with copy-on-save/copy-on-read and concurrency control | Reusable candidate; the value supplies its deep-clone operation |
 | `observability` | AkuSidecar instrumentation vocabulary and adapter over the published telemetry runtime | Product adapter; composition-root lifecycle and explicit export configuration |
+| `capturestartup` | First split-owner launch, navigation, bootstrap, heartbeat and two document samples | Development supervisor log using `recording` and AI4UDiagnostics elapsed-time projection |
 | `timeline` | Closed browser-performance report schema, numeric/shape validation, cloning, and latest-report composition | AkuBrowser adapter; stage names, bounds, UTC receipt time and privacy policy stay here |
 | `instagram` | Existing IG catalogs, attempt ownership, wire/public projection and validation | AkuBrowser adapter; does not grant capture, retry or mutation authority |
 | `xreply` | Closed candidate outcomes and exact-observation binding using the AI4UDiagnostics count policy | AkuBrowser adapter; persisted with source observations |
@@ -23,6 +24,17 @@ Independent-consumer tests use unrelated operations/value types rather than
 claiming another application has already adopted these candidates.
 
 ## Browser boundary
+
+For a development restart, filter the Sidecar stdout log for `capture_startup`.
+The host document itself samples at window load and again after a 12-second
+timer. Chrome can delay that timer. The first eight served documents receive
+distinct ordinals, each with independent early and late receipts. A missing sample means
+the document observation is unknown. On a loaded document, `script_started` records the
+Bridge entry marker and `worker_receipt` records a best-effort acknowledgment
+from the validated CONNECT receiver. A missing acknowledgment alone cannot
+prove the worker never received CONNECT. Bootstrap and heartbeat receipts are
+recorded separately at Sidecar. Sequence and elapsed time reflect observation
+order in this process. A new capture owner retires this startup trace.
 
 The reusable browser sampler lives in
 `internal/httpapi/web/diagnostics/browser-performance.js`, because it runs in the
@@ -55,8 +67,8 @@ AG now imports the published AI4UDiagnostics `telemetry` package from alpha.4.
 AkuSidecar now adopts the same published alpha.4 module without a local replace.
 The existing generic diagnostics values remain in `pkg/diagnostics`; the new
 adapter delegates provider/export construction to `telemetry`. The application
-composition creates and closes one runtime. HTTP borrows it for the five selected
-Timeline performance and IG diagnostic operations. It does not close providers.
+composition creates and closes one runtime. HTTP borrows it for the selected
+Timeline performance, IG diagnostic and split-host startup sample operations.
 
 The composition passes an empty exporter endpoint. No CLI/Settings switch or
 environment-based exporter activation is added. The adapter accepts an explicit
