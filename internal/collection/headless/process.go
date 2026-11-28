@@ -21,6 +21,7 @@ import (
 )
 
 type Options struct {
+	Diagnostics                                                      *WorkerDiagnostics
 	Node, Worker, Pin, Chrome, Profile, ProfileDirectory, BridgePath string
 	WindowedIdentitySources                                          []domain.Source
 	WindowedIdentity                                                 json.RawMessage
@@ -103,7 +104,7 @@ func Launch(ctx context.Context, options Options) (*Process, error) {
 		}
 	}
 	command := exec.Command(options.Node, options.Worker)
-	command.Stderr = io.Discard
+	command.Stderr = options.Diagnostics.HeadlessStderr()
 	input, err := command.StdinPipe()
 	if err != nil {
 		return nil, err

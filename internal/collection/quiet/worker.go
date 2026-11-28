@@ -66,7 +66,7 @@ func (w *Worker) start(ctx context.Context) error {
 		return err
 	}
 	cmd := exec.Command(w.options.Node, w.options.Worker)
-	cmd.Stderr = io.Discard
+	cmd.Stderr = w.options.Diagnostics.QuietStderr()
 	input, err := cmd.StdinPipe()
 	if err != nil {
 		return err

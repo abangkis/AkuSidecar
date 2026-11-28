@@ -606,6 +606,7 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 		fatal(logger, "locate_executable", exeErr)
 		workerRoot := filepath.Join(filepath.Dir(executable), "headless-worker")
 		headlessOptions := headless.Options{Node: filepath.Join(workerRoot, "node.exe"), Worker: filepath.Join(workerRoot, "worker.mjs"), Pin: filepath.Join(workerRoot, "node.pin.json"), Chrome: result.Executable, Profile: captureProfile, ProfileDirectory: captureProfileDirectory, BridgePath: options.BridgeExtensionPath}
+		headlessOptions.Diagnostics = headless.NewWorkerDiagnostics(collectionCtx, logger)
 		if !filepath.IsAbs(headlessOptions.BridgePath) {
 			headlessOptions.BridgePath, _ = filepath.Abs(headlessOptions.BridgePath)
 		}
