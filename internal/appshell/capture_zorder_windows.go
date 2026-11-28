@@ -14,6 +14,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/captureactivity"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 	"golang.org/x/sys/windows"
 )
@@ -367,7 +368,11 @@ func (c *captureZOrder) PrepareBrokerReader(ctx context.Context, marker string) 
 			target := readerbroker.Target{HWND: uint64(hwnd), PID: pid, Property: "AkuBrowser.ExplicitReader." + fmt.Sprint(c.root), Value: uint64(id), Expires: expires, Action: strings.TrimPrefix(marker, "AkuBrowser reader ")}
 			return target, func(ctx context.Context) error {
 				err := errors.New("reader foreground intent already consumed")
-				once.Do(func() { err = c.foregroundReader(ctx, hwnd, id, expires) })
+				once.Do(func() {
+					timing := captureactivity.BeginNativeReader(c.logger, "window", target.Action, "foreground_verification")
+					err = c.foregroundReader(ctx, hwnd, id, expires)
+					timing.Finish(err)
+				})
 				return err
 			}, nil
 		}
@@ -586,9 +591,6 @@ func (c *captureZOrder) foregroundReader(ctx context.Context, hwnd, id uintptr, 
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
-	}
-	if c.logger != nil {
-		c.logger.Printf("reader_foreground actor=broker verified=%t", ok)
 	}
 	if !ok {
 		return errors.New("Windows did not foreground the native reader; select its window and retry")

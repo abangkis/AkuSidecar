@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/captureactivity"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 )
 
@@ -175,15 +176,10 @@ func (s *Server) closeNativeReaderAndResume(ctx context.Context) (map[string]any
 const nativeReaderManualForegroundMessage = "The post opened in your Native Reader tab, but Windows did not bring that window to the foreground. Switch to the Native Reader window manually."
 
 func (s *Server) runDirectNativeReader(ctx context.Context, t *splitCaptureTransport, entry *pendingSplitAction, prepare func(context.Context, string, string, string) (readerbroker.NativePostPreparation, error)) {
-	stageStarted := time.Now()
-	timing := func(stage string, ok bool) {
-		if s.logger != nil {
-			s.logger.Printf("native_reader_timing action=%s stage=%s elapsed_ms=%d ok=%t", entry.action.ID, stage, time.Since(stageStarted).Milliseconds(), ok)
-		}
-		stageStarted = time.Now()
-	}
+	timing := captureactivity.BeginNativeReader(s.logger, "direct", entry.action.ID, "broker_attach_wait")
 	var outcome error
 	defer func() {
+		timing.Finish(outcome)
 		t.mu.Lock()
 		manualForegroundRequired := entry.readerManualForegroundRequired
 		result := splitActionResult{OK: outcome == nil}
@@ -199,7 +195,7 @@ func (s *Server) runDirectNativeReader(ctx context.Context, t *splitCaptureTrans
 			result.Result, _ = json.Marshal(map[string]string{"source": entry.action.Source, "state": "native_post_opened", "url": entry.action.URL})
 		}
 		entry.completed, entry.completionResult = true, &result
-		resultEvent := entry.activity.Result(result.OK)
+		resultEvent := entry.activity.Result(result.OK, entry.readerForegroundVerified, manualForegroundRequired)
 		select {
 		case <-entry.brokerReady:
 		default:
@@ -264,7 +260,7 @@ func (s *Server) runDirectNativeReader(ctx context.Context, t *splitCaptureTrans
 		case <-tick.C:
 		}
 	}
-	timing("broker_attach_wait", true)
+	timing.Next("target_prepare")
 	s.auditSplitAction(ctx, entry.action, "claimed", "accepted")
 	s.auditSplitAction(ctx, entry.action, "reader_prepare", "pending")
 	marker := "/split-reader-intent?id=" + entry.action.ID
@@ -277,7 +273,6 @@ func (s *Server) runDirectNativeReader(ctx context.Context, t *splitCaptureTrans
 		}
 		prepared, err = prepare(ctx, entry.action.ID, entry.action.URL, marker)
 	}
-	timing("target_prepare", err == nil)
 	if err != nil {
 		outcome = err
 		s.auditSplitAction(ctx, entry.action, "reader_prepare", "rejected")
@@ -288,6 +283,7 @@ func (s *Server) runDirectNativeReader(ctx context.Context, t *splitCaptureTrans
 		s.auditSplitAction(ctx, entry.action, "reader_prepare", "rejected")
 		return
 	}
+	timing.Next("reader_completion_wait")
 	foreground := func(activeCtx context.Context) error {
 		if err := prepared.VerifyForeground(activeCtx); err != nil {
 			return err
@@ -307,7 +303,6 @@ func (s *Server) runDirectNativeReader(ctx context.Context, t *splitCaptureTrans
 	case <-t.done:
 		outcome = errors.New("reader transport stopped")
 	}
-	timing("reader_completion_wait", outcome == nil)
 }
 
 func (s *Server) closeNativeReaderHTTP(w http.ResponseWriter, r *http.Request) error {

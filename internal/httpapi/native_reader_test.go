@@ -14,6 +14,7 @@ import (
 
 	"github.com/abangkis/AkuSidecar/internal/captureruntime"
 	"github.com/abangkis/AkuSidecar/internal/collection"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/captureactivity"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/readerbroker"
 )
@@ -104,12 +105,13 @@ func TestDirectNativeReaderRequiresMatchedBrokerAndVerifiedActivation(t *testing
 			var output strings.Builder
 			s.logger = log.New(&output, "", 0)
 			req := readerbroker.Request{RequestID: "broker_" + strings.Repeat(fmt.Sprintf("%x", i), 32), Source: "x", URL: "https://x.com/a/status/1"}
-			entry := &pendingSplitAction{action: splitCaptureAction{ID: "split_direct", Type: "open_native_post", RequestID: req.RequestID, Source: req.Source, URL: req.URL}, directReader: true, brokerReady: make(chan struct{}), brokerDone: make(chan error, 1), result: make(chan splitActionResult, 1)}
+			entry := &pendingSplitAction{action: splitCaptureAction{ID: domain.NewID("split"), Type: "open_native_post", RequestID: req.RequestID, Source: req.Source, URL: req.URL}, directReader: true, brokerReady: make(chan struct{}), brokerDone: make(chan error, 1), result: make(chan splitActionResult, 1)}
+			entry.activity, _ = captureactivity.AdmitSplitAction(s.logger, entry.action.ID, req.RequestID, time.Now(), captureactivity.Queue{})
 			s.splitCapture.actions = []*pendingSplitAction{entry, {action: splitCaptureAction{ID: "split_ping", Type: "ping"}}}
 			prepared := make(chan struct{}, 1)
 			verifyCalls, navigateCalls := 0, 0
 			prepare := func(_ context.Context, id, url, marker string) (readerbroker.NativePostPreparation, error) {
-				if id != "split_direct" || url != req.URL || marker != "/split-reader-intent?id=split_direct" {
+				if id != entry.action.ID || url != req.URL || marker != "/split-reader-intent?id="+id {
 					t.Error("wrong reader correlation")
 				}
 				prepared <- struct{}{}
@@ -194,8 +196,18 @@ func TestDirectNativeReaderRequiresMatchedBrokerAndVerifiedActivation(t *testing
 			case activationErr == nil:
 				terminal = "accepted"
 			}
-			var phases []string
+			var phases, directPhases []string
+			var results []activityLine
 			for _, event := range readActivityLines(t, output.String()) {
+				if event.Operation == "native_reader" {
+					directPhases = append(directPhases, event.Phase)
+					if event.Action != entry.action.ID || event.Duration == nil || event.Sequence != len(directPhases) {
+						t.Fatal(event)
+					}
+				}
+				if event.Operation == "split_action" && event.Phase == "result" {
+					results = append(results, event)
+				}
 				if event.Operation != "reader_broker" {
 					continue
 				}
@@ -227,6 +239,18 @@ func TestDirectNativeReaderRequiresMatchedBrokerAndVerifiedActivation(t *testing
 						t.Fatal(event)
 					}
 				}
+			}
+			if strings.Join(directPhases, ",") != "broker_attach_wait,target_prepare,reader_completion_wait" {
+				t.Fatal(directPhases)
+			}
+			wantForeground := "unverified"
+			if tc.expectManual {
+				wantForeground = "manual_required"
+			} else if tc.expectForegroundCheck {
+				wantForeground = "verified"
+			}
+			if len(results) != 1 || results[0].Action != entry.action.ID || results[0].Foreground != wantForeground {
+				t.Fatal(results)
 			}
 			if strings.Join(phases, ",") != "received,attached,activation_started,helper_reply,activation,terminal" {
 				t.Fatal(phases)

@@ -112,12 +112,37 @@ func TestNativeReaderRejectedActivationNeverNavigatesSocialURL(t *testing.T) {
 	}
 }
 
+type nativeSample struct {
+	Operation, Scope, Phase, Action, Outcome string
+	Sequence                                 int
+	Duration                                 *int64 `json:"duration_ms"`
+	Elapsed                                  *int64 `json:"elapsed_ms"`
+}
+
+func readerSamples(t *testing.T, logs, scope string) []nativeSample {
+	t.Helper()
+	var samples []nativeSample
+	for _, line := range strings.Split(strings.TrimSpace(logs), "\n") {
+		raw, ok := strings.CutPrefix(line, "capture_activity ")
+		var event nativeSample
+		if !ok || json.Unmarshal([]byte(raw), &event) != nil || event.Operation != "native_reader" ||
+			event.Elapsed == nil || event.Duration == nil || *event.Duration < 0 || *event.Elapsed < *event.Duration {
+			t.Fatalf("invalid reader observation %q", line)
+		}
+		if event.Scope == scope {
+			samples = append(samples, event)
+		}
+	}
+	return samples
+}
+
 func TestNativeReaderFallbackRequiresExactLiveOwnedMarkerAndNavigatesOnce(t *testing.T) {
 	for _, scenario := range []string{"changed_page", "changed_window", "expired_binding", "cancelled", "valid"} {
 		t.Run(scenario, func(t *testing.T) {
 			p := &nativeProtocolFixture{createdWindowID: 10}
 			c := &nativeContainmentFixture{}
-			r := &NativeReader{protocol: p, containment: c}
+			var timing bytes.Buffer
+			r := &NativeReader{protocol: p, containment: c, logger: log.New(&timing, "", 0)}
 			postURL := "https://x.com/a/status/1"
 			markerURL := "http://local/split-reader-intent?id=split_owned"
 			prepared, err := r.PrepareNativePost(context.Background(), "split_owned", postURL, markerURL)
@@ -145,6 +170,10 @@ func TestNativeReaderFallbackRequiresExactLiveOwnedMarkerAndNavigatesOnce(t *tes
 			defer cancel()
 			firstErr := prepared.NavigatePost(ctx)
 			if scenario == "valid" {
+				samples := readerSamples(t, timing.String(), "navigation")
+				if len(samples) != 2 || samples[0].Phase != "navigation_guard" || samples[1].Phase != "post_navigation_dispatch" || samples[1].Outcome != "accepted" {
+					t.Fatal(samples)
+				}
 				if firstErr != nil {
 					t.Fatal(firstErr)
 				}
@@ -155,6 +184,14 @@ func TestNativeReaderFallbackRequiresExactLiveOwnedMarkerAndNavigatesOnce(t *tes
 					t.Fatalf("post navigation count or target changed: %v", p.navigations)
 				}
 				return
+			}
+			samples := readerSamples(t, timing.String(), "navigation")
+			want := "rejected"
+			if scenario == "cancelled" {
+				want = "cancelled"
+			}
+			if len(samples) != 1 || samples[0].Phase != "navigation_guard" || samples[0].Outcome != want {
+				t.Fatal("unexpected dispatch or guard outcome", samples)
 			}
 			if firstErr == nil {
 				t.Fatal("stale or changed tab was navigated")
@@ -177,7 +214,11 @@ func TestNativeReaderReusesIdleThenCreatesTabsInSameWindow(t *testing.T) {
 	r := &NativeReader{protocol: p, containment: c, idleTarget: "idle", idleURL: p.pages[0].URL}
 	var timing bytes.Buffer
 	r.logger = log.New(&timing, "", 0)
-	for _, id := range []string{"split_first", "split_second", "split_third"} {
+	ids := []string{"split_" + strings.Repeat("a", 32), "split_" + strings.Repeat("b", 32), "split_" + strings.Repeat("c", 32)}
+	var markers, navigations []string
+	for _, id := range ids {
+		markers = append(markers, "AkuBrowser reader "+id)
+		navigations = append(navigations, "http://local/split-reader-intent?id="+id, "https://x.com/a/status/1")
 		prepared, err := r.PrepareNativePost(context.Background(), id, "https://x.com/a/status/1", "http://local/split-reader-intent?id="+id)
 		if err != nil || prepared.VerifyForeground == nil || prepared.NavigatePost == nil {
 			t.Fatal("prepare", err)
@@ -196,12 +237,20 @@ func TestNativeReaderReusesIdleThenCreatesTabsInSameWindow(t *testing.T) {
 			t.Fatal("verification replayed navigation", err)
 		}
 	}
-	if p.created != 2 || !reflect.DeepEqual(c.markers, []string{"AkuBrowser reader split_first", "AkuBrowser reader split_second", "AkuBrowser reader split_third"}) {
+	if p.created != 2 || !reflect.DeepEqual(c.markers, markers) {
 		t.Fatal("reader window/correlation mismatch", p.created, c.markers)
 	}
-	for _, stage := range []string{"target_attach", "marker_navigation", "window_binding", "post_navigation_dispatch"} {
-		if !strings.Contains(timing.String(), "stage="+stage) {
-			t.Fatalf("missing timing %s", stage)
+	samples := readerSamples(t, timing.String(), "prepare")
+	if len(samples) != len(ids)*4 {
+		t.Fatal(samples)
+	}
+	for i, event := range samples {
+		want := []string{"create_tab", "target_attach", "marker_navigation", "window_binding"}[i%4]
+		if i == 0 {
+			want = "reuse_idle_target"
+		}
+		if event.Action != ids[i/4] || event.Phase != want || event.Sequence != i%4+1 || event.Outcome != "accepted" {
+			t.Fatal(event)
 		}
 	}
 	if strings.Contains(timing.String(), "https://") || strings.Contains(timing.String(), "http://") {
@@ -215,7 +264,7 @@ func TestNativeReaderReusesIdleThenCreatesTabsInSameWindow(t *testing.T) {
 			t.Fatal("retirement closed a post page")
 		}
 	}
-	if !reflect.DeepEqual(p.navigations, []string{"http://local/split-reader-intent?id=split_first", "https://x.com/a/status/1", "http://local/split-reader-intent?id=split_second", "https://x.com/a/status/1", "http://local/split-reader-intent?id=split_third", "https://x.com/a/status/1"}) {
+	if !reflect.DeepEqual(p.navigations, navigations) {
 		t.Fatal("navigation mismatch", p.navigations)
 	}
 }

@@ -3,10 +3,12 @@
 package appshell
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -45,7 +47,8 @@ func TestNativeReaderTabsChrome(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer window.Terminate()
-	r := &NativeReader{protocol: window.CaptureProtocol(), containment: &nativeContainmentFixture{}, idleURL: idleURL}
+	var activity bytes.Buffer
+	r := &NativeReader{logger: log.New(&activity, "", 0), protocol: window.CaptureProtocol(), containment: &nativeContainmentFixture{}, idleURL: idleURL}
 	for ctx.Err() == nil && r.idleTarget == "" {
 		targets, err := r.targets(ctx)
 		if err != nil {
@@ -64,9 +67,35 @@ func TestNativeReaderTabsChrome(t *testing.T) {
 		t.Fatal("initial page missing")
 	}
 	for i := 0; i < 3; i++ {
-		prepared, err := r.PrepareNativePost(ctx, fmt.Sprintf("split_local_%d", i), server.URL+fmt.Sprintf("/post/%d", i), server.URL+fmt.Sprintf("/marker/%d", i))
+		actionID := fmt.Sprintf("split_%032x", i)
+		postURL, markerURL := server.URL+fmt.Sprintf("/post/%d", i), server.URL+fmt.Sprintf("/marker/%d", i)
+		prepared, err := r.PrepareNativePost(ctx, actionID, postURL, markerURL)
 		if err != nil {
 			t.Fatal(err)
+		}
+		// The headless containment fixture returns immediately. Windows binding
+		// waits for the marker title. Observe the owned tab's marker before
+		// simulating the helper reply, since Page.navigate can return first.
+		for {
+			targets, err := r.targets(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			observed := false
+			for _, target := range targets {
+				if r.readerTargets[target.ID] == postURL && target.URL == markerURL {
+					observed = true
+					break
+				}
+			}
+			if observed {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				t.Fatalf("reader tab %d never showed its marker: %v", i, ctx.Err())
+			case <-time.After(25 * time.Millisecond):
+			}
 		}
 		if err := prepared.VerifyForeground(ctx); err != nil {
 			t.Fatal(err)
@@ -103,6 +132,16 @@ func TestNativeReaderTabsChrome(t *testing.T) {
 			t.Fatalf("expected three tabs, got %d pages %d posts", pages, posts)
 		}
 		time.Sleep(25 * time.Millisecond)
+	}
+	samples := readerSamples(t, activity.String(), "navigation")
+	if len(samples) != 6 {
+		t.Fatal(samples)
+	}
+	for i, sample := range samples {
+		wantPhase := []string{"navigation_guard", "post_navigation_dispatch"}[i%2]
+		if sample.Action != fmt.Sprintf("split_%032x", i/2) || sample.Phase != wantPhase || sample.Outcome != "accepted" {
+			t.Fatal(sample)
+		}
 	}
 	receipt, _ := json.Marshal(map[string]any{"headless": true, "pageCount": 3, "singleWindowVerified": true, "foregroundVerified": false})
 	if err := os.WriteFile(filepath.Join(root, "receipt.json"), receipt, 0600); err != nil {

@@ -661,15 +661,15 @@ func launchAppShell(logger *log.Logger, options config.Options, cfg config.Confi
 			if mode == "native_reader" {
 				origin := strings.TrimRight(target, "/")
 				idleURL := origin + "/native-reader-idle"
-				started := time.Now()
+				timing := captureactivity.BeginReaderLaunch(logger, generation)
 				process, err := appshell.Launch(ctx, appshell.LaunchOptions{Executable: result.Executable, UserDataDir: captureProfile, URL: idleURL, NormalWindow: true, PrivateCDP: true, ExtraArgs: []string{"--disable-extensions", "--profile-directory=" + captureProfileDirectory}})
-				logger.Printf("native_reader_timing generation=%d stage=chrome_launch elapsed_ms=%d ok=%t", generation, time.Since(started).Milliseconds(), err == nil)
 				if err != nil {
+					timing.Finish(err)
 					return process, err
 				}
-				started = time.Now()
+				timing.Next("reader_ready")
 				reader, err := appshell.NewNativeReader(ctx, process, idleURL, logger)
-				logger.Printf("native_reader_timing generation=%d stage=reader_ready elapsed_ms=%d ok=%t", generation, time.Since(started).Milliseconds(), err == nil)
+				timing.Finish(err)
 				if err != nil {
 					return reader, err
 				}

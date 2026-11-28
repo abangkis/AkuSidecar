@@ -24,6 +24,11 @@ func newTrace(logger *log.Logger, op d.Operation, start time.Time) *Trace {
 }
 
 type record struct {
+	Scope      string  `json:"scope,omitempty"`
+	DurationMS *int64  `json:"duration_ms,omitempty"`
+	Generation *uint64 `json:"generation,omitempty"`
+	Foreground string  `json:"foreground,omitempty"`
+
 	Producer    string             `json:"producer,omitempty"`
 	Operation   d.Operation        `json:"operation"`
 	Phase       d.Phase            `json:"phase"`

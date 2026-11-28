@@ -41,7 +41,7 @@ func (a *SplitAction) project(phase d.Phase, outcome string, queue *Queue, elaps
 }
 
 // Result records the first committed result, even when the HTTP waiter left.
-func (a *SplitAction) Result(ok bool) Event {
+func (a *SplitAction) Result(ok, verified, manual bool) Event {
 	if a == nil || a.settled {
 		return Event{}
 	}
@@ -50,7 +50,16 @@ func (a *SplitAction) Result(ok bool) Event {
 	if ok {
 		outcome = "accepted"
 	}
-	return a.project("result", outcome, nil, time.Since(a.trace.start))
+	event := a.project("result", outcome, nil, time.Since(a.trace.start))
+	switch {
+	case manual:
+		event.record.Foreground = "manual_required"
+	case verified:
+		event.record.Foreground = "verified"
+	default:
+		event.record.Foreground = "unverified"
+	}
+	return event
 }
 
 type WaitOutcome string

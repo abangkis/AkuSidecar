@@ -16,13 +16,14 @@ import (
 )
 
 type activityLine struct {
-	Producer, Operation, Phase, Outcome, Action, Poll string
-	RequestID                                         string `json:"request_id"`
-	Sequence                                          int
-	Elapsed                                           *int64 `json:"elapsed_ms"`
-	QueueWait                                         *int64 `json:"queue_wait_ms"`
-	Verified                                          *bool
-	Helper                                            *struct {
+	Producer, Operation, Phase, Outcome, Action, Poll, Foreground string
+	RequestID                                                     string `json:"request_id"`
+	Sequence                                                      int
+	Elapsed                                                       *int64 `json:"elapsed_ms"`
+	Duration                                                      *int64 `json:"duration_ms"`
+	QueueWait                                                     *int64 `json:"queue_wait_ms"`
+	Verified                                                      *bool
+	Helper                                                        *struct {
 		Applied, Readback *bool
 		AfterExpiry       bool   `json:"after_expiry"`
 		ContextEnded      bool   `json:"context_ended"`
@@ -135,6 +136,12 @@ func TestSplitActionActivityInterleavedClaimsAndLateResult(t *testing.T) {
 			if event.Action != id {
 				continue
 			}
+			if event.Operation == "native_reader" {
+				if event.RequestID != "" || (event.Phase != "request_total" && event.Phase != "profile_handoff") {
+					t.Fatal("unexpected request observation", event)
+				}
+				continue
+			}
 			if event.Operation == "reader_relay" {
 				if event.RequestID != "" || event.Outcome != "accepted" {
 					t.Fatal("unexpected relay observation", event)
@@ -215,8 +222,15 @@ func TestSplitActionActivityTimeoutHasNoInventedResultOrBrokerID(t *testing.T) {
 		t.Fatalf("timeout: %d %s", w.Code, w.Body)
 	}
 	events := readActivityLines(t, output.String())
-	if len(events) != 2 || events[0].Action == "" || events[0].Action != events[1].Action ||
-		events[1].Phase != "wait_ended" || events[1].Outcome != "timed_out" || events[1].Sequence != 2 ||
+	want := []string{"native_reader/profile_handoff/accepted", "split_action/queued/accepted", "split_action/wait_ended/timed_out", "native_reader/request_total/observed"}
+	var got []string
+	for _, event := range events {
+		got = append(got, event.Operation+"/"+event.Phase+"/"+event.Outcome)
+		if event.Action == "" || event.Action != events[0].Action {
+			t.Fatal(event)
+		}
+	}
+	if !slices.Equal(got, want) || events[2].Sequence != 2 ||
 		strings.Contains(output.String(), "PRIVATE_ID") || strings.Contains(output.String(), `"request_id"`) {
 		t.Fatal(events, output.String())
 	}

@@ -516,7 +516,7 @@ func (s *Server) CancelReaderBroker(req readerbroker.Request) error {
 		}
 		result := splitActionResult{Error: "reader_broker_cancelled", Message: "Native reader click was canceled before helper attachment."}
 		entry.completed, entry.completionResult = true, &result
-		results = append(results, entry.activity.Result(result.OK))
+		results = append(results, entry.activity.Result(result.OK, entry.readerForegroundVerified, entry.readerManualForegroundRequired))
 		select {
 		case entry.result <- result:
 		default:
@@ -1109,11 +1109,8 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			s.auditSplitAction(r.Context(), a, "result", "rejected")
 			return apiError{Status: 409, Code: "development_native_activation_closed", Message: "QA frontend: native activation is disabled."}
 		}
-		readerStarted := time.Now()
-		if a.Type == "open_native_post" && s.logger != nil {
-			defer func() {
-				s.logger.Printf("native_reader_timing action=%s stage=request_total elapsed_ms=%d", a.ID, time.Since(readerStarted).Milliseconds())
-			}()
+		if a.Type == "open_native_post" {
+			defer captureactivity.BeginNativeReader(s.logger, "request", a.ID, "request_total").Total()
 		}
 		if a.Type == "open_native_post" {
 			// One bounded conversation includes both profile handoff and queue wait.
@@ -1143,10 +1140,13 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 					return s.engine.BorrowXMainBrowserAction(ctx, a.Type == "open_native_post")
 				}
 			}
-			borrowStarted := time.Now()
+			var handoff *captureactivity.NativeReader
+			if a.Type == "open_native_post" {
+				handoff = captureactivity.BeginNativeReader(s.logger, "handoff", a.ID, "profile_handoff")
+			}
 			lease, release, err := borrow(r.Context())
-			if a.Type == "open_native_post" && s.logger != nil {
-				s.logger.Printf("native_reader_timing action=%s stage=profile_handoff elapsed_ms=%d ok=%t", a.ID, time.Since(borrowStarted).Milliseconds(), err == nil)
+			if handoff != nil {
+				handoff.Finish(err)
 			}
 			if err != nil {
 				return apiError{Status: 409, Code: "interactive_handoff_unavailable", Message: err.Error()}
@@ -1361,11 +1361,6 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 						// rejecting this POST and leaving it waiting for a timeout.
 						result = splitActionResult{OK: false, Message: "Native reader foreground was not verified. Reload AkuBridge to load the current runtime, then retry Open native post."}
 					}
-					if result.OK {
-						s.logger.Printf("split_reader action=%s phase=result outcome=accepted", entry.action.ID)
-					} else {
-						s.logger.Printf("split_reader action=%s phase=result outcome=rejected", entry.action.ID)
-					}
 				}
 				if entry.action.Type == "open_source" || entry.action.Type == "open_native_post" {
 					outcome := "rejected"
@@ -1378,7 +1373,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 				case entry.result <- result:
 					entry.completed = true
 					entry.completionResult = &result
-					resultEvent = entry.activity.Result(result.OK)
+					resultEvent = entry.activity.Result(result.OK, entry.readerForegroundVerified, entry.readerManualForegroundRequired)
 					entry.runtimeLease.Release()
 					entry.runtimeLease = nil
 					if entry.interactionRelease != nil {

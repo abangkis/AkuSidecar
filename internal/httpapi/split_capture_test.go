@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/abangkis/AkuSidecar/internal/config"
+	"github.com/abangkis/AkuSidecar/internal/diagnostics/captureactivity"
 	"github.com/abangkis/AkuSidecar/internal/domain"
 	"github.com/abangkis/AkuSidecar/internal/engine"
 	"github.com/abangkis/AkuSidecar/internal/reasoning"
@@ -116,7 +117,8 @@ func TestSplitReaderResultRequiresThisActionsSuccessfulForeground(t *testing.T) 
 			var logs strings.Builder
 			s.logger = log.New(&logs, "", 0)
 			s.SetSplitReaderPreparation(func(context.Context, string) (func(context.Context) error, error) { return nil, nil })
-			entry := &pendingSplitAction{action: splitCaptureAction{ID: "split_reader", Type: "open_native_post"}, claimed: true, result: make(chan splitActionResult, 1)}
+			entry := &pendingSplitAction{action: splitCaptureAction{ID: domain.NewID("split"), Type: "open_native_post"}, claimed: true, result: make(chan splitActionResult, 1)}
+			entry.activity, _ = captureactivity.AdmitSplitAction(s.logger, entry.action.ID, "", time.Now(), captureactivity.Queue{})
 			other := &pendingSplitAction{action: splitCaptureAction{ID: "split_other", Type: "open_native_post"}, claimed: true}
 			s.splitCapture.actions = []*pendingSplitAction{entry, other}
 			if phase != "missing" {
@@ -135,7 +137,7 @@ func TestSplitReaderResultRequiresThisActionsSuccessfulForeground(t *testing.T) 
 					t.Fatalf("foreground=%d %s", w.Code, w.Body)
 				}
 			}
-			w := splitRequest(s, token, s.splitCapture.key, "POST", "/api/bridge/split-capture/results/split_reader", `{"ok":true,"result":{"windowId":2}}`)
+			w := splitRequest(s, token, s.splitCapture.key, "POST", "/api/bridge/split-capture/results/"+entry.action.ID, `{"ok":true,"result":{"windowId":2}}`)
 			if w.Code != 204 {
 				t.Fatalf("result=%d %s", w.Code, w.Body)
 			}
@@ -144,7 +146,20 @@ func TestSplitReaderResultRequiresThisActionsSuccessfulForeground(t *testing.T) 
 				if result.OK != (phase == "succeeded") {
 					t.Fatalf("result=%+v", result)
 				}
-				if !result.OK && (!strings.Contains(result.Message, "Reload AkuBridge") || result.Result != nil || !strings.Contains(logs.String(), "phase=result outcome=rejected")) {
+				wantOutcome, wantForeground := "rejected", "unverified"
+				if result.OK {
+					wantOutcome, wantForeground = "accepted", "verified"
+				}
+				var terminals []activityLine
+				for _, event := range readActivityLines(t, logs.String()) {
+					if event.Operation == "split_action" && event.Phase == "result" && event.Action == entry.action.ID {
+						terminals = append(terminals, event)
+					}
+				}
+				if len(terminals) != 1 || terminals[0].Outcome != wantOutcome || terminals[0].Foreground != wantForeground {
+					t.Fatalf("unexpected terminal activity: %+v", terminals)
+				}
+				if !result.OK && (!strings.Contains(result.Message, "Reload AkuBridge") || result.Result != nil) {
 					t.Fatalf("failure not actionable or logged: %+v logs=%s", result, logs.String())
 				}
 			default:

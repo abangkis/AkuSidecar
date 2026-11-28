@@ -79,6 +79,17 @@ cancelled, timed_out and stopped. Missing verification or helper fields mean
 the observation is unavailable. The HTTP relay's prepare and foreground
 samples use `operation=reader_relay` and the issued action ID.
 
+Native-reader observations use `operation=native_reader`. Each scope owns its
+sequence and elapsed clock. Each phase reports its own duration in milliseconds.
+Cold launch and local reader initialization carry the runtime generation. The
+request, profile handoff, direct preparation, tab selection, window verification
+and navigation paths use the issued action ID when available. An ownership or
+expiry rejection during `navigation_guard` ends navigation before dispatch.
+A successful `post_navigation_dispatch` records Chrome accepting the command.
+Remote page readiness requires a separate observation. The canonical
+`split_action` result carries the foreground state (`verified`, `manual_required`
+or `unverified`). The HTTP request total measures time until its handler exits.
+
 The reusable browser sampler lives in
 `internal/httpapi/web/diagnostics/browser-performance.js`, because it runs in the
 browser rather than in Go. It owns opt-in observations, bounds, timers, cleanup
