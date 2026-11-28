@@ -303,27 +303,13 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 	defer cancel()
 	startedAt := time.Now()
 	conversation := &readerBrokerConversation{source: req.Source, url: req.URL, cancel: cancel, expires: startedAt.Add(readerbroker.PreparationLifetime)}
-	t.mu.Lock()
-	t.pruneReaderBrokersLocked(startedAt)
-	if old := t.readerBrokers[req.RequestID]; old != nil {
-		if old.source != req.Source || old.url != req.URL {
-			t.mu.Unlock()
-			return errors.New("reader broker conversation mismatch")
-		}
-		if old.cancelled || old.cancel != nil {
-			t.mu.Unlock()
-			return context.Canceled
-		}
+	if err := t.registerReaderBroker(req, conversation, startedAt); err != nil {
+		captureactivity.ReaderBrokerNotAdmitted(s.logger, req.RequestID, startedAt, err)
+		return err
 	}
-	if t.readerBrokers == nil {
-		t.readerBrokers = make(map[string]*readerBrokerConversation)
-	}
-	if len(t.readerBrokers) >= readerBrokerConversationLimit {
-		t.mu.Unlock()
-		return errors.New("reader broker capacity reached")
-	}
-	t.readerBrokers[req.RequestID] = conversation
-	t.mu.Unlock()
+	trace := captureactivity.BeginReaderBroker(s.logger, req.RequestID, startedAt)
+	var stopped, manualForegroundRequired bool
+	defer func() { trace.Finish(retErr, stopped, manualForegroundRequired) }()
 	defer func() {
 		t.mu.Lock()
 		if t.readerBrokers[req.RequestID] == conversation {
@@ -333,40 +319,12 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 		}
 		t.mu.Unlock()
 	}()
-	if s.logger != nil {
-		s.logger.Printf("reader_broker request_id=%s phase=received outcome=active elapsed_ms=0", req.RequestID)
-	}
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	var entry *pendingSplitAction
 	var attachedAt time.Time
 	var attachedAudit store.SplitActionAudit
 	var attachedAuditReady bool
-	terminalOutcome := "unmatched"
-	defer func() {
-		if s.logger == nil {
-			return
-		}
-		elapsedMS := time.Since(startedAt).Milliseconds()
-		if entry == nil {
-			if terminalOutcome == "unmatched" && ctx.Err() != nil {
-				terminalOutcome = "cancelled"
-			}
-			s.logger.Printf("reader_broker request_id=%s phase=terminal outcome=%s elapsed_ms=%d", req.RequestID, terminalOutcome, elapsedMS)
-			return
-		}
-		outcome := "rejected"
-		switch {
-		case retErr == nil:
-			outcome = "accepted"
-		case errors.Is(retErr, context.Canceled):
-			outcome = "cancelled"
-		case errors.Is(retErr, context.DeadlineExceeded):
-			outcome = "timed_out"
-		}
-		queueWaitMS := splitQueueWaitMS(entry, attachedAt)
-		s.logger.Printf("reader_broker request_id=%s action=%s phase=complete outcome=%s elapsed_ms=%d queue_wait_ms=%s", req.RequestID, entry.action.ID, outcome, elapsedMS, queueWaitMS)
-	}()
 	for entry == nil {
 		t.mu.Lock()
 		for _, a := range t.actions {
@@ -380,28 +338,26 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 		}
 		closed := t.closed
 		t.mu.Unlock()
+		if entry != nil {
+			trace.Attached(entry.action.ID, entry.queuedAt, attachedAt)
+		}
 		if attachedAuditReady {
 			s.persistSplitActionAudit(ctx, attachedAudit)
 			attachedAuditReady = false
 		}
 		if closed {
 			if err := ctx.Err(); err != nil {
-				terminalOutcome = "cancelled"
 				return err
 			}
-			terminalOutcome = "stopped"
+			stopped = true
 			return errors.New("reader broker stopped")
 		}
 		if entry != nil {
-			if s.logger != nil {
-				s.logger.Printf("reader_broker request_id=%s action=%s phase=attached outcome=accepted elapsed_ms=%d queue_wait_ms=%s", req.RequestID, entry.action.ID, attachedAt.Sub(startedAt).Milliseconds(), splitQueueWaitMS(entry, attachedAt))
-			}
 			t.notifyCapture()
 			break
 		}
 		select {
 		case <-ctx.Done():
-			terminalOutcome = "cancelled"
 			return ctx.Err()
 		case <-ticker.C:
 		}
@@ -432,15 +388,12 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 		return outcome
 	}
 	s.auditSplitAction(ctx, entry.action, "reader_foreground", "pending")
+	trace.Activating()
 	activationStarted := time.Now()
 	result, err := activate(target)
-	if s.logger != nil {
-		s.logger.Printf("native_reader_timing action=%s stage=helper_activation elapsed_ms=%d reason=%s focus_category=%s reader_visible=%s reader_minimized=%s",
-			entry.action.ID, time.Since(activationStarted).Milliseconds(), readerbroker.ActivationReason(result, err),
-			readerbroker.DiagnosticFocusCategory(result), readerBrokerBoolDiagnostic(result.ReaderVisible), readerBrokerBoolDiagnostic(result.ReaderMinimized))
-	}
+	returnedAt, contextEnded := time.Now(), ctx.Err() != nil
+	trace.HelperReturned(activationStarted, returnedAt, target.Expires, contextEnded, result, err)
 	foregroundVerified := false
-	manualForegroundRequired := false
 	if err != nil {
 		outcome = err
 	} else if result.OK && result.Readback {
@@ -465,16 +418,7 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 		entry.readerManualForegroundRequired = true
 		t.mu.Unlock()
 	}
-	if s.logger != nil {
-		activationOutcome := "rejected"
-		activationReason := readerbroker.ActivationReason(result, err)
-		if foregroundVerified {
-			activationOutcome = "accepted"
-		} else if err == nil && result.OK && result.Readback {
-			activationReason = "post_activation_completion_failed"
-		}
-		s.logger.Printf("reader_broker request_id=%s action=%s phase=activation outcome=%s reason=%s applied=%t readback=%t verified=%t", req.RequestID, entry.action.ID, activationOutcome, activationReason, result.Applied, result.Readback, foregroundVerified)
-	}
+	trace.Activation(foregroundVerified, err == nil && result.OK && result.Readback, manualForegroundRequired)
 	if foregroundVerified {
 		s.auditSplitAction(ctx, entry.action, "reader_foreground", "accepted")
 	} else {
@@ -488,14 +432,26 @@ func (s *Server) HandleReaderBroker(ctx context.Context, req readerbroker.Reques
 	return outcome
 }
 
-func readerBrokerBoolDiagnostic(value *bool) string {
-	if value == nil {
-		return "unknown"
+func (t *splitCaptureTransport) registerReaderBroker(req readerbroker.Request, conversation *readerBrokerConversation, now time.Time) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.pruneReaderBrokersLocked(now)
+	if old := t.readerBrokers[req.RequestID]; old != nil {
+		if old.source != req.Source || old.url != req.URL {
+			return errors.New("reader broker conversation mismatch")
+		}
+		if old.cancelled || old.cancel != nil {
+			return context.Canceled
+		}
 	}
-	if *value {
-		return "true"
+	if t.readerBrokers == nil {
+		t.readerBrokers = make(map[string]*readerBrokerConversation)
 	}
-	return "false"
+	if len(t.readerBrokers) >= readerBrokerConversationLimit {
+		return errors.New("reader broker capacity reached")
+	}
+	t.readerBrokers[req.RequestID] = conversation
+	return nil
 }
 
 // CancelReaderBroker retires only the exact UI click conversation. A bounded
@@ -853,13 +809,6 @@ func snapshotSplitActionQueue(actions []*pendingSplitAction) captureactivity.Que
 	return snapshot
 }
 
-func splitQueueWaitMS(entry *pendingSplitAction, attachedAt time.Time) string {
-	if entry.queuedAt.IsZero() || attachedAt.IsZero() {
-		return "unavailable"
-	}
-	return strconv.FormatInt(attachedAt.Sub(entry.queuedAt).Milliseconds(), 10)
-}
-
 func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p string) error {
 	t := s.splitCapture
 	if t == nil {
@@ -950,6 +899,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 	}
 	if strings.HasPrefix(p, "/api/bridge/split-capture/reader/") && r.Method == http.MethodPost {
 		parts := strings.Split(strings.TrimPrefix(p, "/api/bridge/split-capture/reader/"), "/")
+		relayStarted := time.Now()
 		if len(parts) != 2 || (parts[0] != "prepare" && parts[0] != "foreground") {
 			return notFound("reader intent")
 		}
@@ -1011,19 +961,19 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 			s.auditSplitAction(r.Context(), entry.action, "reader_foreground", "pending")
 			if foreground == nil {
 				s.auditSplitAction(r.Context(), entry.action, "reader_foreground", "rejected")
-				s.logger.Printf("split_reader action=%s phase=foreground outcome=missing_intent", entry.action.ID)
+				captureactivity.ReaderRelay(s.logger, entry.action.ID, "foreground", relayStarted, "missing_intent")
 				return apiError{Status: 409, Code: "reader_intent_consumed", Message: "Reader foreground intent is not available."}
 			}
 			if err := foreground(r.Context()); err != nil {
 				s.auditSplitAction(r.Context(), entry.action, "reader_foreground", "rejected")
-				s.logger.Printf("split_reader action=%s phase=foreground outcome=rejected", entry.action.ID)
+				captureactivity.ReaderRelay(s.logger, entry.action.ID, "foreground", relayStarted, "rejected")
 				return apiError{Status: 409, Code: "reader_foreground_rejected", Message: err.Error()}
 			}
 			t.mu.Lock()
 			entry.readerForegroundVerified = true
 			t.mu.Unlock()
 			s.auditSplitAction(r.Context(), entry.action, "reader_foreground", "accepted")
-			s.logger.Printf("split_reader action=%s phase=foreground outcome=accepted", entry.action.ID)
+			captureactivity.ReaderRelay(s.logger, entry.action.ID, "foreground", relayStarted, "accepted")
 			return writeJSON(w, 200, map[string]bool{"foreground": true})
 		}
 		if entry.readerPreparing {
@@ -1055,7 +1005,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 				return apiError{Status: 409, Code: "reader_broker_cancelled", Message: "Native reader click was canceled before helper attachment."}
 			}
 			s.auditSplitAction(r.Context(), entry.action, "reader_prepare", "rejected")
-			s.logger.Printf("split_reader action=%s phase=prepare outcome=rejected", entry.action.ID)
+			captureactivity.ReaderRelay(s.logger, entry.action.ID, "prepare", relayStarted, "rejected")
 			return apiError{Status: 409, Code: "reader_binding_rejected", Message: err.Error()}
 		}
 		t.mu.Lock()
@@ -1068,7 +1018,7 @@ func (s *Server) routeSplitCapture(w http.ResponseWriter, r *http.Request, p str
 		entry.brokerTarget = target
 		t.mu.Unlock()
 		s.auditSplitAction(r.Context(), entry.action, "reader_prepare", "accepted")
-		s.logger.Printf("split_reader action=%s phase=prepare outcome=accepted", entry.action.ID)
+		captureactivity.ReaderRelay(s.logger, entry.action.ID, "prepare", relayStarted, "accepted")
 		return writeJSON(w, 200, map[string]bool{"prepared": true})
 	}
 	if p == "/api/split-capture/actions" && r.Method == http.MethodPost {

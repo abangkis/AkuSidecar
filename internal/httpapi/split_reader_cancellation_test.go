@@ -22,7 +22,7 @@ type readerBrokerReceivedPause struct {
 
 func (w *readerBrokerReceivedPause) Write(body []byte) (int, error) {
 	n, err := w.logs.Write(body)
-	if bytes.Contains(body, []byte("phase=received")) {
+	if bytes.Contains(body, []byte(`"phase":"received"`)) {
 		w.once.Do(func() {
 			close(w.received)
 			<-w.resume
@@ -63,7 +63,9 @@ func TestSplitCaptureCloseCancellationWinsBeforeClosedCheck(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("registered waiter did not exit after close")
 	}
-	if !strings.Contains(pause.logs.String(), "phase=terminal outcome=cancelled") {
+	events := readActivityLines(t, pause.logs.String())
+	if len(events) != 2 || events[1].Operation != "reader_broker" || events[1].Phase != "terminal" ||
+		events[1].Outcome != "cancelled" || events[1].RequestID != request.RequestID || events[1].Action != "" {
 		t.Fatalf("close lost cancellation diagnostics: %s", pause.logs.String())
 	}
 	s.splitCapture.mu.Lock()

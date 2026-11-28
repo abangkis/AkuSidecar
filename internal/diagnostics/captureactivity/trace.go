@@ -24,20 +24,24 @@ func newTrace(logger *log.Logger, op d.Operation, start time.Time) *Trace {
 }
 
 type record struct {
-	Producer   string      `json:"producer,omitempty"`
-	Operation  d.Operation `json:"operation"`
-	Phase      d.Phase     `json:"phase"`
-	Sequence   uint32      `json:"sequence"`
-	ElapsedMS  *int64      `json:"elapsed_ms,omitempty"`
-	PID        int         `json:"pid,omitempty"`
-	Executable string      `json:"executable,omitempty"`
-	Version    string      `json:"version,omitempty"`
-	OK         *bool       `json:"ok,omitempty"`
-	Poll       string      `json:"poll,omitempty"`
-	Outcome    string      `json:"outcome,omitempty"`
-	Queue      *Queue      `json:"queue,omitempty"`
-	Action     string      `json:"action,omitempty"`
-	RequestID  string      `json:"request_id,omitempty"`
+	Producer    string             `json:"producer,omitempty"`
+	Operation   d.Operation        `json:"operation"`
+	Phase       d.Phase            `json:"phase"`
+	Sequence    uint32             `json:"sequence"`
+	ElapsedMS   *int64             `json:"elapsed_ms,omitempty"`
+	PID         int                `json:"pid,omitempty"`
+	Executable  string             `json:"executable,omitempty"`
+	Version     string             `json:"version,omitempty"`
+	OK          *bool              `json:"ok,omitempty"`
+	Poll        string             `json:"poll,omitempty"`
+	Outcome     string             `json:"outcome,omitempty"`
+	Queue       *Queue             `json:"queue,omitempty"`
+	Action      string             `json:"action,omitempty"`
+	RequestID   string             `json:"request_id,omitempty"`
+	QueueWaitMS *int64             `json:"queue_wait_ms,omitempty"`
+	Reason      string             `json:"reason,omitempty"`
+	Verified    *bool              `json:"verified,omitempty"`
+	Helper      *helperObservation `json:"helper,omitempty"`
 }
 
 type Queue struct {

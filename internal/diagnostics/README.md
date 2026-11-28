@@ -63,6 +63,22 @@ under `queue` on the admission record. These JSON fields replace the previous
 `split_action action=...` text filter for queued and terminal lines. Durable
 `split_action_audit` rows keep their existing phases.
 
+For a reader-broker invocation, filter `capture_activity` by
+`operation=reader_broker` and `request_id`. The `received` event starts the
+local clock. After the broker matches the request ID, source and URL,
+`attached` adds the issued `action` and the measured `queue_wait_ms` when
+available. A refused duplicate or conflicting registration uses the separate
+`reader_broker_admission` operation so the original invocation remains
+traceable.
+
+`activation_started` marks the helper call. `helper_reply` reports the
+exchange duration, expiry/context observations and allowlisted helper fields.
+`activation` records the local verification or manual foreground fallback.
+The terminal outcome distinguishes accepted, manual_required, rejected,
+cancelled, timed_out and stopped. Missing verification or helper fields mean
+the observation is unavailable. The HTTP relay's prepare and foreground
+samples use `operation=reader_relay` and the issued action ID.
+
 The reusable browser sampler lives in
 `internal/httpapi/web/diagnostics/browser-performance.js`, because it runs in the
 browser rather than in Go. It owns opt-in observations, bounds, timers, cleanup

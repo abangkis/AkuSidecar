@@ -20,7 +20,15 @@ type activityLine struct {
 	RequestID                                         string `json:"request_id"`
 	Sequence                                          int
 	Elapsed                                           *int64 `json:"elapsed_ms"`
-	Queue                                             *struct {
+	QueueWait                                         *int64 `json:"queue_wait_ms"`
+	Verified                                          *bool
+	Helper                                            *struct {
+		Applied, Readback *bool
+		AfterExpiry       bool   `json:"after_expiry"`
+		ContextEnded      bool   `json:"context_ended"`
+		Duration          *int64 `json:"duration_ms"`
+	}
+	Queue *struct {
 		Total       int
 		NativeReady int `json:"native_ready"`
 	}
@@ -122,8 +130,16 @@ func TestSplitActionActivityInterleavedClaimsAndLateResult(t *testing.T) {
 	for i, id := range ids {
 		var action []activityLine
 		claims := 0
+		var relay []string
 		for _, event := range lines {
 			if event.Action != id {
+				continue
+			}
+			if event.Operation == "reader_relay" {
+				if event.RequestID != "" || event.Outcome != "accepted" {
+					t.Fatal("unexpected relay observation", event)
+				}
+				relay = append(relay, event.Phase)
 				continue
 			}
 			if event.RequestID != requests[i] {
@@ -145,6 +161,9 @@ func TestSplitActionActivityInterleavedClaimsAndLateResult(t *testing.T) {
 		}
 		if claims != 1 || len(action) != 3-i {
 			t.Fatalf("%s: claims=%d observations=%+v", id, claims, action)
+		}
+		if i == 0 && len(relay) != 0 || i == 1 && strings.Join(relay, ",") != "prepare,foreground" {
+			t.Fatal("wrong reader relay phases", relay)
 		}
 		slices.SortFunc(action, func(a, b activityLine) int { return cmp.Compare(a.Sequence, b.Sequence) })
 		for index, event := range action {

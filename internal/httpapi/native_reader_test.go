@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
@@ -100,6 +101,8 @@ func TestDirectNativeReaderRequiresMatchedBrokerAndVerifiedActivation(t *testing
 	for i, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			s, token := splitTestServer(t)
+			var output strings.Builder
+			s.logger = log.New(&output, "", 0)
 			req := readerbroker.Request{RequestID: "broker_" + strings.Repeat(fmt.Sprintf("%x", i), 32), Source: "x", URL: "https://x.com/a/status/1"}
 			entry := &pendingSplitAction{action: splitCaptureAction{ID: "split_direct", Type: "open_native_post", RequestID: req.RequestID, Source: req.Source, URL: req.URL}, directReader: true, brokerReady: make(chan struct{}), brokerDone: make(chan error, 1), result: make(chan splitActionResult, 1)}
 			s.splitCapture.actions = []*pendingSplitAction{entry, {action: splitCaptureAction{ID: "split_ping", Type: "ping"}}}
@@ -118,7 +121,11 @@ func TestDirectNativeReaderRequiresMatchedBrokerAndVerifiedActivation(t *testing
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
-			go s.runDirectNativeReader(ctx, s.splitCapture, entry, prepare)
+			directDone := make(chan struct{})
+			go func() {
+				defer close(directDone)
+				s.runDirectNativeReader(ctx, s.splitCapture, entry, prepare)
+			}()
 			// Even an attached reader cannot be taken by a Bridge poll.
 			claim := splitRequest(s, token, s.splitCapture.key, "GET", "/api/bridge/split-capture/next", "")
 			if !strings.Contains(claim.Body.String(), "split_ping") {
@@ -176,6 +183,53 @@ func TestDirectNativeReaderRequiresMatchedBrokerAndVerifiedActivation(t *testing
 			}
 			if !entry.completed {
 				t.Fatal("direct action retained queue ownership")
+			}
+			<-directDone
+			terminal := "rejected"
+			switch {
+			case tc.cancelDuringActivate:
+				terminal = "cancelled"
+			case tc.expectManual:
+				terminal = "manual_required"
+			case activationErr == nil:
+				terminal = "accepted"
+			}
+			var phases []string
+			for _, event := range readActivityLines(t, output.String()) {
+				if event.Operation != "reader_broker" {
+					continue
+				}
+				phases = append(phases, event.Phase)
+				if event.RequestID != req.RequestID || event.Sequence != len(phases) || event.Elapsed == nil {
+					t.Fatal(event)
+				}
+				switch event.Phase {
+				case "helper_reply":
+					h := event.Helper
+					if h == nil || h.Duration == nil || h.AfterExpiry != (tc.name == "binding expires during activation") ||
+						h.ContextEnded != tc.cancelDuringActivate {
+						t.Fatal(event)
+					}
+					if tc.activationErr != nil {
+						if h.Applied != nil || h.Readback != nil || event.Outcome != "unavailable" {
+							t.Fatal(h)
+						}
+					} else if h.Readback == nil || *h.Readback != tc.reply.Readback {
+						t.Fatal(h)
+					}
+				case "activation":
+					if tc.expectManual && event.Outcome != "manual_required" || tc.expectForegroundCheck && (event.Verified == nil || !*event.Verified) ||
+						!tc.expectForegroundCheck && event.Verified != nil {
+						t.Fatal(event)
+					}
+				case "terminal":
+					if event.Outcome != terminal {
+						t.Fatal(event)
+					}
+				}
+			}
+			if strings.Join(phases, ",") != "received,attached,activation_started,helper_reply,activation,terminal" {
+				t.Fatal(phases)
 			}
 		})
 	}
