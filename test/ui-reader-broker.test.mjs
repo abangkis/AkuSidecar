@@ -190,6 +190,36 @@ test("reader helper diagnostics correlate the outcome without logging the native
   assert.ok(!JSON.stringify(logs).includes(url));
 });
 
+test("unavailable console preserves native helper delivery and its original reply", async () => {
+  const worker = fs.readFileSync(new URL("service-worker.js", root), "utf8");
+  for (const outcome of ["accepted", "rejected", "transport_error"]) {
+    let receive;
+    let helperCalls = 0;
+    const phases = [];
+    const result = { ok: outcome === "accepted", message: "helper reply" };
+    const sender = { id: "fixture", frameId: 0, url: "http://127.0.0.1:11122/", tab: { id: 1 } };
+    const chrome = {
+      runtime: { id: sender.id, onMessage: { addListener(fn) { receive = fn; } },
+        async sendNativeMessage() {
+          helperCalls++;
+          if (outcome === "transport_error") throw Error("helper transport unavailable");
+          return result;
+        } },
+      tabs: { onRemoved: { addListener() {} }, get: async () => ({ active: true, windowId: 1 }) },
+      windows: { get: async () => ({ focused: true }) },
+    };
+    vm.runInNewContext(worker, { chrome, URL, performance, console: {
+      info(label, event) { phases.push([label, event.phase]); throw Error("broken console"); },
+    } });
+    const reply = await new Promise(resolve => receive({ requestId: "broker_" + "a".repeat(32),
+      source: "x", url: "https://example.invalid/" }, sender, resolve));
+    assert.equal(helperCalls, 1);
+    assert.equal(reply.ok, result.ok);
+    assert.equal(reply.message, outcome === "transport_error" ? "helper transport unavailable" : result.message);
+    assert.deepEqual(phases, [["aku_reader_broker", "helper_start"], ["aku_reader_broker", "helper_result"]]);
+  }
+});
+
 test("foreground refusal diagnostics retain only fixed focus categories and visibility", async () => {
   let listener;
   const logs=[];

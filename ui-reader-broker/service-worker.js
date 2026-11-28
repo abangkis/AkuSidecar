@@ -3,6 +3,13 @@ const startupURLs = new Map();
 const startupReady = new Set();
 const recoveryAttempted = new Set();
 
+// This extension observes the Chrome-to-helper boundary, including failures before Sidecar receipt.
+function reportHelperEvent(event) {
+  try {
+    console.info("aku_reader_broker", event);
+  } catch { /* Console delivery must never change a native click or its reply. */ }
+}
+
 function uiSender(sender) {
   try {
     const url = new URL(sender.url);
@@ -64,12 +71,12 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     // sendNativeMessage launches a fresh executable for each explicit click.
     // Keep diagnostics free of the native URL and browser capability data.
     const startedAt = performance.now();
-    console.info("aku_reader_broker", { requestId: message.requestId, phase: "helper_start" });
+    reportHelperEvent({ requestId: message.requestId, phase: "helper_start" });
     try {
       const result = await chrome.runtime.sendNativeMessage("com.akubrowser.reader_activation", {
         requestId: message.requestId, source: message.source, url: message.url,
       });
-      console.info("aku_reader_broker", {
+      reportHelperEvent({
         requestId: message.requestId,
         phase: "helper_result",
         outcome: result?.ok === true ? "accepted" : "rejected",
@@ -85,7 +92,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       });
       return result;
     } catch (error) {
-      console.info("aku_reader_broker", {
+      reportHelperEvent({
         requestId: message.requestId,
         phase: "helper_result",
         outcome: "transport_error",

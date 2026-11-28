@@ -1,5 +1,7 @@
 # AI4UDiagnostics alpha.4 telemetry adoption
 
+See [operational logging coverage](operational-logging-coverage.md) for the source-to-sink inventory, durable audit contracts, and diagnostic export coverage.
+
 ## Published baseline and local adoption
 
 The diagnostics extraction is published as
